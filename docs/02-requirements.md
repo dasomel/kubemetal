@@ -165,8 +165,13 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 | `list_local_models` (Phase 2b) | None | `Result<Vec<LocalModel>, String>` | 로컬에 다운로드된 모델 목록 조회 |
 | `upload_model_to_storage` (Phase 2b) | `{ repo_id: String }` | `Result<String, String>` | 로컬 모델을 SeaweedFS S3(8333) `models` 버킷으로 업로드 (FR-07.3) |
 | `register_model_mlflow` (Phase 2b) | `{ repo_id: String }` | `Result<String, String>` | 업로드된 모델을 MLflow Model Registry(5001)에 등록 (FR-07.4) |
-| `run_mlx_finetune` | `FineTuneConfigJSON` | `Result<u32, String>` | MLX 파인튜닝 프로세스 띄우고 PID 리턴 |
-| `kill_mlx_process` | `{ pid: u32 }` | `Result<bool, String>` | 실행 중인 MLX 학습/서빙 프로세스 중지 |
+| `check_mlx_env` (Phase 2c) | None | `MlxEnvStatus {python_ok, venv_exists, mlx_lm_installed, mlx_lm_version}` | `~/.kubemetal/venv`의 python3/mlx-lm 설치 여부·버전 조회 |
+| `setup_mlx_env` (Phase 2c) | None | `Result<String, String>` | 백그라운드로 `python3 -m venv` + `pip install -U mlx-lm` 실행, 진행 상태를 `MlxState.env_setup`에 기록 |
+| `run_mlx_finetune` (Phase 2c) | `FineTuneConfig {model_path, data_path, iters: u32, batch_size: u32, learning_rate: f64, adapter_name}` | `Result<u32, String>` | venv python으로 `scripts/mlx/finetune_wrapper.py`(mlx_lm lora 래퍼) 실행, PID 리턴. model_path/data_path는 홈 디렉터리 하위 실존 경로만 허용 |
+| `get_mlx_status` (Phase 2c) | None | `MlxStatus {env, env_setup_state, env_setup_error, training: Option<TrainingStatus>, serving: Option<ServingStatus>}` | 환경/학습/서빙 상태 통합 조회 |
+| `kill_mlx_process` (Phase 2c) | `{ pid: u32 }` | `Result<bool, String>` | 실행 중인 MLX 학습/서빙 프로세스에 SIGTERM→(1s)→SIGKILL 전송, State 정리 |
+| `start_model_serving` (Phase 2c) | `{ model_path: String, port: u16 }` | `Result<String, String>` | venv `python -m mlx_lm server --model {path} --port {port}` 기동(기본 포트 8080 가정), 이미 서빙 중이면 Err |
+| `stop_model_serving` (Phase 2c) | None | `Result<String, String>` | 진행 중인 모델 서빙 프로세스 종료 |
 
 ### 4.2 K8s External Service Manifest Spec (`mac-gpu-bridge.yaml`)
 

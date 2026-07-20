@@ -6,6 +6,10 @@ use sysinfo::System;
 
 use commands::colima::{get_cluster_status, start_cluster, stop_cluster};
 use commands::metrics::get_system_metrics;
+use commands::mlx::{
+    check_mlx_env, get_mlx_status, kill_mlx_process, run_mlx_finetune, setup_mlx_env,
+    start_model_serving, stop_model_serving, MlxState,
+};
 use commands::modelhub::{
     download_hf_model, get_model_downloads, list_local_models, register_model_mlflow,
     search_hf_models, upload_model_to_storage, ModelHubState,
@@ -21,6 +25,7 @@ pub fn run() {
         .manage(Mutex::new(System::new_all()))
         .manage(PortForwardState::default())
         .manage(ModelHubState::default())
+        .manage(MlxState::default())
         .invoke_handler(tauri::generate_handler![
             get_system_metrics,
             get_cluster_status,
@@ -35,6 +40,13 @@ pub fn run() {
             list_local_models,
             upload_model_to_storage,
             register_model_mlflow,
+            check_mlx_env,
+            setup_mlx_env,
+            run_mlx_finetune,
+            get_mlx_status,
+            kill_mlx_process,
+            start_model_serving,
+            stop_model_serving,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

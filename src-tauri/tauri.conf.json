@@ -31,7 +31,8 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "../scripts/k8s/*"
+      "../scripts/k8s/*",
+      "../scripts/mlx/*"
     ]
   },
   "plugins": {}

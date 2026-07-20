@@ -4,13 +4,15 @@ import { MetricsPanel } from './components/dashboard/MetricsPanel';
 import { ClusterControl } from './components/dashboard/ClusterControl';
 import { ProvisionPanel } from './components/services/ProvisionPanel';
 import { ModelHub } from './components/modelhub/ModelHub';
+import { MlxStudio } from './components/mlx/MlxStudio';
 import { Shield, Sparkles } from 'lucide-react';
 
-type Tab = 'dashboard' | 'modelhub';
+type Tab = 'dashboard' | 'modelhub' | 'mlx';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'dashboard', label: '대시보드' },
   { id: 'modelhub', label: '모델 허브' },
+  { id: 'mlx', label: 'MLX 스튜디오' },
 ];
 
 export const App: React.FC = () => {
@@ -72,8 +74,10 @@ export const App: React.FC = () => {
             {/* MLOps 서비스 프로비저닝 패널 */}
             <ProvisionPanel />
           </>
-        ) : (
+        ) : activeTab === 'modelhub' ? (
           <ModelHub />
+        ) : (
+          <MlxStudio />
         )}
       </main>
 

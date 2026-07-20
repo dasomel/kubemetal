@@ -31,14 +31,3 @@ pub async fn provision_mlops_stack(app: tauri::AppHandle) -> Result<String, Stri
 
     Ok("MLflow / SeaweedFS / GPU 브리지 매니페스트가 적용되었습니다.".into())
 }
-
-// Phase 2 커맨드 예약:
-// #[tauri::command]
-// pub async fn run_mlx_finetune(config: serde_json::Value) -> Result<u32, String> {
-//     todo!("Phase 2: MLX 파인튜닝 프로세스 띄우고 PID 리턴")
-// }
-//
-// #[tauri::command]
-// pub async fn kill_mlx_process(pid: u32) -> Result<bool, String> {
-//     todo!("Phase 2: 실행 중인 MLX 학습/서빙 프로세스 중지")
-// }

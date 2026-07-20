@@ -1,0 +1,639 @@
+use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::Mutex;
+
+use serde::{Deserialize, Serialize};
+use tauri::{Manager, State};
+use tokio::io::{AsyncBufReadExt, BufReader};
+
+use crate::services::process::resolve_cli_path;
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct MlxEnvStatus {
+    pub python_ok: bool,
+    pub venv_exists: bool,
+    pub mlx_lm_installed: bool,
+    pub mlx_lm_version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct EnvSetupStatus {
+    pub state: String, // "idle" | "installing" | "done" | "error"
+    pub error: Option<String>,
+}
+
+impl Default for EnvSetupStatus {
+    fn default() -> Self {
+        Self {
+            state: "idle".into(),
+            error: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct FineTuneConfig {
+    pub model_path: String,
+    pub data_path: String,
+    pub iters: u32,
+    pub batch_size: u32,
+    pub learning_rate: f64,
+    pub adapter_name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TrainingStatus {
+    pub pid: u32,
+    pub status: String, // "running" | "done" | "error" | "killed"
+    pub current_iter: u32,
+    pub total_iters: u32,
+    pub last_loss: Option<f64>,
+    pub adapter_path: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ServingStatus {
+    pub pid: u32,
+    pub port: u16,
+    pub model_path: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MlxStatus {
+    pub env: MlxEnvStatus,
+    pub env_setup_state: String,
+    pub env_setup_error: Option<String>,
+    pub training: Option<TrainingStatus>,
+    pub serving: Option<ServingStatus>,
+}
+
+#[derive(Default)]
+pub struct MlxState {
+    pub env_setup: Mutex<EnvSetupStatus>,
+    pub training: Mutex<Option<TrainingStatus>>,
+    pub serving: Mutex<Option<ServingStatus>>,
+    pub serving_child: Mutex<Option<tokio::process::Child>>,
+}
+
+fn home_dir() -> Result<PathBuf, String> {
+    std::env::var("HOME")
+        .map(PathBuf::from)
+        .map_err(|_| "HOME 환경변수를 찾을 수 없습니다.".to_string())
+}
+
+fn venv_dir() -> Result<PathBuf, String> {
+    Ok(home_dir()?.join(".kubemetal").join("venv"))
+}
+
+fn venv_python() -> Result<PathBuf, String> {
+    Ok(venv_dir()?.join("bin").join("python"))
+}
+
+fn venv_pip() -> Result<PathBuf, String> {
+    Ok(venv_dir()?.join("bin").join("pip"))
+}
+
+/// `model_path`/`data_path`처럼 프론트에서 넘어온 절대경로 문자열을 검증한다.
+/// `canonicalize()`가 존재 검증과 `..`/심볼릭 링크 정규화를 동시에 수행하므로,
+/// 정규화된 경로가 홈 디렉터리 하위인지만 재확인하면 된다(safe 원칙).
+fn validate_home_subpath(p: &str) -> Result<PathBuf, String> {
+    let home = home_dir()?
+        .canonicalize()
+        .map_err(|e| format!("HOME 경로 확인 실패: {e}"))?;
+    let canonical = Path::new(p)
+        .canonicalize()
+        .map_err(|e| format!("경로를 찾을 수 없습니다: {p} ({e})"))?;
+    if !canonical.starts_with(&home) {
+        return Err(format!("허용되지 않은 경로입니다(홈 디렉터리 하위만 허용): {p}"));
+    }
+    Ok(canonical)
+}
+
+fn validate_adapter_name(name: &str) -> Result<(), String> {
+    let is_valid = !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+        && name.chars().any(|c| c != '.');
+    if is_valid {
+        Ok(())
+    } else {
+        Err(format!("잘못된 adapter_name입니다: {name}"))
+    }
+}
+
+fn wrapper_script_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
+    Ok(resource_dir.join("scripts/mlx/finetune_wrapper.py"))
+}
+
+async fn check_mlx_env_inner() -> MlxEnvStatus {
+    let python_ok = resolve_cli_path("python3").is_ok();
+    let venv_py = match venv_python() {
+        Ok(p) => p,
+        Err(_) => {
+            return MlxEnvStatus {
+                python_ok,
+                venv_exists: false,
+                mlx_lm_installed: false,
+                mlx_lm_version: None,
+            }
+        }
+    };
+    let venv_exists = venv_py.is_file();
+    if !venv_exists {
+        return MlxEnvStatus {
+            python_ok,
+            venv_exists,
+            mlx_lm_installed: false,
+            mlx_lm_version: None,
+        };
+    }
+
+    let output = tokio::process::Command::new(&venv_py)
+        .args([
+            "-c",
+            "import mlx_lm, importlib.metadata; print(importlib.metadata.version('mlx-lm'))",
+        ])
+        .output()
+        .await;
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            MlxEnvStatus {
+                python_ok,
+                venv_exists,
+                mlx_lm_installed: true,
+                mlx_lm_version: Some(version),
+            }
+        }
+        _ => MlxEnvStatus {
+            python_ok,
+            venv_exists,
+            mlx_lm_installed: false,
+            mlx_lm_version: None,
+        },
+    }
+}
+
+#[tauri::command]
+pub async fn check_mlx_env() -> Result<MlxEnvStatus, String> {
+    Ok(check_mlx_env_inner().await)
+}
+
+async fn run_setup_inner() -> Result<(), String> {
+    let python3 = resolve_cli_path("python3")?;
+    let venv = venv_dir()?;
+    if !venv.join("bin").join("python").is_file() {
+        let out = tokio::process::Command::new(&python3)
+            .arg("-m")
+            .arg("venv")
+            .arg(&venv)
+            .output()
+            .await
+            .map_err(|e| format!("venv 생성 실행 실패: {e}"))?;
+        if !out.status.success() {
+            return Err(format!(
+                "venv 생성 실패: {}",
+                String::from_utf8_lossy(&out.stderr)
+            ));
+        }
+    }
+
+    let pip = venv_pip()?;
+    let out = tokio::process::Command::new(&pip)
+        .args(["install", "-U", "mlx-lm"])
+        .output()
+        .await
+        .map_err(|e| format!("pip install 실행 실패: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "mlx-lm 설치 실패: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    Ok(())
+}
+
+async fn run_setup(app: tauri::AppHandle) {
+    let result = run_setup_inner().await;
+    let state = app.state::<MlxState>();
+    let mut guard = match state.env_setup.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    match result {
+        Ok(()) => {
+            guard.state = "done".into();
+            guard.error = None;
+        }
+        Err(e) => {
+            guard.state = "error".into();
+            guard.error = Some(e);
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn setup_mlx_env(
+    app: tauri::AppHandle,
+    state: State<'_, MlxState>,
+) -> Result<String, String> {
+    {
+        let mut guard = state.env_setup.lock().map_err(|e| e.to_string())?;
+        if guard.state == "installing" {
+            return Err("MLX 환경 설치가 이미 진행 중입니다.".into());
+        }
+        guard.state = "installing".into();
+        guard.error = None;
+    }
+
+    tokio::spawn(run_setup(app));
+    Ok("MLX venv 설치를 시작했습니다.".into())
+}
+
+fn apply_training_event(app: &tauri::AppHandle, value: &serde_json::Value) {
+    let state = app.state::<MlxState>();
+    let mut guard = match state.training.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let training = match guard.as_mut() {
+        Some(t) => t,
+        None => return,
+    };
+    match value.get("type").and_then(|v| v.as_str()) {
+        Some("progress") => {
+            if let Some(i) = value.get("iter").and_then(|v| v.as_u64()) {
+                training.current_iter = i as u32;
+            }
+            if let Some(l) = value.get("train_loss").and_then(|v| v.as_f64()) {
+                training.last_loss = Some(l);
+            }
+        }
+        Some("done") => {
+            training.status = "done".into();
+            if let Some(p) = value.get("adapter_path").and_then(|v| v.as_str()) {
+                training.adapter_path = Some(p.to_string());
+            }
+            if let Some(l) = value.get("last_loss").and_then(|v| v.as_f64()) {
+                training.last_loss = Some(l);
+            }
+        }
+        Some("error") => {
+            training.status = "error".into();
+            if let Some(m) = value.get("message").and_then(|v| v.as_str()) {
+                training.error = Some(m.to_string());
+            }
+        }
+        Some("warning") => {
+            // 경고는 상태를 바꾸지 않는다(예: MLflow 접근 실패) — 향후 로그 노출용으로만 무시하지 않고 수신.
+        }
+        _ => {}
+    }
+}
+
+async fn read_stdout_lines(app: tauri::AppHandle, stdout: tokio::process::ChildStdout) {
+    let mut lines = BufReader::new(stdout).lines();
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) => {
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                    apply_training_event(&app, &value);
+                }
+            }
+            Ok(None) => break,
+            Err(_) => break,
+        }
+    }
+}
+
+async fn collect_stderr(stderr: tokio::process::ChildStderr) -> String {
+    let mut lines = BufReader::new(stderr).lines();
+    let mut buf = String::new();
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) => {
+                if buf.len() < 4000 {
+                    buf.push_str(&line);
+                    buf.push('\n');
+                }
+            }
+            Ok(None) => break,
+            Err(_) => break,
+        }
+    }
+    buf
+}
+
+fn finalize_training(
+    app: &tauri::AppHandle,
+    exit: std::io::Result<std::process::ExitStatus>,
+    stderr_text: String,
+) {
+    let state = app.state::<MlxState>();
+    let mut guard = match state.training.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let training = match guard.as_mut() {
+        Some(t) => t,
+        None => return,
+    };
+    if training.status != "running" {
+        return;
+    }
+    match exit {
+        Ok(status) if status.success() => training.status = "done".into(),
+        Ok(status) => {
+            training.status = "error".into();
+            training.error = Some(if stderr_text.trim().is_empty() {
+                format!("학습 프로세스가 비정상 종료되었습니다({status})")
+            } else {
+                stderr_text.trim().to_string()
+            });
+        }
+        Err(e) => {
+            training.status = "error".into();
+            training.error = Some(format!("프로세스 대기 실패: {e}"));
+        }
+    }
+}
+
+async fn run_training_reader(app: tauri::AppHandle, mut child: tokio::process::Child) {
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    let stdout_task = stdout.map(|out| tokio::spawn(read_stdout_lines(app.clone(), out)));
+    let stderr_task = stderr.map(|err| tokio::spawn(collect_stderr(err)));
+
+    if let Some(t) = stdout_task {
+        let _ = t.await;
+    }
+    let stderr_text = if let Some(t) = stderr_task {
+        t.await.unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let exit = child.wait().await;
+    finalize_training(&app, exit, stderr_text);
+}
+
+#[tauri::command]
+pub async fn run_mlx_finetune(
+    app: tauri::AppHandle,
+    state: State<'_, MlxState>,
+    config: FineTuneConfig,
+) -> Result<u32, String> {
+    {
+        let guard = state.training.lock().map_err(|e| e.to_string())?;
+        if let Some(t) = guard.as_ref() {
+            if t.status == "running" {
+                return Err(format!("이미 학습이 진행 중입니다(PID {}).", t.pid));
+            }
+        }
+    }
+
+    if config.iters == 0 {
+        return Err("iters는 1 이상이어야 합니다.".into());
+    }
+    if config.batch_size == 0 {
+        return Err("batch_size는 1 이상이어야 합니다.".into());
+    }
+    if !(config.learning_rate.is_finite() && config.learning_rate > 0.0) {
+        return Err("learning_rate는 0보다 큰 유한한 값이어야 합니다.".into());
+    }
+    validate_adapter_name(&config.adapter_name)?;
+
+    let model_path = validate_home_subpath(&config.model_path)?;
+    let data_path = validate_home_subpath(&config.data_path)?;
+
+    let venv_py = venv_python()?;
+    if !venv_py.is_file() {
+        return Err("MLX venv가 없습니다. setup_mlx_env를 먼저 실행하세요.".into());
+    }
+
+    let wrapper = wrapper_script_path(&app)?;
+    if !wrapper.is_file() {
+        return Err(format!(
+            "파인튜닝 래퍼 스크립트를 찾을 수 없습니다: {}",
+            wrapper.display()
+        ));
+    }
+
+    let child = tokio::process::Command::new(&venv_py)
+        .arg(&wrapper)
+        .arg("--model")
+        .arg(&model_path)
+        .arg("--data")
+        .arg(&data_path)
+        .arg("--iters")
+        .arg(config.iters.to_string())
+        .arg("--batch-size")
+        .arg(config.batch_size.to_string())
+        .arg("--learning-rate")
+        .arg(config.learning_rate.to_string())
+        .arg("--adapter-name")
+        .arg(&config.adapter_name)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("파인튜닝 프로세스 실행 실패: {e}"))?;
+
+    let pid = child
+        .id()
+        .ok_or_else(|| "PID를 가져올 수 없습니다.".to_string())?;
+
+    {
+        let mut guard = state.training.lock().map_err(|e| e.to_string())?;
+        *guard = Some(TrainingStatus {
+            pid,
+            status: "running".into(),
+            current_iter: 0,
+            total_iters: config.iters,
+            last_loss: None,
+            adapter_path: None,
+            error: None,
+        });
+    }
+
+    // stdout/stderr는 run_training_reader가 소비하며, 종료 시 child.wait()로 리핑한다.
+    tokio::spawn(run_training_reader(app, child));
+
+    Ok(pid)
+}
+
+#[tauri::command]
+pub async fn get_mlx_status(state: State<'_, MlxState>) -> Result<MlxStatus, String> {
+    let env = check_mlx_env_inner().await;
+    let (env_setup_state, env_setup_error) = {
+        let guard = state.env_setup.lock().map_err(|e| e.to_string())?;
+        (guard.state.clone(), guard.error.clone())
+    };
+    let training = state.training.lock().map_err(|e| e.to_string())?.clone();
+    let serving = state.serving.lock().map_err(|e| e.to_string())?.clone();
+
+    Ok(MlxStatus {
+        env,
+        env_setup_state,
+        env_setup_error,
+        training,
+        serving,
+    })
+}
+
+/// SIGTERM 전송 후 1초 대기, 여전히 살아있으면 SIGKILL. `libc::kill(pid, 0)`으로 생존 여부를 확인한다.
+fn terminate_pid(pid: u32) {
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    let alive = unsafe { libc::kill(pid as i32, 0) == 0 };
+    if alive {
+        unsafe {
+            libc::kill(pid as i32, libc::SIGKILL);
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || terminate_pid(pid))
+        .await
+        .map_err(|e| format!("프로세스 종료 대기 실패: {e}"))?;
+
+    {
+        let mut guard = state.training.lock().map_err(|e| e.to_string())?;
+        if let Some(t) = guard.as_mut() {
+            if t.pid == pid && t.status == "running" {
+                t.status = "killed".into();
+            }
+        }
+    }
+
+    let serving_child = {
+        let mut serving_guard = state.serving.lock().map_err(|e| e.to_string())?;
+        let matches = serving_guard.as_ref().map(|s| s.pid) == Some(pid);
+        if matches {
+            *serving_guard = None;
+            let mut child_guard = state.serving_child.lock().map_err(|e| e.to_string())?;
+            child_guard.take()
+        } else {
+            None
+        }
+    };
+    if let Some(mut child) = serving_child {
+        let _ = child.wait().await;
+    }
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn start_model_serving(
+    state: State<'_, MlxState>,
+    model_path: String,
+    port: u16,
+) -> Result<String, String> {
+    {
+        let guard = state.serving.lock().map_err(|e| e.to_string())?;
+        if guard.is_some() {
+            return Err("이미 모델 서빙이 진행 중입니다.".into());
+        }
+    }
+
+    let validated_model = validate_home_subpath(&model_path)?;
+    let venv_py = venv_python()?;
+    if !venv_py.is_file() {
+        return Err("MLX venv가 없습니다. setup_mlx_env를 먼저 실행하세요.".into());
+    }
+
+    let child = tokio::process::Command::new(&venv_py)
+        .args(["-m", "mlx_lm", "server", "--model"])
+        .arg(&validated_model)
+        .args(["--port", &port.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("서빙 프로세스 실행 실패: {e}"))?;
+
+    let pid = child
+        .id()
+        .ok_or_else(|| "PID를 가져올 수 없습니다.".to_string())?;
+
+    {
+        let mut serving_guard = state.serving.lock().map_err(|e| e.to_string())?;
+        *serving_guard = Some(ServingStatus {
+            pid,
+            port,
+            model_path: validated_model.to_string_lossy().to_string(),
+        });
+        let mut child_guard = state.serving_child.lock().map_err(|e| e.to_string())?;
+        *child_guard = Some(child);
+    }
+
+    Ok(format!("{} 포트에서 모델 서빙을 시작했습니다(PID {pid}).", port))
+}
+
+#[tauri::command]
+pub async fn stop_model_serving(state: State<'_, MlxState>) -> Result<String, String> {
+    let pid = {
+        let guard = state.serving.lock().map_err(|e| e.to_string())?;
+        match guard.as_ref() {
+            Some(s) => s.pid,
+            None => return Err("진행 중인 모델 서빙이 없습니다.".into()),
+        }
+    };
+
+    tokio::task::spawn_blocking(move || terminate_pid(pid))
+        .await
+        .map_err(|e| format!("프로세스 종료 대기 실패: {e}"))?;
+
+    let child = {
+        let mut serving_guard = state.serving.lock().map_err(|e| e.to_string())?;
+        *serving_guard = None;
+        let mut child_guard = state.serving_child.lock().map_err(|e| e.to_string())?;
+        child_guard.take()
+    };
+    if let Some(mut child) = child {
+        let _ = child.wait().await;
+    }
+
+    Ok("모델 서빙을 정지했습니다.".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_adapter_name_accepts_simple_names() {
+        assert!(validate_adapter_name("smoke-test").is_ok());
+        assert!(validate_adapter_name("adapter_v1.2").is_ok());
+    }
+
+    #[test]
+    fn validate_adapter_name_rejects_traversal_and_empty() {
+        assert!(validate_adapter_name("").is_err());
+        assert!(validate_adapter_name("..").is_err());
+        assert!(validate_adapter_name("../evil").is_err());
+        assert!(validate_adapter_name("a/b").is_err());
+    }
+
+    #[test]
+    fn validate_home_subpath_rejects_outside_home() {
+        assert!(validate_home_subpath("/etc/passwd").is_err());
+    }
+
+    #[test]
+    fn validate_home_subpath_rejects_nonexistent() {
+        assert!(validate_home_subpath("/definitely/not/here/xyz").is_err());
+    }
+}
