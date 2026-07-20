@@ -1,7 +1,10 @@
 use tauri::Manager;
-use crate::services::process::resolve_cli_path;
+use crate::services::process::{resolve_bundled_resource, resolve_cli_path};
 
-const MANIFESTS: [&str; 3] = [
+const MANIFESTS: [&str; 4] = [
+    // Secret을 먼저 적용해 mlflow-deployment.yaml의 secretKeyRef가 기동 시점에
+    // 즉시 해석되도록 한다(D13 — SeaweedFS S3 크리덴셜 자동 와이어링).
+    "scripts/k8s/seaweedfs-s3-credentials.yaml",
     "scripts/k8s/mlflow-deployment.yaml",
     "scripts/k8s/seaweedfs-deployment.yaml",
     "scripts/k8s/mac-gpu-bridge.yaml",
@@ -13,7 +16,7 @@ pub async fn provision_mlops_stack(app: tauri::AppHandle) -> Result<String, Stri
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
 
     for manifest in MANIFESTS {
-        let path = resource_dir.join(manifest);
+        let path = resolve_bundled_resource(&resource_dir, manifest);
         let output = tokio::process::Command::new(&kubectl)
             .args(["--context", "colima", "apply", "-f"])
             .arg(&path)

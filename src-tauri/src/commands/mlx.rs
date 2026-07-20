@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::services::process::resolve_cli_path;
+use crate::services::process::{resolve_bundled_resource, resolve_cli_path};
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct MlxEnvStatus {
@@ -125,7 +125,7 @@ fn validate_adapter_name(name: &str) -> Result<(), String> {
 
 fn wrapper_script_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
-    Ok(resource_dir.join("scripts/mlx/finetune_wrapper.py"))
+    Ok(resolve_bundled_resource(&resource_dir, "scripts/mlx/finetune_wrapper.py"))
 }
 
 async fn check_mlx_env_inner() -> MlxEnvStatus {

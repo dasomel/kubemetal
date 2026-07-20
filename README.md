@@ -26,6 +26,16 @@ GPU 서버나 멀티노드 K3s 클러스터로 자연스럽게 확장할 수 있
 - Node 22+ / pnpm
 - Rust (rustup)
 
+## 앱 구성 — 5개 탭
+
+| 탭 | 역할 |
+|----|------|
+| **대시보드** | RAM/CPU 실시간 모니터링, Colima(vz) K8s 클러스터 원클릭 시작/정지, MLOps 스택 프로비저닝, 포트포워딩 제어 |
+| **모델 허브** | Hugging Face 모델 검색 → 호스트 다운로드 → SeaweedFS S3 업로드 → MLflow Model Registry 등록까지 원클릭 흐름, 등록 모델 목록 조회 |
+| **MLX 스튜디오** | 호스트 MLX venv 환경 설치, 로컬 모델 기반 LoRA 파인튜닝 실행(진행률/손실 실시간 표시), `mlx_lm.server` 모델 서빙 시작/정지 |
+| **파이프라인** | 클러스터 구동 → 프로비저닝 → 모델 다운로드 → 파인튜닝 → MLflow 등록 → 서빙까지 단계별 상태를 카드로 시각화 |
+| **접근 콘솔** | MLflow / SeaweedFS Filer 등 프로비저닝된 서비스로 크리덴셜 없이 원클릭 접근, 헬스 상태 조회 |
+
 ## 구동 방법
 
 1. 의존성 설치
@@ -36,17 +46,20 @@ GPU 서버나 멀티노드 K3s 클러스터로 자연스럽게 확장할 수 있
    ```bash
    pnpm tauri dev
    ```
-3. 앱 대시보드에서 **클러스터 시작** 버튼을 누르면 감지된 호스트 RAM 기반으로 자동
+3. **대시보드** 탭의 **클러스터 시작** 버튼을 누르면 감지된 호스트 RAM 기반으로 자동
    산정된 CPU/메모리 값으로 다음 명령이 내부적으로 실행됩니다.
    ```bash
    colima start --cpu <N> --memory <M> --vm-type=vz --mount-type=virtiofs --kubernetes
    ```
-4. **MLOps 스택 프로비저닝** 버튼을 눌러 MLflow / SeaweedFS / mac-gpu-bridge 매니페스트를
-   클러스터에 적용합니다.
+4. **MLOps 스택 프로비저닝** 버튼을 눌러 MLflow / SeaweedFS(+크리덴셜 Secret) /
+   mac-gpu-bridge 매니페스트를 클러스터에 적용합니다.
 5. **포트포워딩 시작** 버튼을 눌러 아래 주소로 접속합니다.
    - MLflow: http://localhost:5001
    - SeaweedFS S3 API: http://localhost:8333
    - SeaweedFS Filer UI: http://localhost:8888
+6. **모델 허브** 탭에서 모델을 다운로드하고, **MLX 스튜디오** 탭에서 파인튜닝/서빙을
+   실행합니다. 전체 흐름은 **파이프라인** 탭에서, 서비스 접근은 **접근 콘솔** 탭에서
+   각각 확인할 수 있습니다.
 
 ### 트러블슈팅 (CLI로 직접 확인)
 
@@ -58,8 +71,16 @@ kubectl --context colima get pods -n default
 ## 빌드 / 패키징
 
 ```bash
-pnpm tauri build   # .app / .dmg 번들 생성
+pnpm tauri build   # .app / .dmg 번들 생성 (서명 없음 로컬 빌드)
 ```
+
+산출물: `src-tauri/target/release/bundle/macos/KubeMetal.app`,
+`src-tauri/target/release/bundle/dmg/KubeMetal_0.1.0_aarch64.dmg`
+
+> 비-GUI(헤드리스) 셸 세션에서는 `.dmg` 생성 단계가 Finder 아이콘 배치용 AppleScript에서
+> 멈출 수 있다(Automation 권한 프롬프트를 응답할 GUI 세션이 없기 때문). 이 경우
+> `src-tauri/target/release/bundle/dmg/bundle_dmg.sh`를 `--sandbox-safe` 옵션과 함께
+> 직접 실행하면 Finder 꾸미기 단계를 건너뛰고 동일한 `.dmg`를 생성할 수 있다.
 
 ## 프로젝트 구조
 
@@ -67,7 +88,8 @@ pnpm tauri build   # .app / .dmg 번들 생성
 kubemetal/
 ├── src/               # Frontend (React + TypeScript + Tailwind)
 ├── src-tauri/         # Backend (Rust Native Control Agent)
-├── scripts/k8s/       # MLflow / SeaweedFS / mac-gpu-bridge 매니페스트
+├── scripts/k8s/       # MLflow / SeaweedFS(+크리덴셜 Secret) / mac-gpu-bridge 매니페스트
+├── scripts/mlx/       # 호스트 MLX 파인튜닝 래퍼(finetune_wrapper.py)
 └── docs/              # 기획서 · 요구사항 · MVP 설계 · 아키텍처 문서
 ```
 
@@ -84,9 +106,11 @@ kubemetal/
 
 - **Phase 1 (완료)**: Tauri v2 백엔드 + Colima(vz) 원클릭 라이프사이클 제어, sysinfo 기반
   RAM/CPU 모니터링, K8s 내 MLflow/SeaweedFS 1클릭 셋업
-- **Phase 2**: 호스트 MLX LoRA 파인튜닝 엔진 연동, Prefect Host Worker 기반 하이브리드
-  파이프라인, MLflow Model Registry 자동 등록
-- **Phase 3**: 통합 대시보드 UI 완성, .dmg 패키징, 배터리/발열/슬립 방지 가드레일,
-  (선택) powermetrics 기반 Metal GPU 모니터링
+- **Phase 2 (구현 완료)**: 서비스 연동 자동 구성(MLflow↔SeaweedFS S3 와이어링), 모델
+  허브(HF 검색→다운로드→업로드→등록), 호스트 MLX LoRA 파인튜닝 + 파이프라인 가시화,
+  통합 접근 콘솔
+- **Phase 3 (진행 중)**: 통합 대시보드 UI·`.dmg` 패키징·메모리 압박/배터리/슬립 방지
+  가드레일은 완료. 발열 가드레일(고온 시 배치 크기 축소)과 (선택) powermetrics 기반
+  Metal GPU 모니터링은 미착수
 
 자세한 로드맵은 [docs/01-proposal.md §7](docs/01-proposal.md#7-단계별-개발-로드맵-roadmap) 참고.

@@ -150,35 +150,38 @@ Mac mini, Mac Studio뿐만 아니라 **MacBook Air/Pro 라인업** 지원을 위
 ## 7. 단계별 개발 로드맵 (Roadmap)
 
 ```
-[Phase 1: MVP Core Engine]
+[Phase 1: MVP Core Engine] — 완료
 ├── Tauri v2 백엔드 및 Colima (vz) 원클릭 라이프사이클 제어
 ├── macOS RAM/CPU 모니터링 데몬 구현 (sysinfo 기반)
 └── K8s 내 MLflow(5001) + SeaweedFS(8333/8888) 1클릭 셋업 스크립트 구축
 
-[Phase 2: 유기적 연동 — 설치에서 통합 운영으로]
-├── 2a. 서비스 연동 자동 구성 (FR-06)
+[Phase 2: 유기적 연동 — 설치에서 통합 운영으로] — 구현 완료
+├── 2a. 서비스 연동 자동 구성 (FR-06) — 완료
 │   ├── 프로비저닝 시 MLflow tracking server의 artifact store를 SeaweedFS S3
 │   │   (endpoint http://seaweedfs:8333, 버킷 mlflow)로 자동 와이어링
 │   ├── 버킷 자동 생성, 연동 상태를 get_cluster_status로 노출
 │   └── (D13, docs/03-mvp-design.md §4)
-├── 2b. 모델 허브 (FR-07)
+├── 2b. 모델 허브 (FR-07) — 완료
 │   ├── Hugging Face 모델 검색 → 다운로드(호스트 저장) → SeaweedFS 업로드
 │   │   → MLflow Model Registry 등록
 │   └── 등록 모델 목록/상세 UI
-├── 2c. MLX 파인튜닝 + 파이프라인 가시화 (FR-08)
+├── 2c. MLX 파인튜닝 + 파이프라인 가시화 (FR-08) — 완료
 │   ├── 호스트 MLX LoRA 파인튜닝 엔진 연동 (Python/MLX)
 │   ├── MLflow 로깅 및 Model Registry 아티팩트 자동 등록
 │   └── 전처리→학습→등록→서빙 단계별 상태 카드/그래프 표시
 │       (Prefect 도입 전에는 앱 내 오케스트레이션 상태만)
-└── 2d. 통합 접근 (FR-09)
+└── 2d. 통합 접근 (FR-09) — 완료
     ├── 서비스 크리덴셜 자동 프로비저닝 + 앱에서 원클릭 인증 접근(임베디드/브라우저)
     └── Keycloak급 IdP 기반 SSO는 멀티유저/원격 확장 시 별도 검토
 
-[Phase 3: GUI Optimization & Packaging]
-├── 통합 대시보드 UI 완성 (Training Studio & Pipeline Visualizer)
-├── macOS 애플리케이션 번들링 (.dmg) 및 CLI 패키지 자동 내장 (Zero-Config)
-├── 하드웨어 가드레일 (배터리/발열/슬립 방지) 추가
-└── (선택) powermetrics 기반 Metal GPU 점유율 모니터링 — privileged helper 방식, root 권한 필요
+[Phase 3: GUI Optimization & Packaging] — 가드레일·패키징 완료, GPU 모니터링 미착수
+├── 통합 대시보드 UI 완성 (Training Studio & Pipeline Visualizer) — 완료
+├── macOS 애플리케이션 번들링 (.dmg) 및 리소스 자동 내장 (Zero-Config) — 완료
+│   (`pnpm tauri build`, resource_dir 번들 구조 실측 검증 — docs/03 §5 전제 #3)
+├── 하드웨어 가드레일 (메모리 압박/배터리/슬립 방지) — 완료
+│   (memory pressure warn/critical, 배터리 구동 시 일시정지, caffeinate 연동, D16/D17)
+└── (선택) 발열 가드레일(고온 시 배치 크기 자동 축소) 및 powermetrics 기반 Metal GPU
+    점유율 모니터링 — 둘 다 미착수 (후자는 privileged helper 방식, root 권한 필요)
 
 [검토 항목 / Backlog]
 └── 16GB급 저사양 기기 대상 "K8s 없이 Docker 런타임만 사용하는 Lite 모드" 도입 검토
