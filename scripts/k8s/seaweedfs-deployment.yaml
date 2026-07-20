@@ -17,8 +17,8 @@ spec:
     spec:
       containers:
         - name: seaweedfs
-          # 이미지 태그(3.73)는 실존 여부 미검증 — docs/03-mvp-design.md §5 참조.
-          image: chrislusf/seaweedfs:3.73
+          # 태그 4.40은 2026-07-21 Docker Hub API로 실존 확인(chrislusf/seaweedfs tags).
+          image: chrislusf/seaweedfs:4.40
           args:
             - server
             - -dir=/data

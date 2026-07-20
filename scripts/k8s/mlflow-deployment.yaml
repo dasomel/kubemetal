@@ -15,20 +15,54 @@ spec:
       labels:
         app: mlflow
     spec:
+      # SeaweedFS S3(무인증)가 뜰 때까지 대기 후 아티팩트 버킷(mlflow)을 보장 생성 (D13/FR-06).
+      initContainers:
+        - name: ensure-artifact-bucket
+          image: curlimages/curl:8.21.0
+          command:
+            - sh
+            - -c
+            - |
+              until curl -sf http://seaweedfs:8333/ -o /dev/null; do
+                echo "waiting for seaweedfs s3..."
+                sleep 2
+              done
+              code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT http://seaweedfs:8333/mlflow)
+              # 200 = created, 409 = already exists (both are success states for "ensure").
+              if [ "$code" = "200" ] || [ "$code" = "409" ]; then
+                echo "bucket mlflow ensured (http $code)"
+              else
+                echo "bucket creation failed (http $code)" >&2
+                exit 1
+              fi
       containers:
         - name: mlflow
-          image: ghcr.io/mlflow/mlflow:v2.11.3
+          # 태그 v3.14.0은 2026-07-21 ghcr.io/v2/mlflow/mlflow/tags/list로 실존 확인.
+          image: ghcr.io/mlflow/mlflow:v3.14.0
+          # 이미지에 boto3 미포함 → 기동 시 설치 후 서버 실행 (S3 아티팩트 스토어용).
           command:
-            - mlflow
-            - server
-            - --backend-store-uri
-            - sqlite:////tmp/mlflow.db
-            - --default-artifact-root
-            - /tmp/artifacts
-            - --host
-            - 0.0.0.0
-            - --port
-            - "5000"
+            - sh
+            - -c
+            - |
+              pip install --quiet boto3 && \
+              exec mlflow server \
+                --backend-store-uri sqlite:////tmp/mlflow.db \
+                --default-artifact-root s3://mlflow/ \
+                --host 0.0.0.0 \
+                --port 5000
+          env:
+            - name: MLFLOW_S3_ENDPOINT_URL
+              value: http://seaweedfs:8333
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: seaweedfs-s3-credentials
+                  key: access-key-id
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: seaweedfs-s3-credentials
+                  key: secret-access-key
           ports:
             - containerPort: 5000
           volumeMounts:
