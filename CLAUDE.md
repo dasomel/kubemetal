@@ -1,221 +1,97 @@
 # KubeMetal — Claude Code Guide
 
 > Apple Silicon-only hybrid MLOps desktop app: K8s (Colima/vz) control plane + macOS host
-> MLX compute, unified in a Tauri v2 (Rust) + React/TypeScript desktop app.
+> MLX compute, in a Tauri v2 (Rust) + React/TypeScript app.
 
-## Quick Overview
+**Control/Compute split is a hard invariant, not a preference**: MLflow/SeaweedFS run as
+pods in a Colima (`vz`+`virtiofs`) K3s VM; all ML computation runs as macOS host
+processes — Metal GPU cannot be passed through to Linux VMs.
 
-KubeMetal splits **control** and **compute**: MLflow/MinIO(/Prefect) run as pods inside a
-Colima (`vz` + `virtiofs`) K3s VM, while all ML computation (MLX LoRA fine-tuning, serving)
-runs natively on the macOS host — Metal GPU cannot be passed through to Linux VMs, so this
-split is a hard architectural invariant, not a preference.
+> Working procedure: global `<procedural_completion>` doctrine (`~/.claude/CLAUDE.md`)
+> on substantive tasks; trivial one-shots answer directly.
 
-> **Working procedure:** follow the global `<procedural_completion>` doctrine
-> (`~/.claude/CLAUDE.md`) on substantive tasks — goal → decompose → execute → verify → risk
-> (five principles + completion gate + escalation). Trivial one-shots answer directly.
+## Source Map — read the file that owns the topic, don't duplicate it here
 
-## Document Map (source of truth)
+| Topic | Canonical file |
+|-------|----------------|
+| Proposal / roadmap | `docs/01-proposal.md` |
+| FR/NFR + IPC command table | `docs/02-requirements.md` (§4.1 = IPC names) |
+| MVP design + **decision registry D1–D12** | `docs/03-mvp-design.md` (§4 registry, §5 verified/unverified assumptions) |
+| Architecture overview | `docs/04-architecture.md` |
+| **Mistakes Log** | `docs/mistakes-log.md` — read the section matching your work area BEFORE touching it; add a row per new mistake |
+| Team harness / lanes / OMC / plan-mode | `.claude/rules/harness.md` — load when orchestrating |
+| UI tokens + design rules | root `DESIGN.md` (Google Labs design.md standard) |
+| Run instructions | `README.md` |
+| Superseded drafts | `docs/archive/` — never implement from these |
 
-| Doc | Content |
-|-----|---------|
-| `docs/01-proposal.md` | Project proposal v0.2 — problem, architecture, tech stack, roadmap |
-| `docs/02-requirements.md` | OSS research + FR/NFR spec v0.2 — IPC command table, manifest spec |
-| `docs/03-mvp-design.md` | Phase 1 MVP design — directory layout, Rust/TS reference code, §4 decision registry |
-| `docs/archive/` | Superseded first drafts (init/spec/arch.md) — do not implement from these |
-
-**Decision registry (D1–D10)** lives in `docs/03-mvp-design.md` §4 and is canonical.
-Code must follow it. Changing a decision requires updating ALL three docs in the same task,
-plus a Mistakes Log entry if the change was driven by a defect.
+Changing a D1–D12 decision requires updating all affected docs in the same task.
 
 ## Architecture Invariants
 
-- **K8s never runs compute.** Anything touching MLX/Metal executes as a host process
-  spawned by the Rust backend — never inside a pod.
-- **Canonical ports (D1, amended 2026-07-20):** MLflow host-forward **5001** (5000 is
-  taken by macOS AirPlay Receiver), SeaweedFS S3 API 8333, SeaweedFS Filer UI 8888,
-  model serving 8080 (`/v1`, configurable). Object storage is **SeaweedFS** (replaced
-  MinIO by user decision — S3-compatible, single-binary master/volume/filer/S3).
-- **Phase 1 metrics = sysinfo RAM/CPU only (D2).** No `powermetrics`, no sudo, no GPU
-  metrics until the Phase 3 privileged-helper work. Never add root-requiring code paths
-  to the default app flow.
-- **VM sizing is derived, not hardcoded (D4):** detected host RAM 16GB → VM 4GB,
-  32–48GB → 8GB, 64GB+ → 12GB.
-- **Pod → host bridge (D10):** `ExternalName` Service `mac-gpu-service` (namespace
-  `default`) aliasing `host.lima.internal` — never `host.docker.internal` (Docker
-  Desktop-only); no `ports` field (CNAME-only). CoreDNS resolution of
-  `host.lima.internal` is an UNVERIFIED assumption — verify on real hardware before
-  building on it.
+- **K8s never runs compute** — MLX/Metal work is host processes spawned by the Rust backend.
+- **Ports (D1)**: MLflow host-forward **5001** (AirPlay owns 5000), SeaweedFS S3 8333,
+  Filer UI 8888, model serving 8080. Object storage is SeaweedFS.
+- **Phase 1 metrics = sysinfo RAM/CPU only (D2)** — no `powermetrics`/sudo/root paths
+  before the Phase 3 privileged helper.
+- **VM sizing derived from detected RAM (D4)**: 16GB→4GB/2CPU, 32–48GB→8GB/4CPU,
+  64GB+→12GB/6CPU — never hardcoded, backend clamps frontend input.
+- **Pod→host bridge (D10)**: ExternalName `mac-gpu-service` (ns `default`) →
+  `host.lima.internal`, no `ports` field. Verified on-device 2026-07-20
+  (CoreDNS → 192.168.5.2); never `host.docker.internal`.
 
-## Agent Team Harness (agy-first)
+## Team & UI (summaries — detail in owning files)
 
-Substantive tasks run as a team per the global `<team>`/`<agy_cli>` doctrine — the session
-model orchestrates, worker lanes execute. **agy is the primary worker**; native subagents
-complement where structured tools (Read/Edit/Grep), OMC skills, or in-session coordination
-are needed.
-
-| Lane | Scope (disjoint — do not cross) | Worker |
-|------|--------------------------------|--------|
-| `rust-backend` | `src-tauri/**`, `scripts/k8s/**`, `Cargo.toml`, `tauri.conf.json`, `capabilities/` | agy (primary) |
-| `frontend` | `src/**`, `package.json`, `tsconfig.json`, `vite.config.ts`, `index.html` | agy (primary) |
-| `qa/verify` | `cargo check`/`clippy`, `tsc --noEmit`, doc↔code sync (D1–D12, IPC names) | native subagent (verifier / code-reviewer) |
-
-Rules:
-- agy invocations: `agy -p "<self-contained prompt>" --print-timeout 10m`, output summary
-  to `.omc/logs/agy-<lane>-result.md`; stdout → `.omc/logs/agy-<lane>.log` (never into
-  main context). Model rotation on quota exhaustion + failure ladder per global `<agy_cli>`.
-- Max 5 concurrent workers (agy + subagents combined). Lanes own disjoint paths; use
-  worktree isolation if scopes must overlap.
-- Every lane prompt cites `docs/02-requirements.md` §4.1 (IPC names) and
-  `docs/03-mvp-design.md` §4 (D1–D12) as binding constraints.
-- Authoring and verification are ALWAYS separate lanes — an agy lane's self-reported
-  success is not evidence; the qa lane (or orchestrator) re-runs the checks.
-
-### OMC plugin utilization
-
-Use oh-my-claudecode components deliberately, not reflexively:
-
-- **Default lanes** (already the harness default): `executor` (implementation),
-  `critic` (plan/design review, opus), `verifier`/`code-reviewer` (qa lane).
-- **QA cycling**: once the app builds, `ultraqa` drives test→verify→fix loops;
-  `verify` gates any "done" claim (evidence before assertions).
-- **Debugging**: `trace`/`tracer` (competing-hypotheses causal tracing) for
-  cross-module root-cause; `debugger` for build/compile errors.
-- **Docs**: run `deepinit` after the `src/` + `src-tauri/` skeletons land to generate
-  hierarchical AGENTS.md; refresh at phase boundaries, not per-commit.
-- **agy runtime option**: `omc-teams` can host agy (antigravity) workers in tmux panes
-  when a lane needs live monitoring; detached `agy -p` + log files stays the default.
-- **Autonomous modes** (`autopilot`/`ralph`/`ultrawork`): keyword-triggered only —
-  they overlap with this harness's team loop, so don't auto-invoke them.
-- **Knowledge**: defects go to the Mistakes Log (canonical); broader learnings that
-  outgrow it go to `wiki` / project-memory.
-
-## UI Design Rules
-
-- **Design source of truth**: `design/tokens/design-tokens.json` (DTCG-style) mapped 1:1
-  into `tailwind.config.js` semantic names. Components use semantic classes ONLY
-  (`bg-surface`, `text-secondary`, …) — raw hex values and default-palette classes
-  (`slate-*` etc.) in components are forbidden; that's how token drift and hallucinated
-  values are prevented.
-- **Modular design docs** live in `design/tokens/` (`colors.md`, `typography.md`,
-  `spacing.md`) — load only the file the task needs, not the whole set.
-- **Readability first**: body text contrast ≥ WCAG AA (4.5:1); metric numbers use
-  `tabular-nums`; status is never color-only (badge text alongside color).
-- **UI verification**: a UI change is done only after visual confirmation in the running
-  app (`pnpm tauri dev`) or vite preview — tsc/build passing is not evidence
-  (see `<context_and_evidence>`).
-- **UI authoring lane**: `designer` agent (or frontend-design skill) with the token files
-  as binding constraints; token changes require updating JSON + tailwind mapping + the
-  affected `design/tokens/*.md` together.
-
-## Plan Mode Guide
-
-Use Plan mode for: new IPC commands or FR-level features, changes to the D1–D10 registry,
-Colima lifecycle logic changes, anything touching the K8s↔host bridge or guardrails.
-Skip it for: doc typos, UI styling, single-file refactors with tests.
-
-## Mistakes Log (Compounding Engineering)
-
-> Add a row whenever a mistake is made (including ones caught in review). Same mistake,
-> never twice. Format: `| YYYY-MM-DD | Mistake | Fix |`
-
-### Rust / Tauri
-| Date | Mistake | Fix |
-|------|---------|-----|
-| 2026-07-20 | tauri.conf.json set `devUrl` but no `beforeDevCommand` — `tauri dev` waited forever for a vite server nobody started; cargo check/tsc/pnpm build all passed, only a real launch exposed it | Pair `devUrl` with `beforeDevCommand: "pnpm dev"` (and `beforeBuildCommand`); a config that references another process must also say who starts it |
-| 2026-07-20 | `plugins: {"dialog": {}}` in tauri.conf.json — tauri-plugin-dialog takes NO config (unit type), so the empty map panicked PluginInitialization at launch; another compile-clean/launch-dead case | Plugins without config must not appear in `plugins` at all; registration = Rust `.plugin(init())` + capability permission, conf entry only for plugins that document config keys |
-| 2026-07-20 | Parsed `colima status` by matching stdout strings — colima logs via logrus to **stderr**, so the match always fails; `vm_type` was also hardcoded | Use `colima status --json` and deserialize with serde |
-| 2026-07-20 | `ColimaStatusRaw` guessed the JSON schema (`status: "Running"` + nested `kubernetes.enabled`) — real colima 0.10.3 output is a FLAT object with `kubernetes: bool` and NO `status` field; when stopped there's no stdout at all (exit 1), so the strict struct made a running cluster report STOPPED | Running = "exit 0 + JSON parses"; map only fields verified against real output (`kubernetes: bool` with `#[serde(default)]`); never ship a serde mapping for an external CLI without capturing its actual output first |
-| 2026-07-20 | `Command::new("colima")` assumed shell PATH — packaged .app launched from Finder does NOT inherit it, so Homebrew CLIs are not found | Resolve absolute paths (`/opt/homebrew/bin`, `/usr/local/bin`, …) via `resolve_cli_path` helper before spawning |
-| 2026-07-20 | Blocking `std::process::Command::output()` inside an async `tauri::command` (`colima start` runs minutes) | Use `tokio::process::Command`; never block the async runtime |
-| 2026-07-20 | Error UX via JS `alert()` — wry WebView does not implement alert/confirm/prompt | Use `@tauri-apps/plugin-dialog` (`message`/`ask`) + `dialog:default` capability |
-| 2026-07-20 | Created `sysinfo::System::new_all()` on every metrics call | Hold one instance in `tauri::State<Mutex<System>>` and `refresh_*()` per call |
-
-### macOS platform
-| Date | Mistake | Fix |
-|------|---------|-----|
-| 2026-07-20 | Bound MLflow to host port 5000 — macOS AirPlay Receiver (ControlCenter) occupies 5000/7000, forwarding silently breaks | Use 5001 (D1); never claim 5000 on macOS |
-| 2026-07-20 | Spec required "powermetrics C-Binding" for GPU metrics — powermetrics is a CLI (no public C API) and requires **root** | Phase 1 ships sysinfo RAM/CPU only; GPU metrics = Phase 3 privileged helper + CLI parsing (D2) |
-| 2026-07-20 | OOM guard triggered on "available RAM < 10%" — macOS file cache keeps RAM near-full at all times, guaranteeing false triggers | Trigger on memory pressure levels (warn/critical) instead (D11) |
-
-### Kubernetes / MLOps stack
-| Date | Mistake | Fix |
-|------|---------|-----|
-| 2026-07-20 | `ExternalName` Service manifest declared `ports` — ExternalName is a DNS CNAME alias only, no port proxying | Omit `ports`; clients dial `host.lima.internal:8080` directly (D10) |
-| 2026-07-20 | Referenced a nonexistent tool "mlx-serve" | The real tool is `mlx_lm.server` (mlx-lm package) or `llama-server` (D12) |
-| 2026-07-20 | Guide cited decision IDs (D6/D8/D9) that didn't match the canonical registry in `docs/03-mvp-design.md` §4 — two decisions weren't even registered | Registry is canonical; cite it verbatim, register missing decisions (D11 memory pressure, D12 serving tool) instead of inventing numbers |
-| 2026-07-20 | docs/03 reference code forwarded only 2 of the 3 D1 ports (MinIO Console 9001 missing); the implementation lane faithfully copied the defect, and the UI linked to the unforwarded port | Reference code in docs is spec too — when a doc lists N required values (D1: 5001/9000/9001), grep the implementation for ALL N, not just the code path |
-| 2026-07-20 | UI hardcoded "6 CPU / 12GB" VM default, contradicting the 16GB device profile | Auto-size from detected RAM per D4 profile table |
-
-## Core Flows
-
-- Frontend `src/` (React + TS + Tailwind) ↔ Tauri IPC ↔ `src-tauri/src/commands/`
-  (colima / metrics / provision) → `src-tauri/src/services/` (process spawn, sysinfo).
-- IPC command names are fixed by `docs/02-requirements.md` §4.1 (`get_system_metrics`,
-  `get_cluster_status`, `start_cluster`, `stop_cluster`, `provision_mlops_stack`,
-  `start_port_forward`, `stop_port_forward`, `run_mlx_finetune`, `kill_mlx_process`).
-  Rust, TS types, and docs must stay in sync.
-- K8s manifests live in `scripts/k8s/` (mlflow, seaweedfs, mac-gpu-bridge).
+- Substantive work runs as lanes (agy-first, max 5 concurrent, disjoint file scopes,
+  authoring ≠ verification). Full rules: `.claude/rules/harness.md`.
+- UI: `DESIGN.md` frontmatter is the only token source, mapped 1:1 into
+  `tailwind.config.js`; no raw hex / default-palette classes in components;
+  `npx @google/design.md lint DESIGN.md` must exit 0 after token changes; UI work is
+  done only after visual confirmation in the running app or vite preview.
 
 ## Development Commands
 
 ```bash
-pnpm tauri dev                      # run app (requires colima installed for cluster features)
-pnpm tauri build                    # bundle .app/.dmg
-cargo check --manifest-path src-tauri/Cargo.toml
+pnpm tauri dev                                        # run app (colima required for cluster features)
+pnpm tauri build                                      # .app/.dmg
+cargo check  --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
-cargo fmt   --manifest-path src-tauri/Cargo.toml
-npx tsc --noEmit                    # TS type check
-colima status --json                # ground truth for cluster state while debugging
+npx tsc --noEmit
+colima status --json                                  # cluster ground truth
+npx @google/design.md lint DESIGN.md                  # design token gate
 ```
 
-Type-check passing ≠ feature working: UI/IPC changes must be verified in the running app
-(`pnpm tauri dev`), cluster changes against a real `colima` (`kubectl get pods`).
+Type-check passing ≠ feature working: verify UI/IPC in the running app, cluster changes
+against real colima (`kubectl --context colima get pods -n default`).
 
 ## Permissions
 
-### Allowed
-- Modify `src/`, `src-tauri/src/`, `scripts/`, `docs/`, `package.json`, `Cargo.toml`,
-  `tauri.conf.json`, `capabilities/`.
-- Add dependencies (pnpm / crates) when justified in the task.
+- Allowed: `src/`, `src-tauri/`, `scripts/`, `docs/`, `DESIGN.md`, root configs;
+  new deps when justified.
+- Forbidden: blocking calls in async commands; `alert()`; shell-PATH assumptions
+  (use `resolve_cli_path`); sudo/`powermetrics` before Phase 3; hardcoded ports/VM
+  sizes/CLI paths; secrets in source; starting Colima above the D4 profile;
+  implementing from `docs/archive/`.
 
-### Forbidden
-- No blocking process calls inside async commands; no `alert()`; no shell-PATH assumptions.
-- No sudo / `powermetrics` / privileged-helper code before Phase 3 (D2).
-- No hardcoded ports, VM sizes, or CLI paths — use the D1/D4 constants and `resolve_cli_path`.
-- No secrets or tokens in source, docs, or `tauri.conf.json`.
-- Never start Colima with memory above the D4 profile for the detected host RAM.
-- Do not implement from `docs/archive/` drafts.
+## Style & Commits
 
-## Code Style
-
-- **Rust**: rustfmt defaults (4-space), edition 2021, clippy-clean (`-D warnings`).
-- **TS/TSX/YAML/JSON/TOML**: 2-space indentation; imports external → internal → relative.
-- Files > 300 lines: split. UI text: no hardcoded user-facing strings once i18n lands.
-- Conventional Commits, scoped to the files the task touched.
-
-## Commit Policy (project guideline)
-
-- **This directory is not yet a git repository** — run `git init` before Phase 1
-  implementation starts; first commit = docs + this guide.
-- Commit after every completed+verified task; don't batch unrelated tasks.
-- **"Commit" means LOCAL commit only** — no `git push`, no remote creation unless the
-  user explicitly asks.
+- Rust: rustfmt defaults, edition 2021, clippy-clean. TS/YAML/JSON/TOML: 2-space;
+  imports external → internal → relative. Files >300 lines: split.
+- Conventional Commits, scoped per task, commit after each verified task.
+  **LOCAL commits only** — no push/remote unless explicitly asked.
 
 ## Resource Safety
 
-- Before `start_cluster`, check host free memory; the VM allocation must follow D4.
-- One cluster lifecycle operation at a time (start/stop/provision are serialized;
-  `colima` itself is not reentrant).
-- After cluster changes, verify from the user's perspective: `colima status --json`,
-  `kubectl get pods -A`, curl the forwarded MLflow (5001) / SeaweedFS (8333 S3,
-  8888 Filer UI) endpoints.
+- One cluster lifecycle op at a time (colima is not reentrant); VM allocation follows D4.
+- After cluster changes verify as the user: `colima status --json`, pods, curl 5001/8333/8888.
+- Port-forwards are process-bound — say which process owns a forward when reporting
+  URLs as reachable.
 
-## Changelog
-| Date | Change | Reason |
-|------|--------|--------|
-| 2026-07-20 | Initial guide, modeled on `idp/` workspace guidelines (Mistakes Log, Permissions, local-commit policy); Mistakes Log seeded with 10 defects found in the draft-doc review | Establish project guidelines before Phase 1 implementation |
-| 2026-07-20 | Aligned decision IDs to the canonical registry (ExternalName→D10, memory pressure→D11, serving tool→D12); bridge invariant now pins service name/namespace; added port-forward IPC commands | Independent plan review (critic) found 2 blockers: D-number collision + ExternalName triple mismatch |
-| 2026-07-20 | Added "Agent Team Harness (agy-first)" — lane table (rust-backend / frontend / qa), agy invocation + logging convention, disjoint-scope and separate-verification rules | User directive: run implementation as a team with aggressive agy utilization |
-| 2026-07-20 | Added "OMC plugin utilization" — default lanes, ultraqa/verify for QA, trace/debugger, deepinit at phase boundaries, omc-teams as agy runtime option, autonomous modes keyword-only | User directive: review active OMC plugin utilization |
-| 2026-07-20 | Object storage MinIO → SeaweedFS; D1 amended (S3 8333, Filer UI 8888 replace 9000/9001); synced across code, manifests, and all three docs | User decision |
-| 2026-07-20 | Added "UI Design Rules" — DTCG token file + tailwind semantic mapping as source of truth, modular design docs, WCAG AA floor, visual-verification gate, designer lane | User directive: adopt token/rules-based design system, improve readability |
+## Changelog (newest first; keep ≤10 rows, fold older into a summary row)
+
+| Date | Change |
+|------|--------|
+| 2026-07-20 | Slimmed guide: Mistakes Log → `docs/mistakes-log.md`, harness detail → `.claude/rules/harness.md` (user directive: keep CLAUDE.md small) |
+| 2026-07-20 | Design source → root `DESIGN.md` (Google standard, lint gate); visual reset to graphite "precision instrument"; endpoint links must use opener plugin |
+| 2026-07-20 | Runtime verification pass: colima JSON schema corrected, tauri dev/plugin config fixed, D10 bridge + SeaweedFS verified on-device |
+| 2026-07-20 | MinIO → SeaweedFS (D1 amended: 8333/8888); team harness (agy-first) + OMC policy added; MVP implemented via agy lanes + QA |
+| 2026-07-20 | Initial guide (idp-style), docs v0.2 baseline, decision registry D1–D12, git repo initialized |
