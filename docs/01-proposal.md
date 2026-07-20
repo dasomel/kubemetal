@@ -1,17 +1,18 @@
 # KubeMetal: Apple Silicon 전용 하이브리드 MLOps 오픈소스 프로젝트 기획서
 
-> **v0.2 Draft** — 본 문서는 `init.md` 초안에 대한 내부 검토 결과를 반영해 재작성한 프로젝트 기획서다.
+> **v0.3 Draft** — 본 문서는 `init.md` 초안에 대한 내부 검토 결과를 반영해 재작성한 프로젝트 기획서다. v0.3에서는 "OSS 설치 도구"에서 "설치된 스택의 유기적 연동 워크스페이스"로 제품 목표를 재정의했다(사용자 피드백 반영, §5·§7 참고).
 
 ---
 
 ## 1. 프로젝트 개요 (Overview)
 
 * **프로젝트명 (가칭)**: **KubeMetal** *(또는 SiliconOps)*
-* **한 줄 정의**: Apple Silicon(Metal/MLX)의 네이티브 연산 성능과 Kubernetes/MLflow 기반 표준 MLOps 제어면을 하나로 통합하는 **macOS 전용 하이브리드 MLOps 데스크톱 솔루션**
+* **한 줄 정의**: Apple Silicon(Metal/MLX)의 네이티브 연산 성능과 Kubernetes/MLflow 기반 표준 MLOps 제어면을 하나로 통합하고, 설치된 스택 구성요소들을 **유기적으로 연동**해 하나의 운영 화면에서 다루는 **macOS 전용 하이브리드 MLOps 통합 워크스페이스**
 * **핵심 가치**
   * 클라우드 GPU 비용 **$0**
   * Apple Silicon 유니파이드 메모리(Unified Memory) 및 Metal/MLX 연산 성능 **최대 활용**
   * Colima + K3s 기반 경량 K8s 클러스터와 호스트 GPU를 결합한 **Zero-Config MLOps 워크플로우**
+  * **"설치"가 아니라 "연동"**: OSS 스택(MLflow/SeaweedFS 등)을 개별 배포하는 데 그치지 않고, 서비스 간 연동(아티팩트 스토어 자동 와이어링), 모델 다운로드→저장→등록 파이프라인, 통합 인증 접근까지 앱 UI에서 이어지는 하나의 흐름으로 제공
 
 ---
 
@@ -103,13 +104,23 @@ MLflow/SeaweedFS/Prefect Server를 K8s(Colima + K3s VM) 위에 올리는 것은 
    * Dataset 업로드 → MLX LoRA 하이퍼파라미터 설정 → 원클릭 파인튜닝
    * 학습 손실 커브(Loss Curve)를 K8s MLflow(포트 5001)로 실시간 스트리밍
 
-3. **Hybrid Pipeline Visualizer**
-   * Prefect 기반 DAG(Directed Acyclic Graph) 시각화
-   * K8s(데이터 전처리) → Host(MLX 파인튜닝) → K8s(MLflow 등록) → Host(서빙 핫리로드) 단계별 상태 모니터링
+3. **Model Hub** *(신설, FR-07)*
+   * Hugging Face 모델 검색 → 호스트 다운로드 → SeaweedFS 업로드 → MLflow Model Registry 등록까지 이어지는 단일 흐름을 앱 UI에서 원클릭으로 처리
+   * 등록된 모델 목록/상세(버전, 스토리지 위치, 등록 상태) 조회
+   * "다운로드 도구"가 아니라 로컬 모델 자산의 저장소–레지스트리 연동을 자동화하는 허브
 
-4. **Model Registry & Playground**
+4. **Hybrid Pipeline Visualizer** *(FR-08)*
+   * 전처리 → 학습(Host MLX) → 등록(K8s MLflow) → 서빙(Host 핫리로드) 단계별 상태를 카드/그래프로 시각화
+   * Phase 2c까지는 Prefect 도입 전이므로 앱 내부 오케스트레이션 상태만 표시, 이후 Prefect 기반 DAG 시각화로 확장
+
+5. **Model Registry & Playground**
    * MLflow 연동 아티팩트 버전 관리 (Staging / Production)
    * `mlx_lm.server` 또는 `llama-server` 엔드포인트(기본 포트 8080)를 활용한 로컬 프롬프트 테스트 Playground
+
+6. **Integrated Access Console** *(신설, FR-09)*
+   * MLflow UI, SeaweedFS Filer UI 등 설치된 각 서비스로 크리덴셜 입력 없이 원클릭 진입(임베디드 뷰 또는 브라우저 오픈)
+   * 서비스별 크리덴셜은 프로비저닝 시 앱이 자동 발급/저장하며, 사용자는 개별 로그인 절차를 신경 쓰지 않음
+   * 로컬 단일 사용자 범위의 "통합 접근"이며, 멀티유저/원격 확장 시 Keycloak급 IdP 기반 SSO 검토 (§7 Phase 2d)
 
 ---
 
@@ -144,10 +155,24 @@ Mac mini, Mac Studio뿐만 아니라 **MacBook Air/Pro 라인업** 지원을 위
 ├── macOS RAM/CPU 모니터링 데몬 구현 (sysinfo 기반)
 └── K8s 내 MLflow(5001) + SeaweedFS(8333/8888) 1클릭 셋업 스크립트 구축
 
-[Phase 2: MLX Training & Hybrid Pipeline]
-├── 호스트 MLX LoRA 파인튜닝 엔진 연동 (Python/MLX)
-├── Prefect Host Worker 기반의 하이브리드 파이프라인 통합
-└── MLflow 로깅 및 Model Registry 아티팩트 자동 등록
+[Phase 2: 유기적 연동 — 설치에서 통합 운영으로]
+├── 2a. 서비스 연동 자동 구성 (FR-06)
+│   ├── 프로비저닝 시 MLflow tracking server의 artifact store를 SeaweedFS S3
+│   │   (endpoint http://seaweedfs:8333, 버킷 mlflow)로 자동 와이어링
+│   ├── 버킷 자동 생성, 연동 상태를 get_cluster_status로 노출
+│   └── (D13, docs/03-mvp-design.md §4)
+├── 2b. 모델 허브 (FR-07)
+│   ├── Hugging Face 모델 검색 → 다운로드(호스트 저장) → SeaweedFS 업로드
+│   │   → MLflow Model Registry 등록
+│   └── 등록 모델 목록/상세 UI
+├── 2c. MLX 파인튜닝 + 파이프라인 가시화 (FR-08)
+│   ├── 호스트 MLX LoRA 파인튜닝 엔진 연동 (Python/MLX)
+│   ├── MLflow 로깅 및 Model Registry 아티팩트 자동 등록
+│   └── 전처리→학습→등록→서빙 단계별 상태 카드/그래프 표시
+│       (Prefect 도입 전에는 앱 내 오케스트레이션 상태만)
+└── 2d. 통합 접근 (FR-09)
+    ├── 서비스 크리덴셜 자동 프로비저닝 + 앱에서 원클릭 인증 접근(임베디드/브라우저)
+    └── Keycloak급 IdP 기반 SSO는 멀티유저/원격 확장 시 별도 검토
 
 [Phase 3: GUI Optimization & Packaging]
 ├── 통합 대시보드 UI 완성 (Training Studio & Pipeline Visualizer)

@@ -628,6 +628,7 @@ export const ClusterControl: React.FC = () => {
 | D10 | `mac-gpu-bridge.yaml`은 `type: ExternalName`이며 `ports` 필드를 선언하지 않는다 — ExternalName은 CNAME 별칭일 뿐 포트 프록시를 수행하지 않으므로, 클라이언트가 대상 포트를 직접 지정해야 한다. |
 | D11 | OOM 가드(FR-05.2)는 "가용 RAM 비율" 기준이 아니라 macOS memory pressure 레벨(warn/critical) 기반으로 트리거한다(파일 캐시로 RAM은 상시 높게 점유). Phase 3 범위. |
 | D12 | 서빙 도구 표기는 mlx_lm.server(mlx-lm 패키지) 또는 llama-server — "mlx-serve"라는 도구는 존재하지 않는다. |
+| D13 | MLflow 아티팩트 스토어는 SeaweedFS S3(endpoint http://seaweedfs:8333, 버킷 mlflow, 더미 크리덴셜 환경변수)로 자동 구성한다 — "설치"가 아니라 "연동"이 목표(FR-06). |
 
 **원본(`arch.md`) 대비 변경 요약**: `commands/provision.rs` 신설(D3), `lib.rs`의 `System` State 등록·`tauri-plugin-dialog` 플러그인 등록·들여쓰기 정정, `services/process.rs`에 `resolve_cli_path` 추가, `colima.rs`를 `get_cluster_status`/`start_cluster`/`stop_cluster`로 개명하며 JSON 파싱과 `tokio::process`로 전환, `metrics.rs`에 `State<Mutex<System>>` 도입, 프론트에 `useMetrics`·`recommendVmResources` 신설 및 `useColima`의 `alert()`를 dialog 플러그인으로 교체, `capabilities/default.json`에 `dialog:default` 권한 추가, `scripts/k8s/mac-gpu-bridge.yaml` 신설, `commands/port_forward.rs` 신설(D3) 및 `stop_cluster`/앱 종료 시 정리 로직 추가, `start_cluster`의 백엔드 clamp 도입, `get_cluster_status`에 `mlflow_ready`/`seaweedfs_ready` 확장.
 

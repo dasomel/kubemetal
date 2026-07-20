@@ -43,7 +43,7 @@ KubeMetal은 "카테고리 1의 유저 친화적 UX" + "카테고리 2의 표준
 
 # [Part 2] KubeMetal 기술 기능 명세서 (Technical Specification)
 
-* **문서 버전**: v0.2
+* **문서 버전**: v0.3 — 사용자 피드백("설치가 아니라 유기적 연동") 반영, FR-06~FR-09 신설 (Phase 2)
 * **대상 시스템**: macOS 14.0 (Sonoma) 이상 (Apple Silicon M1/M2/M3/M4)
 * **개발 프레임워크**: Tauri v2 (Rust Daemon) + React / TypeScript (Frontend)
 
@@ -106,6 +106,35 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 * **FR-05.4 (Phase 3 · 선택 기능)**: Metal GPU 점유율은 macOS `powermetrics` CLI(공개된 C API가 아닌 커맨드라인 도구이며, 실행에 root 권한이 필요함)의 출력을 파싱하여 측정한다. 이를 위해 별도의 privileged helper 프로세스(예: SMJobBless 또는 launchd privileged helper)를 통해 권한을 격리하여 실행해야 하며, 사용자에게 root 권한 요구 사실과 설치 절차를 명시적으로 고지해야 한다. 본 기능은 Phase 1(MVP) 범위에서 제외한다.
 * **FR-05.2 (OOM Protection · Phase 3)**: macOS의 **memory pressure 레벨**(`warn` 또는 `critical`)이 감지되면 진행 중인 MLX 학습 프로세스를 일시정지(Pause)하고 사용자에게 대화상자 경고를 출력해야 한다. macOS는 파일 캐시로 인해 가용 RAM 비율만으로는 상시 오탐이 발생하므로, 단순 "가용 RAM 10% 이하"와 같은 비율 임계값을 트리거 기준으로 사용해서는 안 된다.
 * **FR-05.3 (Power/Thermal Guard · Phase 3)**: 배터리 구동 감지 시 학습 일시정지 옵션을 제공하며, 학습 중 슬립 모드 진입을 방지하기 위해 `caffeinate` 어서션을 실행해야 한다.
+
+### FR-06: 서비스 연동 자동 구성 (Phase 2a)
+
+> 배경: OSS를 개별 설치하는 것만으로는 사용자 편의성이 없다. 설치된 서비스 간 연동까지 앱이 자동으로 구성해야 "유기적 연동"이 성립한다.
+
+* **FR-06.1**: `provision_mlops_stack` 실행 시, MLflow Tracking Server의 artifact store를 SeaweedFS S3 API로 자동 와이어링해야 한다. Endpoint는 `http://seaweedfs:8333`(K8s 서비스 DNS 기준), 버킷명은 `mlflow`로 고정하며, 더미 액세스 키/시크릿 키는 K8s 매니페스트의 환경변수(`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` 또는 SeaweedFS 대응 변수)로 주입한다.
+* **FR-06.2**: SeaweedFS `mlflow` 버킷이 존재하지 않으면 프로비저닝 과정에서 자동 생성해야 한다.
+* **FR-06.3**: `get_cluster_status`는 MLflow↔SeaweedFS 연동 상태(예: `artifact_store_linked: bool`)를 추가로 리턴해, UI가 "배포됨"과 "연동됨"을 구분해 표시할 수 있어야 한다.
+
+### FR-07: 모델 허브 (Phase 2b)
+
+* **FR-07.1**: Hugging Face Hub API를 통해 모델을 검색하고 목록(이름, 크기, 태그)을 UI에 표출해야 한다.
+* **FR-07.2**: 선택한 모델을 호스트 파일시스템으로 다운로드해야 한다.
+* **FR-07.3**: 다운로드된 모델 아티팩트를 SeaweedFS S3 API(8333)로 업로드해야 한다.
+* **FR-07.4**: 업로드된 모델을 MLflow Model Registry에 등록해야 한다(FR-06 연동 전제).
+* **FR-07.5**: 등록된 모델의 목록/상세(버전, 스토리지 경로, 등록 상태)를 조회하는 UI를 제공해야 한다.
+
+### FR-08: 파이프라인 가시화 (Phase 2c)
+
+* **FR-08.1**: 전처리 → 학습(Host MLX) → 등록(K8s MLflow) → 서빙(Host) 단계별 상태를 카드 또는 그래프 형태로 시각화해야 한다.
+* **FR-08.2**: Prefect 미도입 구간(Phase 2c)에서는 앱 내부에서 관리하는 오케스트레이션 상태(각 단계의 진행/완료/실패)만 표시하며, Prefect 기반 DAG 시각화는 Prefect 도입 이후로 범위를 명시적으로 분리한다.
+
+### FR-09: 통합 접근 (Phase 2d)
+
+> 배경: 로컬 단일 사용자 맥락에서는 Keycloak 같은 IdP 도입이 과도할 수 있다. "SSO"의 의도(서비스별 로그인 없이 한 번에 접근)를 로컬 환경에 맞게 재정의한다.
+
+* **FR-09.1**: 로컬 단일 사용자 컨텍스트에서 "SSO"는 **서비스 크리덴셜 자동 프로비저닝 + 앱에서 원클릭 인증 접근**(임베디드 웹뷰 또는 브라우저 오픈, 크리덴셜 자동 주입)으로 정의한다.
+* **FR-09.2**: 각 서비스(MLflow UI, SeaweedFS Filer UI 등) 접근에 필요한 크리덴셜은 프로비저닝 시 앱이 자동 발급/저장하며, 사용자가 별도로 로그인 절차를 수행하지 않아야 한다.
+* **FR-09.3**: Keycloak 등 정식 IdP 기반 SSO는 멀티유저 지원 또는 원격/클러스터 확장 시나리오에서 별도 검토 항목으로 명시하며, 본 Phase 2d 범위에는 포함하지 않는다.
 
 ---
 
