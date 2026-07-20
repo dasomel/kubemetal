@@ -5,14 +5,16 @@ import { ClusterControl } from './components/dashboard/ClusterControl';
 import { ProvisionPanel } from './components/services/ProvisionPanel';
 import { ModelHub } from './components/modelhub/ModelHub';
 import { MlxStudio } from './components/mlx/MlxStudio';
+import { PipelineView } from './components/pipeline/PipelineView';
 import { Shield, Sparkles } from 'lucide-react';
 
-type Tab = 'dashboard' | 'modelhub' | 'mlx';
+type Tab = 'dashboard' | 'modelhub' | 'mlx' | 'pipeline';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'dashboard', label: '대시보드' },
   { id: 'modelhub', label: '모델 허브' },
   { id: 'mlx', label: 'MLX 스튜디오' },
+  { id: 'pipeline', label: '파이프라인' },
 ];
 
 export const App: React.FC = () => {
@@ -76,8 +78,10 @@ export const App: React.FC = () => {
           </>
         ) : activeTab === 'modelhub' ? (
           <ModelHub />
-        ) : (
+        ) : activeTab === 'mlx' ? (
           <MlxStudio />
+        ) : (
+          <PipelineView />
         )}
       </main>
 

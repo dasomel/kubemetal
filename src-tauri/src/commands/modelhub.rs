@@ -44,6 +44,36 @@ pub struct LocalModel {
     pub size_bytes: u64,
 }
 
+#[derive(Debug, Serialize)]
+pub struct RegisteredModel {
+    pub name: String,
+    pub latest_version: Option<String>,
+    pub last_updated_ms: Option<i64>,
+}
+
+/// `/api/2.0/mlflow/registered-models/search` 실측 스키마(2026-07-21, MLflow 3.x,
+/// `localhost:5001` 포트포워딩 경유 확인). 모델이 없으면 `registered_models` 필드 자체가
+/// 응답 JSON에서 생략되므로(`{}`) `#[serde(default)]`로 빈 벡터 취급한다.
+#[derive(Debug, Deserialize)]
+struct MlflowSearchResponse {
+    #[serde(default)]
+    registered_models: Vec<MlflowRegisteredModel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MlflowRegisteredModel {
+    name: String,
+    #[serde(default)]
+    last_updated_timestamp: Option<i64>,
+    #[serde(default)]
+    latest_versions: Vec<MlflowModelVersion>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MlflowModelVersion {
+    version: String,
+}
+
 #[derive(Default)]
 pub struct ModelHubState(pub Mutex<HashMap<String, DownloadStatus>>);
 
@@ -476,6 +506,39 @@ pub async fn register_model_mlflow(repo_id: String) -> Result<String, String> {
     Ok(format!(
         "{repo_id} → MLflow Model Registry에 {repo_slug} v{version}으로 등록되었습니다."
     ))
+}
+
+#[tauri::command]
+pub async fn list_registered_models() -> Result<Vec<RegisteredModel>, String> {
+    let curl = resolve_cli_path("curl")?;
+    let output = tokio::process::Command::new(&curl)
+        .args([
+            "-s",
+            "http://localhost:5001/api/2.0/mlflow/registered-models/search",
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("MLflow(5001) 연결 실패 — 포트포워딩이 활성화되어 있는지 확인하세요: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "MLflow 등록 모델 조회 실패: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let parsed: MlflowSearchResponse = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("MLflow 응답 파싱 실패: {e}"))?;
+
+    Ok(parsed
+        .registered_models
+        .into_iter()
+        .map(|m| RegisteredModel {
+            name: m.name,
+            latest_version: m.latest_versions.first().map(|v| v.version.clone()),
+            last_updated_ms: m.last_updated_timestamp,
+        })
+        .collect())
 }
 
 #[cfg(test)]

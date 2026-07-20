@@ -172,6 +172,7 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 | `kill_mlx_process` (Phase 2c) | `{ pid: u32 }` | `Result<bool, String>` | 실행 중인 MLX 학습/서빙 프로세스에 SIGTERM→(1s)→SIGKILL 전송, State 정리 |
 | `start_model_serving` (Phase 2c) | `{ model_path: String, port: u16 }` | `Result<String, String>` | venv `python -m mlx_lm server --model {path} --port {port}` 기동(기본 포트 8080 가정), 이미 서빙 중이면 Err |
 | `stop_model_serving` (Phase 2c) | None | `Result<String, String>` | 진행 중인 모델 서빙 프로세스 종료 |
+| `list_registered_models` (Phase 2c) | None | `Result<Vec<RegisteredModel>, String>` | MLflow Model Registry(5001)의 `registered-models/search` 결과를 `{name, latest_version, last_updated_ms}`로 매핑해 파이프라인 뷰의 "등록" 단계에 노출 (FR-08) |
 
 ### 4.2 K8s External Service Manifest Spec (`mac-gpu-bridge.yaml`)
 

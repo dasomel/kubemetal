@@ -11,8 +11,8 @@ use commands::mlx::{
     start_model_serving, stop_model_serving, MlxState,
 };
 use commands::modelhub::{
-    download_hf_model, get_model_downloads, list_local_models, register_model_mlflow,
-    search_hf_models, upload_model_to_storage, ModelHubState,
+    download_hf_model, get_model_downloads, list_local_models, list_registered_models,
+    register_model_mlflow, search_hf_models, upload_model_to_storage, ModelHubState,
 };
 use commands::port_forward::{start_port_forward, stop_port_forward, PortForwardState};
 use commands::provision::provision_mlops_stack;
@@ -40,6 +40,7 @@ pub fn run() {
             list_local_models,
             upload_model_to_storage,
             register_model_mlflow,
+            list_registered_models,
             check_mlx_env,
             setup_mlx_env,
             run_mlx_finetune,

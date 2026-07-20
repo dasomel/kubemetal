@@ -81,3 +81,9 @@ export interface LocalModel {
   path: string;
   size_bytes: number;
 }
+
+export interface RegisteredModel {
+  name: string;
+  latest_version?: string;
+  last_updated_ms?: number;
+}
