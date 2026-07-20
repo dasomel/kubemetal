@@ -1,16 +1,13 @@
 use serde::{Deserialize, Serialize};
 use crate::services::process::resolve_cli_path;
 
+/// colima 0.10.x `status --json` 실측 스키마: 기동 중일 때만 exit 0 + stdout에
+/// 평면 JSON({"kubernetes":true,...})을 출력하고, 미기동이면 exit 1 + stdout 없음.
+/// "status" 필드는 존재하지 않는다 — 기동 여부는 파싱 성공 자체로 판별한다.
 #[derive(Debug, Deserialize)]
 struct ColimaStatusRaw {
-    status: String,
     #[serde(default)]
-    kubernetes: Option<KubernetesInfo>,
-}
-
-#[derive(Debug, Deserialize)]
-struct KubernetesInfo {
-    enabled: bool,
+    kubernetes: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -31,20 +28,23 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
         .map_err(|e| format!("colima 실행 실패: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let raw: ColimaStatusRaw = match serde_json::from_str(&stdout) {
-        Ok(v) => v,
-        Err(_) => {
-            return Ok(ClusterStatus {
-                is_running: false,
-                kubernetes_active: false,
-                mlflow_ready: false,
-                seaweedfs_ready: false,
-            })
-        }
+    let raw: Option<ColimaStatusRaw> = if output.status.success() {
+        serde_json::from_str(&stdout).ok()
+    } else {
+        None
     };
 
-    let is_running = raw.status.eq_ignore_ascii_case("running");
-    let kubernetes_active = raw.kubernetes.map(|k| k.enabled).unwrap_or(false);
+    let Some(raw) = raw else {
+        return Ok(ClusterStatus {
+            is_running: false,
+            kubernetes_active: false,
+            mlflow_ready: false,
+            seaweedfs_ready: false,
+        });
+    };
+
+    let is_running = true; // exit 0 + JSON 출력 = 기동 중 (미기동은 위에서 조기 반환)
+    let kubernetes_active = raw.kubernetes;
 
     let (mlflow_ready, seaweedfs_ready) = if kubernetes_active {
         let kubectl = resolve_cli_path("kubectl")?;

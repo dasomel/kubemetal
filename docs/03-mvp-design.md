@@ -80,7 +80,10 @@ sysinfo = "0.30"                     # macOS RAM/CPU 모니터링
   "productName": "kubemetal",
   "identifier": "com.dasomel.kubemetal",
   "build": {
-    "frontendDist": "../dist"
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173"
   },
   "app": {
     "windows": [{ "title": "KubeMetal", "width": 1200, "height": 800 }]
@@ -90,9 +93,7 @@ sysinfo = "0.30"                     # macOS RAM/CPU 모니터링
     "targets": ["app", "dmg"],
     "resources": ["scripts/k8s/*"]
   },
-  "plugins": {
-    "dialog": {}
-  }
+  "plugins": {}
 }
 ```
 > `bundle.resources`에 `scripts/k8s/*`를 등록해야 `provision_mlops_stack`의 `resource_dir()` 조회가 dev/번들 양쪽에서 매니페스트를 찾을 수 있다.
@@ -129,16 +130,13 @@ pub fn resolve_cli_path(bin: &str) -> Result<PathBuf, String> {
 use serde::{Deserialize, Serialize};
 use crate::services::process::resolve_cli_path;
 
+/// colima 0.10.x `status --json` 실측 스키마: 기동 중일 때만 exit 0 + stdout에
+/// 평면 JSON({"kubernetes":true,...})을 출력하고, 미기동이면 exit 1 + stdout 없음.
+/// "status" 필드는 존재하지 않는다 — 기동 여부는 파싱 성공 자체로 판별한다.
 #[derive(Debug, Deserialize)]
 struct ColimaStatusRaw {
-    status: String, // "Running" | "Stopped"
     #[serde(default)]
-    kubernetes: Option<KubernetesInfo>,
-}
-
-#[derive(Debug, Deserialize)]
-struct KubernetesInfo {
-    enabled: bool,
+    kubernetes: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -161,21 +159,24 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
         .map_err(|e| format!("colima 실행 실패: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let raw: ColimaStatusRaw = match serde_json::from_str(&stdout) {
-        Ok(v) => v,
-        // 클러스터 미생성 상태 등은 stdout이 비어있거나 파싱 불가 → STOPPED로 간주
-        Err(_) => {
-            return Ok(ClusterStatus {
-                is_running: false,
-                kubernetes_active: false,
-                mlflow_ready: false,
-                seaweedfs_ready: false,
-            })
-        }
+    // 미기동이면 exit 1 + stdout 없음 → STOPPED로 조기 반환 (실측: colima 0.10.3)
+    let raw: Option<ColimaStatusRaw> = if output.status.success() {
+        serde_json::from_str(&stdout).ok()
+    } else {
+        None
     };
 
-    let is_running = raw.status.eq_ignore_ascii_case("running");
-    let kubernetes_active = raw.kubernetes.map(|k| k.enabled).unwrap_or(false);
+    let Some(raw) = raw else {
+        return Ok(ClusterStatus {
+            is_running: false,
+            kubernetes_active: false,
+            mlflow_ready: false,
+            seaweedfs_ready: false,
+        });
+    };
+
+    let is_running = true; // exit 0 + JSON 출력 = 기동 중
+    let kubernetes_active = raw.kubernetes;
 
     // kubernetes_active일 때만 배포 상태를 조회한다 (D3 정합: get_cluster_status가
     // MLflow/SeaweedFS 파드 헬스체크까지 리턴). kubectl get deploy -n default -o json을
@@ -636,8 +637,8 @@ export const ClusterControl: React.FC = () => {
 
 본 설계는 다음 항목들을 전제로 하며, 실제 Colima/vz 환경에서의 검증이 완료되지 않았다.
 
-1. **`host.lima.internal` DNS 해석**: K3s CoreDNS가 이 이름을 노드의 `resolv.conf`(Lima가 주입하는 호스트 별칭)로 정상 포워딩하는지 실기기 확인이 필요하다.
-2. **`colima status --json`의 필드 스키마**: `status`/`kubernetes.enabled` 외에 실제 출력이 더 중첩된 구조(예: `kubernetes` 하위의 추가 필드, 버전별 스키마 차이)를 가질 수 있어 `ColimaStatusRaw`가 실제 출력과 정확히 일치하는지 실기기 확인이 필요하다.
+1. ~~`host.lima.internal` DNS 해석~~ **(2026-07-20 실측 검증 완료)**: 파드 내부에서 CoreDNS(10.43.0.10)가 `host.lima.internal` → `192.168.5.2`(Lima 호스트 게이트웨이)로 정상 해석하며, `mac-gpu-service.default.svc.cluster.local`의 ExternalName CNAME 체인도 동일 주소로 해석됨을 busybox 파드 nslookup으로 확인했다.
+2. ~~`colima status --json`의 필드 스키마~~ **(2026-07-20 실측 검증 완료, colima 0.10.3)**: 초안 가정(`status: "Running"` 문자열 + `kubernetes.enabled` 중첩)은 틀렸다. 실제 출력은 기동 중일 때만 exit 0 + stdout에 평면 JSON(`{"kubernetes":true,"cpu":6,"memory":...,...}`)이며 `status` 필드는 없고, 미기동이면 exit 1 + stdout 없음(stderr에 logrus fatal). `ColimaStatusRaw`는 `kubernetes: bool` 평면 매핑으로 수정됐고, 기동 여부는 "exit 0 + JSON 파싱 성공" 자체로 판별한다. 버전별 스키마 변동 가능성은 여전히 있으므로 colima 업그레이드 시 재확인.
 3. **`resource_dir()`의 dev/번들 경로 차이**: `tauri dev` 실행 시와 `.app` 번들 실행 시 `resource_dir()`이 반환하는 실제 경로가 다를 수 있어, `scripts/k8s/` 매니페스트 탐색이 두 모드 모두에서 동작하는지 확인이 필요하다.
 4. **포트포워드 프로세스의 생존성**: `kubectl port-forward` 자식 프로세스가 macOS 슬립/네트워크 단절 후에도 자동 재연결되는지, 혹은 좀비 상태로 남아 `stop_port_forward`가 무의미해지는지 검증이 필요하다.
-5. **`chrislusf/seaweedfs:3.73` 이미지 태그 실존 및 S3 게이트웨이 동작**: 해당 태그가 실제 레지스트리에 존재하는지, `server -dir=/data -s3 -filer` 단일 프로세스 구성으로 기동 시 S3 API(8333)와 Filer UI(8888)가 정상 응답하는지 실기기 확인이 필요하다.
+5. ~~`chrislusf/seaweedfs:3.73` 이미지 태그 실존 및 S3 게이트웨이 동작~~ **(2026-07-20 실측 검증 완료)**: 태그 풀·기동 정상(파드 1/1 Ready), 포트포워딩 후 S3 API(8333)가 `ListAllMyBucketsResult` XML을, Filer UI(8888)와 MLflow(5001)가 HTTP 200을 반환함을 curl로 확인했다.

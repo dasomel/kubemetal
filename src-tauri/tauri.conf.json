@@ -3,6 +3,8 @@
   "productName": "KubeMetal",
   "identifier": "com.dasomel.kubemetal",
   "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173"
   },
@@ -32,7 +34,5 @@
       "../scripts/k8s/*"
     ]
   },
-  "plugins": {
-    "dialog": {}
-  }
+  "plugins": {}
 }
