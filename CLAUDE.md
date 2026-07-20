@@ -120,6 +120,7 @@ Skip it for: doc typos, UI styling, single-file refactors with tests.
 | 2026-07-20 | `ExternalName` Service manifest declared `ports` — ExternalName is a DNS CNAME alias only, no port proxying | Omit `ports`; clients dial `host.lima.internal:8080` directly (D10) |
 | 2026-07-20 | Referenced a nonexistent tool "mlx-serve" | The real tool is `mlx_lm.server` (mlx-lm package) or `llama-server` (D12) |
 | 2026-07-20 | Guide cited decision IDs (D6/D8/D9) that didn't match the canonical registry in `docs/03-mvp-design.md` §4 — two decisions weren't even registered | Registry is canonical; cite it verbatim, register missing decisions (D11 memory pressure, D12 serving tool) instead of inventing numbers |
+| 2026-07-20 | docs/03 reference code forwarded only 2 of the 3 D1 ports (MinIO Console 9001 missing); the implementation lane faithfully copied the defect, and the UI linked to the unforwarded port | Reference code in docs is spec too — when a doc lists N required values (D1: 5001/9000/9001), grep the implementation for ALL N, not just the code path |
 | 2026-07-20 | UI hardcoded "6 CPU / 12GB" VM default, contradicting the 16GB device profile | Auto-size from detected RAM per D4 profile table |
 
 ## Core Flows
