@@ -215,10 +215,14 @@ async fn run_download_inner(app: &tauri::AppHandle, repo_id: &str) -> Result<(),
     let dir = models_root()?.join(slug(repo_id));
 
     for file in &files {
-        let dest = safe_join(&dir, &file.path)?;
+        let rel = safe_rel(&file.path)?;
+        let dest = dir.join(&rel);
+        if !dest.starts_with(&dir) {
+            return Err(format!("경로 탈출이 감지되었습니다: {}", file.path));
+        }
         let file_url = format!(
             "https://huggingface.co/{repo_id}/resolve/main/{}",
-            encode_url_path(&file.path)
+            rel_to_url_path(&rel)
         );
         if let Some(parent) = dest.parent() {
             tokio::fs::create_dir_all(parent)
@@ -363,12 +367,16 @@ pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> 
 
     for rel in &files {
         let rel_str = rel.to_string_lossy().replace('\\', "/");
-        // 로컬 디렉터리 스캔이라 위험도는 낮지만, S3 키로 쓰기 전 동일한 safe_join 규칙으로
+        // 로컬 디렉터리 스캔이라 위험도는 낮지만, S3 키로 쓰기 전 동일한 safe_rel 규칙으로
         // 정규화/재검증한다(이중 방어 원칙을 업로드 경로에도 동일 적용).
-        let abs = safe_join(&dir, &rel_str)?;
+        let safe_rel_path = safe_rel(&rel_str)?;
+        let abs = dir.join(&safe_rel_path);
+        if !abs.starts_with(&dir) {
+            return Err(format!("경로 탈출이 감지되었습니다: {rel_str}"));
+        }
         let url = format!(
             "http://localhost:8333/models/{repo_slug}/{}",
-            encode_url_path(&rel_str)
+            rel_to_url_path(&safe_rel_path)
         );
         let out = tokio::process::Command::new(&curl)
             .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "PUT", "--data-binary"])
@@ -475,29 +483,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn safe_join_rejects_parent_dir_traversal() {
-        let base = Path::new("/tmp/kubemetal-test/base");
-        assert!(safe_join(base, "../evil").is_err());
+    fn safe_rel_rejects_parent_dir_traversal() {
+        assert!(safe_rel("../evil").is_err());
     }
 
     #[test]
-    fn safe_join_rejects_absolute_path() {
-        let base = Path::new("/tmp/kubemetal-test/base");
-        assert!(safe_join(base, "/abs").is_err());
+    fn safe_rel_rejects_absolute_path() {
+        assert!(safe_rel("/abs").is_err());
     }
 
     #[test]
-    fn safe_join_rejects_mixed_traversal() {
-        let base = Path::new("/tmp/kubemetal-test/base");
-        assert!(safe_join(base, "a/../../b").is_err());
+    fn safe_rel_rejects_mixed_traversal() {
+        assert!(safe_rel("a/../../b").is_err());
     }
 
     #[test]
-    fn safe_join_accepts_normal_relative_path() {
+    fn safe_rel_accepts_normal_relative_path() {
+        let rel = safe_rel("normal/file.txt").unwrap();
+        assert_eq!(rel, PathBuf::from("normal").join("file.txt"));
+
         let base = Path::new("/tmp/kubemetal-test/base");
-        let joined = safe_join(base, "checkpoints/model.safetensors").unwrap();
-        assert_eq!(joined, base.join("checkpoints").join("model.safetensors"));
+        let joined = base.join(&rel);
         assert!(joined.starts_with(base));
+    }
+
+    #[test]
+    fn safe_rel_join_never_escapes_base_for_malicious_inputs() {
+        let base = Path::new("/tmp/kubemetal-test/base");
+        for malicious in ["../evil", "/abs", "a/../../b", "../../etc/passwd"] {
+            // safe_rel 자체가 거부하지 못하더라도(이론상), 호출부의 starts_with 재검증이
+            // base 밖 쓰기를 반드시 막아야 한다는 이중 방어 계약을 재확인한다.
+            match safe_rel(malicious) {
+                Err(_) => {} // 기대 경로: 1차 방어에서 거부
+                Ok(rel) => assert!(base.join(&rel).starts_with(base)),
+            }
+        }
     }
 
     #[test]
