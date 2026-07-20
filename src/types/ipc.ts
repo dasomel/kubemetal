@@ -100,3 +100,11 @@ export interface ServiceAccess {
   credential_hint?: string;
   credentials: CredentialItem[];
 }
+
+export interface GuardrailStatus {
+  memory_pressure_level: 'normal' | 'warn' | 'critical' | 'unknown';
+  on_battery: boolean;
+  battery_pause_enabled: boolean;
+  training_paused: boolean;
+  caffeinate_active: boolean;
+}

@@ -174,6 +174,10 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 | `stop_model_serving` (Phase 2c) | None | `Result<String, String>` | 진행 중인 모델 서빙 프로세스 종료 |
 | `list_registered_models` (Phase 2c) | None | `Result<Vec<RegisteredModel>, String>` | MLflow Model Registry(5001)의 `registered-models/search` 결과를 `{name, latest_version, last_updated_ms}`로 매핑해 파이프라인 뷰의 "등록" 단계에 노출 (FR-08) |
 | `get_service_access` (Phase 2d) | None | `Result<Vec<ServiceAccess>, String>` | MLflow(5001)·SeaweedFS S3(8333)·SeaweedFS Filer(8888)·Model Serving(8080/v1) 4종의 헬스(`curl -w %{http_code}`, 000이면 unreachable)와 SeaweedFS S3 크리덴셜(`kubectl get secret seaweedfs-s3-credentials -o json` base64 디코드)을 조회해 접근 콘솔에 노출 (FR-09) |
+| `get_guardrail_status` (Phase 3) | None | `GuardrailStatus {memory_pressure_level, on_battery, battery_pause_enabled, training_paused, caffeinate_active}` | `sysctl -n kern.memorystatus_vm_pressure_level`(D16)과 `pmset -g batt` 실측 기반 하드웨어 가드레일 상태 조회 (FR-05.2/05.3) |
+| `set_guardrail_config` (Phase 3) | `{ battery_pause: bool }` | `Result<(), String>` | 배터리 구동 시 학습 자동 일시정지 여부를 `GuardrailState`에 저장 (FR-05.3) |
+| `pause_mlx_training` (Phase 3) | None | `Result<bool, String>` | 진행 중인 MLX 학습 pid에 SIGSTOP 전송, `TrainingStatus.status`를 `paused`로 갱신 |
+| `resume_mlx_training` (Phase 3) | None | `Result<bool, String>` | 일시정지된 MLX 학습 pid에 SIGCONT 전송, `TrainingStatus.status`를 `running`으로 갱신 |
 
 ### 4.2 K8s External Service Manifest Spec (`mac-gpu-bridge.yaml`)
 

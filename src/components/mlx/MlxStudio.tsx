@@ -2,6 +2,7 @@ import React from 'react';
 import { useMlx } from '../../hooks/useMlx';
 import { MlxEnvCard } from './MlxEnvCard';
 import { MlxFineTuneCard } from './MlxFineTuneCard';
+import { MlxGuardrailCard } from './MlxGuardrailCard';
 import { MlxServingCard } from './MlxServingCard';
 
 export const MlxStudio: React.FC = () => {
@@ -20,6 +21,11 @@ export const MlxStudio: React.FC = () => {
     startServing,
     stoppingServing,
     stopServing,
+    guardrailStatus,
+    settingBatteryPause,
+    setBatteryPause,
+    resumingTraining,
+    resumeTraining,
   } = useMlx();
 
   return (
@@ -39,6 +45,15 @@ export const MlxStudio: React.FC = () => {
         killingPid={killingPid}
         onStart={runFinetune}
         onKill={killProcess}
+      />
+
+      <MlxGuardrailCard
+        guardrailStatus={guardrailStatus}
+        training={mlxStatus?.training}
+        settingBatteryPause={settingBatteryPause}
+        onSetBatteryPause={setBatteryPause}
+        resumingTraining={resumingTraining}
+        onResume={resumeTraining}
       />
 
       <MlxServingCard

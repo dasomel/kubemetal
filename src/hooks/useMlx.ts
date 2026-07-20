@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
-import type { MlxEnvStatus, MlxStatus, FineTuneConfig, LocalModel } from '../types/ipc';
+import type { MlxEnvStatus, MlxStatus, FineTuneConfig, LocalModel, GuardrailStatus } from '../types/ipc';
 
 export function useMlx() {
   const [envStatus, setEnvStatus] = useState<MlxEnvStatus | null>(null);
@@ -13,6 +13,9 @@ export function useMlx() {
   const [killingPid, setKillingPid] = useState<number | null>(null);
   const [startingServing, setStartingServing] = useState(false);
   const [stoppingServing, setStoppingServing] = useState(false);
+  const [guardrailStatus, setGuardrailStatus] = useState<GuardrailStatus | null>(null);
+  const [settingBatteryPause, setSettingBatteryPause] = useState(false);
+  const [resumingTraining, setResumingTraining] = useState(false);
 
   const prevEnvStateRef = useRef<string | undefined>(undefined);
 
@@ -111,6 +114,43 @@ export function useMlx() {
     }
   }, [fetchStatus]);
 
+  const fetchGuardrailStatus = useCallback(async () => {
+    try {
+      const res = await invoke<GuardrailStatus>('get_guardrail_status');
+      setGuardrailStatus(res);
+    } catch (err) {
+      console.error('가드레일 상태 로드 오류:', err);
+    }
+  }, []);
+
+  const setBatteryPause = useCallback(
+    async (enabled: boolean) => {
+      setSettingBatteryPause(true);
+      try {
+        await invoke('set_guardrail_config', { batteryPause: enabled });
+        await fetchGuardrailStatus();
+      } catch (err) {
+        await message(`배터리 일시정지 설정 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      } finally {
+        setSettingBatteryPause(false);
+      }
+    },
+    [fetchGuardrailStatus],
+  );
+
+  const resumeTraining = useCallback(async () => {
+    setResumingTraining(true);
+    try {
+      await invoke('resume_mlx_training');
+      await fetchStatus();
+      await fetchGuardrailStatus();
+    } catch (err) {
+      await message(`학습 재개 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+    } finally {
+      setResumingTraining(false);
+    }
+  }, [fetchStatus, fetchGuardrailStatus]);
+
   useEffect(() => {
     checkEnv();
     fetchStatus();
@@ -138,6 +178,14 @@ export function useMlx() {
     prevEnvStateRef.current = state;
   }, [mlxStatus?.env_setup?.state, checkEnv]);
 
+  // 가드레일 상태는 학습이 진행 중일 때만 조회한다(백엔드 감시 루프도 5초 주기이므로 동일하게 맞춘다).
+  useEffect(() => {
+    if (!trainingActive) return;
+    fetchGuardrailStatus();
+    const interval = setInterval(fetchGuardrailStatus, 5000);
+    return () => clearInterval(interval);
+  }, [trainingActive, fetchGuardrailStatus]);
+
   return {
     envStatus,
     checkingEnv,
@@ -154,5 +202,10 @@ export function useMlx() {
     startServing,
     stoppingServing,
     stopServing,
+    guardrailStatus,
+    settingBatteryPause,
+    setBatteryPause,
+    resumingTraining,
+    resumeTraining,
   };
 }

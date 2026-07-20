@@ -26,6 +26,7 @@
 | 2026-07-20 | Bound MLflow to host port 5000 — macOS AirPlay Receiver (ControlCenter) occupies 5000/7000, forwarding silently breaks | Use 5001 (D1); never claim 5000 on macOS |
 | 2026-07-20 | Spec required "powermetrics C-Binding" for GPU metrics — powermetrics is a CLI (no public C API) and requires **root** | Phase 1 ships sysinfo RAM/CPU only; GPU metrics = Phase 3 privileged helper + CLI parsing (D2) |
 | 2026-07-20 | OOM guard triggered on "available RAM < 10%" — macOS file cache keeps RAM near-full at all times, guaranteeing false triggers | Trigger on memory pressure levels (warn/critical) instead (D11) |
+| 2026-07-21 | SIGSTOP sent to only the MLX finetune wrapper pid — the wrapper spawns the real `mlx_lm` training subprocess via `subprocess.Popen` without its own process group, so it just inherits whichever group the wrapper was already in; signaling the wrapper alone freezes it but the `mlx_lm` child keeps running the actual GPU work to completion (confirmed on real hardware: 60-iter smoke run finished normally while the "paused" wrapper sat frozen). Same gap for SIGTERM/SIGKILL — the child survives as an orphan | Spawn the wrapper with `tokio::process::Command::process_group(0)` so it leads its own process group (child inherits it), then target `-pid` (the group) for SIGSTOP/SIGCONT/SIGTERM/SIGKILL (D17) |
 
 ## Kubernetes / MLOps stack
 

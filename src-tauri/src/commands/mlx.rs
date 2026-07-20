@@ -428,6 +428,11 @@ pub async fn run_mlx_finetune(
         ));
     }
 
+    // `.process_group(0)`으로 래퍼를 새 프로세스 그룹의 리더(pgid == 자신의 pid)로 띄운다.
+    // 래퍼가 내부에서 `subprocess.Popen`으로 기동하는 `mlx_lm` 학습 자식 프로세스는 그룹을
+    // 상속받으므로, 이후 가드레일/종료 시그널을 pgid(-pid)로 보내면 래퍼와 실제 학습 자식이
+    // 함께 멈춘다. 실측(2026-07-21): 새 그룹 없이 래퍼 pid에만 SIGSTOP을 보내면 래퍼만 멈추고
+    // `mlx_lm` 자식은 학습을 끝까지 완주해버림을 확인했다(가드레일 무력화 — D17).
     let child = tokio::process::Command::new(&venv_py)
         .arg(&wrapper)
         .arg("--model")
@@ -444,6 +449,7 @@ pub async fn run_mlx_finetune(
         .arg(&config.adapter_name)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .process_group(0)
         .spawn()
         .map_err(|e| format!("파인튜닝 프로세스 실행 실패: {e}"))?;
 
@@ -463,6 +469,11 @@ pub async fn run_mlx_finetune(
             error: None,
         });
     }
+
+    // 학습 시작과 동시에 하드웨어 가드레일(FR-05.2/05.3)을 훅한다: 슬립 방지 caffeinate 기동 +
+    // 5초 주기 memory pressure/배터리 감시 루프. 둘 다 학습 pid 종료 시 스스로 정리된다.
+    crate::commands::guardrails::start_caffeinate(&app, pid);
+    crate::commands::guardrails::spawn_guardrail_loop(app.clone(), pid);
 
     // stdout/stderr는 run_training_reader가 소비하며, 종료 시 child.wait()로 리핑한다.
     tokio::spawn(run_training_reader(app, child));
@@ -490,29 +501,45 @@ pub async fn get_mlx_status(state: State<'_, MlxState>) -> Result<MlxStatus, Str
 }
 
 /// SIGTERM 전송 후 1초 대기, 여전히 살아있으면 SIGKILL. `libc::kill(pid, 0)`으로 생존 여부를 확인한다.
-fn terminate_pid(pid: u32) {
+/// `use_process_group`이면 시그널을 `-pid`(프로세스 그룹)로 보낸다 — 학습 래퍼는
+/// `.process_group(0)`으로 기동되어 자신이 그룹 리더이므로, 그룹으로 보내야 내부에서
+/// `subprocess.Popen`으로 띄운 `mlx_lm` 학습 자식까지 함께 종료된다(D17). 서빙 프로세스는
+/// 새 그룹 없이 앱과 그룹을 공유하므로 단일 pid로 보낸다.
+fn terminate_pid(pid: u32, use_process_group: bool) {
+    let target: i32 = if use_process_group {
+        -(pid as i32)
+    } else {
+        pid as i32
+    };
     unsafe {
-        libc::kill(pid as i32, libc::SIGTERM);
+        libc::kill(target, libc::SIGTERM);
     }
     std::thread::sleep(std::time::Duration::from_secs(1));
     let alive = unsafe { libc::kill(pid as i32, 0) == 0 };
     if alive {
         unsafe {
-            libc::kill(pid as i32, libc::SIGKILL);
+            libc::kill(target, libc::SIGKILL);
         }
     }
 }
 
 #[tauri::command]
 pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bool, String> {
-    tokio::task::spawn_blocking(move || terminate_pid(pid))
+    let is_training = {
+        let guard = state.training.lock().map_err(|e| e.to_string())?;
+        guard.as_ref().map(|t| t.pid == pid).unwrap_or(false)
+    };
+
+    tokio::task::spawn_blocking(move || terminate_pid(pid, is_training))
         .await
         .map_err(|e| format!("프로세스 종료 대기 실패: {e}"))?;
 
     {
         let mut guard = state.training.lock().map_err(|e| e.to_string())?;
         if let Some(t) = guard.as_mut() {
-            if t.pid == pid && t.status == "running" {
+            // running/paused* 등 아직 종료되지 않은 상태였다면 killed로 전이한다(가드레일이
+            // 일시정지시킨 상태에서 사용자가 중지를 눌러도 상태가 갱신되어야 한다).
+            if t.pid == pid && t.status != "done" && t.status != "error" && t.status != "killed" {
                 t.status = "killed".into();
             }
         }
@@ -592,7 +619,7 @@ pub async fn stop_model_serving(state: State<'_, MlxState>) -> Result<String, St
         }
     };
 
-    tokio::task::spawn_blocking(move || terminate_pid(pid))
+    tokio::task::spawn_blocking(move || terminate_pid(pid, false))
         .await
         .map_err(|e| format!("프로세스 종료 대기 실패: {e}"))?;
 

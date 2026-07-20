@@ -6,6 +6,10 @@ use sysinfo::System;
 
 use commands::access::get_service_access;
 use commands::colima::{get_cluster_status, start_cluster, stop_cluster};
+use commands::guardrails::{
+    get_guardrail_status, pause_mlx_training, resume_mlx_training, set_guardrail_config,
+    GuardrailState,
+};
 use commands::metrics::get_system_metrics;
 use commands::mlx::{
     check_mlx_env, get_mlx_status, kill_mlx_process, run_mlx_finetune, setup_mlx_env,
@@ -27,6 +31,7 @@ pub fn run() {
         .manage(PortForwardState::default())
         .manage(ModelHubState::default())
         .manage(MlxState::default())
+        .manage(GuardrailState::default())
         .invoke_handler(tauri::generate_handler![
             get_system_metrics,
             get_cluster_status,
@@ -50,6 +55,10 @@ pub fn run() {
             start_model_serving,
             stop_model_serving,
             get_service_access,
+            get_guardrail_status,
+            set_guardrail_config,
+            pause_mlx_training,
+            resume_mlx_training,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
