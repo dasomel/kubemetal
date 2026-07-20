@@ -16,6 +16,7 @@ pub struct ClusterStatus {
     pub kubernetes_active: bool,
     pub mlflow_ready: bool,
     pub seaweedfs_ready: bool,
+    pub artifact_store_wired: bool,
 }
 
 #[tauri::command]
@@ -40,13 +41,14 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
             kubernetes_active: false,
             mlflow_ready: false,
             seaweedfs_ready: false,
+            artifact_store_wired: false,
         });
     };
 
     let is_running = true; // exit 0 + JSON 출력 = 기동 중 (미기동은 위에서 조기 반환)
     let kubernetes_active = raw.kubernetes;
 
-    let (mlflow_ready, seaweedfs_ready) = if kubernetes_active {
+    let (mlflow_ready, seaweedfs_ready, artifact_store_wired) = if kubernetes_active {
         let kubectl = resolve_cli_path("kubectl")?;
         let deploy_out = tokio::process::Command::new(&kubectl)
             .args(["--context", "colima", "get", "deploy", "-n", "default", "-o", "json"])
@@ -62,9 +64,30 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
                     && d["status"]["availableReplicas"].as_u64().unwrap_or(0) > 0
             })
         };
-        (is_ready("mlflow"), is_ready("seaweedfs"))
+        // mlflow Deployment 컨테이너 env에 MLFLOW_S3_ENDPOINT_URL이 있으면
+        // SeaweedFS(S3) 아티팩트 스토어가 연동된 것으로 판정 — 추가 kubectl 호출 없이
+        // 위에서 이미 가져온 deploy JSON을 재사용한다.
+        let artifact_store_wired = items.iter().any(|d| {
+            d["metadata"]["name"].as_str() == Some("mlflow")
+                && d["spec"]["template"]["spec"]["containers"]
+                    .as_array()
+                    .map(|containers| {
+                        containers.iter().any(|c| {
+                            c["env"]
+                                .as_array()
+                                .map(|envs| {
+                                    envs.iter().any(|e| {
+                                        e["name"].as_str() == Some("MLFLOW_S3_ENDPOINT_URL")
+                                    })
+                                })
+                                .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(false)
+        });
+        (is_ready("mlflow"), is_ready("seaweedfs"), artifact_store_wired)
     } else {
-        (false, false)
+        (false, false, false)
     };
 
     Ok(ClusterStatus {
@@ -72,6 +95,7 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
         kubernetes_active,
         mlflow_ready,
         seaweedfs_ready,
+        artifact_store_wired,
     })
 }
 

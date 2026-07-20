@@ -15,6 +15,7 @@ export interface ClusterStatus {
   kubernetes_active: boolean;
   mlflow_ready: boolean;
   seaweedfs_ready: boolean;
+  artifact_store_wired: boolean;
 }
 
 export interface FineTuneConfig {

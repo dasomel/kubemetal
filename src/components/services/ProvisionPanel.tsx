@@ -21,6 +21,7 @@ export const ProvisionPanel: React.FC = () => {
   const k8sActive = status?.kubernetes_active ?? false;
   const mlflowReady = status?.mlflow_ready ?? false;
   const seaweedfsReady = status?.seaweedfs_ready ?? false;
+  const artifactStoreWired = status?.artifact_store_wired ?? false;
 
   return (
     <div className="rounded-xl bg-surface p-6 shadow-panel">
@@ -47,9 +48,15 @@ export const ProvisionPanel: React.FC = () => {
             <div className="text-bodyStrong text-ink">MLflow Tracking</div>
             <div className="text-caption text-inkFaint mt-0.5">Port 5001</div>
           </div>
-          <div className="flex items-center gap-1.5 text-caption text-inkMuted">
-            <span className={`w-2 h-2 rounded-full ${mlflowReady ? 'bg-success' : 'bg-inkFaint'}`} />
-            <span>{mlflowReady ? 'Ready' : 'Not Ready'}</span>
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-1.5 text-caption text-inkMuted">
+              <span className={`w-2 h-2 rounded-full ${mlflowReady ? 'bg-success' : 'bg-inkFaint'}`} />
+              <span>{mlflowReady ? 'Ready' : 'Not Ready'}</span>
+            </div>
+            <div className={`flex items-center gap-1.5 text-caption ${artifactStoreWired ? 'text-success' : 'text-inkFaint'}`}>
+              <span className={`w-2 h-2 rounded-full ${artifactStoreWired ? 'bg-success' : 'bg-inkFaint'}`} />
+              <span>{artifactStoreWired ? 'SeaweedFS 연동됨' : '연동 대기'}</span>
+            </div>
           </div>
         </div>
 
