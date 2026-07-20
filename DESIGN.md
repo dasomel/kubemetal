@@ -129,7 +129,7 @@ components:
     backgroundColor: "{colors.danger}"
     rounded: "{rounded.full}"
   border-hairline:
-    borderColor: "{colors.hairline}"
+    backgroundColor: "{colors.hairline}"
 ---
 
 ## Overview

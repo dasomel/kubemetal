@@ -32,7 +32,7 @@ export const ProvisionPanel: React.FC = () => {
 
         <button
           onClick={() => refresh()}
-          className="p-1.5 rounded-md bg-surfaceRaised hover:brightness-110 text-inkMuted hover:text-ink transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          className="p-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-inkMuted hover:text-ink transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           title="상태 새로고침"
         >
           <RefreshCw className="w-4 h-4" />
@@ -89,7 +89,7 @@ export const ProvisionPanel: React.FC = () => {
         <button
           onClick={() => startPortForward()}
           disabled={loading || !isRunning || !k8sActive}
-          className="py-2.5 px-4 bg-surfaceRaised hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-ink text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed text-ink text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           <Radio className="w-3.5 h-3.5 text-primary" />
           <span>포트포워딩 시작 (5001, 8333/8888)</span>
@@ -98,7 +98,7 @@ export const ProvisionPanel: React.FC = () => {
         <button
           onClick={() => stopPortForward()}
           disabled={loading || !isRunning}
-          className="py-2.5 px-4 bg-surfaceRaised hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inkMuted text-bodyStrong rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed text-inkMuted text-bodyStrong rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           포트포워딩 정지
         </button>
@@ -113,7 +113,7 @@ export const ProvisionPanel: React.FC = () => {
           <button
             type="button"
             onClick={() => openEndpoint('http://localhost:5001')}
-            className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-110 text-primary flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-primary flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             MLflow UI (http://localhost:5001)
             <ArrowUpRight className="w-3 h-3" />
@@ -121,7 +121,7 @@ export const ProvisionPanel: React.FC = () => {
           <button
             type="button"
             onClick={() => openEndpoint('http://localhost:8888')}
-            className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-110 text-primary flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-primary flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             SeaweedFS Filer UI (http://localhost:8888)
             <ArrowUpRight className="w-3 h-3" />
