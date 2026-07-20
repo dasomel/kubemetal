@@ -6,15 +6,17 @@ import { ProvisionPanel } from './components/services/ProvisionPanel';
 import { ModelHub } from './components/modelhub/ModelHub';
 import { MlxStudio } from './components/mlx/MlxStudio';
 import { PipelineView } from './components/pipeline/PipelineView';
+import { AccessConsole } from './components/access/AccessConsole';
 import { Shield, Sparkles } from 'lucide-react';
 
-type Tab = 'dashboard' | 'modelhub' | 'mlx' | 'pipeline';
+type Tab = 'dashboard' | 'modelhub' | 'mlx' | 'pipeline' | 'access';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'dashboard', label: '대시보드' },
   { id: 'modelhub', label: '모델 허브' },
   { id: 'mlx', label: 'MLX 스튜디오' },
   { id: 'pipeline', label: '파이프라인' },
+  { id: 'access', label: '접근 콘솔' },
 ];
 
 export const App: React.FC = () => {
@@ -80,8 +82,10 @@ export const App: React.FC = () => {
           <ModelHub />
         ) : activeTab === 'mlx' ? (
           <MlxStudio />
-        ) : (
+        ) : activeTab === 'pipeline' ? (
           <PipelineView />
+        ) : (
+          <AccessConsole />
         )}
       </main>
 

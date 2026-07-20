@@ -4,6 +4,7 @@ mod services;
 use std::sync::Mutex;
 use sysinfo::System;
 
+use commands::access::get_service_access;
 use commands::colima::{get_cluster_status, start_cluster, stop_cluster};
 use commands::metrics::get_system_metrics;
 use commands::mlx::{
@@ -48,6 +49,7 @@ pub fn run() {
             kill_mlx_process,
             start_model_serving,
             stop_model_serving,
+            get_service_access,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

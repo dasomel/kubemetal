@@ -87,3 +87,16 @@ export interface RegisteredModel {
   latest_version?: string;
   last_updated_ms?: number;
 }
+
+export interface CredentialItem {
+  key: string;
+  value: string;
+}
+
+export interface ServiceAccess {
+  service: string;
+  url: string;
+  health: 'ok' | 'unreachable';
+  credential_hint?: string;
+  credentials: CredentialItem[];
+}

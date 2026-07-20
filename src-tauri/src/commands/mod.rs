@@ -1,3 +1,4 @@
+pub mod access;
 pub mod colima;
 pub mod metrics;
 pub mod mlx;
