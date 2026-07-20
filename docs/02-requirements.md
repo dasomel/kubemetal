@@ -159,6 +159,12 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 | `provision_mlops_stack` | None | `Result<String, String>` | Helm/kubectl로 MLflow·SeaweedFS 파드 자동 배포 (FR-02.1) |
 | `start_port_forward` | None | `Result<String, String>` | MLflow(5001) · SeaweedFS(8333/8888) `kubectl port-forward` 자식 프로세스 기동 (FR-02.2) |
 | `stop_port_forward` | None | `Result<String, String>` | 추적 중인 포트포워드 자식 프로세스 종료 (FR-02.2) |
+| `search_hf_models` (Phase 2b) | `{ query: String, limit: u32 }` | `Result<Vec<HfModel>, String>` | Hugging Face Hub API로 모델 검색 (FR-07.1) |
+| `download_hf_model` (Phase 2b) | `{ repo_id: String }` | `Result<String, String>` | 모델을 `~/.kubemetal/models/`로 비동기 다운로드 시작 (FR-07.2) |
+| `get_model_downloads` (Phase 2b) | None | `Result<Vec<DownloadStatus>, String>` | 진행 중/완료된 다운로드 상태 조회 |
+| `list_local_models` (Phase 2b) | None | `Result<Vec<LocalModel>, String>` | 로컬에 다운로드된 모델 목록 조회 |
+| `upload_model_to_storage` (Phase 2b) | `{ repo_id: String }` | `Result<String, String>` | 로컬 모델을 SeaweedFS S3(8333) `models` 버킷으로 업로드 (FR-07.3) |
+| `register_model_mlflow` (Phase 2b) | `{ repo_id: String }` | `Result<String, String>` | 업로드된 모델을 MLflow Model Registry(5001)에 등록 (FR-07.4) |
 | `run_mlx_finetune` | `FineTuneConfigJSON` | `Result<u32, String>` | MLX 파인튜닝 프로세스 띄우고 PID 리턴 |
 | `kill_mlx_process` | `{ pid: u32 }` | `Result<bool, String>` | 실행 중인 MLX 학습/서빙 프로세스 중지 |
 

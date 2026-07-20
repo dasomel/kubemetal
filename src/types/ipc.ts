@@ -26,3 +26,24 @@ export interface FineTuneConfig {
   learning_rate: number;
   adapter_path?: string;
 }
+
+export interface HfModel {
+  id: string;
+  downloads: number;
+  likes: number;
+  pipeline_tag?: string;
+}
+
+export interface DownloadStatus {
+  repo_id: string;
+  total_files: number;
+  done_files: number;
+  state: 'downloading' | 'done' | 'error';
+  error?: string;
+}
+
+export interface LocalModel {
+  repo_id: string;
+  path: string;
+  size_bytes: number;
+}
