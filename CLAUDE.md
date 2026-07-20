@@ -31,8 +31,10 @@ plus a Mistakes Log entry if the change was driven by a defect.
 
 - **K8s never runs compute.** Anything touching MLX/Metal executes as a host process
   spawned by the Rust backend — never inside a pod.
-- **Canonical ports (D1):** MLflow host-forward **5001** (5000 is taken by macOS AirPlay
-  Receiver), MinIO S3 API 9000, MinIO Console 9001, model serving 8080 (`/v1`, configurable).
+- **Canonical ports (D1, amended 2026-07-20):** MLflow host-forward **5001** (5000 is
+  taken by macOS AirPlay Receiver), SeaweedFS S3 API 8333, SeaweedFS Filer UI 8888,
+  model serving 8080 (`/v1`, configurable). Object storage is **SeaweedFS** (replaced
+  MinIO by user decision — S3-compatible, single-binary master/volume/filer/S3).
 - **Phase 1 metrics = sysinfo RAM/CPU only (D2).** No `powermetrics`, no sudo, no GPU
   metrics until the Phase 3 privileged-helper work. Never add root-requiring code paths
   to the default app flow.
@@ -131,7 +133,7 @@ Skip it for: doc typos, UI styling, single-file refactors with tests.
   `get_cluster_status`, `start_cluster`, `stop_cluster`, `provision_mlops_stack`,
   `start_port_forward`, `stop_port_forward`, `run_mlx_finetune`, `kill_mlx_process`).
   Rust, TS types, and docs must stay in sync.
-- K8s manifests live in `scripts/k8s/` (mlflow, minio, mac-gpu-bridge).
+- K8s manifests live in `scripts/k8s/` (mlflow, seaweedfs, mac-gpu-bridge).
 
 ## Development Commands
 
@@ -184,7 +186,8 @@ Type-check passing ≠ feature working: UI/IPC changes must be verified in the r
 - One cluster lifecycle operation at a time (start/stop/provision are serialized;
   `colima` itself is not reentrant).
 - After cluster changes, verify from the user's perspective: `colima status --json`,
-  `kubectl get pods -A`, curl the forwarded MLflow (5001) / MinIO (9001) endpoints.
+  `kubectl get pods -A`, curl the forwarded MLflow (5001) / SeaweedFS (8333 S3,
+  8888 Filer UI) endpoints.
 
 ## Changelog
 | Date | Change | Reason |
@@ -193,3 +196,4 @@ Type-check passing ≠ feature working: UI/IPC changes must be verified in the r
 | 2026-07-20 | Aligned decision IDs to the canonical registry (ExternalName→D10, memory pressure→D11, serving tool→D12); bridge invariant now pins service name/namespace; added port-forward IPC commands | Independent plan review (critic) found 2 blockers: D-number collision + ExternalName triple mismatch |
 | 2026-07-20 | Added "Agent Team Harness (agy-first)" — lane table (rust-backend / frontend / qa), agy invocation + logging convention, disjoint-scope and separate-verification rules | User directive: run implementation as a team with aggressive agy utilization |
 | 2026-07-20 | Added "OMC plugin utilization" — default lanes, ultraqa/verify for QA, trace/debugger, deepinit at phase boundaries, omc-teams as agy runtime option, autonomous modes keyword-only | User directive: review active OMC plugin utilization |
+| 2026-07-20 | Object storage MinIO → SeaweedFS; D1 amended (S3 8333, Filer UI 8888 replace 9000/9001); synced across code, manifests, and all three docs | User decision |

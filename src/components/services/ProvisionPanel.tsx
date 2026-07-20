@@ -15,7 +15,7 @@ export const ProvisionPanel: React.FC = () => {
   const isRunning = status?.is_running ?? false;
   const k8sActive = status?.kubernetes_active ?? false;
   const mlflowReady = status?.mlflow_ready ?? false;
-  const minioReady = status?.minio_ready ?? false;
+  const seaweedfsReady = status?.seaweedfs_ready ?? false;
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-xl backdrop-blur">
@@ -53,20 +53,20 @@ export const ProvisionPanel: React.FC = () => {
           </span>
         </div>
 
-        {/* MinIO */}
+        {/* SeaweedFS */}
         <div className="p-3.5 rounded-lg bg-slate-950/50 border border-slate-800 flex items-center justify-between">
           <div>
-            <div className="text-xs font-semibold text-slate-300">MinIO Storage</div>
-            <div className="text-[11px] text-slate-400 mt-0.5">Port 9000/9001</div>
+            <div className="text-xs font-semibold text-slate-300">SeaweedFS Storage</div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Port 8333/8888</div>
           </div>
           <span
             className={`px-2 py-0.5 text-[11px] rounded-full font-medium ${
-              minioReady
+              seaweedfsReady
                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                 : 'bg-slate-800 text-slate-400'
             }`}
           >
-            {minioReady ? 'Ready' : 'Not Ready'}
+            {seaweedfsReady ? 'Ready' : 'Not Ready'}
           </span>
         </div>
 
@@ -99,7 +99,7 @@ export const ProvisionPanel: React.FC = () => {
           className="py-2 px-4 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 font-medium text-xs rounded-lg border border-slate-700 transition-all flex items-center gap-1.5"
         >
           <Radio className="w-3.5 h-3.5 text-blue-400" />
-          <span>포트포워딩 시작 (5001, 9000/9001)</span>
+          <span>포트포워딩 시작 (5001, 8333/8888)</span>
         </button>
 
         <button
@@ -127,16 +127,16 @@ export const ProvisionPanel: React.FC = () => {
             <ArrowUpRight className="w-3 h-3" />
           </a>
           <a
-            href="http://localhost:9001"
+            href="http://localhost:8888"
             target="_blank"
             rel="noreferrer"
             className="px-3 py-1.5 rounded bg-slate-950 hover:bg-slate-800 border border-slate-800 text-teal-400 flex items-center gap-1"
           >
-            MinIO Console (http://localhost:9001)
+            SeaweedFS Filer UI (http://localhost:8888)
             <ArrowUpRight className="w-3 h-3" />
           </a>
           <span className="px-3 py-1.5 rounded bg-slate-950 border border-slate-800 text-slate-400">
-            MinIO S3 API (http://localhost:9000)
+            SeaweedFS S3 API (http://localhost:8333)
           </span>
           <span className="px-3 py-1.5 rounded bg-slate-950 border border-slate-800 text-slate-400">
             Model Serving (http://localhost:8080/v1)

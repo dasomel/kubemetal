@@ -49,7 +49,7 @@ export function useColima() {
 
   const provisionStack = useCallback(async () => {
     setLoading(true);
-    setActionMessage('MLflow, MinIO 및 GPU 브리지 매니페스트 적용 중...');
+    setActionMessage('MLflow, SeaweedFS 및 GPU 브리지 매니페스트 적용 중...');
     try {
       const res = await invoke<string>('provision_mlops_stack');
       await message(res || 'MLOps 스택 프로비저닝이 완료되었습니다.', { title: 'KubeMetal', kind: 'info' });

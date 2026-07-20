@@ -3,7 +3,7 @@ use crate::services::process::resolve_cli_path;
 
 const MANIFESTS: [&str; 3] = [
     "scripts/k8s/mlflow-deployment.yaml",
-    "scripts/k8s/minio-deployment.yaml",
+    "scripts/k8s/seaweedfs-deployment.yaml",
     "scripts/k8s/mac-gpu-bridge.yaml",
 ];
 
@@ -29,7 +29,7 @@ pub async fn provision_mlops_stack(app: tauri::AppHandle) -> Result<String, Stri
         }
     }
 
-    Ok("MLflow / MinIO / GPU 브리지 매니페스트가 적용되었습니다.".into())
+    Ok("MLflow / SeaweedFS / GPU 브리지 매니페스트가 적용되었습니다.".into())
 }
 
 // Phase 2 커맨드 예약:

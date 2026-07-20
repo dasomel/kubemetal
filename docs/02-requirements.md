@@ -33,11 +33,11 @@ KubeMetal 프로젝트의 **[Part 1] 오픈소스 생태계(OSS) 리서치 보�
 | **2. Enterprise MLOps** | Kubeflow, Flyte, ClearML, MLflow | 엔터프라이즈 파이프라인 표준 · DAG 및 모델 레지스트리 완비 | Linux/NVIDIA CUDA 중심 설계 · macOS VM 내부 K8s Pod로 Metal GPU 패스스루 불가 · Kubeflow 풀스택은 RAM 16~32GB 이상 상시 점유 |
 | **3. Mac K8s / VM Engines** | Colima, Lima, OrbStack, Docker Desktop | macOS `vz` 엔진으로 RAM 오버헤드 최소화 · K3s/Docker 원클릭 실행 | 순수 인프라 런타임 레이어만 제공 · MLOps 전용 대시보드 및 도구 스택 미내장 · 호스트 GPU와의 네트워크 브릿지 수동 설정 필요 |
 | **4. Apple Compute Engines** | Apple MLX, `llama-server`, `vllm-mlx` | 애플 실리콘 유니파이드 메모리 100% 활용 · PyTorch 대비 20~80% 빠른 토큰 속도 | CLI/Python 라이브러리 형태 · UI가 없고 K8s 클러스터 제어 기능 부재 |
-| **5. Local GUI Fine-Tuning** | **Transformer Lab** | GUI 기반 MLX 파인튜닝 지원 · 실험 관리(experiment tracking) 내장 · KubeMetal과 가장 근접한 직접 경쟁자 | K8s 기반 표준 파이프라인 미지원 · 호스트-컨테이너 하이브리드 브릿지 부재 · MLflow/MinIO 등 표준 MLOps 스택과 통합되어 있지 않음 |
+| **5. Local GUI Fine-Tuning** | **Transformer Lab** | GUI 기반 MLX 파인튜닝 지원 · 실험 관리(experiment tracking) 내장 · KubeMetal과 가장 근접한 직접 경쟁자 | K8s 기반 표준 파이프라인 미지원 · 호스트-컨테이너 하이브리드 브릿지 부재 · MLflow/SeaweedFS 등 표준 MLOps 스택과 통합되어 있지 않음 |
 
 ### 2. KubeMetal의 포지셔닝 (Competitive Advantage)
 
-KubeMetal은 "카테고리 1의 유저 친화적 UX" + "카테고리 2의 표준 MLOps 파이프라인" + "카테고리 3의 경량 맥 Virtualization" + "카테고리 4의 MLX 성능"을 통합하는 macOS 전용 하이브리드 MLOps 솔루션을 지향합니다. 가장 근접한 경쟁자는 GUI 기반 MLX 파인튜닝을 제공하는 **Transformer Lab**이며, KubeMetal의 차별점은 (1) K8s 표준 파이프라인(Helm/kubectl 기반 MLflow·MinIO 배포), (2) 호스트-컨테이너 하이브리드 브릿지, (3) MLOps 스택 전체 통합에 있습니다.
+KubeMetal은 "카테고리 1의 유저 친화적 UX" + "카테고리 2의 표준 MLOps 파이프라인" + "카테고리 3의 경량 맥 Virtualization" + "카테고리 4의 MLX 성능"을 통합하는 macOS 전용 하이브리드 MLOps 솔루션을 지향합니다. 가장 근접한 경쟁자는 GUI 기반 MLX 파인튜닝을 제공하는 **Transformer Lab**이며, KubeMetal의 차별점은 (1) K8s 표준 파이프라인(Helm/kubectl 기반 MLflow·SeaweedFS 배포), (2) 호스트-컨테이너 하이브리드 브릿지, (3) MLOps 스택 전체 통합에 있습니다.
 
 ---
 
@@ -83,11 +83,11 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 
 ### FR-02: MLOps 인프라 서비스 자동 프로비저닝
 
-* **FR-02.1**: K8s 클러스터 정상 구동 시, Helm/Kubectl을 통해 **MLflow Tracking Server**와 **MinIO Object Storage**를 파드로 자동 배포해야 한다.
-* **FR-02.2**: K8s 내 배포된 MLflow UI 및 MinIO Console/S3 API로 아래 포트를 호스트에 자동 포트포워딩 구성하고, 프론트엔드 Webview로 내장/웹 브라우저 오픈 기능을 제공해야 한다. 포트포워딩은 앱이 관리하는 `kubectl port-forward` 자식 프로세스로 구현하며(`start_port_forward`/`stop_port_forward`), 클러스터 중지 또는 앱 종료 시 해당 프로세스를 정리해야 한다.
+* **FR-02.1**: K8s 클러스터 정상 구동 시, Helm/Kubectl을 통해 **MLflow Tracking Server**와 **SeaweedFS Object Storage**를 파드로 자동 배포해야 한다.
+* **FR-02.2**: K8s 내 배포된 MLflow UI 및 SeaweedFS Filer UI/S3 API로 아래 포트를 호스트에 자동 포트포워딩 구성하고, 프론트엔드 Webview로 내장/웹 브라우저 오픈 기능을 제공해야 한다. 포트포워딩은 앱이 관리하는 `kubectl port-forward` 자식 프로세스로 구현하며(`start_port_forward`/`stop_port_forward`), 클러스터 중지 또는 앱 종료 시 해당 프로세스를 정리해야 한다.
   * MLflow UI: 호스트 **5001번 포트** (macOS AirPlay Receiver가 기본 5000번 포트를 점유하므로 5000 사용 금지)
-  * MinIO Console: 호스트 **9001번 포트**
-  * MinIO S3 API: 호스트 **9000번 포트**
+  * SeaweedFS Filer UI: 호스트 **8888번 포트**
+  * SeaweedFS S3 API: 호스트 **8333번 포트**
 
 ### FR-03: 호스트 Compute Engine (MLX) 파인튜닝 & 서빙 제어
 
@@ -124,11 +124,11 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 | Command 이름 | Input Parameters | Output Return | 설명 |
 | --- | --- | --- | --- |
 | `get_system_metrics` | None | `SystemMetricsJSON` | RAM, CPU 실시간 사용량 리턴 (Metal GPU는 Phase 3, FR-05.4) |
-| `get_cluster_status` | None | `ClusterStatusJSON` | colima 상태 + MLflow/MinIO 배포 준비 여부(`mlflow_ready`/`minio_ready`) 리턴 |
+| `get_cluster_status` | None | `ClusterStatusJSON` | colima 상태 + MLflow/SeaweedFS 배포 준비 여부(`mlflow_ready`/`seaweedfs_ready`) 리턴 |
 | `start_cluster` | `{ cpu: u32, memory: u32 }` | `Result<String, String>` | Colima `vz` K8s 클러스터 구동 |
 | `stop_cluster` | None | `Result<String, String>` | Colima K8s 클러스터 중지 |
-| `provision_mlops_stack` | None | `Result<String, String>` | Helm/kubectl로 MLflow·MinIO 파드 자동 배포 (FR-02.1) |
-| `start_port_forward` | None | `Result<String, String>` | MLflow(5001) · MinIO(9000/9001) `kubectl port-forward` 자식 프로세스 기동 (FR-02.2) |
+| `provision_mlops_stack` | None | `Result<String, String>` | Helm/kubectl로 MLflow·SeaweedFS 파드 자동 배포 (FR-02.1) |
+| `start_port_forward` | None | `Result<String, String>` | MLflow(5001) · SeaweedFS(8333/8888) `kubectl port-forward` 자식 프로세스 기동 (FR-02.2) |
 | `stop_port_forward` | None | `Result<String, String>` | 추적 중인 포트포워드 자식 프로세스 종료 (FR-02.2) |
 | `run_mlx_finetune` | `FineTuneConfigJSON` | `Result<u32, String>` | MLX 파인튜닝 프로세스 띄우고 PID 리턴 |
 | `kill_mlx_process` | `{ pid: u32 }` | `Result<bool, String>` | 실행 중인 MLX 학습/서빙 프로세스 중지 |

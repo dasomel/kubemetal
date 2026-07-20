@@ -14,7 +14,7 @@ export interface ClusterStatus {
   is_running: boolean;
   kubernetes_active: boolean;
   mlflow_ready: boolean;
-  minio_ready: boolean;
+  seaweedfs_ready: boolean;
 }
 
 export interface FineTuneConfig {

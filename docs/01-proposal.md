@@ -20,8 +20,8 @@
 | 기존 방식 | 한계점 | **KubeMetal의 해결책** |
 | --- | --- | --- |
 | **전통적 Kubeflow (Full)** | 리눅스 VM 메모리 점유율이 너무 크고, K8s Pod 내부에서 애플 Metal GPU 패스스루 불가 | **Control/Compute 분리 구조**: K8s는 제어(Control)에만 집중하고, 연산은 macOS 호스트(MLX)가 처리 |
-| **단순 Local LLM 앱** (LM Studio 등) | 단발성 추론/채팅에만 집중되어 있어 파인튜닝, 파이프라인 자동화, 모델 버전 관리 불가능 | **표준 MLOps 스택 통합**: MLflow, Prefect, MinIO를 자동 내장하여 엔터프라이즈급 워크플로 제공 |
-| **Transformer Lab** | GUI + MLX 파인튜닝 + 실험 관리를 이미 제공하는 직접 경쟁 오픈소스로, 단일 앱 내 자체 실험 트래킹 위주 | **K8s 표준 파이프라인 + 하이브리드 브릿지**: MLflow/Prefect/MinIO 같은 업계 표준 컴포넌트를 K8s 위에서 그대로 운용하면서 원격/멀티노드 확장 경로를 열어둠 |
+| **단순 Local LLM 앱** (LM Studio 등) | 단발성 추론/채팅에만 집중되어 있어 파인튜닝, 파이프라인 자동화, 모델 버전 관리 불가능 | **표준 MLOps 스택 통합**: MLflow, Prefect, SeaweedFS를 자동 내장하여 엔터프라이즈급 워크플로 제공 |
+| **Transformer Lab** | GUI + MLX 파인튜닝 + 실험 관리를 이미 제공하는 직접 경쟁 오픈소스로, 단일 앱 내 자체 실험 트래킹 위주 | **K8s 표준 파이프라인 + 하이브리드 브릿지**: MLflow/Prefect/SeaweedFS 같은 업계 표준 컴포넌트를 K8s 위에서 그대로 운용하면서 원격/멀티노드 확장 경로를 열어둠 |
 
 > KubeMetal이 이 영역에서 유일한 시도라고 주장하지는 않는다. 차별점은 "MLX 로컬 연산"과 "K8s 표준 제어면"을 하이브리드로 연결해, 로컬 데스크톱에서 시작해 향후 원격/클러스터 환경으로 자연스럽게 확장 가능한 파이프라인을 제공하는 데 있다.
 
@@ -42,7 +42,7 @@
 │ ┌──────────────────────────────┐     ┌───────────────────────────────┐ │
 │ │ K8s Controller (Colima / vz) │     │ Hardware Guardrail Monitor    │ │
 │ │ • MLflow (Experiment Track)  │     │ • RAM/CPU (sysinfo, Phase 1)  │ │
-│ │ • MinIO (Artifact Storage)   │     │ • Metal GPU (powermetrics,    │ │
+│ │ • SeaweedFS (Artifact Store) │     │ • Metal GPU (powermetrics,    │ │
 │ │ • Prefect Server (Scheduler) │     │   Phase 3 선택 기능·root 필요)│ │
 │ └──────────────────────────────┘     └───────────────────────────────┘ │
 └────────────────────────────────────┬────────────────────────────────────┘
@@ -62,13 +62,13 @@
 | 서비스 | 포트 | 비고 |
 | --- | --- | --- |
 | MLflow Tracking Server | **5001** | macOS AirPlay Receiver가 기본 5000번 포트를 점유하므로 5001로 포워딩 |
-| MinIO S3 API | **9000** | |
-| MinIO Console | **9001** | |
+| SeaweedFS S3 API | **8333** | |
+| SeaweedFS Filer UI | **8888** | |
 | 모델 서빙 엔드포인트 (`mlx_lm.server` / `llama-server`) | **8080** | 설정으로 변경 가능 |
 
 ### 3.2 K8s 채택 근거
 
-MLflow/MinIO/Prefect Server를 K8s(Colima + K3s VM) 위에 올리는 것은 이 세 컴포넌트만 놓고 보면 VM 오버헤드 대비 실익이 논쟁적일 수 있다(단순 `docker compose`로도 동일 스택을 띄울 수 있기 때문). 그럼에도 K8s를 채택하는 이유는 다음과 같다.
+MLflow/SeaweedFS/Prefect Server를 K8s(Colima + K3s VM) 위에 올리는 것은 이 세 컴포넌트만 놓고 보면 VM 오버헤드 대비 실익이 논쟁적일 수 있다(단순 `docker compose`로도 동일 스택을 띄울 수 있기 때문). 그럼에도 K8s를 채택하는 이유는 다음과 같다.
 
 1. **표준 매니페스트 기반 제어면**: Helm 차트/YAML 매니페스트로 MLOps 스택을 선언적으로 관리해, 클라우드 K8s 환경과 동일한 운영 경험과 재사용 가능한 설정을 제공한다.
 2. **원격/멀티노드 확장 대비**: 로컬 단일 노드로 시작하지만, 향후 원격 GPU 서버나 여러 Mac을 K3s 멀티노드 클러스터로 묶어 확장하는 경로를 처음부터 열어둔다. Docker Compose로는 이 확장 경로를 자연스럽게 얻기 어렵다.
@@ -87,7 +87,7 @@ MLflow/MinIO/Prefect Server를 K8s(Colima + K3s VM) 위에 올리는 것은 이 
 | **K8s Runtime** | **Colima (`vz` + `virtiofs`) + K3s** | macOS 네이티브 가상화로 RAM 오버헤드 최소화, 동적 메모리 할당 |
 | **Compute Engine** | **Apple MLX / `llama-server`** | 유니파이드 메모리 zero-copy 지원. PyTorch MPS 대비 토큰 처리 속도는 워크로드(모델 크기, 배치, 양자화)에 따라 상이하며, 구체적 수치는 자체 벤치마크로 검증 예정 |
 | **Pipeline & MLOps** | **MLflow + Prefect** | Kubeflow 대비 가볍고(RAM 약 1~2GB), Prefect Host Worker로 호스트 MLX 제어가 매끄러움 |
-| **Storage** | **MinIO** | S3 호환 로컬 오브젝트 스토리지를 파드로 올려 데이터셋 및 모델 아티팩트 관리 |
+| **Storage** | **SeaweedFS** | S3 호환 + 단일 바이너리 경량 구동(master/volume/filer/S3 일체형)으로 파드로 올려 데이터셋 및 모델 아티팩트 관리 |
 
 ---
 
@@ -142,7 +142,7 @@ Mac mini, Mac Studio뿐만 아니라 **MacBook Air/Pro 라인업** 지원을 위
 [Phase 1: MVP Core Engine]
 ├── Tauri v2 백엔드 및 Colima (vz) 원클릭 라이프사이클 제어
 ├── macOS RAM/CPU 모니터링 데몬 구현 (sysinfo 기반)
-└── K8s 내 MLflow(5001) + MinIO(9000/9001) 1클릭 셋업 스크립트 구축
+└── K8s 내 MLflow(5001) + SeaweedFS(8333/8888) 1클릭 셋업 스크립트 구축
 
 [Phase 2: MLX Training & Hybrid Pipeline]
 ├── 호스트 MLX LoRA 파인튜닝 엔진 연동 (Python/MLX)

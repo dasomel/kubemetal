@@ -18,7 +18,7 @@ pub struct ClusterStatus {
     pub is_running: bool,
     pub kubernetes_active: bool,
     pub mlflow_ready: bool,
-    pub minio_ready: bool,
+    pub seaweedfs_ready: bool,
 }
 
 #[tauri::command]
@@ -38,7 +38,7 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
                 is_running: false,
                 kubernetes_active: false,
                 mlflow_ready: false,
-                minio_ready: false,
+                seaweedfs_ready: false,
             })
         }
     };
@@ -46,7 +46,7 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
     let is_running = raw.status.eq_ignore_ascii_case("running");
     let kubernetes_active = raw.kubernetes.map(|k| k.enabled).unwrap_or(false);
 
-    let (mlflow_ready, minio_ready) = if kubernetes_active {
+    let (mlflow_ready, seaweedfs_ready) = if kubernetes_active {
         let kubectl = resolve_cli_path("kubectl")?;
         let deploy_out = tokio::process::Command::new(&kubectl)
             .args(["--context", "colima", "get", "deploy", "-n", "default", "-o", "json"])
@@ -62,7 +62,7 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
                     && d["status"]["availableReplicas"].as_u64().unwrap_or(0) > 0
             })
         };
-        (is_ready("mlflow"), is_ready("minio"))
+        (is_ready("mlflow"), is_ready("seaweedfs"))
     } else {
         (false, false)
     };
@@ -71,7 +71,7 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
         is_running,
         kubernetes_active,
         mlflow_ready,
-        minio_ready,
+        seaweedfs_ready,
     })
 }
 

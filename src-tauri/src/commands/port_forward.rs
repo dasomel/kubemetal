@@ -12,8 +12,8 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
     let kubectl = resolve_cli_path("kubectl")?;
     let jobs: [(&str, &str, &str); 3] = [
         ("mlflow", "svc/mlflow", "5001:5000"),
-        ("minio", "svc/minio", "9000:9000"),
-        ("minio-console", "svc/minio", "9001:9001"),
+        ("seaweedfs-s3", "svc/seaweedfs", "8333:8333"),
+        ("seaweedfs-filer", "svc/seaweedfs", "8888:8888"),
     ];
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
     for (key, svc, ports) in jobs {

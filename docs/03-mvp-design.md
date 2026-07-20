@@ -12,7 +12,7 @@ kubemetal/
 │   ├── assets/
 │   ├── components/
 │   │   ├── dashboard/                # 시스템 자원(RAM/CPU) 및 Colima 상태 뷰
-│   │   ├── services/                 # MLflow / MinIO 원클릭 프로비저닝 UI
+│   │   ├── services/                 # MLflow / SeaweedFS 원클릭 프로비저닝 UI
 │   │   └── common/                   # 공통 UI 컴포넌트
 │   ├── hooks/                        # Tauri IPC 커스텀 훅 (useColima, useMetrics)
 │   ├── lib/                          # 순수 로직 (VM 리소스 추천 등)
@@ -27,7 +27,7 @@ kubemetal/
 │   │   │   ├── mod.rs
 │   │   │   ├── colima.rs             # Colima/K3s 클러스터 상태·시작·정지
 │   │   │   ├── metrics.rs            # macOS 시스템 자원(RAM/CPU) 측정
-│   │   │   └── provision.rs          # MLflow/MinIO/GPU 브리지 매니페스트 적용
+│   │   │   └── provision.rs          # MLflow/SeaweedFS/GPU 브리지 매니페스트 적용
 │   │   └── services/                 # CLI 래퍼 및 시스템 인터페이스
 │   │       ├── process.rs            # CLI 절대경로 탐색 + tokio 비동기 실행기
 │   │       └── sysinfo.rs            # sysinfo State 초기화 헬퍼
@@ -38,7 +38,7 @@ kubemetal/
 ├── scripts/                          # 로컬 인프라 스크립트 및 매니페스트
 │   └── k8s/
 │       ├── mlflow-deployment.yaml    # K8s 배포용 MLflow 서버
-│       ├── minio-deployment.yaml     # K8s 배포용 MinIO 스토리지
+│       ├── seaweedfs-deployment.yaml # K8s 배포용 SeaweedFS 스토리지
 │       └── mac-gpu-bridge.yaml       # 호스트 MLX 서빙으로의 ExternalName 별칭
 ├── package.json
 └── tsconfig.json
@@ -146,7 +146,7 @@ pub struct ClusterStatus {
     pub is_running: bool,
     pub kubernetes_active: bool,
     pub mlflow_ready: bool,
-    pub minio_ready: bool,
+    pub seaweedfs_ready: bool,
 }
 
 #[tauri::command]
@@ -169,7 +169,7 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
                 is_running: false,
                 kubernetes_active: false,
                 mlflow_ready: false,
-                minio_ready: false,
+                seaweedfs_ready: false,
             })
         }
     };
@@ -178,9 +178,9 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
     let kubernetes_active = raw.kubernetes.map(|k| k.enabled).unwrap_or(false);
 
     // kubernetes_active일 때만 배포 상태를 조회한다 (D3 정합: get_cluster_status가
-    // MLflow/MinIO 파드 헬스체크까지 리턴). kubectl get deploy -n default -o json을
+    // MLflow/SeaweedFS 파드 헬스체크까지 리턴). kubectl get deploy -n default -o json을
     // 파싱해 availableReplicas > 0 여부로 준비 상태를 판정하는 간단 스케치.
-    let (mlflow_ready, minio_ready) = if kubernetes_active {
+    let (mlflow_ready, seaweedfs_ready) = if kubernetes_active {
         let kubectl = resolve_cli_path("kubectl")?;
         let deploy_out = tokio::process::Command::new(&kubectl)
             .args(["--context", "colima", "get", "deploy", "-n", "default", "-o", "json"])
@@ -196,12 +196,12 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
                     && d["status"]["availableReplicas"].as_u64().unwrap_or(0) > 0
             })
         };
-        (is_ready("mlflow"), is_ready("minio"))
+        (is_ready("mlflow"), is_ready("seaweedfs"))
     } else {
         (false, false)
     };
 
-    Ok(ClusterStatus { is_running, kubernetes_active, mlflow_ready, minio_ready })
+    Ok(ClusterStatus { is_running, kubernetes_active, mlflow_ready, seaweedfs_ready })
 }
 
 #[tauri::command]
@@ -264,7 +264,7 @@ pub async fn stop_cluster() -> Result<String, String> {
 
 ### 2.1 포트포워드 매니저 (`src-tauri/src/commands/port_forward.rs`)
 
-FR-02.2의 MLflow(5001→5000)·MinIO(9000/9001) 포트포워딩은 `kubectl port-forward`를 앱이 관리하는 자식 프로세스로 spawn하고, `Child` 핸들을 `tauri::State`로 추적해 `stop_cluster`나 앱 종료 시 반드시 정리한다.
+FR-02.2의 MLflow(5001→5000)·SeaweedFS(8333/8888) 포트포워딩은 `kubectl port-forward`를 앱이 관리하는 자식 프로세스로 spawn하고, `Child` 핸들을 `tauri::State`로 추적해 `stop_cluster`나 앱 종료 시 반드시 정리한다.
 
 ```rust
 use std::collections::HashMap;
@@ -281,8 +281,8 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
     let kubectl = resolve_cli_path("kubectl")?;
     let jobs: [(&str, &str, &str); 3] = [
         ("mlflow", "svc/mlflow", "5001:5000"),
-        ("minio", "svc/minio", "9000:9000"),
-        ("minio-console", "svc/minio", "9001:9001"),
+        ("seaweedfs-s3", "svc/seaweedfs", "8333:8333"),
+        ("seaweedfs-filer", "svc/seaweedfs", "8888:8888"),
     ];
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
     for (key, svc, ports) in jobs {
@@ -353,7 +353,7 @@ use crate::services::process::resolve_cli_path;
 
 const MANIFESTS: [&str; 3] = [
     "scripts/k8s/mlflow-deployment.yaml",
-    "scripts/k8s/minio-deployment.yaml",
+    "scripts/k8s/seaweedfs-deployment.yaml",
     "scripts/k8s/mac-gpu-bridge.yaml",
 ];
 
@@ -381,7 +381,7 @@ pub async fn provision_mlops_stack(app: tauri::AppHandle) -> Result<String, Stri
         }
     }
 
-    Ok("MLflow / MinIO / GPU 브리지 매니페스트가 적용되었습니다.".into())
+    Ok("MLflow / SeaweedFS / GPU 브리지 매니페스트가 적용되었습니다.".into())
 }
 ```
 > `run_mlx_finetune`, `kill_mlx_process`는 명령 이름과 시그니처만 예약하고, 상세 구현은 Phase 이후 범위로 둔다. (D3)
@@ -472,7 +472,7 @@ export interface ClusterStatus {
   is_running: boolean;
   kubernetes_active: boolean;
   mlflow_ready: boolean;
-  minio_ready: boolean;
+  seaweedfs_ready: boolean;
 }
 
 export function useColima() {
@@ -615,7 +615,7 @@ export const ClusterControl: React.FC = () => {
 
 | ID | 결정 |
 |----|------|
-| D1 | 포트: MLflow 5001(호스트 포워딩, AirPlay가 5000 점유), MinIO Console 9001, S3 API 9000, 서빙 8080. |
+| D1 | 포트: MLflow 5001(호스트 포워딩, AirPlay가 5000 점유), SeaweedFS Filer UI 8888, S3 API 8333, 서빙 8080. |
 | D2 | Phase 1 메트릭 범위는 sysinfo 기반 RAM/CPU만. Metal GPU/`powermetrics`는 root 권한이 필요해 Phase 3 선택 기능이며 본 문서 구현 대상이 아니다. |
 | D3 | IPC 커맨드명 통일: `get_system_metrics`, `get_cluster_status`, `start_cluster{cpu,memory}`, `stop_cluster`, `provision_mlops_stack`, `start_port_forward`, `stop_port_forward`, `run_mlx_finetune`, `kill_mlx_process`(뒤 2개는 이름만 예약). |
 | D4 | UI의 CPU/메모리 하드코딩("6 CPU / 12GB") 제거 → `get_system_metrics`로 감지한 전체 RAM 기반 자동 산정(16GB→VM 4GB/2CPU, 32~48GB→8GB/4CPU, 64GB+→12GB/6CPU). |
@@ -628,7 +628,7 @@ export const ClusterControl: React.FC = () => {
 | D11 | OOM 가드(FR-05.2)는 "가용 RAM 비율" 기준이 아니라 macOS memory pressure 레벨(warn/critical) 기반으로 트리거한다(파일 캐시로 RAM은 상시 높게 점유). Phase 3 범위. |
 | D12 | 서빙 도구 표기는 mlx_lm.server(mlx-lm 패키지) 또는 llama-server — "mlx-serve"라는 도구는 존재하지 않는다. |
 
-**원본(`arch.md`) 대비 변경 요약**: `commands/provision.rs` 신설(D3), `lib.rs`의 `System` State 등록·`tauri-plugin-dialog` 플러그인 등록·들여쓰기 정정, `services/process.rs`에 `resolve_cli_path` 추가, `colima.rs`를 `get_cluster_status`/`start_cluster`/`stop_cluster`로 개명하며 JSON 파싱과 `tokio::process`로 전환, `metrics.rs`에 `State<Mutex<System>>` 도입, 프론트에 `useMetrics`·`recommendVmResources` 신설 및 `useColima`의 `alert()`를 dialog 플러그인으로 교체, `capabilities/default.json`에 `dialog:default` 권한 추가, `scripts/k8s/mac-gpu-bridge.yaml` 신설, `commands/port_forward.rs` 신설(D3) 및 `stop_cluster`/앱 종료 시 정리 로직 추가, `start_cluster`의 백엔드 clamp 도입, `get_cluster_status`에 `mlflow_ready`/`minio_ready` 확장.
+**원본(`arch.md`) 대비 변경 요약**: `commands/provision.rs` 신설(D3), `lib.rs`의 `System` State 등록·`tauri-plugin-dialog` 플러그인 등록·들여쓰기 정정, `services/process.rs`에 `resolve_cli_path` 추가, `colima.rs`를 `get_cluster_status`/`start_cluster`/`stop_cluster`로 개명하며 JSON 파싱과 `tokio::process`로 전환, `metrics.rs`에 `State<Mutex<System>>` 도입, 프론트에 `useMetrics`·`recommendVmResources` 신설 및 `useColima`의 `alert()`를 dialog 플러그인으로 교체, `capabilities/default.json`에 `dialog:default` 권한 추가, `scripts/k8s/mac-gpu-bridge.yaml` 신설, `commands/port_forward.rs` 신설(D3) 및 `stop_cluster`/앱 종료 시 정리 로직 추가, `start_cluster`의 백엔드 clamp 도입, `get_cluster_status`에 `mlflow_ready`/`seaweedfs_ready` 확장.
 
 ---
 
@@ -640,3 +640,4 @@ export const ClusterControl: React.FC = () => {
 2. **`colima status --json`의 필드 스키마**: `status`/`kubernetes.enabled` 외에 실제 출력이 더 중첩된 구조(예: `kubernetes` 하위의 추가 필드, 버전별 스키마 차이)를 가질 수 있어 `ColimaStatusRaw`가 실제 출력과 정확히 일치하는지 실기기 확인이 필요하다.
 3. **`resource_dir()`의 dev/번들 경로 차이**: `tauri dev` 실행 시와 `.app` 번들 실행 시 `resource_dir()`이 반환하는 실제 경로가 다를 수 있어, `scripts/k8s/` 매니페스트 탐색이 두 모드 모두에서 동작하는지 확인이 필요하다.
 4. **포트포워드 프로세스의 생존성**: `kubectl port-forward` 자식 프로세스가 macOS 슬립/네트워크 단절 후에도 자동 재연결되는지, 혹은 좀비 상태로 남아 `stop_port_forward`가 무의미해지는지 검증이 필요하다.
+5. **`chrislusf/seaweedfs:3.73` 이미지 태그 실존 및 S3 게이트웨이 동작**: 해당 태그가 실제 레지스트리에 존재하는지, `server -dir=/data -s3 -filer` 단일 프로세스 구성으로 기동 시 S3 API(8333)와 Filer UI(8888)가 정상 응답하는지 실기기 확인이 필요하다.
