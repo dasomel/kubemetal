@@ -24,6 +24,6 @@ pub fn get_system_metrics(state: State<'_, Mutex<System>>) -> Result<SystemMetri
         total_memory_gb: (total * 100.0).round() / 100.0,
         used_memory_gb: (used * 100.0).round() / 100.0,
         memory_usage_percentage: ((used / total * 100.0) as f32 * 10.0).round() / 10.0,
-        cpu_usage_percentage: (sys.global_cpu_info().cpu_usage() * 10.0).round() / 10.0,
+        cpu_usage_percentage: (sys.global_cpu_usage() * 10.0).round() / 10.0,
     })
 }
