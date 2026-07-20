@@ -1,6 +1,11 @@
 import React from 'react';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { useColima } from '../../hooks/useColima';
 import { Boxes, ExternalLink, RefreshCw, Zap, ArrowUpRight, Radio } from 'lucide-react';
+
+const openEndpoint = (url: string) => {
+  openUrl(url).catch(() => window.open(url, '_blank'));
+};
 
 export const ProvisionPanel: React.FC = () => {
   const {
@@ -18,16 +23,16 @@ export const ProvisionPanel: React.FC = () => {
   const seaweedfsReady = status?.seaweedfs_ready ?? false;
 
   return (
-    <div className="rounded-xl border border-default bg-surface p-6 shadow-card">
+    <div className="rounded-xl bg-surface p-6 shadow-panel">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-section text-primary flex items-center gap-2">
-          <Boxes className="w-5 h-5 text-accent" />
+        <h2 className="text-heading text-ink flex items-center gap-2">
+          <Boxes className="w-4 h-4 text-primary" />
           <span>MLOps 스택 프로비저닝 & 포트포워딩</span>
         </h2>
 
         <button
           onClick={() => refresh()}
-          className="p-1.5 rounded-md bg-surface-raised hover:bg-base text-secondary hover:text-primary border border-default transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          className="p-1.5 rounded-md bg-surfaceRaised hover:brightness-110 text-inkMuted hover:text-ink transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           title="상태 새로고침"
         >
           <RefreshCw className="w-4 h-4" />
@@ -37,48 +42,36 @@ export const ProvisionPanel: React.FC = () => {
       {/* 스택 준비 상태 목록 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
         {/* MLflow */}
-        <div className="p-4 rounded-lg bg-surface-raised border border-default flex items-center justify-between">
+        <div className="p-4 rounded-lg bg-surfaceRaised flex items-center justify-between">
           <div>
-            <div className="text-body-strong text-primary">MLflow Tracking</div>
-            <div className="text-caption text-secondary mt-0.5">Port 5001 (D1)</div>
+            <div className="text-bodyStrong text-ink">MLflow Tracking</div>
+            <div className="text-caption text-inkFaint mt-0.5">Port 5001</div>
           </div>
-          <span
-            className={`px-2 py-0.5 text-caption rounded-full font-medium border ${
-              mlflowReady
-                ? 'bg-success/10 text-success border-success/30'
-                : 'bg-base text-muted border-default'
-            }`}
-          >
-            {mlflowReady ? 'Ready' : 'Not Ready'}
-          </span>
+          <div className="flex items-center gap-1.5 text-caption text-inkMuted">
+            <span className={`w-2 h-2 rounded-full ${mlflowReady ? 'bg-success' : 'bg-inkFaint'}`} />
+            <span>{mlflowReady ? 'Ready' : 'Not Ready'}</span>
+          </div>
         </div>
 
         {/* SeaweedFS */}
-        <div className="p-4 rounded-lg bg-surface-raised border border-default flex items-center justify-between">
+        <div className="p-4 rounded-lg bg-surfaceRaised flex items-center justify-between">
           <div>
-            <div className="text-body-strong text-primary">SeaweedFS Storage</div>
-            <div className="text-caption text-secondary mt-0.5">Port 8333/8888</div>
+            <div className="text-bodyStrong text-ink">SeaweedFS Storage</div>
+            <div className="text-caption text-inkFaint mt-0.5">Port 8333/8888</div>
           </div>
-          <span
-            className={`px-2 py-0.5 text-caption rounded-full font-medium border ${
-              seaweedfsReady
-                ? 'bg-success/10 text-success border-success/30'
-                : 'bg-base text-muted border-default'
-            }`}
-          >
-            {seaweedfsReady ? 'Ready' : 'Not Ready'}
-          </span>
+          <div className="flex items-center gap-1.5 text-caption text-inkMuted">
+            <span className={`w-2 h-2 rounded-full ${seaweedfsReady ? 'bg-success' : 'bg-inkFaint'}`} />
+            <span>{seaweedfsReady ? 'Ready' : 'Not Ready'}</span>
+          </div>
         </div>
 
         {/* GPU Bridge */}
-        <div className="p-4 rounded-lg bg-surface-raised border border-default flex items-center justify-between">
+        <div className="p-4 rounded-lg bg-surfaceRaised flex items-center justify-between">
           <div>
-            <div className="text-body-strong text-primary">mac-gpu-bridge</div>
-            <div className="text-caption text-secondary mt-0.5">host.lima.internal (D10)</div>
+            <div className="text-bodyStrong text-ink">mac-gpu-bridge</div>
+            <div className="text-caption text-inkFaint mt-0.5">host.lima.internal</div>
           </div>
-          <span className="px-2 py-0.5 text-caption rounded-full font-medium bg-accent/10 text-accent border border-accent/20">
-            ExternalName
-          </span>
+          <span className="text-caption text-primary">ExternalName</span>
         </div>
       </div>
 
@@ -87,7 +80,7 @@ export const ProvisionPanel: React.FC = () => {
         <button
           onClick={() => provisionStack()}
           disabled={loading || !isRunning || !k8sActive}
-          className="py-2 px-4 bg-accent-strong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse font-semibold text-body rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           <Zap className="w-3.5 h-3.5" />
           <span>MLOps 스택 일괄 배포</span>
@@ -96,49 +89,47 @@ export const ProvisionPanel: React.FC = () => {
         <button
           onClick={() => startPortForward()}
           disabled={loading || !isRunning || !k8sActive}
-          className="py-2 px-4 bg-surface-raised hover:bg-base disabled:opacity-50 disabled:cursor-not-allowed text-primary font-medium text-body rounded-md border border-strong transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          className="py-2.5 px-4 bg-surfaceRaised hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-ink text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
-          <Radio className="w-3.5 h-3.5 text-accent" />
+          <Radio className="w-3.5 h-3.5 text-primary" />
           <span>포트포워딩 시작 (5001, 8333/8888)</span>
         </button>
 
         <button
           onClick={() => stopPortForward()}
           disabled={loading || !isRunning}
-          className="py-2 px-4 bg-surface-raised hover:bg-base disabled:opacity-50 disabled:cursor-not-allowed text-secondary font-medium text-body rounded-md border border-default transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+          className="py-2.5 px-4 bg-surfaceRaised hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inkMuted text-bodyStrong rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           포트포워딩 정지
         </button>
       </div>
 
       {/* 포트 바인딩 바로가기 가이드 */}
-      <div className="pt-4 border-t border-default">
-        <h3 className="text-caption text-secondary mb-2 flex items-center gap-1">
-          <ExternalLink className="w-3.5 h-3.5" /> 호스트 엔드포인트 바로가기 (D1 포트 규격)
+      <div className="pt-4 border-t border-hairline/8">
+        <h3 className="text-label uppercase text-inkFaint mb-2 flex items-center gap-1.5">
+          <ExternalLink className="w-3.5 h-3.5" /> 호스트 엔드포인트 바로가기
         </h3>
-        <div className="flex flex-wrap gap-2 text-body">
-          <a
-            href="http://localhost:5001"
-            target="_blank"
-            rel="noreferrer"
-            className="px-3 py-1.5 rounded-md bg-surface-raised hover:bg-base border border-default text-accent flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        <div className="flex flex-wrap gap-2 text-caption">
+          <button
+            type="button"
+            onClick={() => openEndpoint('http://localhost:5001')}
+            className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-110 text-primary flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             MLflow UI (http://localhost:5001)
             <ArrowUpRight className="w-3 h-3" />
-          </a>
-          <a
-            href="http://localhost:8888"
-            target="_blank"
-            rel="noreferrer"
-            className="px-3 py-1.5 rounded-md bg-surface-raised hover:bg-base border border-default text-accent flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          </button>
+          <button
+            type="button"
+            onClick={() => openEndpoint('http://localhost:8888')}
+            className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-110 text-primary flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             SeaweedFS Filer UI (http://localhost:8888)
             <ArrowUpRight className="w-3 h-3" />
-          </a>
-          <span className="px-3 py-1.5 rounded-md bg-surface-raised border border-default text-secondary">
+          </button>
+          <span className="px-3 py-1.5 rounded-md bg-surfaceRaised text-inkMuted">
             SeaweedFS S3 API (http://localhost:8333)
           </span>
-          <span className="px-3 py-1.5 rounded-md bg-surface-raised border border-default text-secondary">
+          <span className="px-3 py-1.5 rounded-md bg-surfaceRaised text-inkMuted">
             Model Serving (http://localhost:8080/v1)
           </span>
         </div>

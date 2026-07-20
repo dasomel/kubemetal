@@ -6,53 +6,27 @@ export default {
   ],
   theme: {
     extend: {
-      // design/tokens/design-tokens.json 과 1:1로 유지할 것.
+      // DESIGN.md(루트)와 1:1로 유지할 것. 변경 시 `npx @google/design.md export
+      // --format json-tailwind DESIGN.md`로 정합을 확인한다. DESIGN.md가 유일한 소스다.
       colors: {
-        base: '#0b0f16',
-        surface: '#131a26',
-        'surface-raised': '#1c2433',
-        primary: '#f4f7fb',
-        secondary: '#c7cedb',
-        muted: '#98a2b5',
+        primary: '#6d3fe0',
+        primaryStrong: '#5b2fc7',
         inverse: '#ffffff',
-        accent: { DEFAULT: '#5b93f5', strong: '#2f5fc4' },
-        success: { DEFAULT: '#3ddc97', strong: '#1f9d6b' },
-        warning: { DEFAULT: '#f5b642', strong: '#b9861f' },
-        danger: { DEFAULT: '#ff7a7a', strong: '#bf3939' },
-      },
-      backgroundColor: {
-        base: '#0b0f16',
-        surface: '#131a26',
-        'surface-raised': '#1c2433',
-        accent: { DEFAULT: '#5b93f5', strong: '#2f5fc4' },
-        success: { DEFAULT: '#3ddc97', strong: '#1f9d6b' },
-        warning: { DEFAULT: '#f5b642', strong: '#b9861f' },
-        danger: { DEFAULT: '#ff7a7a', strong: '#bf3939' },
-      },
-      textColor: {
-        primary: '#f4f7fb',
-        secondary: '#c7cedb',
-        muted: '#98a2b5',
-        inverse: '#ffffff',
-        accent: { DEFAULT: '#5b93f5', strong: '#2f5fc4' },
-        success: { DEFAULT: '#3ddc97', strong: '#1f9d6b' },
-        warning: { DEFAULT: '#f5b642', strong: '#b9861f' },
-        danger: { DEFAULT: '#ff7a7a', strong: '#bf3939' },
-      },
-      borderColor: {
-        DEFAULT: '#2b3444',
-        default: '#2b3444',
-        strong: '#5a6684',
-        accent: '#5b93f5',
-        success: '#3ddc97',
-        warning: '#f5b642',
-        danger: '#ff7a7a',
-      },
-      ringColor: {
-        DEFAULT: '#5b93f5',
-        accent: '#5b93f5',
+        base: '#fafafa',
+        surface: '#ffffff',
+        surfaceRaised: '#f4f4f5',
+        hairline: '#0f1115',
+        ink: '#23262b',
+        inkMuted: '#52565c',
+        inkFaint: '#686c73',
+        success: '#15803d',
+        warning: '#b45309',
+        danger: '#b91c1c',
+        dangerStrong: '#9b1c1c',
       },
       fontFamily: {
+        // display/heading/label/body/bodyStrong/caption은 DESIGN.md typography 토큰과
+        // 동일한 한국어 대응 산세리프 스택을 공유한다. sans는 body 기본값의 별칭.
         sans: [
           '-apple-system',
           'BlinkMacSystemFont',
@@ -69,13 +43,13 @@ export default {
         mono: ['"SF Mono"', '"JetBrains Mono"', 'ui-monospace', 'Menlo', 'monospace'],
       },
       fontSize: {
-        caption: ['12px', { lineHeight: '16px', fontWeight: '500' }],
+        display: ['22px', { lineHeight: '28px', letterSpacing: '-0.02em', fontWeight: '700' }],
+        heading: ['15px', { lineHeight: '20px', letterSpacing: '-0.01em', fontWeight: '600' }],
+        label: ['11px', { lineHeight: '14px', letterSpacing: '0.08em', fontWeight: '600' }],
         body: ['14px', { lineHeight: '20px', fontWeight: '400' }],
-        'body-strong': ['14px', { lineHeight: '20px', fontWeight: '600' }],
-        subtitle: ['16px', { lineHeight: '24px', fontWeight: '500' }],
-        section: ['20px', { lineHeight: '28px', fontWeight: '700' }],
-        title: ['24px', { lineHeight: '32px', fontWeight: '800' }],
-        metric: ['32px', { lineHeight: '40px', fontWeight: '700', letterSpacing: '-0.01em' }],
+        bodyStrong: ['14px', { lineHeight: '20px', fontWeight: '600' }],
+        caption: ['12px', { lineHeight: '16px', fontWeight: '500' }],
+        metric: ['34px', { lineHeight: '38px', letterSpacing: '-0.01em', fontWeight: '600' }],
       },
       borderRadius: {
         sm: '6px',
@@ -83,9 +57,18 @@ export default {
         lg: '12px',
         xl: '16px',
       },
+      spacing: {
+        xs: '4px',
+        sm: '8px',
+        md: '12px',
+        lg: '16px',
+        xl: '24px',
+        '2xl': '32px',
+        '3xl': '40px',
+      },
       boxShadow: {
-        card: '0 1px 2px rgba(0,0,0,0.4), 0 8px 24px -4px rgba(0,0,0,0.35)',
-        raised: '0 4px 16px -2px rgba(0,0,0,0.5)',
+        // DESIGN.md "Elevation & Depth" 참조: 표면은 밝기 차이로, 그림자는 최소한만.
+        panel: '0 1px 2px rgba(15,17,21,0.04), 0 10px 24px -10px rgba(15,17,21,0.12)',
       },
     },
   },

@@ -7,26 +7,26 @@ import { Shield, Sparkles } from 'lucide-react';
 
 export const App: React.FC = () => {
   return (
-    <div className="min-h-screen bg-base text-primary flex flex-col font-sans">
+    <div className="min-h-screen bg-base text-ink flex flex-col font-sans">
       <Header />
 
       <main className="flex-1 p-6 space-y-6 max-w-7xl w-full mx-auto">
         {/* 상단 안내 배너 */}
-        <div className="rounded-xl bg-surface border border-default p-4 flex items-center justify-between shadow-card">
+        <div className="rounded-xl bg-surface p-4 flex items-center justify-between shadow-panel">
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-md bg-accent/10 text-accent border border-accent/20">
+            <div className="p-2 rounded-md bg-surfaceRaised text-primary">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-subtitle text-primary">
+              <h2 className="text-heading text-ink">
                 Phase 1 MVP Hybrid MLOps Control Dashboard
               </h2>
-              <p className="text-caption text-secondary mt-0.5">
+              <p className="text-caption text-inkMuted mt-0.5">
                 K8s 컨트롤 플레인 (Colima vz VM)과 macOS 호스트 연동 스택을 한눈에 제어합니다.
               </p>
             </div>
           </div>
-          <div className="hidden sm:flex items-center gap-2 text-caption text-secondary bg-surface-raised px-3 py-1.5 rounded-md border border-default">
+          <div className="hidden sm:flex items-center gap-2 text-caption text-inkMuted bg-surfaceRaised px-3 py-1.5 rounded-md">
             <Shield className="w-3.5 h-3.5 text-success" />
             <span>Apple Silicon Metal Safe</span>
           </div>
@@ -42,7 +42,7 @@ export const App: React.FC = () => {
         <ProvisionPanel />
       </main>
 
-      <footer className="border-t border-default py-3 px-6 text-center text-caption text-muted">
+      <footer className="border-t border-hairline/8 py-3 px-6 text-center text-caption text-inkFaint">
         KubeMetal &copy; 2026 — Apple Silicon Hybrid MLOps Architecture
       </footer>
     </div>

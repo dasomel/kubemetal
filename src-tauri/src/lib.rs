@@ -13,6 +13,7 @@ use commands::provision::provision_mlops_stack;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(System::new_all()))
         .manage(PortForwardState::default())
         .invoke_handler(tauri::generate_handler![

@@ -2,13 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 폰트/색상 값은 design/tokens/design-tokens.json 및 tailwind.config.js 시맨틱 토큰과 동일하게 유지할 것 */
+/* 색상/타이포 값은 DESIGN.md(루트) 및 tailwind.config.js 시맨틱 토큰과 동일하게 유지할 것.
+   이 파일은 DESIGN.md 토큰 정의를 그대로 옮기는 예외 위치이므로 raw hex 사용이 허용된다. */
 body {
   margin: 0;
-  background-color: #0b0f16;
-  color: #f4f7fb;
+  background-color: #fafafa;
+  color: #23262b;
   font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', Pretendard,
     'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background-color: rgba(109, 63, 224, 0.18);
+  color: #23262b;
+}
+
+* {
+  scrollbar-color: rgba(15, 17, 21, 0.16) transparent;
+  scrollbar-width: thin;
 }
