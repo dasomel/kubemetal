@@ -44,6 +44,30 @@ plus a Mistakes Log entry if the change was driven by a defect.
   `host.lima.internal` is an UNVERIFIED assumption — verify on real hardware before
   building on it.
 
+## Agent Team Harness (agy-first)
+
+Substantive tasks run as a team per the global `<team>`/`<agy_cli>` doctrine — the session
+model orchestrates, worker lanes execute. **agy is the primary worker**; native subagents
+complement where structured tools (Read/Edit/Grep), OMC skills, or in-session coordination
+are needed.
+
+| Lane | Scope (disjoint — do not cross) | Worker |
+|------|--------------------------------|--------|
+| `rust-backend` | `src-tauri/**`, `scripts/k8s/**`, `Cargo.toml`, `tauri.conf.json`, `capabilities/` | agy (primary) |
+| `frontend` | `src/**`, `package.json`, `tsconfig.json`, `vite.config.ts`, `index.html` | agy (primary) |
+| `qa/verify` | `cargo check`/`clippy`, `tsc --noEmit`, doc↔code sync (D1–D12, IPC names) | native subagent (verifier / code-reviewer) |
+
+Rules:
+- agy invocations: `agy -p "<self-contained prompt>" --print-timeout 10m`, output summary
+  to `.omc/logs/agy-<lane>-result.md`; stdout → `.omc/logs/agy-<lane>.log` (never into
+  main context). Model rotation on quota exhaustion + failure ladder per global `<agy_cli>`.
+- Max 5 concurrent workers (agy + subagents combined). Lanes own disjoint paths; use
+  worktree isolation if scopes must overlap.
+- Every lane prompt cites `docs/02-requirements.md` §4.1 (IPC names) and
+  `docs/03-mvp-design.md` §4 (D1–D12) as binding constraints.
+- Authoring and verification are ALWAYS separate lanes — an agy lane's self-reported
+  success is not evidence; the qa lane (or orchestrator) re-runs the checks.
+
 ## Plan Mode Guide
 
 Use Plan mode for: new IPC commands or FR-level features, changes to the D1–D10 registry,
@@ -147,3 +171,4 @@ Type-check passing ≠ feature working: UI/IPC changes must be verified in the r
 |------|--------|--------|
 | 2026-07-20 | Initial guide, modeled on `idp/` workspace guidelines (Mistakes Log, Permissions, local-commit policy); Mistakes Log seeded with 10 defects found in the draft-doc review | Establish project guidelines before Phase 1 implementation |
 | 2026-07-20 | Aligned decision IDs to the canonical registry (ExternalName→D10, memory pressure→D11, serving tool→D12); bridge invariant now pins service name/namespace; added port-forward IPC commands | Independent plan review (critic) found 2 blockers: D-number collision + ExternalName triple mismatch |
+| 2026-07-20 | Added "Agent Team Harness (agy-first)" — lane table (rust-backend / frontend / qa), agy invocation + logging convention, disjoint-scope and separate-verification rules | User directive: run implementation as a team with aggressive agy utilization |
