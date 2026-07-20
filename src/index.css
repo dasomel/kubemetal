@@ -2,10 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 폰트/색상 값은 design/tokens/design-tokens.json 및 tailwind.config.js 시맨틱 토큰과 동일하게 유지할 것 */
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display',
-    'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: #0b0f16;
+  color: #f4f7fb;
+  font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', Pretendard,
+    'SF Pro Text', 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

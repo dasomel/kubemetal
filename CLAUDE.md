@@ -89,6 +89,24 @@ Use oh-my-claudecode components deliberately, not reflexively:
 - **Knowledge**: defects go to the Mistakes Log (canonical); broader learnings that
   outgrow it go to `wiki` / project-memory.
 
+## UI Design Rules
+
+- **Design source of truth**: `design/tokens/design-tokens.json` (DTCG-style) mapped 1:1
+  into `tailwind.config.js` semantic names. Components use semantic classes ONLY
+  (`bg-surface`, `text-secondary`, …) — raw hex values and default-palette classes
+  (`slate-*` etc.) in components are forbidden; that's how token drift and hallucinated
+  values are prevented.
+- **Modular design docs** live in `design/tokens/` (`colors.md`, `typography.md`,
+  `spacing.md`) — load only the file the task needs, not the whole set.
+- **Readability first**: body text contrast ≥ WCAG AA (4.5:1); metric numbers use
+  `tabular-nums`; status is never color-only (badge text alongside color).
+- **UI verification**: a UI change is done only after visual confirmation in the running
+  app (`pnpm tauri dev`) or vite preview — tsc/build passing is not evidence
+  (see `<context_and_evidence>`).
+- **UI authoring lane**: `designer` agent (or frontend-design skill) with the token files
+  as binding constraints; token changes require updating JSON + tailwind mapping + the
+  affected `design/tokens/*.md` together.
+
 ## Plan Mode Guide
 
 Use Plan mode for: new IPC commands or FR-level features, changes to the D1–D10 registry,
@@ -200,3 +218,4 @@ Type-check passing ≠ feature working: UI/IPC changes must be verified in the r
 | 2026-07-20 | Added "Agent Team Harness (agy-first)" — lane table (rust-backend / frontend / qa), agy invocation + logging convention, disjoint-scope and separate-verification rules | User directive: run implementation as a team with aggressive agy utilization |
 | 2026-07-20 | Added "OMC plugin utilization" — default lanes, ultraqa/verify for QA, trace/debugger, deepinit at phase boundaries, omc-teams as agy runtime option, autonomous modes keyword-only | User directive: review active OMC plugin utilization |
 | 2026-07-20 | Object storage MinIO → SeaweedFS; D1 amended (S3 8333, Filer UI 8888 replace 9000/9001); synced across code, manifests, and all three docs | User decision |
+| 2026-07-20 | Added "UI Design Rules" — DTCG token file + tailwind semantic mapping as source of truth, modular design docs, WCAG AA floor, visual-verification gate, designer lane | User directive: adopt token/rules-based design system, improve readability |
