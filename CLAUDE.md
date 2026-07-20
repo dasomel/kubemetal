@@ -68,6 +68,25 @@ Rules:
 - Authoring and verification are ALWAYS separate lanes — an agy lane's self-reported
   success is not evidence; the qa lane (or orchestrator) re-runs the checks.
 
+### OMC plugin utilization
+
+Use oh-my-claudecode components deliberately, not reflexively:
+
+- **Default lanes** (already the harness default): `executor` (implementation),
+  `critic` (plan/design review, opus), `verifier`/`code-reviewer` (qa lane).
+- **QA cycling**: once the app builds, `ultraqa` drives test→verify→fix loops;
+  `verify` gates any "done" claim (evidence before assertions).
+- **Debugging**: `trace`/`tracer` (competing-hypotheses causal tracing) for
+  cross-module root-cause; `debugger` for build/compile errors.
+- **Docs**: run `deepinit` after the `src/` + `src-tauri/` skeletons land to generate
+  hierarchical AGENTS.md; refresh at phase boundaries, not per-commit.
+- **agy runtime option**: `omc-teams` can host agy (antigravity) workers in tmux panes
+  when a lane needs live monitoring; detached `agy -p` + log files stays the default.
+- **Autonomous modes** (`autopilot`/`ralph`/`ultrawork`): keyword-triggered only —
+  they overlap with this harness's team loop, so don't auto-invoke them.
+- **Knowledge**: defects go to the Mistakes Log (canonical); broader learnings that
+  outgrow it go to `wiki` / project-memory.
+
 ## Plan Mode Guide
 
 Use Plan mode for: new IPC commands or FR-level features, changes to the D1–D10 registry,
@@ -172,3 +191,4 @@ Type-check passing ≠ feature working: UI/IPC changes must be verified in the r
 | 2026-07-20 | Initial guide, modeled on `idp/` workspace guidelines (Mistakes Log, Permissions, local-commit policy); Mistakes Log seeded with 10 defects found in the draft-doc review | Establish project guidelines before Phase 1 implementation |
 | 2026-07-20 | Aligned decision IDs to the canonical registry (ExternalName→D10, memory pressure→D11, serving tool→D12); bridge invariant now pins service name/namespace; added port-forward IPC commands | Independent plan review (critic) found 2 blockers: D-number collision + ExternalName triple mismatch |
 | 2026-07-20 | Added "Agent Team Harness (agy-first)" — lane table (rust-backend / frontend / qa), agy invocation + logging convention, disjoint-scope and separate-verification rules | User directive: run implementation as a team with aggressive agy utilization |
+| 2026-07-20 | Added "OMC plugin utilization" — default lanes, ultraqa/verify for QA, trace/debugger, deepinit at phase boundaries, omc-teams as agy runtime option, autonomous modes keyword-only | User directive: review active OMC plugin utilization |
