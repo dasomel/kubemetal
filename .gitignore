@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Node
+node_modules/
+dist/
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Claude Code / OMC operational state (committable exception: .omc/skills/)
+.omc/*
+!.omc/skills/
+.claude/session-summary.md
+.claude/_workspace/
+
+# Env / secrets
+.env
+.env.*
