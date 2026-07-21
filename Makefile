@@ -57,8 +57,9 @@ forward: ## 포트포워딩 시작 (5001 MLflow / 8333 S3 / 8888 Filer, nohup �
 	  curl -s -o /dev/null -m 3 -w "localhost:$$p -> HTTP %{http_code}\n" http://localhost:$$p/ || true; \
 	done
 
-forward-stop: ## 포트포워딩 프로세스 종료
-	-pkill -f "kubectl --context colima -n default port-forward"
+forward-stop: ## 포트포워딩 프로세스 종료 (mlflow/seaweedfs 대상만, 인자 순서 무관)
+	-pkill -f "port-forward.*svc/mlflow"
+	-pkill -f "port-forward.*svc/seaweedfs"
 
 status: ## 클러스터·파드 상태 요약
 	-colima status --json
