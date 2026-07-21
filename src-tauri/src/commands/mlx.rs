@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Mutex;
 
@@ -99,11 +99,19 @@ fn venv_pip() -> Result<PathBuf, String> {
 /// `model_path`/`data_path`처럼 프론트에서 넘어온 절대경로 문자열을 검증한다.
 /// `canonicalize()`가 존재 검증과 `..`/심볼릭 링크 정규화를 동시에 수행하므로,
 /// 정규화된 경로가 홈 디렉터리 하위인지만 재확인하면 된다(safe 원칙).
+/// 선행 `~`는 셸이 아닌 앱 입력이라 확장되지 않은 채 도달하므로 여기서 HOME으로 치환한다.
 fn validate_home_subpath(p: &str) -> Result<PathBuf, String> {
     let home = home_dir()?
         .canonicalize()
         .map_err(|e| format!("HOME 경로 확인 실패: {e}"))?;
-    let canonical = Path::new(p)
+    let expanded: PathBuf = if p == "~" {
+        home.clone()
+    } else if let Some(rest) = p.strip_prefix("~/") {
+        home.join(rest)
+    } else {
+        PathBuf::from(p)
+    };
+    let canonical = expanded
         .canonicalize()
         .map_err(|e| format!("경로를 찾을 수 없습니다: {p} ({e})"))?;
     if !canonical.starts_with(&home) {
@@ -679,6 +687,15 @@ pub async fn stop_model_serving(state: State<'_, MlxState>) -> Result<String, St
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn validate_home_subpath_expands_tilde() {
+        // "~"와 "~/..."가 HOME 기준으로 확장되어 검증을 통과해야 한다.
+        let home = super::validate_home_subpath("~").expect("~ 확장 실패");
+        assert!(home.ends_with(std::env::var("HOME").unwrap().trim_start_matches('/')));
+        // 존재가 보장되는 홈 하위 경로로 확장 검증 (~/. == 홈 자신)
+        assert!(super::validate_home_subpath("~/.").is_ok());
+    }
+
     use super::*;
 
     #[test]
