@@ -3,9 +3,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
 import type { MlxEnvStatus, MlxStatus, FineTuneConfig, LocalModel, GuardrailStatus } from '../types/ipc';
 
+// 모듈 레벨 캐시 — 탭을 벗어났다 재진입해도 이미 확인된 MLX 환경 상태를 재사용해
+// 불필요한 재확인 호출을 피한다. 환경 설치가 완료됐을 때만(useMlx 내부에서) 갱신한다.
+let cachedEnvStatus: MlxEnvStatus | null = null;
+let hasCachedEnvStatus = false;
+
 export function useMlx() {
-  const [envStatus, setEnvStatus] = useState<MlxEnvStatus | null>(null);
-  const [checkingEnv, setCheckingEnv] = useState(false);
+  const [envStatus, setEnvStatus] = useState<MlxEnvStatus | null>(cachedEnvStatus);
+  const [checkingEnv, setCheckingEnv] = useState(!hasCachedEnvStatus);
   const [settingUpEnv, setSettingUpEnv] = useState(false);
   const [mlxStatus, setMlxStatus] = useState<MlxStatus | null>(null);
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
@@ -24,6 +29,8 @@ export function useMlx() {
     setCheckingEnv(true);
     try {
       const res = await invoke<MlxEnvStatus>('check_mlx_env');
+      cachedEnvStatus = res;
+      hasCachedEnvStatus = true;
       setEnvStatus(res);
     } catch (err) {
       console.error('MLX 환경 확인 오류:', err);
@@ -173,7 +180,10 @@ export function useMlx() {
   }, [fetchStatus, fetchGuardrailStatus]);
 
   useEffect(() => {
-    checkEnv();
+    // 이미 캐시된 환경 상태가 있으면(예: 탭 재진입) 재확인하지 않는다.
+    if (!hasCachedEnvStatus) {
+      checkEnv();
+    }
     fetchStatus();
     fetchLocalModels();
   }, [checkEnv, fetchStatus, fetchLocalModels]);
@@ -190,10 +200,12 @@ export function useMlx() {
     return () => clearInterval(interval);
   }, [shouldPoll, fetchStatus]);
 
-  // 환경 설치가 완료되면 환경 상태와 로컬 모델 목록을 다시 확인한다.
+  // 환경 설치가 "완료"(done)됐을 때만 캐시를 무효화하고 환경 상태를 다시 확인한다.
+  // (설치 실패/error는 환경이 바뀌지 않았으므로 캐시를 건드리지 않는다.)
   useEffect(() => {
     const state = mlxStatus?.env_setup?.state;
-    if (prevEnvStateRef.current === 'installing' && state !== 'installing') {
+    if (prevEnvStateRef.current === 'installing' && state === 'done') {
+      hasCachedEnvStatus = false;
       checkEnv();
     }
     prevEnvStateRef.current = state;

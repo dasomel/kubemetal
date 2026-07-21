@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Rocket, Loader2, Play, Square, ArrowUpRight, AlertTriangle } from 'lucide-react';
 import type { LocalModel, MlxServingState } from '../../types/ipc';
@@ -36,6 +37,7 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
   const [adapterPath, setAdapterPath] = useState('');
   const [port, setPort] = useState(8080);
   const prefilledRef = useRef(false);
+  const portEditedRef = useRef(false);
 
   // 파인튜닝 결과 어댑터 경로가 새로 생기면 비어 있는 어댑터 입력을 한 번만 채운다.
   // (베이스 모델 칸은 항상 로컬 베이스 모델 선택을 유지한다.)
@@ -45,6 +47,24 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
       prefilledRef.current = true;
     }
   }, [adapterPathHint, adapterPath]);
+
+  // 마운트 시 1회 빈 포트를 제안받아 초기값으로 설정한다. 사용자가 그 사이 포트를
+  // 직접 변경했다면(portEditedRef) 존중하고 덮어쓰지 않는다. 실패 시 기존 기본값(8080) 유지.
+  useEffect(() => {
+    let cancelled = false;
+    invoke<number>('suggest_serving_port')
+      .then((suggested) => {
+        if (!cancelled && !portEditedRef.current) {
+          setPort(suggested);
+        }
+      })
+      .catch(() => {
+        // 제안 실패 — 기본값 8080을 그대로 유지한다.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,7 +126,10 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
             min={1}
             max={65535}
             value={port}
-            onChange={(e) => setPort(Number(e.target.value))}
+            onChange={(e) => {
+              portEditedRef.current = true;
+              setPort(Number(e.target.value));
+            }}
             disabled={!!serving}
             className={inputClass}
           />
@@ -145,12 +168,15 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
           </div>
           <button
             type="button"
-            onClick={() => openEndpoint(`http://127.0.0.1:${serving.port}/v1`)}
+            onClick={() => openEndpoint(`http://127.0.0.1:${serving.port}/v1/models`)}
             className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-primary text-caption flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             {`http://127.0.0.1:${serving.port}/v1`}
             <ArrowUpRight className="w-3 h-3" />
           </button>
+          <div className="text-caption text-inkFaint mt-1.5">
+            OpenAI 호환 base URL — 클릭 시 모델 목록으로 동작 확인
+          </div>
         </div>
       )}
     </div>

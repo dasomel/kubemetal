@@ -239,7 +239,8 @@ export const PipelineView: React.FC = () => {
         dot: 'success',
         statusText: `기동됨 (PID ${serving.pid}, 포트 ${serving.port})`,
         detail: serving.model_path,
-        link: { label: `http://127.0.0.1:${serving.port}/v1`, url: `http://127.0.0.1:${serving.port}/v1` },
+        link: { label: `http://127.0.0.1:${serving.port}/v1`, url: `http://127.0.0.1:${serving.port}/v1/models` },
+        hint: 'OpenAI 호환 base URL — 클릭 시 모델 목록으로 동작 확인',
       }
     : {
         key: 'serve',

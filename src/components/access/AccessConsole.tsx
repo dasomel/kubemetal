@@ -17,6 +17,10 @@ const SERVICE_ICON: Record<string, React.ElementType> = {
 
 const MASK = '••••••••••';
 
+// 이 3종만 대시보드 포트포워딩으로 접근성이 회복된다 — Model Serving은 MLX 스튜디오
+// 탭에서 서빙을 시작해야 하므로 별도의 credential_hint(백엔드가 채움)로 안내한다.
+const FORWARDING_SERVICES = new Set(['MLflow', 'SeaweedFS S3 API', 'SeaweedFS Filer UI']);
+
 const isSecretKey = (key: string) => key.toLowerCase().includes('secret');
 
 const CredentialRow: React.FC<{ item: CredentialItem }> = ({ item }) => {
@@ -50,6 +54,11 @@ const CredentialRow: React.FC<{ item: CredentialItem }> = ({ item }) => {
 const ServiceCard: React.FC<{ service: ServiceAccess }> = ({ service }) => {
   const Icon = SERVICE_ICON[service.service] ?? Database;
   const isOk = service.health === 'ok';
+  const isServing = service.service === 'Model Serving';
+  // Model Serving의 url은 OpenAI 호환 base URL(.../v1)이다 — 루트엔 라우트가 없어
+  // 그대로 열면 빈 화면만 보이므로, 표시 텍스트는 base URL을 유지하되 클릭 시에는
+  // 모델 목록이 응답하는 /v1/models로 이동시켜 살아있음을 눈으로 확인할 수 있게 한다.
+  const clickUrl = isServing && service.url ? `${service.url}/models` : service.url;
 
   return (
     <div className="rounded-xl bg-surface p-5 shadow-panel">
@@ -61,7 +70,7 @@ const ServiceCard: React.FC<{ service: ServiceAccess }> = ({ service }) => {
       <div className="flex items-center gap-1.5 text-caption text-inkMuted mb-2">
         <span className={`w-2 h-2 rounded-full shrink-0 ${isOk ? 'bg-success' : 'bg-danger'}`} />
         <span>{isOk ? '정상' : '연결 불가'}</span>
-        <span className="text-inkFaint truncate">· {service.url}</span>
+        {service.url && <span className="text-inkFaint truncate">· {service.url}</span>}
       </div>
 
       {service.credential_hint && (
@@ -76,16 +85,24 @@ const ServiceCard: React.FC<{ service: ServiceAccess }> = ({ service }) => {
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => openEndpoint(service.url)}
-        className="px-2.5 py-1 rounded-md bg-surfaceRaised hover:brightness-95 text-primary text-caption flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      >
-        원클릭 접근
-        <ArrowUpRight className="w-3 h-3" />
-      </button>
+      {service.url && (
+        <button
+          type="button"
+          onClick={() => openEndpoint(clickUrl)}
+          className="px-2.5 py-1 rounded-md bg-surfaceRaised hover:brightness-95 text-primary text-caption flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          원클릭 접근
+          <ArrowUpRight className="w-3 h-3" />
+        </button>
+      )}
 
-      {!isOk && (
+      {isServing && service.url && (
+        <div className="text-caption text-inkFaint mt-1.5">
+          OpenAI 호환 base URL — 클릭 시 모델 목록으로 동작 확인
+        </div>
+      )}
+
+      {!isOk && FORWARDING_SERVICES.has(service.service) && (
         <div className="text-caption text-inkFaint mt-2 pt-2 border-t border-hairline/8">
           대시보드에서 포트포워딩 시작
         </div>

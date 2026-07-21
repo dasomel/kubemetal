@@ -13,7 +13,7 @@ use commands::guardrails::{
 use commands::metrics::get_system_metrics;
 use commands::mlx::{
     check_mlx_env, get_mlx_status, kill_mlx_process, run_mlx_finetune, setup_mlx_env,
-    start_model_serving, stop_model_serving, MlxState,
+    start_model_serving, stop_model_serving, suggest_serving_port, MlxState,
 };
 use commands::modelhub::{
     download_hf_model, get_model_downloads, list_local_models, list_registered_models,
@@ -54,6 +54,7 @@ pub fn run() {
             kill_mlx_process,
             start_model_serving,
             stop_model_serving,
+            suggest_serving_port,
             get_service_access,
             get_guardrail_status,
             set_guardrail_config,

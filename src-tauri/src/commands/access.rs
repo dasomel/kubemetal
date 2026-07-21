@@ -1,7 +1,9 @@
 use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use serde::Serialize;
+use tauri::State;
 
+use crate::commands::mlx::MlxState;
 use crate::services::process::external_command;
 
 #[derive(Debug, Clone, Serialize)]
@@ -125,19 +127,41 @@ async fn fetch_seaweedfs_credentials() -> (Vec<CredentialItem>, Option<String>) 
 }
 
 #[tauri::command]
-pub async fn get_service_access() -> Result<Vec<ServiceAccess>, String> {
+pub async fn get_service_access(state: State<'_, MlxState>) -> Result<Vec<ServiceAccess>, String> {
     const MLFLOW_URL: &str = "http://localhost:5001";
     const S3_URL: &str = "http://localhost:8333";
     const FILER_URL: &str = "http://localhost:8888";
-    const SERVING_URL: &str = "http://127.0.0.1:8080/v1";
 
-    let (mlflow_health, s3_health, filer_health, serving_health, (s3_credentials, s3_hint)) = tokio::join!(
+    // Model Serving 포트는 고정값이 아니라 실제 기동된 서빙 프로세스의 포트를 따른다
+    // (사용자가 서빙 시작 시 임의의 빈 포트를 지정할 수 있으므로).
+    let serving_port = {
+        let guard = state.serving.lock().map_err(|e| e.to_string())?;
+        guard.as_ref().map(|s| s.port)
+    };
+
+    let (mlflow_health, s3_health, filer_health, (s3_credentials, s3_hint)) = tokio::join!(
         check_health(MLFLOW_URL),
         check_health(S3_URL),
         check_health(FILER_URL),
-        check_serving_health(SERVING_URL),
         fetch_seaweedfs_credentials(),
     );
+
+    let (serving_url, serving_health, serving_hint) = match serving_port {
+        Some(port) => {
+            let base_url = format!("http://127.0.0.1:{port}/v1");
+            let health = check_serving_health(&base_url).await;
+            (
+                base_url,
+                health,
+                Some("OpenAI 호환 API — API 키가 필요하지 않습니다.".to_string()),
+            )
+        }
+        None => (
+            String::new(),
+            "unreachable".to_string(),
+            Some("서빙이 실행 중이 아닙니다 — MLX 스튜디오 탭에서 서빙을 시작하세요.".to_string()),
+        ),
+    };
 
     Ok(vec![
         ServiceAccess {
@@ -163,9 +187,9 @@ pub async fn get_service_access() -> Result<Vec<ServiceAccess>, String> {
         },
         ServiceAccess {
             service: "Model Serving".into(),
-            url: SERVING_URL.into(),
+            url: serving_url,
             health: serving_health,
-            credential_hint: Some("OpenAI 호환 API — API 키가 필요하지 않습니다.".into()),
+            credential_hint: serving_hint,
             credentials: Vec::new(),
         },
     ])

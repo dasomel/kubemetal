@@ -10,9 +10,34 @@ interface MlxEnvCardProps {
   onSetup: () => void;
 }
 
+const StatusRow: React.FC<{ checking: boolean; ok?: boolean; readyLabel: string; notReadyLabel: string }> = ({
+  checking,
+  ok,
+  readyLabel,
+  notReadyLabel,
+}) => {
+  if (checking) {
+    return (
+      <div className="flex items-center gap-1.5 text-caption text-inkFaint">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        <span>확인 중…</span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5 text-caption text-inkMuted">
+      <span className={`w-2 h-2 rounded-full ${ok ? 'bg-success' : 'bg-inkFaint'}`} />
+      <span>{ok ? readyLabel : notReadyLabel}</span>
+    </div>
+  );
+};
+
 export const MlxEnvCard: React.FC<MlxEnvCardProps> = ({ envStatus, envSetup, checkingEnv, settingUp, onSetup }) => {
   const installing = settingUp || envSetup?.state === 'installing';
   const ready = envStatus?.venv_exists && envStatus?.mlx_lm_installed;
+  // 최초 확인 전/중에는 envStatus가 아직 없거나 checkingEnv가 true다 — 이때는 "확인 필요"
+  // 대신 "확인 중…"을 노출해 미확인 상태를 오확인 상태처럼 보이지 않게 한다.
+  const checking = checkingEnv || !envStatus;
 
   return (
     <div className="rounded-xl bg-surface p-6 shadow-panel">
@@ -27,30 +52,22 @@ export const MlxEnvCard: React.FC<MlxEnvCardProps> = ({ envStatus, envSetup, che
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
         <div className="p-4 rounded-lg bg-surfaceRaised">
           <div className="text-bodyStrong text-ink mb-2">Python 3</div>
-          <div className="flex items-center gap-1.5 text-caption text-inkMuted">
-            <span className={`w-2 h-2 rounded-full ${envStatus?.python_ok ? 'bg-success' : 'bg-inkFaint'}`} />
-            <span>{envStatus?.python_ok ? '사용 가능' : '확인 필요'}</span>
-          </div>
+          <StatusRow checking={checking} ok={envStatus?.python_ok} readyLabel="사용 가능" notReadyLabel="확인 필요" />
         </div>
 
         <div className="p-4 rounded-lg bg-surfaceRaised">
           <div className="text-bodyStrong text-ink mb-2">가상환경 (venv)</div>
-          <div className="flex items-center gap-1.5 text-caption text-inkMuted">
-            <span className={`w-2 h-2 rounded-full ${envStatus?.venv_exists ? 'bg-success' : 'bg-inkFaint'}`} />
-            <span>{envStatus?.venv_exists ? '생성됨' : '미생성'}</span>
-          </div>
+          <StatusRow checking={checking} ok={envStatus?.venv_exists} readyLabel="생성됨" notReadyLabel="미생성" />
         </div>
 
         <div className="p-4 rounded-lg bg-surfaceRaised">
           <div className="text-bodyStrong text-ink mb-2">mlx-lm</div>
-          <div className="flex items-center gap-1.5 text-caption text-inkMuted">
-            <span className={`w-2 h-2 rounded-full ${envStatus?.mlx_lm_installed ? 'bg-success' : 'bg-inkFaint'}`} />
-            <span>
-              {envStatus?.mlx_lm_installed
-                ? `설치됨${envStatus.mlx_lm_version ? ` · v${envStatus.mlx_lm_version}` : ''}`
-                : '미설치'}
-            </span>
-          </div>
+          <StatusRow
+            checking={checking}
+            ok={envStatus?.mlx_lm_installed}
+            readyLabel={`설치됨${envStatus?.mlx_lm_version ? ` · v${envStatus.mlx_lm_version}` : ''}`}
+            notReadyLabel="미설치"
+          />
         </div>
       </div>
 

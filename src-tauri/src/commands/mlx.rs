@@ -778,6 +778,25 @@ pub async fn start_model_serving(
     }
 }
 
+/// `range` 내에서 로컬 바인드가 성공하는 첫 포트를 찾는다. bind 성공 시 리스너를 즉시
+/// drop해 포트를 반납한다 — 실제 서빙 프로세스가 그 포트를 다시 bind할 때까지 사용 여부만
+/// 확인하는 용도이므로 TOCTOU 경합 가능성은 있으나(D: 다른 프로세스가 그 사이 선점),
+/// start_model_serving이 실제 spawn 직전에 다시 bind를 확인하므로 여기서는 "제안값"으로만 쓰인다.
+fn find_available_port(range: std::ops::RangeInclusive<u16>) -> Result<u16, String> {
+    for port in range {
+        if let Ok(listener) = std::net::TcpListener::bind(("127.0.0.1", port)) {
+            drop(listener);
+            return Ok(port);
+        }
+    }
+    Err("사용 가능한 포트를 찾지 못했습니다.".into())
+}
+
+#[tauri::command]
+pub async fn suggest_serving_port() -> Result<u16, String> {
+    find_available_port(8080..=8099)
+}
+
 #[tauri::command]
 pub async fn stop_model_serving(state: State<'_, MlxState>) -> Result<String, String> {
     let pid = {
@@ -839,5 +858,19 @@ mod tests {
     #[test]
     fn validate_home_subpath_rejects_nonexistent() {
         assert!(validate_home_subpath("/definitely/not/here/xyz").is_err());
+    }
+
+    #[test]
+    fn find_available_port_skips_occupied_port() {
+        // 포트 0으로 바인드하면 OS가 빈 포트를 배정한다 — 실제 개발 환경에서 점유 중인
+        // 8080/8081과 충돌하지 않으면서도 "점유된 포트를 건너뛰는지"를 검증할 수 있다.
+        let occupied = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("포트 점유 실패");
+        let occupied_port = occupied.local_addr().expect("주소 조회 실패").port();
+
+        let result = find_available_port(occupied_port..=occupied_port.saturating_add(5))
+            .expect("가용 포트를 찾지 못함");
+
+        assert_ne!(result, occupied_port);
+        drop(occupied);
     }
 }
