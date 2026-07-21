@@ -8,7 +8,7 @@ KUBECTL := kubectl --context colima -n default
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev build check test lint fmt verify \
+.PHONY: help install dev build bin app install-app check test lint fmt verify \
         cluster-up cluster-down provision forward forward-stop status clean
 
 help: ## 타깃 목록
@@ -22,6 +22,20 @@ dev: ## 앱 개발 모드 실행 (vite는 beforeDevCommand로 자동 기동)
 
 build: ## 릴리스 번들(.app/.dmg) 빌드 — 헤드리스 dmg 이슈는 README 참고
 	pnpm tauri build
+
+bin: ## 순수 실행 바이너리 생성 (src-tauri/target/release/kubemetal)
+	pnpm build
+	cargo build --release --manifest-path $(CARGO_MANIFEST)
+	@echo "실행 파일: src-tauri/target/release/kubemetal"
+
+app: ## .app 번들만 생성 (dmg 생략 — 헤드리스 안전)
+	pnpm tauri build --bundles app
+	@echo "번들: src-tauri/target/release/bundle/macos/KubeMetal.app"
+
+install-app: app ## .app 빌드 후 /Applications에 설치(기존본 교체)
+	rm -rf /Applications/KubeMetal.app
+	ditto src-tauri/target/release/bundle/macos/KubeMetal.app /Applications/KubeMetal.app
+	@echo "설치 완료: /Applications/KubeMetal.app"
 
 check: ## Rust 타입/컴파일 체크
 	cargo check --manifest-path $(CARGO_MANIFEST)
