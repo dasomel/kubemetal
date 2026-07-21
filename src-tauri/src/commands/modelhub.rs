@@ -260,7 +260,7 @@ async fn run_download_inner(app: &tauri::AppHandle, repo_id: &str) -> Result<(),
                 .map_err(|e| format!("디렉터리 생성 실패: {e}"))?;
         }
         let out = tokio::process::Command::new(&curl)
-            .arg("-sL")
+            .arg("-sfL")
             .arg("-o")
             .arg(&dest)
             .arg(&file_url)

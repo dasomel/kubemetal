@@ -392,75 +392,16 @@ pub async fn run_mlx_finetune(
     state: State<'_, MlxState>,
     config: FineTuneConfig,
 ) -> Result<u32, String> {
-    {
-        let guard = state.training.lock().map_err(|e| e.to_string())?;
+    let prev_training = {
+        let mut guard = state.training.lock().map_err(|e| e.to_string())?;
         if let Some(t) = guard.as_ref() {
             if t.status == "running" {
                 return Err(format!("이미 학습이 진행 중입니다(PID {}).", t.pid));
             }
         }
-    }
-
-    if config.iters == 0 {
-        return Err("iters는 1 이상이어야 합니다.".into());
-    }
-    if config.batch_size == 0 {
-        return Err("batch_size는 1 이상이어야 합니다.".into());
-    }
-    if !(config.learning_rate.is_finite() && config.learning_rate > 0.0) {
-        return Err("learning_rate는 0보다 큰 유한한 값이어야 합니다.".into());
-    }
-    validate_adapter_name(&config.adapter_name)?;
-
-    let model_path = validate_home_subpath(&config.model_path)?;
-    let data_path = validate_home_subpath(&config.data_path)?;
-
-    let venv_py = venv_python()?;
-    if !venv_py.is_file() {
-        return Err("MLX venv가 없습니다. setup_mlx_env를 먼저 실행하세요.".into());
-    }
-
-    let wrapper = wrapper_script_path(&app)?;
-    if !wrapper.is_file() {
-        return Err(format!(
-            "파인튜닝 래퍼 스크립트를 찾을 수 없습니다: {}",
-            wrapper.display()
-        ));
-    }
-
-    // `.process_group(0)`으로 래퍼를 새 프로세스 그룹의 리더(pgid == 자신의 pid)로 띄운다.
-    // 래퍼가 내부에서 `subprocess.Popen`으로 기동하는 `mlx_lm` 학습 자식 프로세스는 그룹을
-    // 상속받으므로, 이후 가드레일/종료 시그널을 pgid(-pid)로 보내면 래퍼와 실제 학습 자식이
-    // 함께 멈춘다. 실측(2026-07-21): 새 그룹 없이 래퍼 pid에만 SIGSTOP을 보내면 래퍼만 멈추고
-    // `mlx_lm` 자식은 학습을 끝까지 완주해버림을 확인했다(가드레일 무력화 — D17).
-    let child = tokio::process::Command::new(&venv_py)
-        .arg(&wrapper)
-        .arg("--model")
-        .arg(&model_path)
-        .arg("--data")
-        .arg(&data_path)
-        .arg("--iters")
-        .arg(config.iters.to_string())
-        .arg("--batch-size")
-        .arg(config.batch_size.to_string())
-        .arg("--learning-rate")
-        .arg(config.learning_rate.to_string())
-        .arg("--adapter-name")
-        .arg(&config.adapter_name)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .process_group(0)
-        .spawn()
-        .map_err(|e| format!("파인튜닝 프로세스 실행 실패: {e}"))?;
-
-    let pid = child
-        .id()
-        .ok_or_else(|| "PID를 가져올 수 없습니다.".to_string())?;
-
-    {
-        let mut guard = state.training.lock().map_err(|e| e.to_string())?;
+        let prev = guard.clone();
         *guard = Some(TrainingStatus {
-            pid,
+            pid: 0,
             status: "running".into(),
             current_iter: 0,
             total_iters: config.iters,
@@ -468,17 +409,93 @@ pub async fn run_mlx_finetune(
             adapter_path: None,
             error: None,
         });
+        prev
+    };
+
+    let res = (|| -> Result<(u32, tokio::process::Child), String> {
+        if config.iters == 0 {
+            return Err("iters는 1 이상이어야 합니다.".into());
+        }
+        if config.batch_size == 0 {
+            return Err("batch_size는 1 이상이어야 합니다.".into());
+        }
+        if !(config.learning_rate.is_finite() && config.learning_rate > 0.0) {
+            return Err("learning_rate는 0보다 큰 유한한 값이어야 합니다.".into());
+        }
+        validate_adapter_name(&config.adapter_name)?;
+
+        let model_path = validate_home_subpath(&config.model_path)?;
+        let data_path = validate_home_subpath(&config.data_path)?;
+
+        let venv_py = venv_python()?;
+        if !venv_py.is_file() {
+            return Err("MLX venv가 없습니다. setup_mlx_env를 먼저 실행하세요.".into());
+        }
+
+        let wrapper = wrapper_script_path(&app)?;
+        if !wrapper.is_file() {
+            return Err(format!(
+                "파인튜닝 래퍼 스크립트를 찾을 수 없습니다: {}",
+                wrapper.display()
+            ));
+        }
+
+        let child = tokio::process::Command::new(&venv_py)
+            .arg(&wrapper)
+            .arg("--model")
+            .arg(&model_path)
+            .arg("--data")
+            .arg(&data_path)
+            .arg("--iters")
+            .arg(config.iters.to_string())
+            .arg("--batch-size")
+            .arg(config.batch_size.to_string())
+            .arg("--learning-rate")
+            .arg(config.learning_rate.to_string())
+            .arg("--adapter-name")
+            .arg(&config.adapter_name)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .process_group(0)
+            .spawn()
+            .map_err(|e| format!("파인튜닝 프로세스 실행 실패: {e}"))?;
+
+        let pid = child
+            .id()
+            .ok_or_else(|| "PID를 가져올 수 없습니다.".to_string())?;
+
+        Ok((pid, child))
+    })();
+
+    match res {
+        Ok((pid, child)) => {
+            {
+                let mut guard = state.training.lock().map_err(|e| e.to_string())?;
+                *guard = Some(TrainingStatus {
+                    pid,
+                    status: "running".into(),
+                    current_iter: 0,
+                    total_iters: config.iters,
+                    last_loss: None,
+                    adapter_path: None,
+                    error: None,
+                });
+            }
+
+            crate::commands::guardrails::start_caffeinate(&app, pid);
+            crate::commands::guardrails::spawn_guardrail_loop(app.clone(), pid);
+
+            tokio::spawn(run_training_reader(app, child));
+
+            Ok(pid)
+        }
+        Err(e) => {
+            if let Ok(mut guard) = state.training.lock() {
+                *guard = prev_training;
+            }
+            Err(e)
+        }
     }
-
-    // 학습 시작과 동시에 하드웨어 가드레일(FR-05.2/05.3)을 훅한다: 슬립 방지 caffeinate 기동 +
-    // 5초 주기 memory pressure/배터리 감시 루프. 둘 다 학습 pid 종료 시 스스로 정리된다.
-    crate::commands::guardrails::start_caffeinate(&app, pid);
-    crate::commands::guardrails::spawn_guardrail_loop(app.clone(), pid);
-
-    // stdout/stderr는 run_training_reader가 소비하며, 종료 시 child.wait()로 리핑한다.
-    tokio::spawn(run_training_reader(app, child));
-
-    Ok(pid)
 }
 
 #[tauri::command]
@@ -570,43 +587,62 @@ pub async fn start_model_serving(
     port: u16,
 ) -> Result<String, String> {
     {
-        let guard = state.serving.lock().map_err(|e| e.to_string())?;
+        let mut guard = state.serving.lock().map_err(|e| e.to_string())?;
         if guard.is_some() {
             return Err("이미 모델 서빙이 진행 중입니다.".into());
         }
-    }
-
-    let validated_model = validate_home_subpath(&model_path)?;
-    let venv_py = venv_python()?;
-    if !venv_py.is_file() {
-        return Err("MLX venv가 없습니다. setup_mlx_env를 먼저 실행하세요.".into());
-    }
-
-    let child = tokio::process::Command::new(&venv_py)
-        .args(["-m", "mlx_lm", "server", "--model"])
-        .arg(&validated_model)
-        .args(["--port", &port.to_string()])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| format!("서빙 프로세스 실행 실패: {e}"))?;
-
-    let pid = child
-        .id()
-        .ok_or_else(|| "PID를 가져올 수 없습니다.".to_string())?;
-
-    {
-        let mut serving_guard = state.serving.lock().map_err(|e| e.to_string())?;
-        *serving_guard = Some(ServingStatus {
-            pid,
+        *guard = Some(ServingStatus {
+            pid: 0,
             port,
-            model_path: validated_model.to_string_lossy().to_string(),
+            model_path: model_path.clone(),
         });
-        let mut child_guard = state.serving_child.lock().map_err(|e| e.to_string())?;
-        *child_guard = Some(child);
     }
 
-    Ok(format!("{} 포트에서 모델 서빙을 시작했습니다(PID {pid}).", port))
+    let res = (|| -> Result<(u32, tokio::process::Child, String), String> {
+        let validated_model = validate_home_subpath(&model_path)?;
+        let venv_py = venv_python()?;
+        if !venv_py.is_file() {
+            return Err("MLX venv가 없습니다. setup_mlx_env를 먼저 실행하세요.".into());
+        }
+
+        let child = tokio::process::Command::new(&venv_py)
+            .args(["-m", "mlx_lm", "server", "--model"])
+            .arg(&validated_model)
+            .args(["--port", &port.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| format!("서빙 프로세스 실행 실패: {e}"))?;
+
+        let pid = child
+            .id()
+            .ok_or_else(|| "PID를 가져올 수 없습니다.".to_string())?;
+
+        Ok((pid, child, validated_model.to_string_lossy().to_string()))
+    })();
+
+    match res {
+        Ok((pid, child, validated_model_str)) => {
+            {
+                let mut serving_guard = state.serving.lock().map_err(|e| e.to_string())?;
+                *serving_guard = Some(ServingStatus {
+                    pid,
+                    port,
+                    model_path: validated_model_str,
+                });
+                let mut child_guard = state.serving_child.lock().map_err(|e| e.to_string())?;
+                *child_guard = Some(child);
+            }
+
+            Ok(format!("{} 포트에서 모델 서빙을 시작했습니다(PID {pid}).", port))
+        }
+        Err(e) => {
+            if let Ok(mut guard) = state.serving.lock() {
+                *guard = None;
+            }
+            Err(e)
+        }
+    }
 }
 
 #[tauri::command]

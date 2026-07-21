@@ -1,6 +1,7 @@
 import React from 'react';
-import { ShieldCheck, Loader2, PlayCircle, BatteryCharging, Battery, Coffee } from 'lucide-react';
+import { ShieldCheck, Loader2, PlayCircle, PauseCircle, BatteryCharging, Battery, Coffee } from 'lucide-react';
 import type { GuardrailStatus, MlxTrainingState } from '../../types/ipc';
+import { useMlx } from '../../hooks/useMlx';
 
 interface MlxGuardrailCardProps {
   guardrailStatus: GuardrailStatus | null;
@@ -9,6 +10,8 @@ interface MlxGuardrailCardProps {
   onSetBatteryPause: (enabled: boolean) => void;
   resumingTraining: boolean;
   onResume: () => void;
+  pausingTraining?: boolean;
+  onPause?: () => void;
 }
 
 const tileLabelClass = 'text-label uppercase text-inkFaint mb-1';
@@ -40,8 +43,15 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
   onSetBatteryPause,
   resumingTraining,
   onResume,
+  pausingTraining: propPausing,
+  onPause: propOnPause,
 }) => {
+  const { pausingTraining: hookPausing, pauseTraining: hookOnPause } = useMlx();
+  const pausingTraining = propPausing ?? hookPausing;
+  const onPause = propOnPause ?? hookOnPause;
+
   const isPaused = !!training && training.status.startsWith('paused');
+  const isRunning = !!training && (training.status === 'running' || training.status === 'training');
   const level = guardrailStatus?.memory_pressure_level ?? 'unknown';
 
   return (
@@ -127,6 +137,30 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
                     <PlayCircle className="w-3.5 h-3.5" />
                   )}
                   <span>재개</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isRunning && (
+            <div className="pt-3 border-t border-hairline/8">
+              <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-surfaceRaised">
+                <div className="flex items-center gap-1.5 text-caption text-success">
+                  <span className="w-2 h-2 rounded-full bg-success shrink-0" />
+                  <span>학습이 진행 중입니다.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={onPause}
+                  disabled={pausingTraining}
+                  className="py-1.5 px-3 bg-transparent hover:bg-surfaceRaised border border-hairline/8 disabled:opacity-50 disabled:cursor-not-allowed text-ink text-caption rounded-md transition-all flex items-center gap-1.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                >
+                  {pausingTraining ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <PauseCircle className="w-3.5 h-3.5" />
+                  )}
+                  <span>일시정지</span>
                 </button>
               </div>
             </div>

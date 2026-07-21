@@ -16,6 +16,7 @@ export function useMlx() {
   const [guardrailStatus, setGuardrailStatus] = useState<GuardrailStatus | null>(null);
   const [settingBatteryPause, setSettingBatteryPause] = useState(false);
   const [resumingTraining, setResumingTraining] = useState(false);
+  const [pausingTraining, setPausingTraining] = useState(false);
 
   const prevEnvStateRef = useRef<string | undefined>(undefined);
 
@@ -151,6 +152,19 @@ export function useMlx() {
     }
   }, [fetchStatus, fetchGuardrailStatus]);
 
+  const pauseTraining = useCallback(async () => {
+    setPausingTraining(true);
+    try {
+      await invoke('pause_mlx_training');
+      await fetchStatus();
+      await fetchGuardrailStatus();
+    } catch (err) {
+      await message(`학습 일시정지 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+    } finally {
+      setPausingTraining(false);
+    }
+  }, [fetchStatus, fetchGuardrailStatus]);
+
   useEffect(() => {
     checkEnv();
     fetchStatus();
@@ -207,5 +221,7 @@ export function useMlx() {
     setBatteryPause,
     resumingTraining,
     resumeTraining,
+    pausingTraining,
+    pauseTraining,
   };
 }
