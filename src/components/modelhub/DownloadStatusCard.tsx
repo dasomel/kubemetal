@@ -10,7 +10,7 @@ export const DownloadStatusCard: React.FC<DownloadStatusCardProps> = ({ download
   if (downloads.length === 0) return null;
 
   return (
-    <div className="rounded-xl bg-surface p-6 shadow-panel">
+    <div className="rounded-xl bg-surface p-4 shadow-panel">
       <div className="mb-4">
         <div className="text-label uppercase text-inkFaint mb-1">Progress</div>
         <h2 className="text-heading text-ink flex items-center gap-2">
@@ -23,7 +23,7 @@ export const DownloadStatusCard: React.FC<DownloadStatusCardProps> = ({ download
         {downloads.map((d) => {
           const percent = d.total_files > 0 ? Math.min((d.done_files / d.total_files) * 100, 100) : 0;
           return (
-            <div key={d.repo_id} className="p-4 rounded-lg bg-surfaceRaised">
+            <div key={d.repo_id} className="p-3 rounded-lg bg-surfaceRaised">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-bodyStrong text-ink truncate">{d.repo_id}</span>
                 <span className="text-caption text-inkFaint tabular-nums">

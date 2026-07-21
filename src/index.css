@@ -92,3 +92,21 @@ body {
   scrollbar-color: rgba(15, 17, 21, 0.16) transparent;
   scrollbar-width: thin;
 }
+
+/* 상태 주도 UI 전이 — 카드 등장/축소 시 사용하는 공용 트랜지션.
+   DESIGN.md에 별도 모션 토큰이 없으므로 기존 컴포넌트가 이미 쓰는
+   duration-300~500 + ease-out 관용구를 하나의 유틸리티로 통일한다. */
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-card-in {
+  animation: card-in 300ms ease-out;
+}

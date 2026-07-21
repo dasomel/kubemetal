@@ -48,7 +48,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
   };
 
   return (
-    <div className="rounded-xl bg-surface p-6 shadow-panel">
+    <div className="rounded-xl bg-surface p-4 shadow-panel">
       <div className="mb-4">
         <div className="text-label uppercase text-inkFaint mb-1">MLX-LM</div>
         <h2 className="text-heading text-ink flex items-center gap-2">
@@ -58,11 +58,11 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
       </div>
 
       {localModels.length === 0 ? (
-        <div className="py-6 text-center text-inkMuted text-body mb-5">
+        <div className="py-6 text-center text-inkMuted text-body mb-4">
           로컬 모델이 없습니다. 모델 허브 탭에서 모델을 먼저 다운로드하세요.
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="space-y-4 mb-5">
+        <form onSubmit={handleSubmit} className="space-y-4 mb-4">
           <div>
             <label className={labelClass}>로컬 모델</label>
             <select
@@ -167,7 +167,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
 
       {training && (
         <div className="pt-4 border-t border-hairline/8">
-          <div className="p-4 rounded-lg bg-surfaceRaised">
+          <div className="p-3 rounded-lg bg-surfaceRaised">
             <div className="flex items-center justify-between mb-2">
               <span className="text-bodyStrong text-ink">진행 상황</span>
               <span className="text-caption text-inkFaint tabular-nums">

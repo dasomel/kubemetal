@@ -82,13 +82,13 @@ components:
     textColor: "{colors.ink}"
     typography: "{typography.heading}"
     rounded: "{rounded.xl}"
-    padding: 24px
+    padding: 16px
   panel-inset:
     backgroundColor: "{colors.surfaceRaised}"
     textColor: "{colors.inkMuted}"
     typography: "{typography.body}"
     rounded: "{rounded.lg}"
-    padding: 16px
+    padding: 12px
   progress-track:
     backgroundColor: "{colors.base}"
     rounded: "{rounded.full}"
@@ -194,9 +194,11 @@ components:
 ## Layout
 
 페이지는 `max-w-7xl`(1280px)로 폭을 제한하고 좌우 여백은 `spacing.xl`(24px)을 쓴다.
-카드 그룹은 반응형 그리드(`grid-cols-1 lg:grid-cols-2` 등)로 배치하며 카드 간 간격은
-`spacing.xl`(24px), 카드 내부 요소 간 간격은 `spacing.lg`(16px)로 통일한다. 카드 패딩은
-`spacing.xl`(24px), 카드 내부 서브 블록(패널 인셋) 패딩은 `spacing.lg`(16px)만 쓴다.
+카드는 단순한 상태/수치 정보를 담는 경우가 많으므로 넓게 펼치기보다 **촘촘하게** 배치한다.
+카드 그룹은 반응형 그리드(`grid-cols-1 md:grid-cols-2 xl:grid-cols-3` 등, 콘텐츠가 단순할수록
+칼럼을 더 쪼갠다)로 배치하며 카드 간 간격은 `spacing.lg`(16px), 카드 내부 요소 간 간격은
+`spacing.md`(12px) 이하(`spacing.sm` 8px 포함)로 통일한다. 카드 패딩은 `spacing.lg`(16px),
+카드 내부 서브 블록(패널 인셋) 패딩은 `spacing.md`(12px)만 쓴다.
 임의의 중간값 패딩(예: 20px, 14px)은 사용하지 않는다.
 
 ## Elevation & Depth

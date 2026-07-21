@@ -27,7 +27,7 @@ export const ModelHubGuideCard: React.FC = () => {
   const metrics = useMetrics(5000);
 
   return (
-    <div className="rounded-xl bg-surface p-6 shadow-panel">
+    <div className="rounded-xl bg-surface p-4 shadow-panel">
       <div className="mb-4">
         <div className="text-label uppercase text-inkFaint mb-1">Guide</div>
         <h2 className="text-heading text-ink flex items-center gap-2">

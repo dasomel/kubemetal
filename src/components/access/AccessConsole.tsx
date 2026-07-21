@@ -61,7 +61,7 @@ const ServiceCard: React.FC<{ service: ServiceAccess }> = ({ service }) => {
   const clickUrl = isServing && service.url ? `${service.url}/models` : service.url;
 
   return (
-    <div className="rounded-xl bg-surface p-5 shadow-panel">
+    <div className="rounded-xl bg-surface p-4 shadow-panel">
       <div className="flex items-center gap-2 mb-3">
         <Icon className="w-4 h-4 text-primary shrink-0" />
         <h3 className="text-bodyStrong text-ink truncate">{service.service}</h3>
@@ -120,7 +120,7 @@ export const AccessConsole: React.FC = () => {
   }, []);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="rounded-xl bg-surface p-4 flex items-center justify-between gap-4 shadow-panel">
         <div>
           <h2 className="text-heading text-ink mb-0.5">접근 콘솔</h2>
@@ -150,7 +150,7 @@ export const AccessConsole: React.FC = () => {
           조회된 서비스가 없습니다.
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {services.map((service) => (
             <ServiceCard key={service.service} service={service} />
           ))}

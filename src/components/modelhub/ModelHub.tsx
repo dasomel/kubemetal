@@ -25,7 +25,7 @@ export const ModelHub: React.FC = () => {
   } = useModelHub();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <ModelHubGuideCard />
 
       <ModelSearchCard

@@ -33,7 +33,7 @@ const openEndpoint = (url: string) => {
 const StageCard: React.FC<{ stage: StageInfo }> = ({ stage }) => {
   const Icon = stage.icon;
   return (
-    <div className="flex-1 rounded-xl bg-surface p-5 shadow-panel min-w-0">
+    <div className="flex-1 rounded-xl bg-surface p-4 shadow-panel min-w-0">
       <div className="flex items-center gap-2 mb-3">
         <Icon className="w-4 h-4 text-primary shrink-0" />
         <h3 className="text-bodyStrong text-ink truncate">{stage.title}</h3>
@@ -254,7 +254,7 @@ export const PipelineView: React.FC = () => {
   const stages = [infraStage, modelPrepStage, trainingStage, registerStage, servingStage];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="rounded-xl bg-surface p-4 shadow-panel">
         <h2 className="text-heading text-ink mb-0.5">파이프라인 가시화</h2>
         <p className="text-caption text-inkMuted">

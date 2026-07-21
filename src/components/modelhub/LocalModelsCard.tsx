@@ -24,7 +24,7 @@ export const LocalModelsCard: React.FC<LocalModelsCardProps> = ({
   onRegister,
 }) => {
   return (
-    <div className="rounded-xl bg-surface p-6 shadow-panel">
+    <div className="rounded-xl bg-surface p-4 shadow-panel">
       <div className="mb-4">
         <div className="text-label uppercase text-inkFaint mb-1">Local Cache</div>
         <h2 className="text-heading text-ink flex items-center gap-2">
@@ -48,7 +48,7 @@ export const LocalModelsCard: React.FC<LocalModelsCardProps> = ({
             return (
               <div
                 key={model.repo_id}
-                className="p-4 rounded-lg bg-surfaceRaised flex items-center justify-between gap-4"
+                className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between gap-4"
               >
                 <div className="min-w-0">
                   <div className="text-bodyStrong text-ink truncate">{model.repo_id}</div>

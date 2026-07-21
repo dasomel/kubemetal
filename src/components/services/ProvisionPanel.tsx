@@ -25,7 +25,7 @@ export const ProvisionPanel: React.FC = () => {
   const artifactStoreWired = status?.artifact_store_wired ?? false;
 
   return (
-    <div className="rounded-xl bg-surface p-6 shadow-panel">
+    <div className="rounded-xl bg-surface p-4 shadow-panel">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-heading text-ink flex items-center gap-2">
           <Boxes className="w-4 h-4 text-primary" />
@@ -42,9 +42,9 @@ export const ProvisionPanel: React.FC = () => {
       </div>
 
       {/* 스택 준비 상태 목록 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-4">
         {/* MLflow */}
-        <div className="p-4 rounded-lg bg-surfaceRaised flex items-center justify-between">
+        <div className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between">
           <div>
             <div className="text-bodyStrong text-ink">MLflow Tracking</div>
             <div className="text-caption text-inkFaint mt-0.5">Port 5001</div>
@@ -62,7 +62,7 @@ export const ProvisionPanel: React.FC = () => {
         </div>
 
         {/* SeaweedFS */}
-        <div className="p-4 rounded-lg bg-surfaceRaised flex items-center justify-between">
+        <div className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between">
           <div>
             <div className="text-bodyStrong text-ink">SeaweedFS Storage</div>
             <div className="text-caption text-inkFaint mt-0.5">Port 8333/8888</div>
@@ -74,7 +74,7 @@ export const ProvisionPanel: React.FC = () => {
         </div>
 
         {/* GPU Bridge */}
-        <div className="p-4 rounded-lg bg-surfaceRaised flex items-center justify-between">
+        <div className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between">
           <div>
             <div className="text-bodyStrong text-ink">mac-gpu-bridge</div>
             <div className="text-caption text-inkFaint mt-0.5">host.lima.internal</div>
@@ -84,7 +84,7 @@ export const ProvisionPanel: React.FC = () => {
       </div>
 
       {/* 액션 버튼 */}
-      <div className="flex flex-wrap gap-3 mb-5">
+      <div className="flex flex-wrap gap-3 mb-4">
         <button
           onClick={() => provisionStack()}
           disabled={loading || !isRunning || !k8sActive}

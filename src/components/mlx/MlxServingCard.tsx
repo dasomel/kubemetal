@@ -73,7 +73,7 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
   };
 
   return (
-    <div className="rounded-xl bg-surface p-6 shadow-panel">
+    <div className="rounded-xl bg-surface p-4 shadow-panel">
       <div className="mb-4">
         <div className="text-label uppercase text-inkFaint mb-1">Serving</div>
         <h2 className="text-heading text-ink flex items-center gap-2">
@@ -89,7 +89,7 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4 mb-5">
+      <form onSubmit={handleSubmit} className="space-y-4 mb-4">
         <div>
           <label className={labelClass}>베이스 모델</label>
           <select

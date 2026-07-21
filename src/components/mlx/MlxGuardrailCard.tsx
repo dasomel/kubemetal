@@ -55,7 +55,7 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
   const level = guardrailStatus?.memory_pressure_level ?? 'unknown';
 
   return (
-    <div className="rounded-xl bg-surface p-6 shadow-panel">
+    <div className="rounded-xl bg-surface p-4 shadow-panel">
       <div className="mb-4">
         <div className="text-label uppercase text-inkFaint mb-1">Safety</div>
         <h2 className="text-heading text-ink flex items-center gap-2">
@@ -68,7 +68,7 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
         <div className="py-6 text-center text-inkMuted text-body">가드레일 상태를 불러오는 중...</div>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2">
             <div className="p-3 rounded-lg bg-surfaceRaised">
               <div className={tileLabelClass}>메모리 압력</div>
               <div className="flex items-center gap-1.5 text-bodyStrong text-ink">

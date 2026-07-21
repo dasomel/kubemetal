@@ -52,7 +52,7 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
   const sectionLabel = trimmedQuery ? '검색 결과' : '인기 MLX 모델';
 
   return (
-    <div className="rounded-xl bg-surface p-6 shadow-panel">
+    <div className="rounded-xl bg-surface p-4 shadow-panel">
       <div className="mb-4">
         <div className="text-label uppercase text-inkFaint mb-1">Hugging Face</div>
         <h2 className="text-heading text-ink flex items-center gap-2">
@@ -119,7 +119,7 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
             return (
               <div
                 key={model.id}
-                className="p-4 rounded-lg bg-surfaceRaised flex items-center justify-between gap-4"
+                className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between gap-4"
               >
                 <div className="min-w-0">
                   <div className="text-bodyStrong text-ink truncate">{model.id}</div>
