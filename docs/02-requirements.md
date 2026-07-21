@@ -93,7 +93,7 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 
 * **FR-03.1**: macOS 호스트 환경의 Python VirtualEnv 또는 독립 바이너리를 이용해 **MLX LoRA Fine-Tuning** 스크립트를 백그라운드 프로세스로 실행할 수 있어야 한다.
 * **FR-03.2**: MLX 학습 실행 시, K8s MLflow Server URI (`http://localhost:5001` 또는 내부 DNS)로 학습 파라미터, 손실(Loss) 메트릭, `.safetensors` 무게 파일을 자동 전송하도록 래핑해야 한다.
-* **FR-03.3**: 학습이 완료되거나 로컬 모델 선택 시 `mlx-lm` 패키지의 `mlx_lm.server` 또는 `llama-server` 프로세스를 띄워 OpenAI 호환 REST API 엔드포인트(기본값 `http://localhost:8080/v1`, 설정을 통해 변경 가능)를 제공해야 한다.
+* **FR-03.3**: 학습이 완료되거나 로컬 모델 선택 시 `mlx-lm` 패키지의 `mlx_lm.server` 또는 `llama-server` 프로세스를 띄워 OpenAI 호환 REST API 엔드포인트(기본값 `http://127.0.0.1:8080/v1`, 설정을 통해 변경 가능)를 제공해야 한다.
 
 ### FR-04: K8s ↔ macOS Host 하이브리드 브릿지 통신
 
@@ -168,9 +168,9 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 | `check_mlx_env` (Phase 2c) | None | `MlxEnvStatus {python_ok, venv_exists, mlx_lm_installed, mlx_lm_version}` | `~/.kubemetal/venv`의 python3/mlx-lm 설치 여부·버전 조회 |
 | `setup_mlx_env` (Phase 2c) | None | `Result<String, String>` | 백그라운드로 `python3 -m venv` + `pip install -U mlx-lm` 실행, 진행 상태를 `MlxState.env_setup`에 기록 |
 | `run_mlx_finetune` (Phase 2c) | `FineTuneConfig {model_path, data_path, iters: u32, batch_size: u32, learning_rate: f64, adapter_name}` | `Result<u32, String>` | venv python으로 `scripts/mlx/finetune_wrapper.py`(mlx_lm lora 래퍼) 실행, PID 리턴. model_path/data_path는 홈 디렉터리 하위 실존 경로만 허용 |
-| `get_mlx_status` (Phase 2c) | None | `MlxStatus {env, env_setup_state, env_setup_error, training: Option<TrainingStatus>, serving: Option<ServingStatus>}` | 환경/학습/서빙 상태 통합 조회 |
+| `get_mlx_status` (Phase 2c) | None | `MlxStatus {env, env_setup_state, env_setup_error, training: Option<TrainingStatus>, serving: Option<ServingStatus>, last_serving_error: Option<String>}` | 환경/학습/서빙 상태 통합 조회. `last_serving_error`는 서빙 프로세스가 사용자 요청 없이 예기치 않게 종료됐을 때 exit code/stderr 요약을 담는다 |
 | `kill_mlx_process` (Phase 2c) | `{ pid: u32 }` | `Result<bool, String>` | 실행 중인 MLX 학습/서빙 프로세스에 SIGTERM→(1s)→SIGKILL 전송, State 정리 |
-| `start_model_serving` (Phase 2c) | `{ model_path: String, port: u16 }` | `Result<String, String>` | venv `python -m mlx_lm server --model {path} --port {port}` 기동(기본 포트 8080 가정), 이미 서빙 중이면 Err |
+| `start_model_serving` (Phase 2c) | `{ model_path: String, adapter_path: Option<String>, port: u16 }` | `Result<String, String>` | 실기기 실측(2026-07-21): 진입 시 `TcpListener::bind(("127.0.0.1", port))`로 포트 선점 여부를 먼저 확인해 실패하면 spawn 없이 Err(다른 프로세스가 사용 중인 포트 안내, 예: 8080이 Tomcat 등에 선점된 경우). `model_path`가 `adapter_config.json`을 가진 어댑터 디렉터리로 판정되면 그 파일의 `model` 필드에서 베이스 모델 경로를 읽어 자동 승격(베이스를 `--model`, 해당 디렉터리를 `--adapter-path`)하고, 필드가 없으면 Err("베이스 모델을 함께 지정하세요"). 그렇지 않으면 `model_path`를 `--model`로, `adapter_path`가 있으면 `--adapter-path`로 넘겨 venv `python -m mlx_lm server` 기동. 이미 서빙 중이면 Err. 기동한 자식 프로세스는 백그라운드 태스크(`run_serving_reader`)가 `wait()`하며, `stop_model_serving`/`kill_mlx_process`로 의도적으로 멈춘 경우가 아니면 종료 시 `last_serving_error`에 원인을 기록 |
 | `stop_model_serving` (Phase 2c) | None | `Result<String, String>` | 진행 중인 모델 서빙 프로세스 종료 |
 | `list_registered_models` (Phase 2c) | None | `Result<Vec<RegisteredModel>, String>` | MLflow Model Registry(5001)의 `registered-models/search` 결과를 `{name, latest_version, last_updated_ms}`로 매핑해 파이프라인 뷰의 "등록" 단계에 노출 (FR-08) |
 | `get_service_access` (Phase 2d) | None | `Result<Vec<ServiceAccess>, String>` | MLflow(5001)·SeaweedFS S3(8333)·SeaweedFS Filer(8888)·Model Serving(8080/v1) 4종의 헬스(`curl -w %{http_code}`, 000이면 unreachable)와 SeaweedFS S3 크리덴셜(`kubectl get secret seaweedfs-s3-credentials -o json` base64 디코드)을 조회해 접근 콘솔에 노출 (FR-09) |

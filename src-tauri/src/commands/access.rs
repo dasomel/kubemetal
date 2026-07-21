@@ -129,7 +129,7 @@ pub async fn get_service_access() -> Result<Vec<ServiceAccess>, String> {
     const MLFLOW_URL: &str = "http://localhost:5001";
     const S3_URL: &str = "http://localhost:8333";
     const FILER_URL: &str = "http://localhost:8888";
-    const SERVING_URL: &str = "http://localhost:8080/v1";
+    const SERVING_URL: &str = "http://127.0.0.1:8080/v1";
 
     let (mlflow_health, s3_health, filer_health, serving_health, (s3_credentials, s3_hint)) = tokio::join!(
         check_health(MLFLOW_URL),

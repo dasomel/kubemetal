@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { Rocket, Loader2, Play, Square, ArrowUpRight } from 'lucide-react';
-import type { MlxServingState } from '../../types/ipc';
+import { Rocket, Loader2, Play, Square, ArrowUpRight, AlertTriangle } from 'lucide-react';
+import type { LocalModel, MlxServingState } from '../../types/ipc';
 
 interface MlxServingCardProps {
   serving?: MlxServingState;
-  adapterPath?: string;
+  lastServingError?: string;
+  localModels: LocalModel[];
+  adapterPathHint?: string;
   starting: boolean;
   stopping: boolean;
-  onStart: (modelPath: string, port: number) => void;
+  onStart: (modelPath: string, adapterPath: string | undefined, port: number) => void;
   onStop: () => void;
 }
 
@@ -22,28 +24,32 @@ const openEndpoint = (url: string) => {
 
 export const MlxServingCard: React.FC<MlxServingCardProps> = ({
   serving,
-  adapterPath,
+  lastServingError,
+  localModels,
+  adapterPathHint,
   starting,
   stopping,
   onStart,
   onStop,
 }) => {
   const [modelPath, setModelPath] = useState('');
+  const [adapterPath, setAdapterPath] = useState('');
   const [port, setPort] = useState(8080);
   const prefilledRef = useRef(false);
 
-  // 파인튜닝 결과 어댑터 경로가 새로 생기면 비어 있는 입력을 한 번만 채운다.
+  // 파인튜닝 결과 어댑터 경로가 새로 생기면 비어 있는 어댑터 입력을 한 번만 채운다.
+  // (베이스 모델 칸은 항상 로컬 베이스 모델 선택을 유지한다.)
   useEffect(() => {
-    if (adapterPath && !prefilledRef.current && !modelPath) {
-      setModelPath(adapterPath);
+    if (adapterPathHint && !prefilledRef.current && !adapterPath) {
+      setAdapterPath(adapterPathHint);
       prefilledRef.current = true;
     }
-  }, [adapterPath, modelPath]);
+  }, [adapterPathHint, adapterPath]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!modelPath) return;
-    onStart(modelPath, port);
+    onStart(modelPath, adapterPath || undefined, port);
   };
 
   return (
@@ -56,15 +62,39 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
         </h2>
       </div>
 
+      {lastServingError && (
+        <div className="mb-4 flex items-start gap-1.5 text-caption text-danger">
+          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <span>{lastServingError}</span>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-4 mb-5">
         <div>
-          <label className={labelClass}>어댑터/모델 경로</label>
-          <input
-            type="text"
+          <label className={labelClass}>베이스 모델</label>
+          <select
             value={modelPath}
             onChange={(e) => setModelPath(e.target.value)}
             disabled={!!serving}
-            placeholder="예: /path/to/adapter 또는 모델 경로"
+            className={inputClass}
+          >
+            <option value="">모델 선택...</option>
+            {localModels.map((m) => (
+              <option key={m.repo_id} value={m.path}>
+                {m.repo_id}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className={labelClass}>어댑터 경로 (선택)</label>
+          <input
+            type="text"
+            value={adapterPath}
+            onChange={(e) => setAdapterPath(e.target.value)}
+            disabled={!!serving}
+            placeholder="예: ~/.kubemetal/adapters/my-adapter"
             className={inputClass}
           />
         </div>
@@ -108,14 +138,17 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
         <div className="pt-4 border-t border-hairline/8">
           <div className="flex items-center gap-1.5 text-caption text-inkMuted mb-3">
             <span className="w-2 h-2 rounded-full bg-success" />
-            <span>서빙 중 (PID {serving.pid}) · {serving.model_path}</span>
+            <span>
+              서빙 중 (PID {serving.pid}) · {serving.model_path}
+              {serving.adapter_path ? ` · 어댑터 ${serving.adapter_path}` : ''}
+            </span>
           </div>
           <button
             type="button"
-            onClick={() => openEndpoint(`http://localhost:${serving.port}/v1`)}
+            onClick={() => openEndpoint(`http://127.0.0.1:${serving.port}/v1`)}
             className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-primary text-caption flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
-            {`http://localhost:${serving.port}/v1`}
+            {`http://127.0.0.1:${serving.port}/v1`}
             <ArrowUpRight className="w-3 h-3" />
           </button>
         </div>

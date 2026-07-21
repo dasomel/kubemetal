@@ -58,7 +58,9 @@ export const MlxStudio: React.FC = () => {
 
       <MlxServingCard
         serving={mlxStatus?.serving}
-        adapterPath={mlxStatus?.training?.adapter_path}
+        lastServingError={mlxStatus?.last_serving_error}
+        localModels={localModels}
+        adapterPathHint={mlxStatus?.training?.adapter_path}
         starting={startingServing}
         stopping={stoppingServing}
         onStart={startServing}

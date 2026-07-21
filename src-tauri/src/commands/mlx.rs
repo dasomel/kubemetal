@@ -59,6 +59,7 @@ pub struct ServingStatus {
     pub pid: u32,
     pub port: u16,
     pub model_path: String,
+    pub adapter_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -68,6 +69,7 @@ pub struct MlxStatus {
     pub env_setup_error: Option<String>,
     pub training: Option<TrainingStatus>,
     pub serving: Option<ServingStatus>,
+    pub last_serving_error: Option<String>,
 }
 
 #[derive(Default)]
@@ -75,7 +77,7 @@ pub struct MlxState {
     pub env_setup: Mutex<EnvSetupStatus>,
     pub training: Mutex<Option<TrainingStatus>>,
     pub serving: Mutex<Option<ServingStatus>>,
-    pub serving_child: Mutex<Option<tokio::process::Child>>,
+    pub last_serving_error: Mutex<Option<String>>,
 }
 
 fn home_dir() -> Result<PathBuf, String> {
@@ -118,6 +120,21 @@ fn validate_home_subpath(p: &str) -> Result<PathBuf, String> {
         return Err(format!("허용되지 않은 경로입니다(홈 디렉터리 하위만 허용): {p}"));
     }
     Ok(canonical)
+}
+
+#[derive(Debug, Deserialize)]
+struct AdapterConfigFile {
+    model: Option<String>,
+}
+
+/// `adapter_dir`이 `adapter_config.json`을 담은 어댑터 디렉터리인지 판정하고,
+/// 있다면 학습 시 사용된 베이스 모델 경로(`model` 필드)를 읽어 반환한다.
+/// 실물 확인(2026-07-21): `mlx_lm.lora` 학습이 남기는 `adapter_config.json`에
+/// 베이스 모델 절대경로가 최상위 `model` 필드로 그대로 저장되어 있다.
+fn read_adapter_base_model(adapter_dir: &std::path::Path) -> Option<String> {
+    let content = std::fs::read_to_string(adapter_dir.join("adapter_config.json")).ok()?;
+    let parsed: AdapterConfigFile = serde_json::from_str(&content).ok()?;
+    parsed.model
 }
 
 fn validate_adapter_name(name: &str) -> Result<(), String> {
@@ -519,6 +536,11 @@ pub async fn get_mlx_status(state: State<'_, MlxState>) -> Result<MlxStatus, Str
     };
     let training = state.training.lock().map_err(|e| e.to_string())?.clone();
     let serving = state.serving.lock().map_err(|e| e.to_string())?.clone();
+    let last_serving_error = state
+        .last_serving_error
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
 
     Ok(MlxStatus {
         env,
@@ -526,6 +548,7 @@ pub async fn get_mlx_status(state: State<'_, MlxState>) -> Result<MlxStatus, Str
         env_setup_error,
         training,
         serving,
+        last_serving_error,
     })
 }
 
@@ -574,28 +597,81 @@ pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bo
         }
     }
 
-    let serving_child = {
+    {
+        // 서빙 프로세스는 spawn 직후 run_serving_reader가 Child 소유권을 가져가 wait()한다.
+        // 여기서는 상태만 즉시 비우면 되고, reaper는 pid가 더 이상 state.serving과 일치하지
+        // 않는 것을 보고 사용자 의도 종료로 판단해 last_serving_error를 기록하지 않는다.
         let mut serving_guard = state.serving.lock().map_err(|e| e.to_string())?;
-        let matches = serving_guard.as_ref().map(|s| s.pid) == Some(pid);
-        if matches {
+        if serving_guard.as_ref().map(|s| s.pid) == Some(pid) {
             *serving_guard = None;
-            let mut child_guard = state.serving_child.lock().map_err(|e| e.to_string())?;
-            child_guard.take()
-        } else {
-            None
         }
-    };
-    if let Some(mut child) = serving_child {
-        let _ = child.wait().await;
     }
 
     Ok(true)
 }
 
+/// 서빙 Child의 종료를 백그라운드에서 대기하고 상태를 정리한다.
+/// spawn 직후 Child 소유권 전체가 이 태스크로 넘어오므로(다른 코드는 더 이상 wait()하지
+/// 않는다), stop_model_serving/kill_mlx_process는 시그널만 보내고 state.serving을 즉시
+/// 비운다. 그래서 여기서 pid가 더 이상 state.serving과 일치하지 않으면 "사용자 의도 종료"로
+/// 판단해 조용히 반환하고, 일치하면(=아무도 멈추라고 하지 않았는데 죽었다) exit code와
+/// 최근 stderr 요약을 last_serving_error에 남긴다.
+async fn run_serving_reader(app: tauri::AppHandle, mut child: tokio::process::Child, pid: u32) {
+    let stderr = child.stderr.take();
+    let stderr_task = stderr.map(|err| tokio::spawn(collect_stderr(err)));
+
+    let exit = child.wait().await;
+    let stderr_text = if let Some(t) = stderr_task {
+        t.await.unwrap_or_default()
+    } else {
+        String::new()
+    };
+
+    let state = app.state::<MlxState>();
+    let still_current = {
+        let serving_guard = match state.serving.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        serving_guard.as_ref().map(|s| s.pid) == Some(pid)
+    };
+    if !still_current {
+        return;
+    }
+    if let Ok(mut serving_guard) = state.serving.lock() {
+        *serving_guard = None;
+    }
+
+    let mut err_guard = match state.last_serving_error.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    match exit {
+        Ok(status) if status.success() => {
+            *err_guard = None;
+        }
+        Ok(status) => {
+            *err_guard = Some(if stderr_text.trim().is_empty() {
+                format!("서빙 프로세스가 예기치 않게 종료되었습니다({status})")
+            } else {
+                format!(
+                    "서빙 프로세스가 예기치 않게 종료되었습니다({status}): {}",
+                    stderr_text.trim()
+                )
+            });
+        }
+        Err(e) => {
+            *err_guard = Some(format!("서빙 프로세스 대기 실패: {e}"));
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn start_model_serving(
+    app: tauri::AppHandle,
     state: State<'_, MlxState>,
     model_path: String,
+    adapter_path: Option<String>,
     port: u16,
 ) -> Result<String, String> {
     {
@@ -607,22 +683,51 @@ pub async fn start_model_serving(
             pid: 0,
             port,
             model_path: model_path.clone(),
+            adapter_path: adapter_path.clone(),
         });
     }
 
-    let res = (|| -> Result<(u32, tokio::process::Child, String), String> {
-        let validated_model = validate_home_subpath(&model_path)?;
+    let res = (|| -> Result<(u32, tokio::process::Child, String, Option<String>), String> {
+        // 8080은 개발 환경에서 다른 서비스(예: Tomcat)가 선점하고 있는 경우가 흔하다.
+        // bind 성공 시 리스너를 즉시 drop해 포트를 반납하고 그 사이에 실제 서빙 프로세스를 스폰한다.
+        let listener = std::net::TcpListener::bind(("127.0.0.1", port)).map_err(|_| {
+            format!("포트 {port}는 다른 프로세스가 사용 중입니다. 서빙 카드에서 다른 포트(예: 8081)를 지정하세요.")
+        })?;
+        drop(listener);
+
+        let validated_model_dir = validate_home_subpath(&model_path)?;
+        let is_adapter_dir = validated_model_dir.join("adapter_config.json").is_file();
+
+        let (base_model, effective_adapter): (PathBuf, Option<PathBuf>) = if is_adapter_dir {
+            let base = read_adapter_base_model(&validated_model_dir).ok_or_else(|| {
+                "어댑터 디렉터리입니다 — 베이스 모델을 함께 지정하세요.".to_string()
+            })?;
+            let validated_base = validate_home_subpath(&base)?;
+            (validated_base, Some(validated_model_dir.clone()))
+        } else {
+            let explicit_adapter = match adapter_path.as_deref() {
+                Some(p) if !p.is_empty() => Some(validate_home_subpath(p)?),
+                _ => None,
+            };
+            (validated_model_dir.clone(), explicit_adapter)
+        };
+
         let venv_py = venv_python()?;
         if !venv_py.is_file() {
             return Err("MLX venv가 없습니다. setup_mlx_env를 먼저 실행하세요.".into());
         }
 
-        let child = tokio::process::Command::new(&venv_py)
-            .args(["-m", "mlx_lm", "server", "--model"])
-            .arg(&validated_model)
-            .args(["--port", &port.to_string()])
+        let mut cmd = tokio::process::Command::new(&venv_py);
+        cmd.args(["-m", "mlx_lm", "server", "--model"])
+            .arg(&base_model)
+            .args(["--port", &port.to_string()]);
+        if let Some(ref adapter) = effective_adapter {
+            cmd.arg("--adapter-path").arg(adapter);
+        }
+
+        let child = cmd
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(Stdio::piped())
             .env("PATH", augmented_path())
             .spawn()
             .map_err(|e| format!("서빙 프로세스 실행 실패: {e}"))?;
@@ -631,23 +736,38 @@ pub async fn start_model_serving(
             .id()
             .ok_or_else(|| "PID를 가져올 수 없습니다.".to_string())?;
 
-        Ok((pid, child, validated_model.to_string_lossy().to_string()))
+        Ok((
+            pid,
+            child,
+            base_model.to_string_lossy().to_string(),
+            effective_adapter.map(|p| p.to_string_lossy().to_string()),
+        ))
     })();
 
     match res {
-        Ok((pid, child, validated_model_str)) => {
+        Ok((pid, child, base_model_str, effective_adapter_str)) => {
             {
                 let mut serving_guard = state.serving.lock().map_err(|e| e.to_string())?;
                 *serving_guard = Some(ServingStatus {
                     pid,
                     port,
-                    model_path: validated_model_str,
+                    model_path: base_model_str,
+                    adapter_path: effective_adapter_str.clone(),
                 });
-                let mut child_guard = state.serving_child.lock().map_err(|e| e.to_string())?;
-                *child_guard = Some(child);
+            }
+            {
+                let mut err_guard = state.last_serving_error.lock().map_err(|e| e.to_string())?;
+                *err_guard = None;
             }
 
-            Ok(format!("{} 포트에서 모델 서빙을 시작했습니다(PID {pid}).", port))
+            tokio::spawn(run_serving_reader(app, child, pid));
+
+            let adapter_note = effective_adapter_str
+                .map(|p| format!(" · 어댑터 {p}"))
+                .unwrap_or_default();
+            Ok(format!(
+                "{port} 포트에서 모델 서빙을 시작했습니다(PID {pid}){adapter_note}."
+            ))
         }
         Err(e) => {
             if let Ok(mut guard) = state.serving.lock() {
@@ -672,14 +792,13 @@ pub async fn stop_model_serving(state: State<'_, MlxState>) -> Result<String, St
         .await
         .map_err(|e| format!("프로세스 종료 대기 실패: {e}"))?;
 
-    let child = {
+    // Child 소유권은 run_serving_reader가 갖고 있으므로 여기서는 상태만 비운다.
+    // reaper가 실제 종료를 감지하고 last_serving_error를 남기지 않는다(사용자 의도 종료).
+    {
         let mut serving_guard = state.serving.lock().map_err(|e| e.to_string())?;
-        *serving_guard = None;
-        let mut child_guard = state.serving_child.lock().map_err(|e| e.to_string())?;
-        child_guard.take()
-    };
-    if let Some(mut child) = child {
-        let _ = child.wait().await;
+        if serving_guard.as_ref().map(|s| s.pid) == Some(pid) {
+            *serving_guard = None;
+        }
     }
 
     Ok("모델 서빙을 정지했습니다.".into())

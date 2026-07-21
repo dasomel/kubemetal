@@ -137,7 +137,7 @@ export const ProvisionPanel: React.FC = () => {
             SeaweedFS S3 API (http://localhost:8333)
           </span>
           <span className="px-3 py-1.5 rounded-md bg-surfaceRaised text-inkMuted">
-            Model Serving (http://localhost:8080/v1)
+            Model Serving (http://127.0.0.1:8080/v1)
           </span>
         </div>
       </div>

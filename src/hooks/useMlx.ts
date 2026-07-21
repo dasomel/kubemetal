@@ -89,18 +89,25 @@ export function useMlx() {
     }
   }, [fetchStatus]);
 
-  const startServing = useCallback(async (modelPath: string, port: number) => {
-    setStartingServing(true);
-    try {
-      const res = await invoke<string>('start_model_serving', { modelPath, port });
-      await message(res || '모델 서빙을 시작했습니다.', { title: 'KubeMetal', kind: 'info' });
-      await fetchStatus();
-    } catch (err) {
-      await message(`모델 서빙 시작 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
-    } finally {
-      setStartingServing(false);
-    }
-  }, [fetchStatus]);
+  const startServing = useCallback(
+    async (modelPath: string, adapterPath: string | undefined, port: number) => {
+      setStartingServing(true);
+      try {
+        const res = await invoke<string>('start_model_serving', {
+          modelPath,
+          adapterPath: adapterPath || null,
+          port,
+        });
+        await message(res || '모델 서빙을 시작했습니다.', { title: 'KubeMetal', kind: 'info' });
+        await fetchStatus();
+      } catch (err) {
+        await message(`모델 서빙 시작 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      } finally {
+        setStartingServing(false);
+      }
+    },
+    [fetchStatus],
+  );
 
   const stopServing = useCallback(async () => {
     setStoppingServing(true);

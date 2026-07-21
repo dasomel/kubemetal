@@ -239,7 +239,7 @@ export const PipelineView: React.FC = () => {
         dot: 'success',
         statusText: `기동됨 (PID ${serving.pid}, 포트 ${serving.port})`,
         detail: serving.model_path,
-        link: { label: `http://localhost:${serving.port}/v1`, url: `http://localhost:${serving.port}/v1` },
+        link: { label: `http://127.0.0.1:${serving.port}/v1`, url: `http://127.0.0.1:${serving.port}/v1` },
       }
     : {
         key: 'serve',

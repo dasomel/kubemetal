@@ -53,12 +53,14 @@ export interface MlxServingState {
   pid: number;
   port: number;
   model_path: string;
+  adapter_path?: string;
 }
 
 export interface MlxStatus {
   env_setup?: MlxEnvSetupState;
   training?: MlxTrainingState;
   serving?: MlxServingState;
+  last_serving_error?: string;
 }
 
 export interface HfModel {
