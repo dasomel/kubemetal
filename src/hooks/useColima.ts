@@ -3,10 +3,18 @@ import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
 import type { ClusterStatus } from '../types/ipc';
 
+const PORT_FORWARD_TOTAL = 3;
+
+export interface PortForwardStatus {
+  active: number;
+  total: number;
+}
+
 export function useColima() {
   const [status, setStatus] = useState<ClusterStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [portForwardStatus, setPortForwardStatus] = useState<PortForwardStatus | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -65,9 +73,16 @@ export function useColima() {
   const startPortForward = useCallback(async () => {
     try {
       const res = await invoke<string>('start_port_forward');
+      setPortForwardStatus({ active: PORT_FORWARD_TOTAL, total: PORT_FORWARD_TOTAL });
       await message(res || '포트포워딩이 시작되었습니다.', { title: 'KubeMetal', kind: 'info' });
       await fetchStatus();
     } catch (err) {
+      // 백엔드가 부분 실패 시 "n(:port) 응답 없음"을 포트별로 나열한다 — 실패 개수를 세어
+      // 활성 포트 수를 추정한다(전면 실패면 0/3).
+      const errText = String(err);
+      const failedCount = (errText.match(/응답 없음/g) || []).length;
+      const active = failedCount > 0 ? Math.max(PORT_FORWARD_TOTAL - failedCount, 0) : 0;
+      setPortForwardStatus({ active, total: PORT_FORWARD_TOTAL });
       await message(`포트포워딩 시작 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
     }
   }, [fetchStatus]);
@@ -75,6 +90,7 @@ export function useColima() {
   const stopPortForward = useCallback(async () => {
     try {
       const res = await invoke<string>('stop_port_forward');
+      setPortForwardStatus(null);
       await message(res || '포트포워딩이 정지되었습니다.', { title: 'KubeMetal', kind: 'info' });
       await fetchStatus();
     } catch (err) {
@@ -92,6 +108,7 @@ export function useColima() {
     status,
     loading,
     actionMessage,
+    portForwardStatus,
     startCluster,
     stopCluster,
     provisionStack,

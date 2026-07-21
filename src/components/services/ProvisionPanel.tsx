@@ -11,6 +11,7 @@ export const ProvisionPanel: React.FC = () => {
   const {
     status,
     loading,
+    portForwardStatus,
     provisionStack,
     startPortForward,
     stopPortForward,
@@ -98,8 +99,20 @@ export const ProvisionPanel: React.FC = () => {
           disabled={loading || !isRunning || !k8sActive}
           className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed text-ink text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
-          <Radio className="w-3.5 h-3.5 text-primary" />
-          <span>포트포워딩 시작 (5001, 8333/8888)</span>
+          <Radio
+            className={`w-3.5 h-3.5 ${
+              portForwardStatus && portForwardStatus.active < portForwardStatus.total
+                ? 'text-warning'
+                : 'text-primary'
+            }`}
+          />
+          <span>
+            {portForwardStatus
+              ? portForwardStatus.active === portForwardStatus.total
+                ? `포워딩 활성 (${portForwardStatus.active}/${portForwardStatus.total})`
+                : `포워딩 일부 활성 (${portForwardStatus.active}/${portForwardStatus.total})`
+              : '포트포워딩 시작 (5001, 8333/8888)'}
+          </span>
         </button>
 
         <button
@@ -137,7 +150,7 @@ export const ProvisionPanel: React.FC = () => {
             SeaweedFS S3 API (http://localhost:8333)
           </span>
           <span className="px-3 py-1.5 rounded-md bg-surfaceRaised text-inkMuted">
-            Model Serving (http://127.0.0.1:8080/v1)
+            Model Serving (http://127.0.0.1:8080/v1/models)
           </span>
         </div>
       </div>
