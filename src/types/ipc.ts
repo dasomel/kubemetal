@@ -68,6 +68,9 @@ export interface HfModel {
   downloads: number;
   likes: number;
   pipeline_tag?: string;
+  /** safetensors 텐서 dtype별 바이트 폭 가중합으로 추정한 모델 용량(바이트). safetensors가
+   * 없는 리포지토리(GGUF 전용 등)는 undefined. */
+  size_bytes?: number;
 }
 
 export interface DownloadStatus {

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Search, Loader2, Download, ArrowDownToLine, Heart, Tag } from 'lucide-react';
+import React from 'react';
+import { Search, Loader2, Download, ArrowDownToLine, Heart, Tag, HardDrive } from 'lucide-react';
 import type { HfModel } from '../../types/ipc';
 import { MODEL_CATEGORIES, type ModelCategory } from '../../lib/modelCategories';
 
@@ -9,9 +9,24 @@ interface ModelSearchCardProps {
   loadingPopular: boolean;
   searching: boolean;
   downloadingIds: Set<string>;
-  onSearch: (query: string, limit: number, author?: string) => void;
+  /** 검색창에 표시되는 현재 검색어 — 카테고리 칩/메모리 가이드 클릭으로도 갱신되므로
+   * 부모(ModelHub)가 소유한다(controlled input). */
+  query: string;
+  /** 현재 활성화된 프리셋 id(카테고리 칩 또는 메모리 가이드 행) — 둘 중 어느 쪽에서 선택됐든
+   * id 네임스페이스가 겹치지 않아(카테고리는 평문 id, 가이드는 `ram-` 접두사) 하나로 관리한다. */
+  activeSelectionId: string | null;
+  onQueryChange: (value: string) => void;
+  onSubmitSearch: () => void;
+  onSelectCategory: (category: ModelCategory) => void;
   onDownload: (repoId: string) => void;
 }
+
+const formatSize = (bytes: number): string => {
+  const gb = bytes / 1024 ** 3;
+  if (gb >= 1) return `${gb.toFixed(1)}GB`;
+  const mb = bytes / 1024 ** 2;
+  return `${mb.toFixed(0)}MB`;
+};
 
 export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
   results,
@@ -19,31 +34,18 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
   loadingPopular,
   searching,
   downloadingIds,
-  onSearch,
+  query,
+  activeSelectionId,
+  onQueryChange,
+  onSubmitSearch,
+  onSelectCategory,
   onDownload,
 }) => {
-  const [query, setQuery] = useState('');
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
-
-  const activeCategory = MODEL_CATEGORIES.find((c) => c.id === activeCategoryId) ?? null;
+  const activeCategory = MODEL_CATEGORIES.find((c) => c.id === activeSelectionId) ?? null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setActiveCategoryId(null);
-    onSearch(query, 20);
-  };
-
-  const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setQuery(e.target.value);
-    setActiveCategoryId(null);
-  };
-
-  const handleCategoryClick = (category: ModelCategory) => {
-    setQuery(category.query);
-    setActiveCategoryId(category.id);
-    if (category.query.trim()) {
-      onSearch(category.query, 8, category.author);
-    }
+    onSubmitSearch();
   };
 
   const trimmedQuery = query.trim();
@@ -65,7 +67,7 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
         <input
           type="text"
           value={query}
-          onChange={handleQueryChange}
+          onChange={(e) => onQueryChange(e.target.value)}
           placeholder="예: meta-llama/Llama-3.2-1B"
           className="flex-1 px-3.5 py-2.5 rounded-md bg-surfaceRaised text-ink text-body placeholder:text-inkFaint border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         />
@@ -81,12 +83,12 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
 
       <div className="flex flex-wrap gap-2 mb-1.5">
         {MODEL_CATEGORIES.map((category) => {
-          const isActive = activeCategoryId === category.id;
+          const isActive = activeSelectionId === category.id;
           return (
             <button
               key={category.id}
               type="button"
-              onClick={() => handleCategoryClick(category)}
+              onClick={() => onSelectCategory(category)}
               className={`py-1.5 px-3 rounded-md text-caption transition-all border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                 isActive
                   ? 'bg-surfaceRaised text-primary border-primary/40'
@@ -132,6 +134,12 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
                       <Heart className="w-3.5 h-3.5" />
                       {model.likes.toLocaleString()}
                     </span>
+                    {model.size_bytes !== undefined && (
+                      <span className="flex items-center gap-1">
+                        <HardDrive className="w-3.5 h-3.5" />
+                        {formatSize(model.size_bytes)}
+                      </span>
+                    )}
                     {model.pipeline_tag && (
                       <span className="flex items-center gap-1">
                         <Tag className="w-3.5 h-3.5" />

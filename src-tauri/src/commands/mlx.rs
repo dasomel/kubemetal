@@ -65,8 +65,7 @@ pub struct ServingStatus {
 #[derive(Debug, Clone, Serialize)]
 pub struct MlxStatus {
     pub env: MlxEnvStatus,
-    pub env_setup_state: String,
-    pub env_setup_error: Option<String>,
+    pub env_setup: EnvSetupStatus,
     pub training: Option<TrainingStatus>,
     pub serving: Option<ServingStatus>,
     pub last_serving_error: Option<String>,
@@ -530,10 +529,7 @@ pub async fn run_mlx_finetune(
 #[tauri::command]
 pub async fn get_mlx_status(state: State<'_, MlxState>) -> Result<MlxStatus, String> {
     let env = check_mlx_env_inner().await;
-    let (env_setup_state, env_setup_error) = {
-        let guard = state.env_setup.lock().map_err(|e| e.to_string())?;
-        (guard.state.clone(), guard.error.clone())
-    };
+    let env_setup = state.env_setup.lock().map_err(|e| e.to_string())?.clone();
     let training = state.training.lock().map_err(|e| e.to_string())?.clone();
     let serving = state.serving.lock().map_err(|e| e.to_string())?.clone();
     let last_serving_error = state
@@ -544,8 +540,7 @@ pub async fn get_mlx_status(state: State<'_, MlxState>) -> Result<MlxStatus, Str
 
     Ok(MlxStatus {
         env,
-        env_setup_state,
-        env_setup_error,
+        env_setup,
         training,
         serving,
         last_serving_error,

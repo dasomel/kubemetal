@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Header } from './components/common/Header';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { MetricsPanel } from './components/dashboard/MetricsPanel';
 import { ClusterControl } from './components/dashboard/ClusterControl';
 import { LockedPreview } from './components/dashboard/LockedPreview';
@@ -130,77 +131,79 @@ export const App: React.FC = () => {
       </nav>
 
       <main className="flex-1 p-6 space-y-4 max-w-7xl w-full mx-auto">
-        {activeTab === 'dashboard' ? (
-          <>
-            {/* 상단 안내 배너 — 여정 단계에 따라 문구가 바뀐다 */}
-            <div className="animate-card-in rounded-xl bg-surface p-4 flex items-center justify-between shadow-panel">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-md bg-surfaceRaised text-primary">
-                  <Sparkles className="w-5 h-5" />
+        <ErrorBoundary resetKey={activeTab}>
+          {activeTab === 'dashboard' ? (
+            <>
+              {/* 상단 안내 배너 — 여정 단계에 따라 문구가 바뀐다 */}
+              <div className="animate-card-in rounded-xl bg-surface p-4 flex items-center justify-between shadow-panel">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-md bg-surfaceRaised text-primary">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-heading text-ink">
+                      Hybrid MLOps Control Dashboard
+                    </h2>
+                    <p className="text-caption text-inkMuted mt-0.5">{BANNER_COPY[journeyStage]}</p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-heading text-ink">
-                    Hybrid MLOps Control Dashboard
-                  </h2>
-                  <p className="text-caption text-inkMuted mt-0.5">{BANNER_COPY[journeyStage]}</p>
+                <div className="hidden sm:flex items-center gap-2 text-caption text-inkMuted bg-surfaceRaised px-3 py-1.5 rounded-md">
+                  <Shield className="w-3.5 h-3.5 text-success" />
+                  <span>Apple Silicon Metal Safe</span>
                 </div>
               </div>
-              <div className="hidden sm:flex items-center gap-2 text-caption text-inkMuted bg-surfaceRaised px-3 py-1.5 rounded-md">
-                <Shield className="w-3.5 h-3.5 text-success" />
-                <span>Apple Silicon Metal Safe</span>
-              </div>
-            </div>
 
-            {journeyStage === 'bootstrap' && (
-              <>
-                {/* 클러스터 미기동 — 시작 카드가 히어로, 스택/포워딩은 잠긴 프리뷰 */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <MetricsPanel />
-                  <ClusterControl />
-                </div>
-                <LockedPreview caption="클러스터를 시작하면 MLOps 스택 배포와 포트포워딩을 진행할 수 있습니다">
+              {journeyStage === 'bootstrap' && (
+                <>
+                  {/* 클러스터 미기동 — 시작 카드가 히어로, 스택/포워딩은 잠긴 프리뷰 */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <MetricsPanel />
+                    <ClusterControl />
+                  </div>
+                  <LockedPreview caption="클러스터를 시작하면 MLOps 스택 배포와 포트포워딩을 진행할 수 있습니다">
+                    <ProvisionPanel />
+                  </LockedPreview>
+                </>
+              )}
+
+              {journeyStage === 'provision' && (
+                <>
+                  {/* 기동됨 + 스택 미배포 — 프로비저닝이 전면, 완료 항목은 요약 배지로 접힘 */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <ClusterControl compact />
+                    <MetricsPanel compact />
+                  </div>
                   <ProvisionPanel />
-                </LockedPreview>
-              </>
-            )}
+                </>
+              )}
 
-            {journeyStage === 'provision' && (
-              <>
-                {/* 기동됨 + 스택 미배포 — 프로비저닝이 전면, 완료 항목은 요약 배지로 접힘 */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <ClusterControl compact />
-                  <MetricsPanel compact />
-                </div>
-                <ProvisionPanel />
-              </>
-            )}
-
-            {journeyStage === 'ready' && (
-              <>
-                {/* 스택 Ready + 연동 — 전체 상태 요약 스트립을 상단에 고정 */}
-                <StatusSummaryStrip
-                  cluster={clusterRunning && k8sActive}
-                  stack={stackReady}
-                  integration={integrationWired}
-                  forwarding={forwardingActive}
-                />
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <ClusterControl compact />
-                  <MetricsPanel compact />
-                </div>
-                <ProvisionPanel />
-              </>
-            )}
-          </>
-        ) : activeTab === 'modelhub' ? (
-          <ModelHub />
-        ) : activeTab === 'mlx' ? (
-          <MlxStudio />
-        ) : activeTab === 'pipeline' ? (
-          <PipelineView />
-        ) : (
-          <AccessConsole />
-        )}
+              {journeyStage === 'ready' && (
+                <>
+                  {/* 스택 Ready + 연동 — 전체 상태 요약 스트립을 상단에 고정 */}
+                  <StatusSummaryStrip
+                    cluster={clusterRunning && k8sActive}
+                    stack={stackReady}
+                    integration={integrationWired}
+                    forwarding={forwardingActive}
+                  />
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <ClusterControl compact />
+                    <MetricsPanel compact />
+                  </div>
+                  <ProvisionPanel />
+                </>
+              )}
+            </>
+          ) : activeTab === 'modelhub' ? (
+            <ModelHub />
+          ) : activeTab === 'mlx' ? (
+            <MlxStudio />
+          ) : activeTab === 'pipeline' ? (
+            <PipelineView />
+          ) : (
+            <AccessConsole />
+          )}
+        </ErrorBoundary>
       </main>
 
       <footer className="border-t border-hairline/8 py-3 px-6 text-center text-caption text-inkFaint">

@@ -8,7 +8,7 @@ use tauri::{Manager, State};
 use crate::services::process::external_command;
 
 /// Hugging Face `/api/models?search=...` 실측 스키마(2026-07-21, `Qwen/Qwen3-*` 대상 확인)
-/// 응답에는 `_id`, `tags`, `library_name` 등 다른 필드도 있으나 여기서 쓰는 4개만 매핑한다.
+/// 응답에는 `_id`, `tags`, `library_name` 등 다른 필드도 있으나 여기서 쓰는 필드만 매핑한다.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HfModel {
     pub id: String,
@@ -17,6 +17,69 @@ pub struct HfModel {
     #[serde(default)]
     pub likes: u64,
     pub pipeline_tag: Option<String>,
+    /// 모델 용량(바이트) 추정치 — `safetensors.parameters`의 dtype별 텐서 원소 수 ×
+    /// dtype 바이트폭을 합산해 계산한다(아래 `estimate_size_bytes` 참고). safetensors 형식이
+    /// 아니거나(GGUF 전용 등) HF가 메타데이터를 못 주는 리포지토리는 `None`.
+    pub size_bytes: Option<u64>,
+}
+
+/// `expand[]=safetensors` 실측(2026-07-21, `mlx-community/Qwen2.5-7B-Instruct-4bit` 대상):
+/// `parameters`는 dtype -> 텐서 원소 수 맵이다. 실제 `model.safetensors` 파일 크기(블롭 API로
+/// 대조 확인, 약 4.30GB)와 이 필드로 계산한 바이트 합계가 거의 일치했다(F16 2바이트 +
+/// U32 4바이트 가중합 ≈ 4.284GB) — MLX 4bit 양자화 텐서가 U32에 패킹되어 있어도 바이트
+/// 단위 합산은 실제 파일 크기를 정확히 반영한다.
+#[derive(Debug, Deserialize)]
+struct HfSafetensorsInfo {
+    #[serde(default)]
+    parameters: HashMap<String, u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct HfModelRaw {
+    id: String,
+    #[serde(default)]
+    downloads: u64,
+    #[serde(default)]
+    likes: u64,
+    pipeline_tag: Option<String>,
+    safetensors: Option<HfSafetensorsInfo>,
+}
+
+/// safetensors dtype 태그의 바이트 폭. 알려지지 않은 태그는 0으로 처리해 과대평가보다
+/// 과소평가(용량 표시 누락 대신 실제보다 작게)를 택한다.
+fn dtype_byte_width(dtype: &str) -> u64 {
+    match dtype {
+        "F64" | "I64" | "U64" => 8,
+        "F32" | "I32" | "U32" => 4,
+        "F16" | "BF16" | "I16" | "U16" => 2,
+        "I8" | "U8" | "BOOL" | "F8_E4M3" | "F8_E5M2" => 1,
+        _ => 0,
+    }
+}
+
+fn estimate_size_bytes(info: &HfSafetensorsInfo) -> Option<u64> {
+    if info.parameters.is_empty() {
+        return None;
+    }
+    Some(
+        info.parameters
+            .iter()
+            .map(|(dtype, count)| count * dtype_byte_width(dtype))
+            .sum(),
+    )
+}
+
+impl From<HfModelRaw> for HfModel {
+    fn from(raw: HfModelRaw) -> Self {
+        let size_bytes = raw.safetensors.as_ref().and_then(estimate_size_bytes);
+        HfModel {
+            id: raw.id,
+            downloads: raw.downloads,
+            likes: raw.likes,
+            pipeline_tag: raw.pipeline_tag,
+            size_bytes,
+        }
+    }
 }
 
 /// `/api/models/{repo_id}/tree/main?recursive=true` 실측 스키마 중 필요한 필드만 매핑.
@@ -185,8 +248,14 @@ pub async fn search_hf_models(
     limit: u32,
     author: Option<String>,
 ) -> Result<Vec<HfModel>, String> {
+    // expand[] 파라미터를 하나라도 지정하면 HF API가 기본 필드 세트를 내려주지 않고
+    // 지정한 필드로 완전히 대체한다(2026-07-21 실측) — 그래서 원래 기본 응답에 있던
+    // downloads/likes/pipeline_tag까지 전부 명시해야 하고, 여기에 용량 계산용
+    // safetensors도 함께 추가한다.
     let mut url = format!(
-        "https://huggingface.co/api/models?search={}&limit={}&sort=downloads",
+        "https://huggingface.co/api/models?search={}&limit={}&sort=downloads\
+         &expand%5B%5D=downloads&expand%5B%5D=likes&expand%5B%5D=pipeline_tag\
+         &expand%5B%5D=safetensors",
         percent_encode(&query),
         limit
     );
@@ -208,8 +277,9 @@ pub async fn search_hf_models(
         ));
     }
 
-    serde_json::from_slice::<Vec<HfModel>>(&output.stdout)
-        .map_err(|e| format!("Hugging Face 응답 파싱 실패: {e}"))
+    let raw: Vec<HfModelRaw> = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("Hugging Face 응답 파싱 실패: {e}"))?;
+    Ok(raw.into_iter().map(HfModel::from).collect())
 }
 
 fn update_status(app: &tauri::AppHandle, repo_id: &str, f: impl FnOnce(&mut DownloadStatus)) {
@@ -548,6 +618,45 @@ pub async fn list_registered_models() -> Result<Vec<RegisteredModel>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dtype_byte_width_covers_known_safetensors_dtypes() {
+        assert_eq!(dtype_byte_width("F16"), 2);
+        assert_eq!(dtype_byte_width("BF16"), 2);
+        assert_eq!(dtype_byte_width("F32"), 4);
+        assert_eq!(dtype_byte_width("U32"), 4);
+        assert_eq!(dtype_byte_width("U8"), 1);
+        assert_eq!(dtype_byte_width("UNKNOWN_DTYPE"), 0);
+    }
+
+    #[test]
+    fn estimate_size_bytes_matches_real_file_size_within_tolerance() {
+        // 실측(2026-07-21): mlx-community/Qwen2.5-7B-Instruct-4bit의 safetensors 원소 수
+        // (F16 238310912 + U32 951910400) — 실제 model.safetensors 파일 크기(blobs=true로
+        // 대조 확인)는 4,284,346,255바이트였다. 가중합이 그 값과 거의 일치해야 한다.
+        let mut parameters = HashMap::new();
+        parameters.insert("F16".to_string(), 238_310_912u64);
+        parameters.insert("U32".to_string(), 951_910_400u64);
+        let info = HfSafetensorsInfo { parameters };
+
+        let estimated = estimate_size_bytes(&info).expect("safetensors 정보가 있으므로 Some이어야 함");
+        let actual_file_size = 4_284_346_255u64;
+        let diff = actual_file_size.abs_diff(estimated);
+        // 0.1% 이내 오차만 허용 — 텐서 원소 수 x dtype 바이트폭 가중합이 실제 파일 크기의
+        // 근사치임을 보장한다.
+        assert!(
+            diff * 1000 < actual_file_size,
+            "추정치 {estimated}가 실제 크기 {actual_file_size}와 너무 차이남(diff={diff})"
+        );
+    }
+
+    #[test]
+    fn estimate_size_bytes_returns_none_for_empty_parameters() {
+        let info = HfSafetensorsInfo {
+            parameters: HashMap::new(),
+        };
+        assert!(estimate_size_bytes(&info).is_none());
+    }
 
     #[test]
     fn safe_rel_rejects_parent_dir_traversal() {
