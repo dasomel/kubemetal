@@ -1,6 +1,7 @@
 import React from 'react';
 import { useModelHub } from '../../hooks/useModelHub';
 import { ModelSearchCard } from './ModelSearchCard';
+import { ModelHubGuideCard } from './ModelHubGuideCard';
 import { DownloadStatusCard } from './DownloadStatusCard';
 import { LocalModelsCard } from './LocalModelsCard';
 
@@ -9,6 +10,8 @@ export const ModelHub: React.FC = () => {
     searchResults,
     searching,
     search,
+    popularModels,
+    loadingPopular,
     downloads,
     downloadingIds,
     startDownload,
@@ -23,8 +26,12 @@ export const ModelHub: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <ModelHubGuideCard />
+
       <ModelSearchCard
         results={searchResults}
+        popularModels={popularModels}
+        loadingPopular={loadingPopular}
         searching={searching}
         downloadingIds={downloadingIds}
         onSearch={search}

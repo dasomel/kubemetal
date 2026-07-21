@@ -180,12 +180,21 @@ fn collect_files(base: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Re
 }
 
 #[tauri::command]
-pub async fn search_hf_models(query: String, limit: u32) -> Result<Vec<HfModel>, String> {
-    let url = format!(
+pub async fn search_hf_models(
+    query: String,
+    limit: u32,
+    author: Option<String>,
+) -> Result<Vec<HfModel>, String> {
+    let mut url = format!(
         "https://huggingface.co/api/models?search={}&limit={}&sort=downloads",
         percent_encode(&query),
         limit
     );
+    // 빈 query("")도 HF API가 그대로 받아들이며(2026-07-21 실측), author만으로 필터링된
+    // 인기 모델 목록을 반환한다 — "인기 MLX 모델" 자동 로드에 사용.
+    if let Some(author) = author.filter(|a| !a.is_empty()) {
+        url.push_str(&format!("&author={}", percent_encode(&author)));
+    }
     let output = external_command("curl")?
         .args(["-sL", &url])
         .output()

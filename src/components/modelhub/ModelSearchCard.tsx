@@ -1,28 +1,55 @@
 import React, { useState } from 'react';
 import { Search, Loader2, Download, ArrowDownToLine, Heart, Tag } from 'lucide-react';
 import type { HfModel } from '../../types/ipc';
+import { MODEL_CATEGORIES, type ModelCategory } from '../../lib/modelCategories';
 
 interface ModelSearchCardProps {
   results: HfModel[];
+  popularModels: HfModel[];
+  loadingPopular: boolean;
   searching: boolean;
   downloadingIds: Set<string>;
-  onSearch: (query: string, limit: number) => void;
+  onSearch: (query: string, limit: number, author?: string) => void;
   onDownload: (repoId: string) => void;
 }
 
 export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
   results,
+  popularModels,
+  loadingPopular,
   searching,
   downloadingIds,
   onSearch,
   onDownload,
 }) => {
   const [query, setQuery] = useState('');
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
+
+  const activeCategory = MODEL_CATEGORIES.find((c) => c.id === activeCategoryId) ?? null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setActiveCategoryId(null);
     onSearch(query, 20);
   };
+
+  const handleQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setQuery(e.target.value);
+    setActiveCategoryId(null);
+  };
+
+  const handleCategoryClick = (category: ModelCategory) => {
+    setQuery(category.query);
+    setActiveCategoryId(category.id);
+    if (category.query.trim()) {
+      onSearch(category.query, 8, category.author);
+    }
+  };
+
+  const trimmedQuery = query.trim();
+  const displayResults = trimmedQuery ? results : popularModels;
+  const isLoadingDisplay = trimmedQuery ? searching : loadingPopular;
+  const sectionLabel = trimmedQuery ? '검색 결과' : '인기 MLX 모델';
 
   return (
     <div className="rounded-xl bg-surface p-6 shadow-panel">
@@ -34,11 +61,11 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
         </h2>
       </div>
 
-      <form onSubmit={handleSubmit} className="flex gap-3 mb-5">
+      <form onSubmit={handleSubmit} className="flex gap-3 mb-4">
         <input
           type="text"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={handleQueryChange}
           placeholder="예: meta-llama/Llama-3.2-1B"
           className="flex-1 px-3.5 py-2.5 rounded-md bg-surfaceRaised text-ink text-body placeholder:text-inkFaint border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         />
@@ -52,13 +79,42 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
         </button>
       </form>
 
-      {results.length === 0 ? (
+      <div className="flex flex-wrap gap-2 mb-1.5">
+        {MODEL_CATEGORIES.map((category) => {
+          const isActive = activeCategoryId === category.id;
+          return (
+            <button
+              key={category.id}
+              type="button"
+              onClick={() => handleCategoryClick(category)}
+              className={`py-1.5 px-3 rounded-md text-caption transition-all border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                isActive
+                  ? 'bg-surfaceRaised text-primary border-primary/40'
+                  : 'bg-surface text-inkMuted border-hairline/8 hover:brightness-95'
+              }`}
+            >
+              {category.label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-caption text-inkFaint mb-4 min-h-[1em]">
+        {activeCategory?.description ?? ''}
+      </p>
+
+      <div className="text-label uppercase text-inkFaint mb-2">{sectionLabel}</div>
+
+      {displayResults.length === 0 ? (
         <div className="py-8 text-center text-inkMuted text-body">
-          {searching ? '모델을 검색하는 중...' : '검색어를 입력하고 Hugging Face 모델을 찾아보세요.'}
+          {isLoadingDisplay
+            ? '모델을 불러오는 중...'
+            : trimmedQuery
+              ? '검색 결과가 없습니다.'
+              : '인기 모델을 불러올 수 없습니다.'}
         </div>
       ) : (
         <div className="space-y-2">
-          {results.map((model) => {
+          {displayResults.map((model) => {
             const isDownloading = downloadingIds.has(model.id);
             return (
               <div

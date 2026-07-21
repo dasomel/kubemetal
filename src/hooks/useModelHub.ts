@@ -6,6 +6,8 @@ import type { HfModel, DownloadStatus, LocalModel } from '../types/ipc';
 export function useModelHub() {
   const [searchResults, setSearchResults] = useState<HfModel[]>([]);
   const [searching, setSearching] = useState(false);
+  const [popularModels, setPopularModels] = useState<HfModel[]>([]);
+  const [loadingPopular, setLoadingPopular] = useState(false);
   const [downloads, setDownloads] = useState<DownloadStatus[]>([]);
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
   const [localModels, setLocalModels] = useState<LocalModel[]>([]);
@@ -34,16 +36,33 @@ export function useModelHub() {
     }
   }, []);
 
-  const search = useCallback(async (query: string, limit = 20) => {
+  const search = useCallback(async (query: string, limit = 20, author?: string) => {
     if (!query.trim()) return;
     setSearching(true);
     try {
-      const res = await invoke<HfModel[]>('search_hf_models', { query, limit });
+      const res = await invoke<HfModel[]>('search_hf_models', { query, limit, author });
       setSearchResults(res);
     } catch (err) {
       await message(`모델 검색 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
     } finally {
       setSearching(false);
+    }
+  }, []);
+
+  // 모델 허브 탭 진입 시 검색 없이도 mlx-community의 인기 모델을 보여준다.
+  const loadPopularModels = useCallback(async () => {
+    setLoadingPopular(true);
+    try {
+      const res = await invoke<HfModel[]>('search_hf_models', {
+        query: '',
+        limit: 8,
+        author: 'mlx-community',
+      });
+      setPopularModels(res);
+    } catch (err) {
+      console.error('인기 모델 로드 오류:', err);
+    } finally {
+      setLoadingPopular(false);
     }
   }, []);
 
@@ -101,7 +120,8 @@ export function useModelHub() {
   useEffect(() => {
     fetchLocalModels();
     fetchDownloads();
-  }, [fetchLocalModels, fetchDownloads]);
+    loadPopularModels();
+  }, [fetchLocalModels, fetchDownloads, loadPopularModels]);
 
   const hasActiveDownload = downloads.some((d) => d.state === 'downloading');
 
@@ -128,6 +148,8 @@ export function useModelHub() {
     searchResults,
     searching,
     search,
+    popularModels,
+    loadingPopular,
     downloads,
     downloadingIds,
     startDownload,
