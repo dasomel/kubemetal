@@ -56,7 +56,7 @@ export const App: React.FC = () => {
                 </div>
                 <div>
                   <h2 className="text-heading text-ink">
-                    Phase 1 MVP Hybrid MLOps Control Dashboard
+                    Hybrid MLOps Control Dashboard
                   </h2>
                   <p className="text-caption text-inkMuted mt-0.5">
                     K8s 컨트롤 플레인 (Colima vz VM)과 macOS 호스트 연동 스택을 한눈에 제어합니다.
