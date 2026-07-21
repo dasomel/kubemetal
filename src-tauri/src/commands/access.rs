@@ -2,7 +2,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine;
 use serde::Serialize;
 
-use crate::services::process::resolve_cli_path;
+use crate::services::process::external_command;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CredentialItem {
@@ -23,11 +23,11 @@ pub struct ServiceAccess {
 /// (FR-09 범위에서는 TCP 응답이 오면 상태 코드와 무관하게 "ok"로 취급 — 서비스가 살아있다는
 /// 신호로 충분하며, 라우트별 200 여부까지 검증하지는 않는다).
 async fn check_health(url: &str) -> String {
-    let curl = match resolve_cli_path("curl") {
-        Ok(p) => p,
+    let mut cmd = match external_command("curl") {
+        Ok(c) => c,
         Err(_) => return "unreachable".into(),
     };
-    let output = tokio::process::Command::new(&curl)
+    let output = cmd
         .args(["-s", "-o", "/dev/null", "-m", "2", "-w", "%{http_code}", url])
         .output()
         .await;
@@ -45,12 +45,12 @@ async fn check_health(url: &str) -> String {
 /// 모델 서빙 전용 헬스: 8080은 무관한 로컬 프로세스가 선점할 수 있어(실측: Tomcat 404)
 /// "TCP 응답 = ok" 판정이 오탐을 낸다. OpenAI 호환 `/v1/models`가 HTTP 200일 때만 ok.
 async fn check_serving_health(base_url: &str) -> String {
-    let curl = match resolve_cli_path("curl") {
-        Ok(p) => p,
+    let mut cmd = match external_command("curl") {
+        Ok(c) => c,
         Err(_) => return "unreachable".into(),
     };
     let url = format!("{base_url}/models");
-    let output = tokio::process::Command::new(&curl)
+    let output = cmd
         .args(["-s", "-o", "/dev/null", "-m", "2", "-w", "%{http_code}", &url])
         .output()
         .await;
@@ -65,11 +65,11 @@ async fn check_serving_health(base_url: &str) -> String {
 /// `kubectl get secret -o json`의 `data` 필드는 K8s가 항상 base64 인코딩해 반환하므로
 /// (매니페스트가 `stringData`를 쓰더라도) 여기서 디코드가 필요하다.
 async fn fetch_seaweedfs_credentials() -> (Vec<CredentialItem>, Option<String>) {
-    let kubectl = match resolve_cli_path("kubectl") {
-        Ok(p) => p,
+    let mut cmd = match external_command("kubectl") {
+        Ok(c) => c,
         Err(e) => return (Vec::new(), Some(format!("kubectl 실행 파일을 찾을 수 없습니다: {e}"))),
     };
-    let output = match tokio::process::Command::new(&kubectl)
+    let output = match cmd
         .args([
             "--context",
             "colima",

@@ -2,14 +2,13 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use tokio::process::Child;
 use tauri::State;
-use crate::services::process::resolve_cli_path;
+use crate::services::process::external_command;
 
 #[derive(Default)]
 pub struct PortForwardState(pub Mutex<HashMap<&'static str, Child>>);
 
 #[tauri::command]
 pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<String, String> {
-    let kubectl = resolve_cli_path("kubectl")?;
     let jobs: [(&str, &str, &str); 3] = [
         ("mlflow", "svc/mlflow", "5001:5000"),
         ("seaweedfs-s3", "svc/seaweedfs", "8333:8333"),
@@ -17,7 +16,7 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
     ];
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
     for (key, svc, ports) in jobs {
-        let child = tokio::process::Command::new(&kubectl)
+        let child = external_command("kubectl")?
             .args(["--context", "colima", "port-forward", "-n", "default", svc, ports])
             .spawn()
             .map_err(|e| format!("port-forward({key}) 실행 실패: {e}"))?;

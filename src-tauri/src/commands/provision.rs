@@ -1,5 +1,5 @@
 use tauri::Manager;
-use crate::services::process::{resolve_bundled_resource, resolve_cli_path};
+use crate::services::process::{external_command, resolve_bundled_resource};
 
 const MANIFESTS: [&str; 4] = [
     // Secret을 먼저 적용해 mlflow-deployment.yaml의 secretKeyRef가 기동 시점에
@@ -12,12 +12,11 @@ const MANIFESTS: [&str; 4] = [
 
 #[tauri::command]
 pub async fn provision_mlops_stack(app: tauri::AppHandle) -> Result<String, String> {
-    let kubectl = resolve_cli_path("kubectl")?;
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
 
     for manifest in MANIFESTS {
         let path = resolve_bundled_resource(&resource_dir, manifest);
-        let output = tokio::process::Command::new(&kubectl)
+        let output = external_command("kubectl")?
             .args(["--context", "colima", "apply", "-f"])
             .arg(&path)
             .output()

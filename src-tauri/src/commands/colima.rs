@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::services::process::resolve_cli_path;
+use crate::services::process::external_command;
 
 /// colima 0.10.x `status --json` 실측 스키마: 기동 중일 때만 exit 0 + stdout에
 /// 평면 JSON({"kubernetes":true,...})을 출력하고, 미기동이면 exit 1 + stdout 없음.
@@ -21,8 +21,7 @@ pub struct ClusterStatus {
 
 #[tauri::command]
 pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
-    let bin = resolve_cli_path("colima")?;
-    let output = tokio::process::Command::new(&bin)
+    let output = external_command("colima")?
         .args(["status", "--json"])
         .output()
         .await
@@ -49,8 +48,7 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
     let kubernetes_active = raw.kubernetes;
 
     let (mlflow_ready, seaweedfs_ready, artifact_store_wired) = if kubernetes_active {
-        let kubectl = resolve_cli_path("kubectl")?;
-        let deploy_out = tokio::process::Command::new(&kubectl)
+        let deploy_out = external_command("kubectl")?
             .args(["--context", "colima", "get", "deploy", "-n", "default", "-o", "json"])
             .output()
             .await
@@ -101,8 +99,6 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
 
 #[tauri::command]
 pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
-    let bin = resolve_cli_path("colima")?;
-
     let mut sys = sysinfo::System::new_all();
     sys.refresh_memory();
     sys.refresh_cpu_usage();
@@ -116,7 +112,7 @@ pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
     let memory = memory.min(max_memory_gb as u32).max(1);
     let cpu = cpu.clamp(1, host_cores);
 
-    let output = tokio::process::Command::new(bin)
+    let output = external_command("colima")?
         .args([
             "start",
             "--cpu", &cpu.to_string(),
@@ -138,8 +134,7 @@ pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn stop_cluster() -> Result<String, String> {
-    let bin = resolve_cli_path("colima")?;
-    let output = tokio::process::Command::new(bin)
+    let output = external_command("colima")?
         .arg("stop")
         .output()
         .await

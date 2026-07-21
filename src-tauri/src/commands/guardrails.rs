@@ -5,7 +5,7 @@ use serde::Serialize;
 use tauri::Manager;
 
 use crate::commands::mlx::MlxState;
-use crate::services::process::resolve_cli_path;
+use crate::services::process::external_command;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GuardrailStatus {
@@ -41,11 +41,11 @@ fn parse_on_battery(text: &str) -> bool {
 }
 
 async fn measure_memory_pressure_level() -> String {
-    let sysctl = match resolve_cli_path("sysctl") {
-        Ok(p) => p,
+    let mut cmd = match external_command("sysctl") {
+        Ok(c) => c,
         Err(_) => return "unknown".into(),
     };
-    let output = tokio::process::Command::new(&sysctl)
+    let output = cmd
         .args(["-n", "kern.memorystatus_vm_pressure_level"])
         .output()
         .await;
@@ -58,11 +58,11 @@ async fn measure_memory_pressure_level() -> String {
 }
 
 async fn measure_on_battery() -> bool {
-    let pmset = match resolve_cli_path("pmset") {
-        Ok(p) => p,
+    let mut cmd = match external_command("pmset") {
+        Ok(c) => c,
         Err(_) => return false,
     };
-    let output = tokio::process::Command::new(&pmset)
+    let output = cmd
         .args(["-g", "batt"])
         .output()
         .await;
@@ -189,11 +189,11 @@ pub async fn resume_mlx_training(app: tauri::AppHandle) -> Result<bool, String> 
 /// 학습 시작 시 `caffeinate -dims -w <pid>`를 기동해 슬립 진입을 방지한다(FR-05.3).
 /// `-w <pid>`는 대상 프로세스가 종료되면 caffeinate 자신도 함께 종료되므로 별도 kill이 불필요하다.
 pub fn start_caffeinate(app: &tauri::AppHandle, pid: u32) {
-    let caffeinate = match resolve_cli_path("caffeinate") {
-        Ok(p) => p,
+    let mut cmd = match external_command("caffeinate") {
+        Ok(c) => c,
         Err(_) => return, // caffeinate 없음 — 가드레일은 best-effort이므로 조용히 skip
     };
-    let mut child = match tokio::process::Command::new(&caffeinate)
+    let mut child = match cmd
         .args(["-dims", "-w", &pid.to_string()])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())

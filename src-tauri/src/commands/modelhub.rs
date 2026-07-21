@@ -5,7 +5,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
-use crate::services::process::resolve_cli_path;
+use crate::services::process::external_command;
 
 /// Hugging Face `/api/models?search=...` 실측 스키마(2026-07-21, `Qwen/Qwen3-*` 대상 확인)
 /// 응답에는 `_id`, `tags`, `library_name` 등 다른 필드도 있으나 여기서 쓰는 4개만 매핑한다.
@@ -181,13 +181,12 @@ fn collect_files(base: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Re
 
 #[tauri::command]
 pub async fn search_hf_models(query: String, limit: u32) -> Result<Vec<HfModel>, String> {
-    let curl = resolve_cli_path("curl")?;
     let url = format!(
         "https://huggingface.co/api/models?search={}&limit={}&sort=downloads",
         percent_encode(&query),
         limit
     );
-    let output = tokio::process::Command::new(&curl)
+    let output = external_command("curl")?
         .args(["-sL", &url])
         .output()
         .await
@@ -217,10 +216,9 @@ fn update_status(app: &tauri::AppHandle, repo_id: &str, f: impl FnOnce(&mut Down
 
 async fn run_download_inner(app: &tauri::AppHandle, repo_id: &str) -> Result<(), String> {
     validate_repo_id(repo_id)?;
-    let curl = resolve_cli_path("curl")?;
     let tree_url =
         format!("https://huggingface.co/api/models/{repo_id}/tree/main?recursive=true");
-    let output = tokio::process::Command::new(&curl)
+    let output = external_command("curl")?
         .args(["-sL", &tree_url])
         .output()
         .await
@@ -259,7 +257,7 @@ async fn run_download_inner(app: &tauri::AppHandle, repo_id: &str) -> Result<(),
                 .await
                 .map_err(|e| format!("디렉터리 생성 실패: {e}"))?;
         }
-        let out = tokio::process::Command::new(&curl)
+        let out = external_command("curl")?
             .arg("-sfL")
             .arg("-o")
             .arg(&dest)
@@ -359,7 +357,6 @@ pub fn list_local_models() -> Result<Vec<LocalModel>, String> {
 #[tauri::command]
 pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> {
     validate_repo_id(&repo_id)?;
-    let curl = resolve_cli_path("curl")?;
     let repo_slug = slug(&repo_id);
     let dir = models_root()?.join(&repo_slug);
     if !dir.is_dir() {
@@ -369,7 +366,7 @@ pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> 
         ));
     }
 
-    let create_bucket = tokio::process::Command::new(&curl)
+    let create_bucket = external_command("curl")?
         .args([
             "-s",
             "-o",
@@ -408,7 +405,7 @@ pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> 
             "http://localhost:8333/models/{repo_slug}/{}",
             rel_to_url_path(&safe_rel_path)
         );
-        let out = tokio::process::Command::new(&curl)
+        let out = external_command("curl")?
             .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "PUT", "--data-binary"])
             .arg(format!("@{}", abs.display()))
             .arg(&url)
@@ -436,11 +433,10 @@ fn list_repo_files(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
 #[tauri::command]
 pub async fn register_model_mlflow(repo_id: String) -> Result<String, String> {
     validate_repo_id(&repo_id)?;
-    let curl = resolve_cli_path("curl")?;
     let repo_slug = slug(&repo_id);
 
     let create_body = serde_json::json!({ "name": repo_slug }).to_string();
-    let create_out = tokio::process::Command::new(&curl)
+    let create_out = external_command("curl")?
         .args([
             "-s",
             "-X",
@@ -471,7 +467,7 @@ pub async fn register_model_mlflow(repo_id: String) -> Result<String, String> {
 
     let source = format!("s3://models/{repo_slug}");
     let version_body = serde_json::json!({ "name": repo_slug, "source": source }).to_string();
-    let version_out = tokio::process::Command::new(&curl)
+    let version_out = external_command("curl")?
         .args([
             "-s",
             "-X",
@@ -510,8 +506,7 @@ pub async fn register_model_mlflow(repo_id: String) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn list_registered_models() -> Result<Vec<RegisteredModel>, String> {
-    let curl = resolve_cli_path("curl")?;
-    let output = tokio::process::Command::new(&curl)
+    let output = external_command("curl")?
         .args([
             "-s",
             "http://localhost:5001/api/2.0/mlflow/registered-models/search",

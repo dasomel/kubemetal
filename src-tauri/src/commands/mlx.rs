@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::services::process::{resolve_bundled_resource, resolve_cli_path};
+use crate::services::process::{
+    augmented_path, external_command, resolve_bundled_resource, resolve_cli_path,
+};
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct MlxEnvStatus {
@@ -156,6 +158,7 @@ async fn check_mlx_env_inner() -> MlxEnvStatus {
             "-c",
             "import mlx_lm, importlib.metadata; print(importlib.metadata.version('mlx-lm'))",
         ])
+        .env("PATH", augmented_path())
         .output()
         .await;
 
@@ -184,10 +187,9 @@ pub async fn check_mlx_env() -> Result<MlxEnvStatus, String> {
 }
 
 async fn run_setup_inner() -> Result<(), String> {
-    let python3 = resolve_cli_path("python3")?;
     let venv = venv_dir()?;
     if !venv.join("bin").join("python").is_file() {
-        let out = tokio::process::Command::new(&python3)
+        let out = external_command("python3")?
             .arg("-m")
             .arg("venv")
             .arg(&venv)
@@ -205,6 +207,7 @@ async fn run_setup_inner() -> Result<(), String> {
     let pip = venv_pip()?;
     let out = tokio::process::Command::new(&pip)
         .args(["install", "-U", "mlx-lm"])
+        .env("PATH", augmented_path())
         .output()
         .await
         .map_err(|e| format!("pip install 실행 실패: {e}"))?;
@@ -456,6 +459,7 @@ pub async fn run_mlx_finetune(
             .arg(&config.adapter_name)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .env("PATH", augmented_path())
             .process_group(0)
             .spawn()
             .map_err(|e| format!("파인튜닝 프로세스 실행 실패: {e}"))?;
@@ -611,6 +615,7 @@ pub async fn start_model_serving(
             .args(["--port", &port.to_string()])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
+            .env("PATH", augmented_path())
             .spawn()
             .map_err(|e| format!("서빙 프로세스 실행 실패: {e}"))?;
 
