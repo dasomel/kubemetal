@@ -24,8 +24,9 @@ build: ## 릴리스 번들(.app/.dmg) 빌드 — 헤드리스 dmg 이슈는 READ
 	pnpm tauri build
 
 bin: ## 순수 실행 바이너리 생성 (src-tauri/target/release/kubemetal)
-	pnpm build
-	cargo build --release --manifest-path $(CARGO_MANIFEST)
+	# 플레인 `cargo build`는 custom-protocol 피처가 빠져 devUrl(5173)을 바라보는
+	# 빈 화면 바이너리가 된다 — 반드시 tauri CLI 경유로 빌드한다.
+	pnpm tauri build --no-bundle
 	@echo "실행 파일: src-tauri/target/release/kubemetal"
 
 app: ## .app 번들만 생성 (dmg 생략 — 헤드리스 안전)

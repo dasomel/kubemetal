@@ -18,6 +18,7 @@
 | 2026-07-20 | Error UX via JS `alert()` — wry WebView does not implement alert/confirm/prompt | Use `@tauri-apps/plugin-dialog` (`message`/`ask`) + `dialog:default` capability |
 | 2026-07-20 | Created `sysinfo::System::new_all()` on every metrics call | Hold one instance in `tauri::State<Mutex<System>>` and `refresh_*()` per call |
 | 2026-07-20 | External endpoint links rendered as `<a href>` — Tauri WebView cannot open external URLs via anchor/window.open, so the buttons silently did nothing | Register `tauri-plugin-opener` + `opener:allow-open-url` capability (scoped to `http://localhost:*`) and call `openUrl()`; browser-preview fallback `.catch(() => window.open(url, '_blank'))` |
+| 2026-07-21 | Built the release executable with plain `cargo build --release` — without the `custom-protocol` feature the binary serves from `devUrl` (localhost:5173) instead of embedded assets, so it launches to a blank window when no dev server runs (binary literally contains the 5173 URL); process-alive smoke tests never catch this | Always build executables via the tauri CLI (`pnpm tauri build --no-bundle` for bin-only); verified fixed binary is byte-identical to the CLI-built .app binary |
 
 ## macOS platform
 
