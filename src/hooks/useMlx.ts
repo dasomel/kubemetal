@@ -183,22 +183,20 @@ export function useMlx() {
     checkEnv();
     fetchStatus();
     fetchLocalModels();
-  }, [checkEnv, fetchStatus, fetchLocalModels]);
+    fetchGuardrailStatus();
+  }, [checkEnv, fetchStatus, fetchLocalModels, fetchGuardrailStatus]);
 
   const envInstalling = mlxStatus?.env_setup?.state === 'installing';
   const trainingActive =
     !!mlxStatus?.training && mlxStatus.training.status !== 'done' && mlxStatus.training.status !== 'error';
   const shouldPoll = envInstalling || trainingActive;
 
-  // 환경 설치 또는 파인튜닝이 진행 중일 때만 3초 간격으로 상태를 폴링한다.
   useEffect(() => {
     if (!shouldPoll) return;
     const interval = setInterval(fetchStatus, 3000);
     return () => clearInterval(interval);
   }, [shouldPoll, fetchStatus]);
 
-  // 환경 설치가 "완료"(done)됐을 때만 캐시를 무효화하고 환경 상태를 다시 확인한다.
-  // (설치 실패/error는 환경이 바뀌지 않았으므로 캐시를 건드리지 않는다.)
   useEffect(() => {
     const state = mlxStatus?.env_setup?.state;
     if (prevEnvStateRef.current === 'installing' && state === 'done') {
@@ -208,10 +206,8 @@ export function useMlx() {
     prevEnvStateRef.current = state;
   }, [mlxStatus?.env_setup?.state, checkEnv]);
 
-  // 가드레일 상태는 학습이 진행 중일 때만 조회한다(백엔드 감시 루프도 5초 주기이므로 동일하게 맞춘다).
   useEffect(() => {
     if (!trainingActive) return;
-    fetchGuardrailStatus();
     const interval = setInterval(fetchGuardrailStatus, 5000);
     return () => clearInterval(interval);
   }, [trainingActive, fetchGuardrailStatus]);
