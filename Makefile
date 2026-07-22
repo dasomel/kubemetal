@@ -20,16 +20,16 @@ install: ## 프론트엔드 의존성 설치 (pnpm)
 dev: ## 앱 개발 모드 실행 (vite는 beforeDevCommand로 자동 기동)
 	pnpm tauri dev
 
-build: ## 릴리스 번들(.app/.dmg) 빌드 — 헤드리스 dmg 이슈는 README 참고
+build: clean ## 릴리스 번들(.app/.dmg) 빌드 — 헤드리스 dmg 이슈는 README 참고
 	pnpm tauri build
 
-bin: ## 순수 실행 바이너리 생성 (src-tauri/target/release/kubemetal)
+bin: clean ## 순수 실행 바이너리 생성 (src-tauri/target/release/kubemetal)
 	# 플레인 `cargo build`는 custom-protocol 피처가 빠져 devUrl(5173)을 바라보는
 	# 빈 화면 바이너리가 된다 — 반드시 tauri CLI 경유로 빌드한다.
 	pnpm tauri build --no-bundle
 	@echo "실행 파일: src-tauri/target/release/kubemetal"
 
-app: ## .app 번들만 생성 (dmg 생략 — 헤드리스 안전)
+app: clean ## .app 번들만 생성 (dmg 생략 — 헤드리스 안전)
 	pnpm tauri build --bundles app
 	@echo "번들: src-tauri/target/release/bundle/macos/KubeMetal.app"
 
@@ -80,5 +80,11 @@ status: ## 클러스터·파드 상태 요약
 	-colima status --json
 	-$(KUBECTL) get pods
 
-clean: ## 웹 빌드 산출물 제거 (Rust target은 cargo clean을 직접 실행)
+clean: ## 빌드 캐시·산출물 전체 제거 (프론트엔드 + Rust incremental)
 	rm -rf dist
+	rm -rf node_modules/.vite
+	rm -f tsconfig.tsbuildinfo
+	rm -rf src-tauri/target/release/build
+	rm -rf src-tauri/target/release/incremental
+	rm -rf src-tauri/target/release/.fingerprint
+	@echo "✓ 캐시 정리 완료"
