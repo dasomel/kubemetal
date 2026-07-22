@@ -2,6 +2,7 @@ import React from 'react';
 import { ShieldCheck, Loader2, PlayCircle, PauseCircle, BatteryCharging, Battery, Coffee } from 'lucide-react';
 import type { GuardrailStatus, MlxTrainingState } from '../../types/ipc';
 import { useMlx } from '../../hooks/useMlx';
+import { useTranslation } from '../../i18n/i18nContext';
 
 interface MlxGuardrailCardProps {
   guardrailStatus: GuardrailStatus | null;
@@ -16,24 +17,11 @@ interface MlxGuardrailCardProps {
 
 const tileLabelClass = 'text-label uppercase text-inkFaint mb-1';
 
-const LEVEL_LABEL: Record<string, string> = {
-  normal: '정상',
-  warn: '경고',
-  critical: '위험',
-  unknown: '알 수 없음',
-};
-
 const LEVEL_DOT: Record<string, string> = {
   normal: 'bg-success',
   warn: 'bg-warning',
   critical: 'bg-danger',
   unknown: 'bg-inkFaint',
-};
-
-const PAUSE_REASON_LABEL: Record<string, string> = {
-  paused: '수동으로 일시정지됨',
-  paused_memory_pressure: '메모리 압력 감지로 자동 일시정지됨',
-  paused_battery: '배터리 구동 감지로 자동 일시정지됨',
 };
 
 export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
@@ -47,8 +35,22 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
   onPause: propOnPause,
 }) => {
   const { pausingTraining: hookPausing, pauseTraining: hookOnPause } = useMlx();
+  const { t, language } = useTranslation();
   const pausingTraining = propPausing ?? hookPausing;
   const onPause = propOnPause ?? hookOnPause;
+
+  const levelLabel: Record<string, string> = {
+    normal: language === 'en' ? 'Normal' : '정상',
+    warn: language === 'en' ? 'Warning' : '경고',
+    critical: language === 'en' ? 'Critical' : '위험',
+    unknown: language === 'en' ? 'Unknown' : '알 수 없음',
+  };
+
+  const pauseReasonLabel: Record<string, string> = {
+    paused: language === 'en' ? 'Manually paused' : '수동으로 일시정지됨',
+    paused_memory_pressure: language === 'en' ? 'Auto paused due to memory pressure' : '메모리 압력 감지로 자동 일시정지됨',
+    paused_battery: language === 'en' ? 'Auto paused due to battery power' : '배터리 구동 감지로 자동 일시정지됨',
+  };
 
   const isPaused = !!training && training.status.startsWith('paused');
   const isRunning = !!training && (training.status === 'running' || training.status === 'training');
@@ -60,37 +62,43 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
         <div className="text-label uppercase text-inkFaint mb-1">Safety</div>
         <h2 className="text-heading text-ink flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-primary" />
-          <span>가드레일</span>
+          <span>{t('mlx.guardrailTitle')}</span>
         </h2>
       </div>
 
       {!guardrailStatus ? (
-        <div className="py-6 text-center text-inkMuted text-body">가드레일 상태를 불러오는 중...</div>
+        <div className="py-6 text-center text-inkMuted text-body">
+          {language === 'en' ? 'Loading guardrail status...' : '가드레일 상태를 불러오는 중...'}
+        </div>
       ) : (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-2">
             <div className="p-3 rounded-lg bg-surfaceRaised">
-              <div className={tileLabelClass}>메모리 압력</div>
+              <div className={tileLabelClass}>{language === 'en' ? 'Memory Pressure' : '메모리 압력'}</div>
               <div className="flex items-center gap-1.5 text-bodyStrong text-ink">
                 <span className={`w-2 h-2 rounded-full shrink-0 ${LEVEL_DOT[level] ?? LEVEL_DOT.unknown}`} />
-                <span>{LEVEL_LABEL[level] ?? level}</span>
+                <span>{levelLabel[level] ?? level}</span>
               </div>
             </div>
             <div className="p-3 rounded-lg bg-surfaceRaised">
-              <div className={tileLabelClass}>전원</div>
+              <div className={tileLabelClass}>{language === 'en' ? 'Power' : '전원'}</div>
               <div className="flex items-center gap-1.5 text-bodyStrong text-ink">
                 {guardrailStatus.on_battery ? (
                   <Battery className="w-3.5 h-3.5 text-warning" />
                 ) : (
                   <BatteryCharging className="w-3.5 h-3.5 text-success" />
                 )}
-                <span>{guardrailStatus.on_battery ? '배터리 구동' : 'AC 전원'}</span>
+                <span>
+                  {guardrailStatus.on_battery
+                    ? (language === 'en' ? 'Battery Power' : '배터리 구동')
+                    : (language === 'en' ? 'AC Power' : 'AC 전원')}
+                </span>
               </div>
             </div>
           </div>
 
           <label className="flex items-center justify-between gap-3 py-1">
-            <span className="text-body text-ink">배터리 구동 시 학습 자동 일시정지</span>
+            <span className="text-body text-ink">{t('mlx.batteryPauseToggle')}</span>
             <button
               type="button"
               role="switch"
@@ -114,7 +122,11 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
           {guardrailStatus.caffeinate_active && (
             <div className="flex items-center gap-1.5 text-caption text-inkMuted">
               <Coffee className="w-3.5 h-3.5 text-primary" />
-              <span>caffeinate 활성 — 학습 중 슬립 진입을 방지합니다.</span>
+              <span>
+                {language === 'en'
+                  ? 'caffeinate active — Prevents system sleep during training.'
+                  : 'caffeinate 활성 — 학습 중 슬립 진입을 방지합니다.'}
+              </span>
             </div>
           )}
 
@@ -123,7 +135,7 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
               <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-surfaceRaised">
                 <div className="flex items-center gap-1.5 text-caption text-warning">
                   <span className="w-2 h-2 rounded-full bg-warning shrink-0" />
-                  <span>{PAUSE_REASON_LABEL[training!.status] ?? '학습이 일시정지되었습니다.'}</span>
+                  <span>{pauseReasonLabel[training!.status] ?? (language === 'en' ? 'Training is paused.' : '학습이 일시정지되었습니다.')}</span>
                 </div>
                 <button
                   type="button"
@@ -136,7 +148,7 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
                   ) : (
                     <PlayCircle className="w-3.5 h-3.5" />
                   )}
-                  <span>재개</span>
+                  <span>{resumingTraining ? t('mlx.resumingBtn') : t('mlx.resumeTrainingBtn')}</span>
                 </button>
               </div>
             </div>
@@ -147,7 +159,7 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
               <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-surfaceRaised">
                 <div className="flex items-center gap-1.5 text-caption text-success">
                   <span className="w-2 h-2 rounded-full bg-success shrink-0" />
-                  <span>학습이 진행 중입니다.</span>
+                  <span>{language === 'en' ? 'Training in progress.' : '학습이 진행 중입니다.'}</span>
                 </div>
                 <button
                   type="button"
@@ -160,7 +172,7 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
                   ) : (
                     <PauseCircle className="w-3.5 h-3.5" />
                   )}
-                  <span>일시정지</span>
+                  <span>{language === 'en' ? 'Pause' : '일시정지'}</span>
                 </button>
               </div>
             </div>

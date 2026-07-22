@@ -3,6 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Rocket, Loader2, Play, Square, ArrowUpRight, AlertTriangle } from 'lucide-react';
 import type { LocalModel, MlxServingState } from '../../types/ipc';
+import { ModelChatPlayground } from './ModelChatPlayground';
+import { useTranslation } from '../../i18n/i18nContext';
 
 interface MlxServingCardProps {
   serving?: MlxServingState;
@@ -33,6 +35,7 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
   onStart,
   onStop,
 }) => {
+  const { t, language } = useTranslation();
   const [modelPath, setModelPath] = useState('');
   const [adapterPath, setAdapterPath] = useState('');
   const [port, setPort] = useState(8080);
@@ -78,7 +81,7 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
         <div className="text-label uppercase text-inkFaint mb-1">Serving</div>
         <h2 className="text-heading text-ink flex items-center gap-2">
           <Rocket className="w-4 h-4 text-primary" />
-          <span>모델 서빙</span>
+          <span>{t('mlx.servingTitle')}</span>
         </h2>
       </div>
 
@@ -91,14 +94,14 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
 
       <form onSubmit={handleSubmit} className="space-y-4 mb-4">
         <div>
-          <label className={labelClass}>베이스 모델</label>
+          <label className={labelClass}>{t('mlx.selectBaseModel')}</label>
           <select
             value={modelPath}
             onChange={(e) => setModelPath(e.target.value)}
             disabled={!!serving}
             className={inputClass}
           >
-            <option value="">모델 선택...</option>
+            <option value="">{t('mlx.selectModelPlaceholder')}</option>
             {localModels.map((m) => (
               <option key={m.repo_id} value={m.path}>
                 {m.repo_id}
@@ -108,19 +111,19 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
         </div>
 
         <div>
-          <label className={labelClass}>어댑터 경로 (선택)</label>
+          <label className={labelClass}>{t('mlx.adapterPathOptional')}</label>
           <input
             type="text"
             value={adapterPath}
             onChange={(e) => setAdapterPath(e.target.value)}
             disabled={!!serving}
-            placeholder="예: ~/.kubemetal/adapters/my-adapter"
+            placeholder={language === 'en' ? 'e.g. ~/.kubemetal/adapters/my-adapter' : '예: ~/.kubemetal/adapters/my-adapter'}
             className={inputClass}
           />
         </div>
 
         <div className="max-w-[160px]">
-          <label className={labelClass}>포트</label>
+          <label className={labelClass}>{t('mlx.portLabel')}</label>
           <input
             type="number"
             min={1}
@@ -143,7 +146,7 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
             className="py-2.5 px-4 bg-dangerStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           >
             {stopping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
-            <span>서빙 정지</span>
+            <span>{t('mlx.stopServingBtn')}</span>
           </button>
         ) : (
           <button
@@ -152,33 +155,40 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
             className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           >
             {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-            <span>서빙 시작</span>
+            <span>{t('mlx.startServingBtn')}</span>
           </button>
         )}
       </form>
 
       {serving && (
-        <div className="pt-4 border-t border-hairline/8">
-          <div className="flex items-center gap-1.5 text-caption text-inkMuted mb-3">
-            <span className="w-2 h-2 rounded-full bg-success" />
-            <span>
-              서빙 중 (PID {serving.pid}) · {serving.model_path}
-              {serving.adapter_path ? ` · 어댑터 ${serving.adapter_path}` : ''}
-            </span>
+        <div className="pt-4 border-t border-hairline/8 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-caption text-inkMuted">
+              <span className="w-2 h-2 rounded-full bg-success" />
+              <span>
+                {language === 'en' ? `Serving active (PID ${serving.pid}) · ` : `서빙 중 (PID ${serving.pid}) · `}
+                {serving.model_path}
+                {serving.adapter_path ? (language === 'en' ? ` · adapter ${serving.adapter_path}` : ` · 어댑터 ${serving.adapter_path}`) : ''}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => openEndpoint(`http://127.0.0.1:${serving.port}/v1/models`)}
+              className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-primary text-caption flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary self-start sm:self-auto"
+            >
+              {`http://127.0.0.1:${serving.port}/v1`}
+              <ArrowUpRight className="w-3 h-3" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => openEndpoint(`http://127.0.0.1:${serving.port}/v1/models`)}
-            className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-primary text-caption flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            {`http://127.0.0.1:${serving.port}/v1`}
-            <ArrowUpRight className="w-3 h-3" />
-          </button>
-          <div className="text-caption text-inkFaint mt-1.5">
-            OpenAI 호환 base URL — 클릭 시 모델 목록으로 동작 확인
-          </div>
+
+          <ModelChatPlayground
+            port={serving.port}
+            modelPath={serving.model_path}
+            adapterPath={serving.adapter_path}
+          />
         </div>
       )}
     </div>
   );
 };
+

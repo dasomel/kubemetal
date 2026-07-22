@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
-  MessageSquare,
   Send,
   Trash2,
   Sliders,

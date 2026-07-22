@@ -28,10 +28,17 @@ export const Header: React.FC = () => {
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surfaceRaised border border-hairline/8">
           <Cpu className="w-3.5 h-3.5 text-primary" />
           <span>
-            {t('header.hostMemory')}
-            {metrics ? ` (${metrics.used_memory_gb.toFixed(1)}GB / ${metrics.total_memory_gb.toFixed(0)}GB)` : ''}
+            {metrics
+              ? `${metrics.used_memory_gb.toFixed(1)} / ${metrics.total_memory_gb.toFixed(0)}GB · ${metrics.memory_usage_percentage}%`
+              : t('header.hostMemory')}
           </span>
         </div>
+        {metrics && (metrics.gpu_usage_percentage ?? 0) > 0 && (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surfaceRaised border border-hairline/8">
+            <Cpu className="w-3.5 h-3.5 text-primary" />
+            <span>GPU {metrics.gpu_usage_percentage}%</span>
+          </div>
+        )}
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surfaceRaised border border-hairline/8">
           <HardDrive className="w-3.5 h-3.5 text-primary" />
           <span>{t('header.vmVirt')}</span>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Sliders, Loader2, Play, Square } from 'lucide-react';
 import type { LocalModel, MlxTrainingState, FineTuneConfig } from '../../types/ipc';
+import { useTranslation } from '../../i18n/i18nContext';
 
 interface MlxFineTuneCardProps {
   localModels: LocalModel[];
@@ -23,6 +24,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
   onStart,
   onKill,
 }) => {
+  const { t, language } = useTranslation();
   const [modelPath, setModelPath] = useState('');
   const [dataPath, setDataPath] = useState('~/.kubemetal/datasets/smoke');
   const [iters, setIters] = useState(100);
@@ -53,25 +55,25 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
         <div className="text-label uppercase text-inkFaint mb-1">MLX-LM</div>
         <h2 className="text-heading text-ink flex items-center gap-2">
           <Sliders className="w-4 h-4 text-primary" />
-          <span>파인튜닝</span>
+          <span>{t('mlx.finetuneTitle')}</span>
         </h2>
       </div>
 
       {localModels.length === 0 ? (
         <div className="py-6 text-center text-inkMuted text-body mb-4">
-          로컬 모델이 없습니다. 모델 허브 탭에서 모델을 먼저 다운로드하세요.
+          {t('orch.noLocalModelsNotice')}
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4 mb-4">
           <div>
-            <label className={labelClass}>로컬 모델</label>
+            <label className={labelClass}>{t('mlx.selectBaseModel')}</label>
             <select
               value={modelPath}
               onChange={(e) => setModelPath(e.target.value)}
               disabled={isTraining}
               className={inputClass}
             >
-              <option value="">모델 선택...</option>
+              <option value="">{t('mlx.selectModelPlaceholder')}</option>
               {localModels.map((m) => (
                 <option key={m.repo_id} value={m.path}>
                   {m.repo_id}
@@ -81,7 +83,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
           </div>
 
           <div>
-            <label className={labelClass}>데이터셋 경로</label>
+            <label className={labelClass}>{t('mlx.datasetPathLabel')}</label>
             <input
               type="text"
               value={dataPath}
@@ -93,7 +95,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
-              <label className={labelClass}>Iters</label>
+              <label className={labelClass}>{t('mlx.itersLabel')}</label>
               <input
                 type="number"
                 min={1}
@@ -104,7 +106,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
               />
             </div>
             <div>
-              <label className={labelClass}>Batch Size</label>
+              <label className={labelClass}>{t('mlx.batchSizeLabel')}</label>
               <input
                 type="number"
                 min={1}
@@ -115,7 +117,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
               />
             </div>
             <div>
-              <label className={labelClass}>Learning Rate</label>
+              <label className={labelClass}>{t('mlx.learningRateLabel')}</label>
               <input
                 type="number"
                 step="0.00001"
@@ -127,7 +129,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
               />
             </div>
             <div>
-              <label className={labelClass}>Adapter Name</label>
+              <label className={labelClass}>{t('mlx.adapterNameLabel')}</label>
               <input
                 type="text"
                 value={adapterName}
@@ -150,7 +152,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
               ) : (
                 <Square className="w-4 h-4" />
               )}
-              <span>학습 중지</span>
+              <span>{t('mlx.stopFinetuneBtn')}</span>
             </button>
           ) : (
             <button
@@ -159,7 +161,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
               className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
             >
               {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-              <span>파인튜닝 시작</span>
+              <span>{t('mlx.startFinetuneBtn')}</span>
             </button>
           )}
         </form>
@@ -169,7 +171,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
         <div className="pt-4 border-t border-hairline/8">
           <div className="p-3 rounded-lg bg-surfaceRaised">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-bodyStrong text-ink">진행 상황</span>
+              <span className="text-bodyStrong text-ink">{t('mlx.trainingProgressTitle')}</span>
               <span className="text-caption text-inkFaint tabular-nums">
                 {training.current_iter} / {training.total_iters} iter
                 {training.last_loss != null ? ` · loss ${training.last_loss.toFixed(4)}` : ''}
@@ -190,19 +192,19 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
             {isTraining && (
               <div className="flex items-center gap-1.5 text-caption text-inkMuted">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                <span>학습 중 (PID {training.pid})</span>
+                <span>{language === 'en' ? `Training in progress (PID ${training.pid})` : `학습 중 (PID ${training.pid})`}</span>
               </div>
             )}
             {training.status === 'done' && (
               <div className="flex items-center gap-1.5 text-caption text-inkMuted">
                 <span className="w-2 h-2 rounded-full bg-success" />
-                <span>완료{training.adapter_path ? ` · ${training.adapter_path}` : ''}</span>
+                <span>{language === 'en' ? 'Completed' : '완료'}{training.adapter_path ? ` · ${training.adapter_path}` : ''}</span>
               </div>
             )}
             {training.status === 'error' && (
               <div className="flex items-center gap-1.5 text-caption text-danger">
                 <span className="w-2 h-2 rounded-full bg-danger" />
-                <span>오류: {training.error ?? '알 수 없는 오류'}</span>
+                <span>{language === 'en' ? 'Error' : '오류'}: {training.error ?? (language === 'en' ? 'Unknown error' : '알 수 없는 오류')}</span>
               </div>
             )}
           </div>

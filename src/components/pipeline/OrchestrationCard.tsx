@@ -164,7 +164,7 @@ export const OrchestrationCard: React.FC = () => {
               <div className="flex items-center gap-2 border-l border-hairline/8 pl-6">
                 <span className="text-bodyStrong text-ink">{t('orch.runnerLabel')}</span>
                 <span className={`w-2 h-2 rounded-full shrink-0 ${status?.runner_running ? 'bg-success' : 'bg-inkFaint'}`} />
-                <span className="text-caption text-inkMuted">{status?.runner_running ? t('orch.runnerRunning', { pid: status.runner_pid }) : t('orch.runnerStopped')}</span>
+                <span className="text-caption text-inkMuted">{status?.runner_running ? t('orch.runnerRunning', { pid: status.runner_pid ?? 0 }) : t('orch.runnerStopped')}</span>
               </div>
             </div>
 
