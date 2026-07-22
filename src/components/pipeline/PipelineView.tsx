@@ -1,10 +1,11 @@
 import React, { useEffect } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { ChevronDown, ChevronRight, Server, Database, Cpu, Archive, Rocket, ArrowUpRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Server, Database, Cpu, Archive, Rocket, FlaskConical, ArrowUpRight } from 'lucide-react';
 import { useColima } from '../../hooks/useColima';
 import { useModelHub } from '../../hooks/useModelHub';
 import { useMlx } from '../../hooks/useMlx';
 import { useRegisteredModels } from '../../hooks/useRegisteredModels';
+import { usePrefect } from '../../hooks/usePrefect';
 import { OrchestrationCard } from './OrchestrationCard';
 
 type DotColor = 'success' | 'warning' | 'danger' | 'inkFaint';
@@ -80,6 +81,7 @@ export const PipelineView: React.FC = () => {
   const { localModels, downloads } = useModelHub();
   const { mlxStatus } = useMlx();
   const registered = useRegisteredModels();
+  const { evalResults } = usePrefect(false);
 
   useEffect(() => {
     registered.refresh();
@@ -252,7 +254,31 @@ export const PipelineView: React.FC = () => {
         hint: 'MLX 스튜디오에서 서빙 시작',
       };
 
-  const stages = [infraStage, modelPrepStage, trainingStage, registerStage, servingStage];
+  // ⑥ 평가
+  const evalStage: StageInfo =
+    evalResults.length > 0
+      ? {
+          key: 'eval',
+          icon: FlaskConical,
+          title: '평가',
+          dot: 'success',
+          statusText: `최근 결과 ${Math.min(evalResults.length, 3)}건`,
+          detail: evalResults
+            .slice(0, 3)
+            .map((m) => `${m.task} · ${m.metric} ${m.value.toFixed(3)}`)
+            .join(' / '),
+          link: { label: 'MLflow UI', url: 'http://localhost:5001' },
+        }
+      : {
+          key: 'eval',
+          icon: FlaskConical,
+          title: '평가',
+          dot: 'inkFaint',
+          statusText: '평가 이력 없음',
+          hint: '오케스트레이션에서 평가 실행',
+        };
+
+  const stages = [infraStage, modelPrepStage, trainingStage, registerStage, servingStage, evalStage];
 
   return (
     <div className="space-y-4">

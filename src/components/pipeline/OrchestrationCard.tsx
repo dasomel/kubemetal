@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { Workflow, Loader2, Play, Square, Cpu, ArrowUpRight, Rocket } from 'lucide-react';
+import { Workflow, Loader2, Play, Square, Cpu, ArrowUpRight, Rocket, FlaskConical } from 'lucide-react';
 import { usePrefect } from '../../hooks/usePrefect';
 import { useMlx } from '../../hooks/useMlx';
 import type { FlowRunInfo, FineTuneConfig } from '../../types/ipc';
@@ -61,12 +61,26 @@ export const OrchestrationCard: React.FC = () => {
     stopRunner,
     triggeringFlow,
     triggerFinetuneFlow,
+    evalInstalling,
+    setupEvalEnv,
+    triggeringEvaluate,
+    triggerEvaluateFlow,
   } = usePrefect(true);
-  const { localModels } = useMlx();
+  const { localModels, mlxStatus } = useMlx();
   const [showFlowForm, setShowFlowForm] = useState(false);
   const [modelPath, setModelPath] = useState('');
+  const [showEvalForm, setShowEvalForm] = useState(false);
+  const [evalTasks, setEvalTasks] = useState('gsm8k');
+  const [evalLimit, setEvalLimit] = useState(8);
+  const [evalPort, setEvalPort] = useState(8080);
 
   const serverReady = status?.server_ready ?? false;
+  const servingPort = mlxStatus?.serving?.port;
+
+  // 서빙 활성 포트가 바뀌면 평가 폼의 포트를 자동으로 맞춘다(수동 입력은 계속 허용).
+  useEffect(() => {
+    if (servingPort) setEvalPort(servingPort);
+  }, [servingPort]);
 
   const handleTrigger = (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,6 +96,13 @@ export const OrchestrationCard: React.FC = () => {
     triggerFinetuneFlow(config);
     setShowFlowForm(false);
     setModelPath('');
+  };
+
+  const handleEvaluate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!servingPort) return;
+    triggerEvaluateFlow(evalTasks || 'gsm8k', evalLimit, evalPort);
+    setShowEvalForm(false);
   };
 
   return (
@@ -230,6 +251,95 @@ export const OrchestrationCard: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowFlowForm(false)}
+                    className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 text-inkMuted text-bodyStrong rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  >
+                    취소
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+
+          {/* ⑥ 평가 */}
+          <div className="pt-3 border-t border-hairline/8">
+            <h3 className="text-label uppercase text-inkFaint mb-2">평가</h3>
+            {!status?.eval_env_installed ? (
+              <button
+                type="button"
+                onClick={() => setupEvalEnv()}
+                disabled={evalInstalling}
+                className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+              >
+                {evalInstalling ? <Loader2 className="w-4 h-4 animate-spin" /> : <FlaskConical className="w-4 h-4" />}
+                <span>{evalInstalling ? '설치 중...' : '평가 환경 설치'}</span>
+              </button>
+            ) : !showEvalForm ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowEvalForm(true)}
+                  className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 text-ink text-bodyStrong rounded-md transition-all flex items-center gap-1.5 border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  <FlaskConical className="w-4 h-4" />
+                  <span>평가 실행</span>
+                </button>
+                {!servingPort && (
+                  <div className="text-caption text-inkFaint mt-2">
+                    모델 서빙이 실행 중이 아닙니다. MLX 스튜디오에서 서빙을 먼저 시작하세요.
+                  </div>
+                )}
+              </>
+            ) : (
+              <form onSubmit={handleEvaluate} className="space-y-3">
+                <div>
+                  <label className={labelClass}>태스크</label>
+                  <input
+                    type="text"
+                    value={evalTasks}
+                    onChange={(e) => setEvalTasks(e.target.value)}
+                    placeholder="gsm8k"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>샘플 수</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={evalLimit}
+                    onChange={(e) => setEvalLimit(Math.max(1, Number(e.target.value) || 1))}
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>서빙 포트</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={evalPort}
+                    onChange={(e) => setEvalPort(Number(e.target.value) || 0)}
+                    className={inputClass}
+                  />
+                  {servingPort ? (
+                    <div className="text-caption text-inkFaint mt-1">현재 서빙 포트 {servingPort} 자동 감지됨 · 수동 변경 가능</div>
+                  ) : (
+                    <div className="text-caption text-danger mt-1">
+                      모델 서빙이 실행 중이 아닙니다. MLX 스튜디오에서 서빙을 먼저 시작하세요.
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={triggeringEvaluate || !servingPort}
+                    className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                  >
+                    {triggeringEvaluate ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                    <span>평가 실행</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowEvalForm(false)}
                     className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 text-inkMuted text-bodyStrong rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     취소

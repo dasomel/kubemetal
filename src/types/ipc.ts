@@ -124,7 +124,16 @@ export interface FlowRunInfo {
 export interface PrefectStatus {
   server_ready: boolean;
   env_installed: boolean;
+  eval_env_installed: boolean;
   runner_running: boolean;
   runner_pid?: number;
   recent_runs: FlowRunInfo[];
+}
+
+export interface EvalMetric {
+  run_id: string;
+  task: string;
+  metric: string;
+  value: number;
+  timestamp_ms: number;
 }

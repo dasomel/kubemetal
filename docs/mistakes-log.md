@@ -42,6 +42,7 @@
 | 2026-07-20 | docs/03 reference code forwarded only 2 of the 3 D1 ports (MinIO Console 9001 missing); the implementation lane faithfully copied the defect, and the UI linked to the unforwarded port | Reference code in docs is spec too — when a doc lists N required values, grep the implementation for ALL N, not just the code path |
 | 2026-07-20 | UI hardcoded "6 CPU / 12GB" VM default, contradicting the 16GB device profile | Auto-size from detected RAM per D4 profile table |
 | 2026-07-20 | Assumed forwarded endpoints (5001/8333/8888) stay reachable — `kubectl port-forward` children die with their parent, so after verification cleanup the URLs went dark and looked like an app bug | Port-forwards are process-bound: reachable only while the app's forward (or a manual `nohup kubectl port-forward`) is alive; always state which process owns a forward when reporting URLs as working |
+| 2026-07-23 | Bare `pip install lm-eval` (no extras) installs fine but `local-completions`/`local-chat-completions` model types raise `ModuleNotFoundError: tenacity` at first use — the `api` extra (`tenacity`, `tiktoken`) isn't a base dependency even though it's required for the exact HTTP-eval path this app needs | `setup_eval_env` installs `lm-eval[api]`, never bare `lm-eval` (D20) |
 
 ## Process / Orchestration
 

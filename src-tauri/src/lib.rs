@@ -21,8 +21,9 @@ use commands::modelhub::{
 };
 use commands::port_forward::{start_port_forward, stop_port_forward, PortForwardState};
 use commands::prefect::{
-    get_prefect_status, setup_prefect_env, start_prefect_runner, stop_prefect_runner,
-    trigger_finetune_flow, PrefectState,
+    get_eval_results, get_prefect_status, setup_eval_env, setup_prefect_env,
+    start_prefect_runner, stop_prefect_runner, trigger_evaluate_flow, trigger_finetune_flow,
+    PrefectState,
 };
 use commands::provision::provision_mlops_stack;
 
@@ -70,6 +71,9 @@ pub fn run() {
             start_prefect_runner,
             stop_prefect_runner,
             trigger_finetune_flow,
+            setup_eval_env,
+            trigger_evaluate_flow,
+            get_eval_results,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

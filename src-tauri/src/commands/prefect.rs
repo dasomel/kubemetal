@@ -29,14 +29,30 @@ pub struct FlowRunInfo {
 pub struct PrefectStatus {
     pub server_ready: bool,
     pub env_installed: bool,
+    pub eval_env_installed: bool,
     pub runner_running: bool,
     pub runner_pid: Option<u32>,
     pub recent_runs: Vec<FlowRunInfo>,
 }
 
+/// Phase 4b — `docs/05-mlops-research.md` Q2, D20. MLflow REST `runs/search`
+/// (experiment "kubemetal-eval")를 평탄화한 결과. `run_id`가 같은 여러 행이 한 평가
+/// run의 태스크별 메트릭들을 나타낸다.
+#[derive(Debug, Clone, Serialize)]
+pub struct EvalMetric {
+    pub run_id: String,
+    pub task: String,
+    pub metric: String,
+    pub value: f64,
+    pub timestamp_ms: i64,
+}
+
 #[derive(Default)]
 pub struct PrefectState {
     pub env_setup: Mutex<EnvSetupStatus>,
+    /// `setup_eval_env` 전용 진행 상태 — `env_setup`(prefect 자체 설치)과 동시 진행될 수
+    /// 있으므로 별도 Mutex로 분리한다.
+    pub eval_env_setup: Mutex<EnvSetupStatus>,
     pub runner_pid: Mutex<Option<u32>>,
     pub last_runner_error: Mutex<Option<String>>,
 }
@@ -117,6 +133,23 @@ async fn check_prefect_env_installed() -> bool {
     matches!(output, Ok(out) if out.status.success())
 }
 
+/// venv `python -c "import lm_eval"` 성공 여부로 평가 스택(lm-eval-harness) 설치를
+/// 판정한다. `check_prefect_env_installed`와 동일 패턴(D20).
+async fn check_eval_env_installed() -> bool {
+    let Ok(venv_py) = venv_python() else {
+        return false;
+    };
+    if !venv_py.is_file() {
+        return false;
+    }
+    let output = tokio::process::Command::new(&venv_py)
+        .args(["-c", "import lm_eval"])
+        .env("PATH", augmented_path())
+        .output()
+        .await;
+    matches!(output, Ok(out) if out.status.success())
+}
+
 /// `POST /flow_runs/filter`(실기기 실측, 2026-07-23 prefect 3.7.8)로 최근 실행 5건을
 /// 최신순으로 조회한다. 포워딩 미활성 등 어떤 이유로든 실패하면 빈 배열을 반환한다.
 async fn fetch_recent_flow_runs() -> Vec<FlowRunInfo> {
@@ -150,8 +183,11 @@ async fn fetch_recent_flow_runs() -> Vec<FlowRunInfo> {
 
 #[tauri::command]
 pub async fn get_prefect_status(state: State<'_, PrefectState>) -> Result<PrefectStatus, String> {
-    let (server_ready, env_installed) =
-        tokio::join!(check_prefect_server_ready(), check_prefect_env_installed());
+    let (server_ready, env_installed, eval_env_installed) = tokio::join!(
+        check_prefect_server_ready(),
+        check_prefect_env_installed(),
+        check_eval_env_installed()
+    );
 
     let runner_pid = *state.runner_pid.lock().map_err(|e| e.to_string())?;
     let recent_runs = if server_ready {
@@ -163,6 +199,7 @@ pub async fn get_prefect_status(state: State<'_, PrefectState>) -> Result<Prefec
     Ok(PrefectStatus {
         server_ready,
         env_installed,
+        eval_env_installed,
         runner_running: runner_pid.is_some(),
         runner_pid,
         recent_runs,
@@ -226,6 +263,69 @@ pub async fn setup_prefect_env(
 
     tokio::spawn(run_prefect_env_setup(app));
     Ok("Prefect 설치를 시작했습니다.".into())
+}
+
+/// `lm-eval[api]`를 설치한다(`api` extra는 `local-completions` 모델 타입에 필요한
+/// `tenacity`/`tiktoken`을 포함 — 실기기 실측 2026-07-23: extra 없이 설치하면
+/// `ModuleNotFoundError: tenacity`로 즉시 실패). `run_prefect_env_setup_inner`와 동일
+/// 패턴, venv 부재 시 즉시 Err.
+async fn run_eval_env_setup_inner() -> Result<(), String> {
+    let venv_py = venv_python()?;
+    if !venv_py.is_file() {
+        return Err("MLX venv가 없습니다. MLX 스튜디오에서 setup_mlx_env를 먼저 실행하세요.".into());
+    }
+
+    let pip = venv_pip()?;
+    let out = tokio::process::Command::new(&pip)
+        .args(["install", "-U", "lm-eval[api]"])
+        .env("PATH", augmented_path())
+        .output()
+        .await
+        .map_err(|e| format!("pip install 실행 실패: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "lm-eval 설치 실패: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    Ok(())
+}
+
+async fn run_eval_env_setup(app: tauri::AppHandle) {
+    let result = run_eval_env_setup_inner().await;
+    let state = app.state::<PrefectState>();
+    let mut guard = match state.eval_env_setup.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    match result {
+        Ok(()) => {
+            guard.state = "done".into();
+            guard.error = None;
+        }
+        Err(e) => {
+            guard.state = "error".into();
+            guard.error = Some(e);
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn setup_eval_env(
+    app: tauri::AppHandle,
+    state: State<'_, PrefectState>,
+) -> Result<String, String> {
+    {
+        let mut guard = state.eval_env_setup.lock().map_err(|e| e.to_string())?;
+        if guard.state == "installing" {
+            return Err("평가 환경 설치가 이미 진행 중입니다.".into());
+        }
+        guard.state = "installing".into();
+        guard.error = None;
+    }
+
+    tokio::spawn(run_eval_env_setup(app));
+    Ok("평가 환경(lm-eval) 설치를 시작했습니다.".into())
 }
 
 async fn collect_stderr(stderr: tokio::process::ChildStderr) -> String {
@@ -449,4 +549,137 @@ pub async fn trigger_finetune_flow(config: FineTuneConfig) -> Result<String, Str
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .ok_or_else(|| "flow run 응답에서 id를 읽지 못했습니다.".to_string())
+}
+
+/// MLflow REST 호출 베이스 — `modelhub.rs`의 기존 MLflow REST 호출과 동일 호스트 표기
+/// (`localhost:5001`, 포트포워딩 `svc/mlflow 5001:5000` 전제).
+const MLFLOW_BASE: &str = "http://localhost:5001";
+
+/// `trigger_finetune_flow`와 동일 패턴으로 evaluate deployment id를 조회해 flow run을
+/// 생성한다. `serving_port`로 `host_runner.py::evaluate_flow`의 `serving_url` 파라미터
+/// (`http://127.0.0.1:{port}/v1`)를 구성 — mlx_lm.server는 IPv4(127.0.0.1)에만 bind하므로
+/// `localhost`를 쓰지 않는다(mistakes-log.md 2026-07-21 macOS 항목).
+#[tauri::command]
+pub async fn trigger_evaluate_flow(
+    tasks: String,
+    limit: u32,
+    serving_port: u16,
+) -> Result<String, String> {
+    if tasks.trim().is_empty() {
+        return Err("tasks는 비어있을 수 없습니다.".into());
+    }
+    if limit == 0 {
+        return Err("limit은 1 이상이어야 합니다.".into());
+    }
+
+    let serving_url = format!("http://127.0.0.1:{serving_port}/v1");
+
+    let deployment = curl_get_json(&format!("{PREFECT_API_BASE}/deployments/name/evaluate/evaluate"))
+        .await
+        .ok_or_else(|| {
+            "Prefect 서버에 연결할 수 없습니다 — 포트포워딩(4200)이 활성인지 확인하세요.".to_string()
+        })?;
+    let deployment_id = deployment
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            "evaluate deployment를 찾을 수 없습니다 — Prefect 러너가 실행 중인지 확인하세요."
+                .to_string()
+        })?;
+
+    let body = serde_json::json!({
+        "parameters": {
+            "serving_url": serving_url,
+            "tasks": tasks,
+            "limit": limit,
+        }
+    });
+
+    let run = curl_post_json(
+        &format!("{PREFECT_API_BASE}/deployments/{deployment_id}/create_flow_run"),
+        &body,
+    )
+    .await
+    .ok_or_else(|| "flow run 생성 요청이 실패했습니다.".to_string())?;
+
+    run.get("id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .ok_or_else(|| "flow run 응답에서 id를 읽지 못했습니다.".to_string())
+}
+
+/// MLflow experiment "kubemetal-eval"의 최근 run들을 조회해 평탄화한다
+/// (`host_runner.py::evaluate_flow`의 `_flatten_metrics`가 남기는 `"task/metric/filter"`
+/// 메트릭 키 형식 실측 2026-07-23 기준 — 첫 `/`를 기준으로 task/metric을 분리). experiment가
+/// 아직 없거나(평가를 한 번도 실행하지 않음) MLflow에 연결할 수 없으면 빈 배열을 반환한다
+/// (다른 조회 커맨드들과 동일한 "실패 시 빈 값" 규칙).
+#[tauri::command]
+pub async fn get_eval_results() -> Result<Vec<EvalMetric>, String> {
+    let Some(exp) = curl_get_json(&format!(
+        "{MLFLOW_BASE}/api/2.0/mlflow/experiments/get-by-name?experiment_name=kubemetal-eval"
+    ))
+    .await
+    else {
+        return Ok(Vec::new());
+    };
+    let Some(experiment_id) = exp
+        .get("experiment")
+        .and_then(|e| e.get("experiment_id"))
+        .and_then(|v| v.as_str())
+    else {
+        return Ok(Vec::new());
+    };
+
+    let body = serde_json::json!({
+        "experiment_ids": [experiment_id],
+        "max_results": 10,
+        "order_by": ["attribute.start_time DESC"],
+    });
+    let Some(search) =
+        curl_post_json(&format!("{MLFLOW_BASE}/api/2.0/mlflow/runs/search"), &body).await
+    else {
+        return Ok(Vec::new());
+    };
+    let Some(runs) = search.get("runs").and_then(|v| v.as_array()) else {
+        return Ok(Vec::new());
+    };
+
+    let mut out = Vec::new();
+    for run in runs {
+        let Some(run_id) = run
+            .get("info")
+            .and_then(|i| i.get("run_id"))
+            .and_then(|v| v.as_str())
+        else {
+            continue;
+        };
+        let Some(metrics) = run
+            .get("data")
+            .and_then(|d| d.get("metrics"))
+            .and_then(|v| v.as_array())
+        else {
+            continue;
+        };
+        for m in metrics {
+            let (Some(key), Some(value)) = (
+                m.get("key").and_then(|v| v.as_str()),
+                m.get("value").and_then(|v| v.as_f64()),
+            ) else {
+                continue;
+            };
+            let timestamp_ms = m.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0);
+            let (task, metric) = match key.split_once('/') {
+                Some((t, rest)) => (t.to_string(), rest.to_string()),
+                None => (String::new(), key.to_string()),
+            };
+            out.push(EvalMetric {
+                run_id: run_id.to_string(),
+                task,
+                metric,
+                value,
+                timestamp_ms,
+            });
+        }
+    }
+    Ok(out)
 }
