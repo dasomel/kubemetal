@@ -1,5 +1,6 @@
 import React from 'react';
 import { useMlx } from '../../hooks/useMlx';
+import { useTranslation } from '../../i18n/i18nContext';
 import { MlxEnvCard } from './MlxEnvCard';
 import { MlxFineTuneCard } from './MlxFineTuneCard';
 import { MlxGuardrailCard } from './MlxGuardrailCard';
@@ -28,6 +29,7 @@ export const MlxStudio: React.FC = () => {
     resumingTraining,
     resumeTraining,
   } = useMlx();
+  const { t } = useTranslation();
 
   // 환경이 준비되기 전엔 설치 카드만 히어로로 노출하고, 파인튜닝/가드레일/서빙은
   // "다음 단계" 잠긴 프리뷰로 축소한다. 준비되면 환경 카드는 한 줄 배지로 접혀
@@ -88,9 +90,9 @@ export const MlxStudio: React.FC = () => {
         </>
       ) : (
         <>
-          <LockedPreview caption="MLX 환경 설치 후 파인튜닝을 이용할 수 있습니다">{fineTune}</LockedPreview>
-          <LockedPreview caption="MLX 환경 설치 후 가드레일이 활성화됩니다">{guardrail}</LockedPreview>
-          <LockedPreview caption="MLX 환경 설치 후 모델 서빙을 이용할 수 있습니다">{serving}</LockedPreview>
+          <LockedPreview caption={t('mlx.lockedFinetune')}>{fineTune}</LockedPreview>
+          <LockedPreview caption={t('mlx.lockedGuardrail')}>{guardrail}</LockedPreview>
+          <LockedPreview caption={t('mlx.lockedServing')}>{serving}</LockedPreview>
         </>
       )}
     </div>

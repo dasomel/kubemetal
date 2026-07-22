@@ -6,6 +6,7 @@ import { useModelHub } from '../../hooks/useModelHub';
 import { useMlx } from '../../hooks/useMlx';
 import { useRegisteredModels } from '../../hooks/useRegisteredModels';
 import { usePrefect } from '../../hooks/usePrefect';
+import { useTranslation } from '../../i18n/i18nContext';
 import { OrchestrationCard } from './OrchestrationCard';
 import { DataIngestionDagCard } from './DataIngestionDagCard';
 import { RagCard } from './RagCard';
@@ -85,6 +86,7 @@ export const PipelineView: React.FC = () => {
   const { mlxStatus } = useMlx();
   const registered = useRegisteredModels();
   const { evalResults } = usePrefect(false);
+  const { t } = useTranslation();
 
   useEffect(() => {
     registered.refresh();
@@ -97,30 +99,33 @@ export const PipelineView: React.FC = () => {
       return {
         key: 'infra',
         icon: Server,
-        title: '인프라',
+        title: t('pipeline.infraTitle'),
         dot: 'inkFaint',
-        statusText: '대기',
-        hint: '대시보드에서 클러스터 시작',
+        statusText: t('pipeline.infraWaiting'),
+        hint: t('pipeline.infraHintDashboard'),
       };
     }
     if (!cluster.artifact_store_wired) {
       return {
         key: 'infra',
         icon: Server,
-        title: '인프라',
+        title: t('pipeline.infraTitle'),
         dot: 'warning',
-        statusText: '기동됨 · 스택 연동 대기',
-        detail: `MLflow ${cluster.mlflow_ready ? '준비' : '대기'} · SeaweedFS ${cluster.seaweedfs_ready ? '준비' : '대기'}`,
-        hint: '대시보드에서 MLOps 스택 프로비저닝 및 포트포워딩 실행',
+        statusText: t('pipeline.infraRunningPending'),
+        detail: t('pipeline.infraDetailMlflowSeaweed', {
+          mlflow: cluster.mlflow_ready ? 'Ready' : 'Not Ready',
+          seaweed: cluster.seaweedfs_ready ? 'Ready' : 'Not Ready',
+        }),
+        hint: t('pipeline.infraHintProvision'),
       };
     }
     return {
       key: 'infra',
       icon: Server,
-      title: '인프라',
+      title: t('pipeline.infraTitle'),
       dot: 'success',
-      statusText: '준비됨',
-      detail: 'K8s + MLflow + SeaweedFS 연동 완료',
+      statusText: t('pipeline.infraReady'),
+      detail: t('pipeline.infraReadyDetail'),
     };
   })();
 
@@ -131,9 +136,9 @@ export const PipelineView: React.FC = () => {
       return {
         key: 'model',
         icon: Database,
-        title: '모델 준비',
+        title: t('pipeline.modelPrepTitle'),
         dot: 'warning',
-        statusText: `다운로드 진행 중 (${activeDownloads.length}개)`,
+        statusText: t('pipeline.modelPrepDownloading', { count: activeDownloads.length }),
         detail: activeDownloads.map((d) => `${d.repo_id} ${d.done_files}/${d.total_files || '?'}`).join(', '),
       };
     }
@@ -141,19 +146,19 @@ export const PipelineView: React.FC = () => {
       return {
         key: 'model',
         icon: Database,
-        title: '모델 준비',
+        title: t('pipeline.modelPrepTitle'),
         dot: 'inkFaint',
-        statusText: '대기',
-        hint: '모델 허브에서 모델 다운로드',
+        statusText: t('pipeline.modelPrepWaiting'),
+        hint: t('pipeline.modelPrepHintHub'),
       };
     }
     return {
       key: 'model',
       icon: Database,
-      title: '모델 준비',
+      title: t('pipeline.modelPrepTitle'),
       dot: 'success',
-      statusText: `로컬 모델 ${localModels.length}개`,
-      detail: `총 ${bytesToHuman(localModels.reduce((sum, m) => sum + m.size_bytes, 0))}`,
+      statusText: t('pipeline.modelPrepReady', { count: localModels.length }),
+      detail: t('pipeline.modelPrepTotalSize', { size: bytesToHuman(localModels.reduce((sum, m) => sum + m.size_bytes, 0)) }),
     };
   })();
 
@@ -164,19 +169,19 @@ export const PipelineView: React.FC = () => {
       return {
         key: 'train',
         icon: Cpu,
-        title: '학습',
+        title: t('pipeline.trainTitle'),
         dot: 'inkFaint',
-        statusText: '대기',
-        hint: 'MLX 스튜디오에서 파인튜닝 시작',
+        statusText: t('pipeline.trainWaiting'),
+        hint: t('pipeline.trainHintStudio'),
       };
     }
     if (training.status === 'error') {
       return {
         key: 'train',
         icon: Cpu,
-        title: '학습',
+        title: t('pipeline.trainTitle'),
         dot: 'danger',
-        statusText: '실패',
+        statusText: t('pipeline.trainFailed'),
         detail: training.error,
       };
     }
@@ -184,18 +189,18 @@ export const PipelineView: React.FC = () => {
       return {
         key: 'train',
         icon: Cpu,
-        title: '학습',
+        title: t('pipeline.trainTitle'),
         dot: 'success',
-        statusText: '완료',
-        detail: training.adapter_path ? `어댑터: ${training.adapter_path}` : undefined,
+        statusText: t('pipeline.trainDone'),
+        detail: training.adapter_path ? t('pipeline.trainAdapter', { path: training.adapter_path }) : undefined,
       };
     }
     return {
       key: 'train',
       icon: Cpu,
-      title: '학습',
+      title: t('pipeline.trainTitle'),
       dot: 'warning',
-      statusText: `진행 중 (PID ${training.pid})`,
+      statusText: t('pipeline.trainRunning', { pid: training.pid }),
       detail: `iter ${training.current_iter}/${training.total_iters}${
         training.last_loss != null ? ` · loss ${training.last_loss.toFixed(4)}` : ''
       }`,
@@ -208,30 +213,30 @@ export const PipelineView: React.FC = () => {
       return {
         key: 'register',
         icon: Archive,
-        title: '등록',
+        title: t('pipeline.registerTitle'),
         dot: 'danger',
-        statusText: 'MLflow 접근 불가',
-        hint: '대시보드에서 포트포워딩(5001)이 활성화되어 있는지 확인',
+        statusText: t('pipeline.registerUnreachable'),
+        hint: t('pipeline.registerHintPortForward'),
       };
     }
     if (registered.models.length === 0) {
       return {
         key: 'register',
         icon: Archive,
-        title: '등록',
+        title: t('pipeline.registerTitle'),
         dot: 'inkFaint',
-        statusText: registered.loading && !registered.loaded ? '확인 중' : '대기',
-        hint: '모델 허브에서 MLflow 등록',
+        statusText: registered.loading && !registered.loaded ? t('pipeline.registerChecking') : t('pipeline.registerWaiting'),
+        hint: t('pipeline.registerHintHub'),
       };
     }
     const latest = registered.models[registered.models.length - 1];
     return {
       key: 'register',
       icon: Archive,
-      title: '등록',
+      title: t('pipeline.registerTitle'),
       dot: 'success',
-      statusText: `등록 모델 ${registered.models.length}개`,
-      detail: `최신: ${latest.name}${latest.latest_version ? ` v${latest.latest_version}` : ''}`,
+      statusText: t('pipeline.registerReady', { count: registered.models.length }),
+      detail: t('pipeline.registerLatest', { name: `${latest.name}${latest.latest_version ? ` v${latest.latest_version}` : ''}` }),
     };
   })();
 
@@ -241,20 +246,20 @@ export const PipelineView: React.FC = () => {
     ? {
         key: 'serve',
         icon: Rocket,
-        title: '서빙',
+        title: t('pipeline.servingTitle'),
         dot: 'success',
-        statusText: `기동됨 (PID ${serving.pid}, 포트 ${serving.port})`,
+        statusText: t('pipeline.servingRunning', { pid: serving.pid, port: serving.port }),
         detail: serving.model_path,
         link: { label: `http://127.0.0.1:${serving.port}/v1`, url: `http://127.0.0.1:${serving.port}/v1/models` },
-        hint: 'OpenAI 호환 base URL — 클릭 시 모델 목록으로 동작 확인',
+        hint: t('pipeline.servingBaseUrlHint'),
       }
     : {
         key: 'serve',
         icon: Rocket,
-        title: '서빙',
+        title: t('pipeline.servingTitle'),
         dot: 'inkFaint',
-        statusText: '중지',
-        hint: 'MLX 스튜디오에서 서빙 시작',
+        statusText: t('pipeline.servingStopped'),
+        hint: t('pipeline.servingHintStudio'),
       };
 
   // ⑥ 평가
@@ -263,9 +268,9 @@ export const PipelineView: React.FC = () => {
       ? {
           key: 'eval',
           icon: FlaskConical,
-          title: '평가',
+          title: t('pipeline.evalTitle'),
           dot: 'success',
-          statusText: `최근 결과 ${Math.min(evalResults.length, 3)}건`,
+          statusText: t('pipeline.evalRecent', { count: Math.min(evalResults.length, 3) }),
           detail: evalResults
             .slice(0, 3)
             .map((m) => `${m.task} · ${m.metric} ${m.value.toFixed(3)}`)
@@ -275,10 +280,10 @@ export const PipelineView: React.FC = () => {
       : {
           key: 'eval',
           icon: FlaskConical,
-          title: '평가',
+          title: t('pipeline.evalTitle'),
           dot: 'inkFaint',
-          statusText: '평가 이력 없음',
-          hint: '오케스트레이션에서 평가 실행',
+          statusText: t('pipeline.evalNoHistory'),
+          hint: t('pipeline.evalHintOrch'),
         };
 
   const stages = [infraStage, modelPrepStage, trainingStage, registerStage, servingStage, evalStage];
@@ -286,9 +291,9 @@ export const PipelineView: React.FC = () => {
   return (
     <div className="space-y-4">
       <div className="rounded-xl bg-surface p-4 shadow-panel">
-        <h2 className="text-heading text-ink mb-0.5">파이프라인 가시화</h2>
+        <h2 className="text-heading text-ink mb-0.5">{t('pipeline.title')}</h2>
         <p className="text-caption text-inkMuted">
-          인프라 → 모델 준비 → 학습 → 등록 → 서빙까지 앱 내 오케스트레이션 상태를 한눈에 확인합니다.
+          {t('pipeline.subtitle')}
         </p>
       </div>
 
@@ -317,7 +322,7 @@ export const PipelineView: React.FC = () => {
           disabled={registered.loading}
           className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 disabled:opacity-50 text-caption text-inkMuted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
-          {registered.loading ? '등록 모델 새로고침 중...' : '등록 모델 새로고침'}
+          {registered.loading ? t('pipeline.refreshingModels') : t('pipeline.refreshModels')}
         </button>
       </div>
     </div>

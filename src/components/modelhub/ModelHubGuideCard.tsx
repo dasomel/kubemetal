@@ -2,9 +2,23 @@ import React from 'react';
 import { Gauge } from 'lucide-react';
 import { useMetrics } from '../../hooks/useMetrics';
 import { RAM_SIZE_PROFILES, matchRamProfile, type RamSizeProfile } from '../../lib/modelCategories';
+import { useTranslation } from '../../i18n/i18nContext';
 
-function recommendationFor(totalGb: number): string {
+function recommendationFor(totalGb: number, language: string): string {
   const rounded = Math.round(totalGb);
+  if (language === 'en') {
+    if (totalGb >= 64) {
+      return `This Mac (${rounded}GB) easily handles up to 32B class 4-bit models. 4-bit quantized models from mlx-community are recommended.`;
+    }
+    if (totalGb >= 32) {
+      return `This Mac (${rounded}GB) is suited for 7~14B class 4-bit models. 4-bit quantized models from mlx-community are recommended.`;
+    }
+    if (totalGb >= 16) {
+      return `This Mac (${rounded}GB) recommends 1~4B class 4-bit models. Larger models may experience memory pressure.`;
+    }
+    return `This Mac (${rounded}GB) has limited memory. Ultra-light 1~3B 4-bit models are recommended.`;
+  }
+
   if (totalGb >= 64) {
     return `이 Mac(${rounded}GB)은 32B급 4bit까지 무난합니다. mlx-community의 4bit 변환본을 권장합니다.`;
   }
@@ -26,9 +40,9 @@ export const ModelHubGuideCard: React.FC<ModelHubGuideCardProps> = ({
   activeSelectionId,
   onSelectProfile,
 }) => {
-  // 가이드 문구는 자주 바뀔 필요가 없어 대시보드보다 느린 주기로만 폴링한다.
   const metrics = useMetrics(5000);
   const matchedProfile = metrics ? matchRamProfile(metrics.total_memory_gb) : null;
+  const { language, t } = useTranslation();
 
   return (
     <div className="rounded-xl bg-surface p-4 shadow-panel">
@@ -36,18 +50,18 @@ export const ModelHubGuideCard: React.FC<ModelHubGuideCardProps> = ({
         <div className="text-label uppercase text-inkFaint mb-1">Guide</div>
         <h2 className="text-heading text-ink flex items-center gap-2">
           <Gauge className="w-4 h-4 text-primary" />
-          <span>메모리 기반 모델 가이드</span>
+          <span>{t('modelhub.guideTitle')}</span>
         </h2>
       </div>
 
       {metrics && (
-        <p className="text-body text-inkMuted mb-4">{recommendationFor(metrics.total_memory_gb)}</p>
+        <p className="text-body text-inkMuted mb-4">{recommendationFor(metrics.total_memory_gb, language)}</p>
       )}
 
       <div className="rounded-lg bg-surfaceRaised overflow-hidden">
         <div className="grid grid-cols-2 px-3 pt-3 pb-2 text-label uppercase text-inkFaint">
-          <span>통합 메모리</span>
-          <span>권장 모델 규모 · 클릭해 검색</span>
+          <span>{language === 'en' ? 'Unified Memory' : '통합 메모리'}</span>
+          <span>{language === 'en' ? 'Recommended Model Spec · Click to search' : '권장 모델 규모 · 클릭해 검색'}</span>
         </div>
         <div className="divide-y divide-hairline/8">
           {RAM_SIZE_PROFILES.map((profile) => {
@@ -65,7 +79,7 @@ export const ModelHubGuideCard: React.FC<ModelHubGuideCardProps> = ({
                 <span className={`text-bodyStrong flex items-center gap-1.5 ${isActive ? 'text-primary' : 'text-ink'}`}>
                   {profile.range}
                   {isMatch && (
-                    <span className="text-caption text-primary font-normal">(이 Mac)</span>
+                    <span className="text-caption text-primary font-normal">{language === 'en' ? '(This Mac)' : '(이 Mac)'}</span>
                   )}
                 </span>
                 <span className="text-body text-inkMuted">{profile.sizeLabel}</span>

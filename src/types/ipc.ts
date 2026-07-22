@@ -141,10 +141,12 @@ export interface EvalMetric {
 }
 
 export interface RagSearchResult {
-  id: string;
+  id?: string;
   text: string;
   score: number;
   source?: string;
+  filename?: string;
+  chunk_index?: number;
 }
 
 export interface RagIndexStatus {

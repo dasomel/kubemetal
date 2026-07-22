@@ -3,6 +3,7 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { Workflow, Loader2, Play, Square, Cpu, ArrowUpRight, Rocket, FlaskConical } from 'lucide-react';
 import { usePrefect } from '../../hooks/usePrefect';
 import { useMlx } from '../../hooks/useMlx';
+import { useTranslation } from '../../i18n/i18nContext';
 import type { FlowRunInfo, FineTuneConfig } from '../../types/ipc';
 
 const openEndpoint = (url: string) => {
@@ -67,6 +68,7 @@ export const OrchestrationCard: React.FC = () => {
     triggerEvaluateFlow,
   } = usePrefect(true);
   const { localModels, mlxStatus } = useMlx();
+  const { t } = useTranslation();
   const [showFlowForm, setShowFlowForm] = useState(false);
   const [modelPath, setModelPath] = useState('');
   const [showEvalForm, setShowEvalForm] = useState(false);
@@ -112,7 +114,7 @@ export const OrchestrationCard: React.FC = () => {
           <div className="text-label uppercase text-inkFaint mb-1">Prefect</div>
           <h2 className="text-heading text-ink flex items-center gap-2">
             <Workflow className="w-4 h-4 text-primary" />
-            <span>오케스트레이션</span>
+            <span>{t('orch.title')}</span>
           </h2>
         </div>
         {serverReady && (
@@ -130,12 +132,12 @@ export const OrchestrationCard: React.FC = () => {
       {/* ① 서버 상태 */}
       <div className="flex items-center gap-1.5 text-caption text-inkMuted mb-1.5">
         <span className={`w-2 h-2 rounded-full shrink-0 ${serverReady ? 'bg-success' : 'bg-inkFaint'}`} />
-        <span>Prefect 서버 {serverReady ? '준비됨' : '대기'}</span>
+        <span>{t('orch.prefectServer')} {serverReady ? t('orch.ready') : t('orch.waiting')}</span>
       </div>
 
       {!serverReady ? (
         <div className="text-caption text-inkFaint">
-          Prefect 서버는 MLOps 스택 배포에 포함됩니다 — 대시보드에서 스택을 배포하면 함께 기동됩니다.
+          {t('orch.serverNotice')}
         </div>
       ) : (
         <div className="space-y-3 mt-3">
@@ -143,9 +145,9 @@ export const OrchestrationCard: React.FC = () => {
           <div className="p-3 rounded-lg bg-surfaceRaised flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2">
-                <span className="text-bodyStrong text-ink">Prefect 환경:</span>
+                <span className="text-bodyStrong text-ink">{t('orch.envLabel')}</span>
                 <span className={`w-2 h-2 rounded-full shrink-0 ${status?.env_installed ? 'bg-success' : 'bg-inkFaint'}`} />
-                <span className="text-caption text-inkMuted">{status?.env_installed ? '설치됨' : '미설치'}</span>
+                <span className="text-caption text-inkMuted">{status?.env_installed ? t('orch.installed') : t('orch.notInstalled')}</span>
                 {!status?.env_installed && (
                   <button
                     type="button"
@@ -154,15 +156,15 @@ export const OrchestrationCard: React.FC = () => {
                     className="ml-2 py-1 px-2.5 bg-primaryStrong hover:brightness-110 disabled:opacity-50 text-inverse text-caption rounded-md transition-all flex items-center gap-1 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
                     {installing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Cpu className="w-3 h-3" />}
-                    <span>{installing ? '설치 중...' : '환경 설치'}</span>
+                    <span>{installing ? t('orch.installingEnv') : t('orch.installEnv')}</span>
                   </button>
                 )}
               </div>
 
               <div className="flex items-center gap-2 border-l border-hairline/8 pl-6">
-                <span className="text-bodyStrong text-ink">플로우 러너:</span>
+                <span className="text-bodyStrong text-ink">{t('orch.runnerLabel')}</span>
                 <span className={`w-2 h-2 rounded-full shrink-0 ${status?.runner_running ? 'bg-success' : 'bg-inkFaint'}`} />
-                <span className="text-caption text-inkMuted">{status?.runner_running ? `실행 중 (PID ${status.runner_pid})` : '중지됨'}</span>
+                <span className="text-caption text-inkMuted">{status?.runner_running ? t('orch.runnerRunning', { pid: status.runner_pid }) : t('orch.runnerStopped')}</span>
               </div>
             </div>
 
@@ -174,7 +176,7 @@ export const OrchestrationCard: React.FC = () => {
                 className="py-1.5 px-3 bg-surface hover:brightness-95 disabled:opacity-50 text-ink text-caption font-medium rounded-md transition-all flex items-center gap-1.5 shrink-0 border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 {stoppingRunner ? <Loader2 className="w-3 h-3 animate-spin" /> : <Square className="w-3 h-3" />}
-                <span>중지</span>
+                <span>{t('orch.stop')}</span>
               </button>
             ) : (
               <button
@@ -184,14 +186,14 @@ export const OrchestrationCard: React.FC = () => {
                 className="py-1.5 px-3 bg-primaryStrong hover:brightness-110 disabled:opacity-50 text-inverse text-caption font-medium rounded-md transition-all flex items-center gap-1.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 {startingRunner ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
-                <span>시작</span>
+                <span>{t('orch.start')}</span>
               </button>
             )}
           </div>
 
           {/* ④ 최근 flow run */}
           <div>
-            <h3 className="text-label uppercase text-inkFaint mb-2">최근 플로우 실행</h3>
+            <h3 className="text-label uppercase text-inkFaint mb-2">{t('orch.recentRuns')}</h3>
             {status && status.recent_runs.length > 0 ? (
               <div className="space-y-1.5">
                 {status.recent_runs.slice(0, 5).map((run) => (
@@ -199,7 +201,7 @@ export const OrchestrationCard: React.FC = () => {
                 ))}
               </div>
             ) : (
-              <div className="py-4 text-center text-inkFaint text-caption">최근 실행 기록이 없습니다.</div>
+              <div className="py-4 text-center text-inkFaint text-caption">{t('orch.noRecentRuns')}</div>
             )}
           </div>
 
@@ -214,20 +216,20 @@ export const OrchestrationCard: React.FC = () => {
                   className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                 >
                   <Rocket className="w-4 h-4" />
-                  <span>파인튜닝 플로우 실행</span>
+                  <span>{t('orch.runFinetuneFlow')}</span>
                 </button>
                 {localModels.length === 0 && (
                   <div className="text-caption text-inkFaint mt-2">
-                    로컬 모델이 없습니다. 모델 허브에서 먼저 다운로드하세요.
+                    {t('orch.noLocalModelsNotice')}
                   </div>
                 )}
               </>
             ) : (
               <form onSubmit={handleTrigger} className="space-y-3">
                 <div>
-                  <label className={labelClass}>로컬 모델</label>
+                  <label className={labelClass}>{t('orch.localModelLabel')}</label>
                   <select value={modelPath} onChange={(e) => setModelPath(e.target.value)} className={inputClass}>
-                    <option value="">모델 선택...</option>
+                    <option value="">{t('orch.selectModelPlaceholder')}</option>
                     {localModels.map((m) => (
                       <option key={m.repo_id} value={m.path}>
                         {m.repo_id}
@@ -242,14 +244,14 @@ export const OrchestrationCard: React.FC = () => {
                     className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                   >
                     {triggeringFlow ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                    <span>실행 (기본값)</span>
+                    <span>{t('orch.runDefaultBtn')}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowFlowForm(false)}
                     className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 text-inkMuted text-bodyStrong rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
-                    취소
+                    {t('orch.cancelBtn')}
                   </button>
                 </div>
               </form>
@@ -258,7 +260,7 @@ export const OrchestrationCard: React.FC = () => {
 
           {/* ⑥ 평가 */}
           <div className="pt-3 border-t border-hairline/8">
-            <h3 className="text-label uppercase text-inkFaint mb-2">평가</h3>
+            <h3 className="text-label uppercase text-inkFaint mb-2">{t('orch.evalHeader')}</h3>
             {!status?.eval_env_installed ? (
               <button
                 type="button"
@@ -267,7 +269,7 @@ export const OrchestrationCard: React.FC = () => {
                 className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
               >
                 {evalInstalling ? <Loader2 className="w-4 h-4 animate-spin" /> : <FlaskConical className="w-4 h-4" />}
-                <span>{evalInstalling ? '설치 중...' : '평가 환경 설치'}</span>
+                <span>{evalInstalling ? t('orch.installingEvalEnv') : t('orch.installEvalEnvBtn')}</span>
               </button>
             ) : !showEvalForm ? (
               <>
@@ -277,18 +279,18 @@ export const OrchestrationCard: React.FC = () => {
                   className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 text-ink text-bodyStrong rounded-md transition-all flex items-center gap-1.5 border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <FlaskConical className="w-4 h-4" />
-                  <span>평가 실행</span>
+                  <span>{t('orch.runEvalBtn')}</span>
                 </button>
                 {!servingPort && (
                   <div className="text-caption text-inkFaint mt-2">
-                    모델 서빙이 실행 중이 아닙니다. MLX 스튜디오에서 서빙을 먼저 시작하세요.
+                    {t('orch.noServingNotice')}
                   </div>
                 )}
               </>
             ) : (
               <form onSubmit={handleEvaluate} className="space-y-3">
                 <div>
-                  <label className={labelClass}>태스크</label>
+                  <label className={labelClass}>{t('orch.taskLabel')}</label>
                   <input
                     type="text"
                     value={evalTasks}
@@ -298,7 +300,7 @@ export const OrchestrationCard: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>샘플 수</label>
+                  <label className={labelClass}>{t('orch.sampleCountLabel')}</label>
                   <input
                     type="number"
                     min={1}
@@ -308,7 +310,7 @@ export const OrchestrationCard: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>서빙 포트</label>
+                  <label className={labelClass}>{t('orch.servingPortLabel')}</label>
                   <input
                     type="number"
                     min={1}
@@ -317,10 +319,10 @@ export const OrchestrationCard: React.FC = () => {
                     className={inputClass}
                   />
                   {servingPort ? (
-                    <div className="text-caption text-inkFaint mt-1">현재 서빙 포트 {servingPort} 자동 감지됨 · 수동 변경 가능</div>
+                    <div className="text-caption text-inkFaint mt-1">{t('orch.autoPortDetected', { port: servingPort })}</div>
                   ) : (
                     <div className="text-caption text-danger mt-1">
-                      모델 서빙이 실행 중이 아닙니다. MLX 스튜디오에서 서빙을 먼저 시작하세요.
+                      {t('orch.servingNotRunningError')}
                     </div>
                   )}
                 </div>
@@ -331,14 +333,14 @@ export const OrchestrationCard: React.FC = () => {
                     className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                   >
                     {triggeringEvaluate ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                    <span>평가 실행</span>
+                    <span>{t('orch.runEvalBtn')}</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setShowEvalForm(false)}
                     className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 text-inkMuted text-bodyStrong rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
-                    취소
+                    {t('orch.cancelBtn')}
                   </button>
                 </div>
               </form>

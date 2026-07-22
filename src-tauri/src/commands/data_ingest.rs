@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
 use crate::commands::mlx::{
-    home_dir, validate_home_subpath, venv_python,
+    validate_home_subpath, venv_python,
 };
 use crate::commands::rag::default_lancedb_dir;
 use crate::services::process::{augmented_path, resolve_bundled_resource};
@@ -125,7 +125,7 @@ pub async fn run_data_ingest(
         return Err("소스 경로는 비어 있을 수 없습니다.".into());
     }
 
-    let target_source_path = if source_type.to_lower_case() == "local" {
+    let target_source_path = if source_type.to_lowercase() == "local" {
         validate_home_subpath(&source_path)?
             .to_string_lossy()
             .to_string()

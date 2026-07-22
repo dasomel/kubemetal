@@ -1,6 +1,7 @@
 import React from 'react';
 import { HardDrive, Loader2, UploadCloud, ClipboardCheck } from 'lucide-react';
 import type { LocalModel } from '../../types/ipc';
+import { useTranslation } from '../../i18n/i18nContext';
 
 interface LocalModelsCardProps {
   models: LocalModel[];
@@ -23,19 +24,21 @@ export const LocalModelsCard: React.FC<LocalModelsCardProps> = ({
   onUpload,
   onRegister,
 }) => {
+  const { t } = useTranslation();
+
   return (
     <div className="rounded-xl bg-surface p-4 shadow-panel">
       <div className="mb-4">
         <div className="text-label uppercase text-inkFaint mb-1">Local Cache</div>
         <h2 className="text-heading text-ink flex items-center gap-2">
           <HardDrive className="w-4 h-4 text-primary" />
-          <span>로컬 모델</span>
+          <span>{t('modelhub.localModelsTitle')}</span>
         </h2>
       </div>
 
       {models.length === 0 ? (
         <div className="py-8 text-center text-inkMuted text-body">
-          다운로드된 로컬 모델이 없습니다. 모델 검색 후 다운로드를 시작하세요.
+          {t('modelhub.noLocalModels')}
         </div>
       ) : (
         <div className="space-y-2">
@@ -72,7 +75,13 @@ export const LocalModelsCard: React.FC<LocalModelsCardProps> = ({
                     ) : (
                       <UploadCloud className="w-3.5 h-3.5 text-primary" />
                     )}
-                    <span>{isUploaded ? 'SeaweedFS 업로드됨' : 'SeaweedFS 업로드'}</span>
+                    <span>
+                      {isUploading
+                        ? t('modelhub.uploadingBtn')
+                        : isUploaded
+                        ? t('modelhub.uploadedBtn')
+                        : t('modelhub.uploadToStorageBtn')}
+                    </span>
                   </button>
 
                   <button
@@ -88,7 +97,13 @@ export const LocalModelsCard: React.FC<LocalModelsCardProps> = ({
                     ) : (
                       <ClipboardCheck className="w-3.5 h-3.5 text-primary" />
                     )}
-                    <span>{isRegistered ? 'MLflow 등록됨' : 'MLflow 등록'}</span>
+                    <span>
+                      {isRegistering
+                        ? t('modelhub.registeringBtn')
+                        : isRegistered
+                        ? t('modelhub.registeredBtn')
+                        : t('modelhub.registerModelBtn')}
+                    </span>
                   </button>
                 </div>
               </div>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Tag, GitBranch, Loader2, Plus, Server } from 'lucide-react';
 import { useDVC } from '../../hooks/useDVC';
+import { useTranslation } from '../../i18n/i18nContext';
 
 const inputClass =
   'w-full px-3.5 py-2 rounded-md bg-surfaceRaised text-ink text-body placeholder:text-inkFaint border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary';
@@ -8,6 +9,7 @@ const labelClass = 'text-label uppercase text-inkFaint mb-1 block';
 
 export const DvcCard: React.FC = () => {
   const { status, initializing, creatingTag, initDvc, createTag } = useDVC(true);
+  const { t } = useTranslation();
   const [tagName, setTagName] = useState('');
   const [tagMessage, setTagMessage] = useState('');
   const [datasetPath, setDatasetPath] = useState('./data/dataset');
@@ -29,7 +31,7 @@ export const DvcCard: React.FC = () => {
           <div className="text-label uppercase text-inkFaint mb-1">SeaweedFS S3 Remote</div>
           <h2 className="text-heading text-ink flex items-center gap-2">
             <GitBranch className="w-4 h-4 text-primary" />
-            <span>DVC 데이터셋 버저닝</span>
+            <span>{t('dvc.title')}</span>
           </h2>
         </div>
         <div className="flex items-center gap-1.5 text-caption text-inkMuted">
@@ -38,21 +40,21 @@ export const DvcCard: React.FC = () => {
               isInitialized ? 'bg-success' : 'bg-inkFaint'
             }`}
           />
-          <span>{isInitialized ? 'DVC 연동됨' : '미초기화'}</span>
+          <span>{isInitialized ? t('dvc.connected') : t('dvc.uninitialized')}</span>
         </div>
       </div>
 
       <p className="text-caption text-inkMuted mb-4">
-        Git 커밋과 연동하여 파인튜닝 데이터셋의 버전을 관리하고 SeaweedFS S3 remote 스토리지에 동기화합니다.
+        {t('dvc.desc')}
       </p>
 
       {/* DVC 미초기화 시 초기화 버튼 */}
       {!isInitialized ? (
         <div className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between gap-3 mb-4">
           <div>
-            <div className="text-bodyStrong text-ink">DVC 저장소 초기화</div>
+            <div className="text-bodyStrong text-ink">{t('dvc.initRepoTitle')}</div>
             <div className="text-caption text-inkFaint mt-0.5">
-              SeaweedFS S3 스토리지 remote 기반 DVC 파이프라인을 구성합니다.
+              {t('dvc.initRepoDesc')}
             </div>
           </div>
           <button
@@ -62,19 +64,19 @@ export const DvcCard: React.FC = () => {
             className="py-2 px-3.5 bg-primaryStrong hover:brightness-110 disabled:opacity-50 text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             {initializing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Server className="w-3.5 h-3.5" />}
-            <span>{initializing ? '초기화 중...' : 'DVC 초기화'}</span>
+            <span>{initializing ? t('dvc.initializingBtn') : t('dvc.initBtn')}</span>
           </button>
         </div>
       ) : (
         <div className="p-3 rounded-lg bg-surfaceRaised mb-4 flex items-center justify-between text-caption">
           <div className="flex items-center gap-2">
             <Server className="w-4 h-4 text-primary" />
-            <span className="text-inkFaint">Remote S3:</span>
+            <span className="text-inkFaint">{t('dvc.remoteS3')}</span>
             <span className="text-ink font-mono">{status?.remote_url || 's3://kubemetal-dvc'}</span>
           </div>
           {status?.current_tag && (
             <div className="flex items-center gap-1">
-              <span className="text-inkFaint">현재 태그:</span>
+              <span className="text-inkFaint">{t('dvc.currentTag')}</span>
               <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-medium">{status.current_tag}</span>
             </div>
           )}
@@ -85,13 +87,13 @@ export const DvcCard: React.FC = () => {
       <div className="p-3 rounded-lg bg-surfaceRaised mb-4 space-y-3 border border-hairline/8">
         <h3 className="text-bodyStrong text-ink flex items-center gap-1.5">
           <Plus className="w-4 h-4 text-primary" />
-          <span>새 버전 태그 생성</span>
+          <span>{t('dvc.createTagTitle')}</span>
         </h3>
 
         <form onSubmit={handleCreateTag} className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
-              <label className={labelClass}>태그 이름</label>
+              <label className={labelClass}>{t('dvc.tagNameLabel')}</label>
               <input
                 type="text"
                 value={tagName}
@@ -101,7 +103,7 @@ export const DvcCard: React.FC = () => {
               />
             </div>
             <div>
-              <label className={labelClass}>데이터셋 경로</label>
+              <label className={labelClass}>{t('dvc.datasetPathLabel')}</label>
               <input
                 type="text"
                 value={datasetPath}
@@ -112,12 +114,12 @@ export const DvcCard: React.FC = () => {
             </div>
           </div>
           <div>
-            <label className={labelClass}>버전 설명 / 변경 사항</label>
+            <label className={labelClass}>{t('dvc.tagDescLabel')}</label>
             <input
               type="text"
               value={tagMessage}
               onChange={(e) => setTagMessage(e.target.value)}
-              placeholder="예: 파인튜닝용 정제 문장 1,000건 추가 및 중복 제거"
+              placeholder={t('dvc.tagDescPlaceholder')}
               className={inputClass}
             />
           </div>
@@ -128,7 +130,7 @@ export const DvcCard: React.FC = () => {
               className="py-2 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               {creatingTag ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Tag className="w-3.5 h-3.5" />}
-              <span>{creatingTag ? '태그 생성 중...' : '버전 태그 생성'}</span>
+              <span>{creatingTag ? t('dvc.creatingTagBtn') : t('dvc.createTagBtn')}</span>
             </button>
           </div>
         </form>
@@ -136,7 +138,7 @@ export const DvcCard: React.FC = () => {
 
       {/* 데이터셋 버전 태그 목록 */}
       <div className="pt-3 border-t border-hairline/8 space-y-2">
-        <h3 className="text-label uppercase text-inkFaint">등록된 데이터셋 버전 태그 ({status?.tags.length || 0}개)</h3>
+        <h3 className="text-label uppercase text-inkFaint">{t('dvc.registeredTagsHeader', { count: status?.tags.length || 0 })}</h3>
         {status?.tags && status.tags.length > 0 ? (
           <div className="space-y-2">
             {status.tags.map((tag) => (
@@ -150,7 +152,7 @@ export const DvcCard: React.FC = () => {
                   </div>
                   <div className="text-body text-ink mt-1.5">{tag.message}</div>
                   {tag.dataset_path && (
-                    <div className="text-caption text-inkMuted mt-1">경로: {tag.dataset_path}</div>
+                    <div className="text-caption text-inkMuted mt-1">{t('dvc.pathLabel')} {tag.dataset_path}</div>
                   )}
                 </div>
                 {tag.created_at && (
@@ -161,7 +163,7 @@ export const DvcCard: React.FC = () => {
           </div>
         ) : (
           <div className="py-4 text-center text-inkFaint text-caption">
-            생성된 데이터셋 버전 태그가 없습니다.
+            {t('dvc.noTags')}
           </div>
         )}
       </div>

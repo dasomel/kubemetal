@@ -2,6 +2,7 @@ import React from 'react';
 import { Search, Loader2, Download, ArrowDownToLine, Heart, Tag, HardDrive } from 'lucide-react';
 import type { HfModel } from '../../types/ipc';
 import { MODEL_CATEGORIES, type ModelCategory } from '../../lib/modelCategories';
+import { useTranslation } from '../../i18n/i18nContext';
 
 interface ModelSearchCardProps {
   results: HfModel[];
@@ -41,6 +42,7 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
   onSelectCategory,
   onDownload,
 }) => {
+  const { t, language } = useTranslation();
   const activeCategory = MODEL_CATEGORIES.find((c) => c.id === activeSelectionId) ?? null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -51,7 +53,9 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
   const trimmedQuery = query.trim();
   const displayResults = trimmedQuery ? results : popularModels;
   const isLoadingDisplay = trimmedQuery ? searching : loadingPopular;
-  const sectionLabel = trimmedQuery ? '검색 결과' : '인기 MLX 모델';
+  const sectionLabel = trimmedQuery
+    ? (language === 'en' ? 'Search Results' : '검색 결과')
+    : t('modelhub.popularModelsTitle');
 
   return (
     <div className="rounded-xl bg-surface p-4 shadow-panel">
@@ -59,7 +63,7 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
         <div className="text-label uppercase text-inkFaint mb-1">Hugging Face</div>
         <h2 className="text-heading text-ink flex items-center gap-2">
           <Search className="w-4 h-4 text-primary" />
-          <span>모델 검색</span>
+          <span>{t('modelhub.searchTitle')}</span>
         </h2>
       </div>
 
@@ -68,7 +72,7 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
           type="text"
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}
-          placeholder="예: meta-llama/Llama-3.2-1B"
+          placeholder={t('modelhub.searchPlaceholder')}
           className="flex-1 px-3.5 py-2.5 rounded-md bg-surfaceRaised text-ink text-body placeholder:text-inkFaint border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         />
         <button
@@ -77,7 +81,7 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
           className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
-          <span>검색</span>
+          <span>{t('modelhub.searchBtn')}</span>
         </button>
       </form>
 
@@ -109,10 +113,10 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
       {displayResults.length === 0 ? (
         <div className="py-8 text-center text-inkMuted text-body">
           {isLoadingDisplay
-            ? '모델을 불러오는 중...'
+            ? (language === 'en' ? 'Loading models...' : '모델을 불러오는 중...')
             : trimmedQuery
-              ? '검색 결과가 없습니다.'
-              : '인기 모델을 불러올 수 없습니다.'}
+              ? (language === 'en' ? 'No search results found.' : '검색 결과가 없습니다.')
+              : (language === 'en' ? 'Unable to load popular models.' : '인기 모델을 불러올 수 없습니다.')}
         </div>
       ) : (
         <div className="space-y-2">
@@ -159,7 +163,7 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
                   ) : (
                     <Download className="w-3.5 h-3.5 text-primary" />
                   )}
-                  <span>다운로드</span>
+                  <span>{isDownloading ? t('modelhub.downloadingBtn') : t('modelhub.downloadBtn')}</span>
                 </button>
               </div>
             );

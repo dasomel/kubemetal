@@ -2,6 +2,7 @@ import React from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useColima } from '../../hooks/useColima';
 import { usePrefect } from '../../hooks/usePrefect';
+import { useTranslation } from '../../i18n/i18nContext';
 import { Boxes, ExternalLink, RefreshCw, Zap, ArrowUpRight, Radio } from 'lucide-react';
 
 const openEndpoint = (url: string) => {
@@ -18,6 +19,7 @@ export const ProvisionPanel: React.FC = () => {
     stopPortForward,
     refresh,
   } = useColima();
+  const { t } = useTranslation();
 
   const isRunning = status?.is_running ?? false;
   const k8sActive = status?.kubernetes_active ?? false;
@@ -34,13 +36,13 @@ export const ProvisionPanel: React.FC = () => {
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-heading text-ink flex items-center gap-2">
           <Boxes className="w-4 h-4 text-primary" />
-          <span>MLOps 스택 프로비저닝 & 포트포워딩</span>
+          <span>{t('provision.title')}</span>
         </h2>
 
         <button
           onClick={() => refresh()}
           className="p-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-inkMuted hover:text-ink transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-          title="상태 새로고침"
+          title={t('provision.refreshTooltip')}
         >
           <RefreshCw className="w-4 h-4" />
         </button>
@@ -51,17 +53,17 @@ export const ProvisionPanel: React.FC = () => {
         {/* MLflow */}
         <div className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between">
           <div>
-            <div className="text-bodyStrong text-ink">MLflow Tracking</div>
+            <div className="text-bodyStrong text-ink">{t('provision.mlflowTracking')}</div>
             <div className="text-caption text-inkFaint mt-0.5">Port 5001</div>
           </div>
           <div className="flex flex-col items-end gap-1">
             <div className="flex items-center gap-1.5 text-caption text-inkMuted">
               <span className={`w-2 h-2 rounded-full ${mlflowReady ? 'bg-success' : 'bg-inkFaint'}`} />
-              <span>{mlflowReady ? 'Ready' : 'Not Ready'}</span>
+              <span>{mlflowReady ? t('provision.mlflowReady') : t('provision.mlflowNotReady')}</span>
             </div>
             <div className={`flex items-center gap-1.5 text-caption ${artifactStoreWired ? 'text-success' : 'text-inkFaint'}`}>
               <span className={`w-2 h-2 rounded-full ${artifactStoreWired ? 'bg-success' : 'bg-inkFaint'}`} />
-              <span>{artifactStoreWired ? 'SeaweedFS 연동됨' : '연동 대기'}</span>
+              <span>{artifactStoreWired ? t('provision.seaweedWired') : t('provision.seaweedPending')}</span>
             </div>
           </div>
         </div>
@@ -69,33 +71,33 @@ export const ProvisionPanel: React.FC = () => {
         {/* SeaweedFS */}
         <div className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between">
           <div>
-            <div className="text-bodyStrong text-ink">SeaweedFS Storage</div>
+            <div className="text-bodyStrong text-ink">{t('provision.seaweedfsStorage')}</div>
             <div className="text-caption text-inkFaint mt-0.5">Port 8333/8888</div>
           </div>
           <div className="flex items-center gap-1.5 text-caption text-inkMuted">
             <span className={`w-2 h-2 rounded-full ${seaweedfsReady ? 'bg-success' : 'bg-inkFaint'}`} />
-            <span>{seaweedfsReady ? 'Ready' : 'Not Ready'}</span>
+            <span>{seaweedfsReady ? t('provision.seaweedReady') : t('provision.seaweedNotReady')}</span>
           </div>
         </div>
 
         {/* GPU Bridge */}
         <div className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between">
           <div>
-            <div className="text-bodyStrong text-ink">mac-gpu-bridge</div>
+            <div className="text-bodyStrong text-ink">{t('provision.macGpuBridge')}</div>
             <div className="text-caption text-inkFaint mt-0.5">host.lima.internal</div>
           </div>
-          <span className="text-caption text-primary">ExternalName</span>
+          <span className="text-caption text-primary">{t('provision.externalName')}</span>
         </div>
 
         {/* Prefect */}
         <div className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between">
           <div>
-            <div className="text-bodyStrong text-ink">Prefect Orchestration</div>
+            <div className="text-bodyStrong text-ink">{t('provision.prefectOrchestration')}</div>
             <div className="text-caption text-inkFaint mt-0.5">Port 4200</div>
           </div>
           <div className="flex items-center gap-1.5 text-caption text-inkMuted">
             <span className={`w-2 h-2 rounded-full ${prefectReady ? 'bg-success' : 'bg-inkFaint'}`} />
-            <span>{prefectReady ? 'Ready' : 'Not Ready'}</span>
+            <span>{prefectReady ? t('provision.prefectReady') : t('provision.prefectNotReady')}</span>
           </div>
         </div>
       </div>
@@ -108,7 +110,7 @@ export const ProvisionPanel: React.FC = () => {
           className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           <Zap className="w-3.5 h-3.5" />
-          <span>MLOps 스택 일괄 배포</span>
+          <span>{t('provision.deployBtn')}</span>
         </button>
 
         <button
@@ -126,9 +128,9 @@ export const ProvisionPanel: React.FC = () => {
           <span>
             {portForwardStatus
               ? portForwardStatus.active === portForwardStatus.total
-                ? `포워딩 활성 (${portForwardStatus.active}/${portForwardStatus.total})`
-                : `포워딩 일부 활성 (${portForwardStatus.active}/${portForwardStatus.total})`
-              : '포트포워딩 시작 (5001, 8333/8888)'}
+                ? t('provision.forwardingActive', { active: portForwardStatus.active, total: portForwardStatus.total })
+                : t('provision.forwardingPartial', { active: portForwardStatus.active, total: portForwardStatus.total })
+              : t('provision.startForwardingBtn')}
           </span>
         </button>
 
@@ -137,14 +139,14 @@ export const ProvisionPanel: React.FC = () => {
           disabled={loading || !isRunning}
           className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed text-inkMuted text-bodyStrong rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
-          포트포워딩 정지
+          {t('provision.stopForwardingBtn')}
         </button>
       </div>
 
       {/* 포트 바인딩 바로가기 가이드 */}
       <div className="pt-4 border-t border-hairline/8">
         <h3 className="text-label uppercase text-inkFaint mb-2 flex items-center gap-1.5">
-          <ExternalLink className="w-3.5 h-3.5" /> 호스트 엔드포인트 바로가기
+          <ExternalLink className="w-3.5 h-3.5" /> {t('provision.hostEndpoints')}
         </h3>
         <div className="flex flex-wrap gap-2 text-caption">
           <button

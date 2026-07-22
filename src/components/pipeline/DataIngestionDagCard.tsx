@@ -20,6 +20,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { useDataIngest } from '../../hooks/useDataIngest';
+import { useTranslation } from '../../i18n/i18nContext';
 import type { DataIngestSourceType, DagNodeId, DagNodeStatus } from '../../types/ipc';
 
 const sourceOptions: { id: DataIngestSourceType; label: string; icon: React.ElementType; example: string }[] = [
@@ -30,31 +31,31 @@ const sourceOptions: { id: DataIngestSourceType; label: string; icon: React.Elem
 
 const dagNodeDefinitions: {
   id: DagNodeId;
-  title: string;
+  titleKey: string;
   subtitle: string;
   icon: React.ElementType;
 }[] = [
   {
     id: 'ingest',
-    title: '1. Source Ingestion',
+    titleKey: '1. Source Ingestion',
     subtitle: 'Web / File / HuggingFace',
     icon: Globe,
   },
   {
     id: 'clean_chunk',
-    title: '2. Clean & Chunk',
+    titleKey: '2. Clean & Chunk',
     subtitle: 'Recursive Character Splitter',
     icon: Scissors,
   },
   {
     id: 'lancedb_store',
-    title: '3. LanceDB RAG Store',
+    titleKey: '3. LanceDB RAG Store',
     subtitle: 'all-MiniLM-L6-v2 Embeddings',
     icon: Layers,
   },
   {
     id: 'dvc_backup',
-    title: '4. SeaweedFS DVC Backup',
+    titleKey: '4. SeaweedFS DVC Backup',
     subtitle: 'S3 Remote Versioning',
     icon: CloudUpload,
   },
@@ -68,38 +69,6 @@ const getNodeIcon = (nodeId: DagNodeId, sourceType: DataIngestSourceType): React
   }
   const found = dagNodeDefinitions.find((n) => n.id === nodeId);
   return found ? found.icon : Database;
-};
-
-const getStatusBadge = (status: DagNodeStatus, isCurrent: boolean) => {
-  if (status === 'running' || isCurrent) {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-caption font-medium bg-primary/10 text-primary border border-primary/20 animate-pulse">
-        <Loader2 className="w-3 h-3 animate-spin shrink-0" />
-        실행 중
-      </span>
-    );
-  }
-  if (status === 'success') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-caption font-medium bg-success/10 text-success border border-success/20">
-        <CheckCircle2 className="w-3 h-3 shrink-0" />
-        성공
-      </span>
-    );
-  }
-  if (status === 'error') {
-    return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-caption font-medium bg-danger/10 text-danger border border-danger/20">
-        <AlertTriangle className="w-3 h-3 shrink-0" />
-        오류
-      </span>
-    );
-  }
-  return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-caption font-medium bg-surfaceRaised text-inkFaint border border-hairline/20">
-      대기
-    </span>
-  );
 };
 
 const SvgDagConnector: React.FC<{ fromStatus: DagNodeStatus; toStatus: DagNodeStatus; active: boolean }> = ({
@@ -158,11 +127,44 @@ export const DataIngestionDagCard: React.FC = () => {
     triggerPipelineRun,
     resetPipeline,
   } = useDataIngest();
+  const { t } = useTranslation();
 
   const [showConfig, setShowConfig] = useState(true);
   const [copiedLog, setCopiedLog] = useState(false);
 
   const activeMetric = activeNodeId && pipelineRun?.nodes[activeNodeId] ? pipelineRun.nodes[activeNodeId] : null;
+
+  const getStatusBadge = (status: DagNodeStatus, isCurrent: boolean) => {
+    if (status === 'running' || isCurrent) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-caption font-medium bg-primary/10 text-primary border border-primary/20 animate-pulse">
+          <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+          {t('dataIngest.statusRunning')}
+        </span>
+      );
+    }
+    if (status === 'success') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-caption font-medium bg-success/10 text-success border border-success/20">
+          <CheckCircle2 className="w-3 h-3 shrink-0" />
+          {t('dataIngest.statusSuccess')}
+        </span>
+      );
+    }
+    if (status === 'error') {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-caption font-medium bg-danger/10 text-danger border border-danger/20">
+          <AlertTriangle className="w-3 h-3 shrink-0" />
+          {t('dataIngest.statusError')}
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-caption font-medium bg-surfaceRaised text-inkFaint border border-hairline/20">
+        {t('dataIngest.statusIdle')}
+      </span>
+    );
+  };
 
   const handleSourceTypeChange = (type: DataIngestSourceType) => {
     const matched = sourceOptions.find((s) => s.id === type);
@@ -188,13 +190,13 @@ export const DataIngestionDagCard: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
-            <h2 className="text-heading font-bold text-ink">데이터 수집 & DAG 파이프라인</h2>
+            <h2 className="text-heading font-bold text-ink">{t('dataIngest.title')}</h2>
             {pipelineRun?.overall_status && (
               <span className="ml-2">{getStatusBadge(pipelineRun.overall_status, isPipelineRunning)}</span>
             )}
           </div>
           <p className="text-caption text-inkMuted mt-0.5">
-            웹, 파일, HuggingFace 데이터셋 수집 → 청킹 → LanceDB RAG → SeaweedFS S3 백업 자동화 파이프라인
+            {t('dataIngest.subtitle')}
           </p>
         </div>
 
@@ -205,7 +207,7 @@ export const DataIngestionDagCard: React.FC = () => {
             className="px-3 py-1.5 rounded-lg bg-surfaceRaised hover:brightness-95 text-caption text-ink font-medium flex items-center gap-1.5 border border-hairline/20"
           >
             <Settings2 className="w-4 h-4 text-inkMuted" />
-            <span>수집 옵션</span>
+            <span>{t('dataIngest.optionsBtn')}</span>
             {showConfig ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
 
@@ -214,7 +216,7 @@ export const DataIngestionDagCard: React.FC = () => {
               type="button"
               onClick={resetPipeline}
               className="p-1.5 rounded-lg bg-surfaceRaised hover:brightness-95 text-inkMuted hover:text-ink border border-hairline/20"
-              title="초기화"
+              title={t('dataIngest.resetBtnTitle')}
             >
               <RotateCcw className="w-4 h-4" />
             </button>
@@ -229,12 +231,12 @@ export const DataIngestionDagCard: React.FC = () => {
             {isPipelineRunning ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>파이프라인 실행 중...</span>
+                <span>{t('dataIngest.runningBtn')}</span>
               </>
             ) : (
               <>
                 <Play className="w-4 h-4 fill-current" />
-                <span>파이프라인 실행</span>
+                <span>{t('dataIngest.runBtn')}</span>
               </>
             )}
           </button>
@@ -246,13 +248,13 @@ export const DataIngestionDagCard: React.FC = () => {
         <div className="rounded-lg bg-surfaceRaised/50 p-4 border border-hairline/15 space-y-4">
           <div className="text-bodyStrong text-ink font-semibold flex items-center gap-1.5">
             <Settings2 className="w-4 h-4 text-primary" />
-            <span>수집 옵션 설정</span>
+            <span>{t('dataIngest.configTitle')}</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {/* Source Type Selection Tabs */}
             <div className="md:col-span-3">
-              <label className="block text-caption text-inkMuted mb-1.5 font-medium">수집 데이터 소스 유형</label>
+              <label className="block text-caption text-inkMuted mb-1.5 font-medium">{t('dataIngest.sourceTypeLabel')}</label>
               <div className="grid grid-cols-3 gap-2">
                 {sourceOptions.map((opt) => {
                   const Icon = opt.icon;
@@ -280,10 +282,10 @@ export const DataIngestionDagCard: React.FC = () => {
             <div className="md:col-span-3">
               <label className="block text-caption text-inkMuted mb-1 font-medium">
                 {config.source_type === 'web'
-                  ? '대상 Web URL'
+                  ? t('dataIngest.targetWebUrl')
                   : config.source_type === 'huggingface'
-                  ? 'HuggingFace 리포지토리 / 데이터셋 이름'
-                  : '로컬 문서 디렉토리 경로'}
+                  ? t('dataIngest.targetHfRepo')
+                  : t('dataIngest.targetLocalDir')}
               </label>
               <div className="flex gap-2">
                 <input
@@ -303,14 +305,14 @@ export const DataIngestionDagCard: React.FC = () => {
                   }
                   className="px-2.5 py-1.5 rounded-lg bg-surface border border-hairline/20 text-caption text-inkMuted hover:text-ink hover:bg-surfaceRaised"
                 >
-                  기본 값 적용
+                  {t('dataIngest.applyDefaultBtn')}
                 </button>
               </div>
             </div>
 
             {/* Advanced Settings */}
             <div>
-              <label className="block text-caption text-inkMuted mb-1 font-medium">청크 크기 (Chunk Size)</label>
+              <label className="block text-caption text-inkMuted mb-1 font-medium">{t('dataIngest.chunkSize')}</label>
               <input
                 type="number"
                 min={64}
@@ -323,7 +325,7 @@ export const DataIngestionDagCard: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-caption text-inkMuted mb-1 font-medium">청크 오버랩 (Chunk Overlap)</label>
+              <label className="block text-caption text-inkMuted mb-1 font-medium">{t('dataIngest.chunkOverlap')}</label>
               <input
                 type="number"
                 min={0}
@@ -336,7 +338,7 @@ export const DataIngestionDagCard: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-caption text-inkMuted mb-1 font-medium">LanceDB 컬렉션 이름</label>
+              <label className="block text-caption text-inkMuted mb-1 font-medium">{t('dataIngest.collectionName')}</label>
               <input
                 type="text"
                 value={config.collection_name}
@@ -355,7 +357,7 @@ export const DataIngestionDagCard: React.FC = () => {
                 className="w-4 h-4 rounded border-hairline text-primary focus:ring-primary accent-primary"
               />
               <label htmlFor="autoDvcBackup" className="text-caption text-ink font-medium cursor-pointer">
-                LanceDB 수집 후 SeaweedFS S3에 자동 DVC 백업 버저닝 스냅샷 생성
+                {t('dataIngest.autoDvcBackup')}
               </label>
             </div>
           </div>
@@ -365,8 +367,8 @@ export const DataIngestionDagCard: React.FC = () => {
       {/* DAG Node Flow Diagram */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-bodyStrong text-ink font-semibold">DAG 노드 파이프라인 그래프</span>
-          <span className="text-caption text-inkFaint">노드를 클릭하여 해당 실행 로그 및 메트릭을 확인합니다</span>
+          <span className="text-bodyStrong text-ink font-semibold">{t('dataIngest.dagGraphTitle')}</span>
+          <span className="text-caption text-inkFaint">{t('dataIngest.dagGraphHint')}</span>
         </div>
 
         <div className="flex flex-col md:flex-row items-stretch justify-between gap-2 md:gap-0 p-3 rounded-xl bg-surfaceRaised/40 border border-hairline/15 overflow-x-auto">
@@ -424,14 +426,14 @@ export const DataIngestionDagCard: React.FC = () => {
                   </div>
 
                   <div>
-                    <h4 className="text-bodyStrong text-ink font-semibold leading-snug truncate">{node.title}</h4>
+                    <h4 className="text-bodyStrong text-ink font-semibold leading-snug truncate">{node.titleKey}</h4>
                     <p className="text-caption text-inkFaint truncate mt-0.5">{node.subtitle}</p>
                   </div>
 
                   <div className="mt-3 pt-2 border-t border-hairline/10 flex items-center justify-between text-caption text-inkMuted">
-                    <span>처리 항목:</span>
+                    <span>{t('dataIngest.processedItems')}</span>
                     <span className="font-mono font-semibold text-ink">
-                      {nodeMetric ? nodeMetric.items_processed : 0}개
+                      {t('dataIngest.itemsCount', { count: nodeMetric ? nodeMetric.items_processed : 0 })}
                     </span>
                   </div>
                 </div>
@@ -448,9 +450,9 @@ export const DataIngestionDagCard: React.FC = () => {
             <div className="flex items-center gap-2">
               <Terminal className="w-4 h-4 text-primary" />
               <h3 className="text-bodyStrong text-ink font-semibold">
-                노드 실행 정보 & 실행 로그:{' '}
+                {t('dataIngest.nodeLogsTitle')}{' '}
                 <span className="text-primary font-bold">
-                  {dagNodeDefinitions.find((n) => n.id === activeNodeId)?.title}
+                  {dagNodeDefinitions.find((n) => n.id === activeNodeId)?.titleKey}
                 </span>
               </h3>
             </div>
@@ -458,7 +460,7 @@ export const DataIngestionDagCard: React.FC = () => {
             <div className="flex items-center gap-2">
               {activeMetric?.duration_ms ? (
                 <span className="text-caption text-inkMuted bg-surface px-2.5 py-1 rounded-md border border-hairline/20 font-mono">
-                  실행 소요: <strong className="text-ink">{activeMetric.duration_ms}ms</strong>
+                  {t('dataIngest.durationMs')} <strong className="text-ink">{activeMetric.duration_ms}ms</strong>
                 </span>
               ) : null}
 
@@ -469,7 +471,7 @@ export const DataIngestionDagCard: React.FC = () => {
                 className="px-2.5 py-1 rounded-md bg-surface hover:brightness-95 text-caption text-inkMuted hover:text-ink border border-hairline/20 flex items-center gap-1"
               >
                 {copiedLog ? <Check className="w-3.5 h-3.5 text-success" /> : <ArrowRight className="w-3.5 h-3.5" />}
-                <span>{copiedLog ? '복사됨' : '로그 복사'}</span>
+                <span>{copiedLog ? t('dataIngest.copiedLogsBtn') : t('dataIngest.copyLogsBtn')}</span>
               </button>
             </div>
           </div>
@@ -494,11 +496,11 @@ export const DataIngestionDagCard: React.FC = () => {
                   <span className="text-gray-600 select-none shrink-0">{i + 1}</span>
                   <span
                     className={
-                      log.includes('[오류]')
+                      log.includes('[오류]') || log.includes('[Error]')
                         ? 'text-red-400 font-semibold'
-                        : log.includes('완료') || log.includes('성공')
+                        : log.includes('완료') || log.includes('성공') || log.includes('completed') || log.includes('Success')
                         ? 'text-emerald-400 font-medium'
-                        : log.includes('실행 중') || log.includes('시작')
+                        : log.includes('실행 중') || log.includes('시작') || log.includes('running')
                         ? 'text-blue-300'
                         : 'text-gray-300'
                     }
@@ -508,7 +510,7 @@ export const DataIngestionDagCard: React.FC = () => {
                 </div>
               ))
             ) : (
-              <div className="text-gray-500 italic py-6 text-center">선택된 노드의 실행 로그가 없습니다.</div>
+              <div className="text-gray-500 italic py-6 text-center">{t('dataIngest.noLogs')}</div>
             )}
           </div>
         </div>
