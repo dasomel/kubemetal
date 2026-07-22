@@ -1,7 +1,10 @@
 import React from 'react';
 import { Cpu, Layers, HardDrive } from 'lucide-react';
+import { useMetrics } from '../../hooks/useMetrics';
 
 export const Header: React.FC = () => {
+  const metrics = useMetrics(3000);
+
   return (
     <header className="border-b border-hairline/8 bg-surface px-6 py-4 flex items-center justify-between">
       <div className="flex items-center gap-3">
@@ -22,7 +25,10 @@ export const Header: React.FC = () => {
       <div className="flex items-center gap-3 text-caption text-inkMuted">
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surfaceRaised border border-hairline/8">
           <Cpu className="w-3.5 h-3.5 text-primary" />
-          <span>Host: macOS Unified Memory</span>
+          <span>
+            Host: macOS Unified Memory
+            {metrics ? ` (${metrics.used_memory_gb.toFixed(1)}GB / ${metrics.total_memory_gb.toFixed(0)}GB)` : ''}
+          </span>
         </div>
         <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surfaceRaised border border-hairline/8">
           <HardDrive className="w-3.5 h-3.5 text-primary" />
