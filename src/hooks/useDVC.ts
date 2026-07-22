@@ -19,10 +19,14 @@ export function useDVC(active: boolean = false) {
   }, []);
 
   const initDvc = useCallback(
-    async (remoteUrl?: string) => {
+    async (_remoteUrl?: string) => {
       setInitializing(true);
       try {
-        const res = await invoke<string>('init_dvc_repo', { remoteUrl: remoteUrl || null });
+        const res = await invoke<string>('dvc_commit_dataset', {
+          dataPath: null,
+          bucketName: 'dvc-repo',
+          commitMessage: 'Initialize DVC dataset repository',
+        });
         await message(res || 'DVC 저장소가 초기화되었습니다.', { title: 'KubeMetal', kind: 'info' });
         await fetchStatus();
       } catch (err) {
@@ -39,15 +43,15 @@ export function useDVC(active: boolean = false) {
       if (!tag.trim()) return;
       setCreatingTag(true);
       try {
-        const res = await invoke<string>('create_dvc_tag', {
-          tag,
-          message: messageStr,
-          datasetPath: datasetPath || null,
+        const res = await invoke<string>('dvc_commit_dataset', {
+          dataPath: datasetPath || null,
+          bucketName: 'dvc-repo',
+          commitMessage: `[${tag}] ${messageStr}`,
         });
-        await message(res || `DVC 태그 '${tag}' 생성 완료`, { title: 'KubeMetal', kind: 'info' });
+        await message(res || `DVC 데이터셋 버전 '${tag}' 커밋 완료`, { title: 'KubeMetal', kind: 'info' });
         await fetchStatus();
       } catch (err) {
-        await message(`DVC 태그 생성 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+        await message(`DVC 버전 생성 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
       } finally {
         setCreatingTag(false);
       }

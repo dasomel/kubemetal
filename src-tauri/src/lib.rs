@@ -27,7 +27,8 @@ use commands::prefect::{
 };
 use commands::provision::provision_mlops_stack;
 use commands::rag::{
-    dvc_commit_dataset, get_rag_status, index_documents, query_rag, setup_rag_env, RagState,
+    dvc_commit_dataset, get_dvc_status, get_rag_status, index_documents, query_rag, setup_rag_env,
+    RagState,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -83,6 +84,7 @@ pub fn run() {
             index_documents,
             query_rag,
             dvc_commit_dataset,
+            get_dvc_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
