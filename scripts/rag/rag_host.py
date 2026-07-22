@@ -8,23 +8,32 @@ and DVC dataset versioning with SeaweedFS S3 remote.
 import argparse
 import json
 import os
+import shutil
 import sys
 import subprocess
 from pathlib import Path
 
+def get_dvc_bin() -> str:
+    """
+    Find dvc binary path in current Python environment or system PATH.
+    """
+    venv_bin = Path(sys.executable).parent / "dvc"
+    if venv_bin.is_file():
+        return str(venv_bin)
+    found = shutil.which("dvc")
+    if found:
+        return found
+    return "dvc"
+
 def get_embedding_model(model_name: str):
     """
-    Load embedding model using sentence-transformers or mlx-embeddings fallback.
+    Load embedding model using sentence-transformers.
     """
     try:
         from sentence_transformers import SentenceTransformer
         return SentenceTransformer(model_name)
     except ImportError:
-        try:
-            # Fallback check if sentence_transformers isn't installed
-            raise RuntimeError("sentence-transformers가 설치되지 않았습니다. setup_rag_env를 실행하세요.")
-        except Exception as e:
-            raise RuntimeError(f"임베딩 모델 로드 실패: {e}")
+        raise RuntimeError("sentence-transformers가 설치되지 않았습니다. setup_rag_env를 실행하세요.")
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50):
     """
@@ -92,7 +101,7 @@ def cmd_index(args):
                         "chunk_index": idx,
                         "text": chunk
                     })
-        except Exception as e:
+        except Exception:
             continue
 
     if not chunks_data:
@@ -111,8 +120,9 @@ def cmd_index(args):
     db_path.mkdir(parents=True, exist_ok=True)
     db = lancedb.connect(str(db_path))
 
-    # Create table (overwrite mode if exists)
-    table = db.create_table(collection, data=chunks_data, mode="overwrite")
+    existing_tables = db.list_tables()
+    mode = "overwrite" if collection in existing_tables else "create"
+    table = db.create_table(collection, data=chunks_data, mode=mode)
 
     print(json.dumps({
         "status": "ok",
@@ -140,7 +150,8 @@ def cmd_query(args):
         sys.exit(1)
 
     db = lancedb.connect(str(db_path))
-    if collection not in db.table_names():
+    existing_tables = db.list_tables()
+    if collection not in existing_tables:
         print(json.dumps({"status": "error", "error": f"컬렉션 '{collection}'을 찾을 수 없습니다."}))
         sys.exit(1)
 
@@ -153,9 +164,7 @@ def cmd_query(args):
 
     formatted_results = []
     for r in search_results:
-        # Distance / Similarity score handling
         score = r.get("_distance", 0.0)
-        # Convert L2 distance or cosine distance to rough similarity if possible, or pass distance
         formatted_results.append({
             "text": r.get("text", ""),
             "filename": r.get("filename", ""),
@@ -181,36 +190,33 @@ def cmd_dvc_commit(args):
         print(json.dumps({"status": "error", "error": f"데이터 경로가 존재하지 않습니다: {data_dir}"}))
         sys.exit(1)
 
+    dvc_bin = get_dvc_bin()
     work_dir = data_dir if data_dir.is_dir() else data_dir.parent
 
     # Check / init DVC
     dvc_dir = work_dir / ".dvc"
     if not dvc_dir.exists():
-        res = subprocess.run(["dvc", "init", "--no-scm"], cwd=work_dir, capture_output=True, text=True)
+        res = subprocess.run([dvc_bin, "init", "--no-scm"], cwd=work_dir, capture_output=True, text=True)
         if res.returncode != 0:
-            # Fallback try without --no-scm if git repo or general init
-            res = subprocess.run(["dvc", "init"], cwd=work_dir, capture_output=True, text=True)
+            res = subprocess.run([dvc_bin, "init"], cwd=work_dir, capture_output=True, text=True)
 
     # Add S3 remote
     remote_name = "seaweedfs"
     s3_uri = f"s3://{bucket}"
     
-    subprocess.run(["dvc", "remote", "add", "-f", "-d", remote_name, s3_uri], cwd=work_dir, capture_output=True)
-    subprocess.run(["dvc", "remote", "modify", remote_name, "endpointurl", remote_url], cwd=work_dir, capture_output=True)
-    subprocess.run(["dvc", "remote", "modify", remote_name, "access_key_id", access_key], cwd=work_dir, capture_output=True)
-    subprocess.run(["dvc", "remote", "modify", remote_name, "secret_access_key", secret_key], cwd=work_dir, capture_output=True)
-    subprocess.run(["dvc", "remote", "modify", remote_name, "use_ssl", "false"], cwd=work_dir, capture_output=True)
+    subprocess.run([dvc_bin, "remote", "add", "-f", "-d", remote_name, s3_uri], cwd=work_dir, capture_output=True)
+    subprocess.run([dvc_bin, "remote", "modify", remote_name, "endpointurl", remote_url], cwd=work_dir, capture_output=True)
+    subprocess.run([dvc_bin, "remote", "modify", remote_name, "access_key_id", access_key], cwd=work_dir, capture_output=True)
+    subprocess.run([dvc_bin, "remote", "modify", remote_name, "secret_access_key", secret_key], cwd=work_dir, capture_output=True)
+    subprocess.run([dvc_bin, "remote", "modify", remote_name, "use_ssl", "false"], cwd=work_dir, capture_output=True)
 
     target_rel = data_dir.name if data_dir != work_dir else "."
     
     # dvc add
-    add_res = subprocess.run(["dvc", "add", target_rel], cwd=work_dir, capture_output=True, text=True)
-    if add_res.returncode != 0 and "is already tracked" not in add_res.stderr:
-        # If failure, report error
-        pass
+    subprocess.run([dvc_bin, "add", target_rel], cwd=work_dir, capture_output=True, text=True)
 
     # dvc push
-    push_res = subprocess.run(["dvc", "push", "-r", remote_name], cwd=work_dir, capture_output=True, text=True)
+    push_res = subprocess.run([dvc_bin, "push", "-r", remote_name], cwd=work_dir, capture_output=True, text=True)
     if push_res.returncode != 0:
         print(json.dumps({
             "status": "error",
