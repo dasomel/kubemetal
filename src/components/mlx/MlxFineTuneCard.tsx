@@ -172,7 +172,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
               <span className="text-bodyStrong text-ink">진행 상황</span>
               <span className="text-caption text-inkFaint tabular-nums">
                 {training.current_iter} / {training.total_iters} iter
-                {training.last_loss !== undefined ? ` · loss ${training.last_loss.toFixed(4)}` : ''}
+                {training.last_loss != null ? ` · loss ${training.last_loss.toFixed(4)}` : ''}
               </span>
             </div>
             <div

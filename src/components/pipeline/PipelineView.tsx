@@ -196,7 +196,7 @@ export const PipelineView: React.FC = () => {
       dot: 'warning',
       statusText: `진행 중 (PID ${training.pid})`,
       detail: `iter ${training.current_iter}/${training.total_iters}${
-        training.last_loss !== undefined ? ` · loss ${training.last_loss.toFixed(4)}` : ''
+        training.last_loss != null ? ` · loss ${training.last_loss.toFixed(4)}` : ''
       }`,
     };
   })();
