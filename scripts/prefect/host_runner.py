@@ -226,7 +226,54 @@ def evaluate_flow(
     return {"run_id": reporter.run_id, "metrics": metrics}
 
 
+INGEST_SCRIPT_PATH = Path(__file__).resolve().parent.parent / "data" / "ingest_host.py"
+
+
+@flow(name="ingest", log_prints=True)
+def ingest_flow(
+    source_type: str = "local",
+    source_path: str = "docs",
+    collection: str = "dataset_ingest",
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+    dvc_backup: bool = False,
+) -> dict:
+    """`ingest_host.py`를 실행하여 Web/HF/Local 데이터 수집, 청킹, LanceDB 인덱싱 및 DVC 커밋 DAG를 수행한다."""
+    logger = get_run_logger()
+    if not INGEST_SCRIPT_PATH.is_file():
+        raise RuntimeError(f"ingest_host.py를 찾을 수 없습니다: {INGEST_SCRIPT_PATH}")
+
+    cmd = [
+        sys.executable,
+        "-u",
+        str(INGEST_SCRIPT_PATH),
+        "--source-type", source_type,
+        "--source-path", source_path,
+        "--collection", collection,
+        "--chunk-size", str(chunk_size),
+        "--chunk-overlap", str(chunk_overlap),
+    ]
+    if dvc_backup:
+        cmd.append("--dvc-backup")
+
+    logger.info(f"ingest_host 시작: {' '.join(cmd)}")
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        message = proc.stderr.strip() or proc.stdout.strip() or f"ingest_host exited with {proc.returncode}"
+        raise RuntimeError(message)
+
+    try:
+        res = json.loads(proc.stdout)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"ingest_host JSON 파싱 실패: {e}\nstdout: {proc.stdout}") from e
+
+    logger.info(f"수집 완료: status={res.get('status')} chunks={res.get('total_chunks_created')}")
+    return res
+
+
 if __name__ == "__main__":
     finetune_deployment = finetune_flow.to_deployment(name="finetune")
     evaluate_deployment = evaluate_flow.to_deployment(name="evaluate")
-    serve(finetune_deployment, evaluate_deployment)
+    ingest_deployment = ingest_flow.to_deployment(name="ingest")
+    serve(finetune_deployment, evaluate_deployment, ingest_deployment)
+

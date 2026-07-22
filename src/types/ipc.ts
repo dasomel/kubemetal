@@ -171,3 +171,40 @@ export interface DvcStatus {
   last_error?: string;
 }
 
+export type DataIngestSourceType = 'web' | 'file' | 'huggingface';
+
+export interface DataIngestConfig {
+  source_type: DataIngestSourceType;
+  source_target: string;
+  chunk_size: number;
+  chunk_overlap: number;
+  collection_name: string;
+  auto_dvc_backup: boolean;
+}
+
+export type DagNodeId = 'ingest' | 'clean_chunk' | 'lancedb_store' | 'dvc_backup';
+
+export type DagNodeStatus = 'idle' | 'running' | 'success' | 'error';
+
+export interface DagNodeMetric {
+  id: DagNodeId;
+  name: string;
+  status: DagNodeStatus;
+  items_processed: number;
+  duration_ms: number;
+  logs: string[];
+  error_message?: string;
+  details?: Record<string, string | number | boolean>;
+}
+
+export interface DataIngestPipelineRun {
+  run_id: string;
+  config: DataIngestConfig;
+  overall_status: DagNodeStatus;
+  current_node?: DagNodeId;
+  start_time?: string;
+  end_time?: string;
+  nodes: Record<DagNodeId, DagNodeMetric>;
+}
+
+

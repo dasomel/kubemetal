@@ -6,6 +6,9 @@ use sysinfo::System;
 
 use commands::access::get_service_access;
 use commands::colima::{get_cluster_status, start_cluster, stop_cluster};
+use commands::data_ingest::{
+    get_ingest_status, list_ingested_datasets, run_data_ingest, DataIngestState,
+};
 use commands::guardrails::{
     get_guardrail_status, pause_mlx_training, resume_mlx_training, set_guardrail_config,
     GuardrailState,
@@ -43,6 +46,7 @@ pub fn run() {
         .manage(GuardrailState::default())
         .manage(PrefectState::default())
         .manage(RagState::default())
+        .manage(DataIngestState::default())
         .invoke_handler(tauri::generate_handler![
             get_system_metrics,
             get_cluster_status,
@@ -85,6 +89,9 @@ pub fn run() {
             query_rag,
             dvc_commit_dataset,
             get_dvc_status,
+            run_data_ingest,
+            get_ingest_status,
+            list_ingested_datasets,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

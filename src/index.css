@@ -110,3 +110,14 @@ body {
 .animate-card-in {
   animation: card-in 300ms ease-out;
 }
+
+@keyframes dash {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+.animate-dash {
+  animation: dash 1s linear infinite;
+}
+

@@ -7,6 +7,7 @@ import { useMlx } from '../../hooks/useMlx';
 import { useRegisteredModels } from '../../hooks/useRegisteredModels';
 import { usePrefect } from '../../hooks/usePrefect';
 import { OrchestrationCard } from './OrchestrationCard';
+import { DataIngestionDagCard } from './DataIngestionDagCard';
 import { RagCard } from './RagCard';
 import { DvcCard } from './DvcCard';
 
@@ -290,6 +291,8 @@ export const PipelineView: React.FC = () => {
           인프라 → 모델 준비 → 학습 → 등록 → 서빙까지 앱 내 오케스트레이션 상태를 한눈에 확인합니다.
         </p>
       </div>
+
+      <DataIngestionDagCard />
 
       <OrchestrationCard />
 
