@@ -139,45 +139,41 @@ export const OrchestrationCard: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-3 mt-3">
-          {/* ② 환경 상태 */}
-          <div className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between gap-3">
-            <div>
-              <div className="text-bodyStrong text-ink">Prefect 환경</div>
-              <div className="flex items-center gap-1.5 text-caption text-inkMuted mt-0.5">
+          {/* ② 환경 상태 & ③ 플로우 러너 (한 줄 표시) */}
+          <div className="p-3 rounded-lg bg-surfaceRaised flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2">
+                <span className="text-bodyStrong text-ink">Prefect 환경:</span>
                 <span className={`w-2 h-2 rounded-full shrink-0 ${status?.env_installed ? 'bg-success' : 'bg-inkFaint'}`} />
-                <span>{status?.env_installed ? '설치됨' : '미설치'}</span>
+                <span className="text-caption text-inkMuted">{status?.env_installed ? '설치됨' : '미설치'}</span>
+                {!status?.env_installed && (
+                  <button
+                    type="button"
+                    onClick={() => setupEnv()}
+                    disabled={installing}
+                    className="ml-2 py-1 px-2.5 bg-primaryStrong hover:brightness-110 disabled:opacity-50 text-inverse text-caption rounded-md transition-all flex items-center gap-1 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  >
+                    {installing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Cpu className="w-3 h-3" />}
+                    <span>{installing ? '설치 중...' : '환경 설치'}</span>
+                  </button>
+                )}
               </div>
-            </div>
-            {!status?.env_installed && (
-              <button
-                type="button"
-                onClick={() => setupEnv()}
-                disabled={installing}
-                className="py-2 px-3.5 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-              >
-                {installing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Cpu className="w-3.5 h-3.5" />}
-                <span>{installing ? '설치 중...' : '환경 설치'}</span>
-              </button>
-            )}
-          </div>
 
-          {/* ③ 러너 */}
-          <div className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between gap-3">
-            <div>
-              <div className="text-bodyStrong text-ink">플로우 러너</div>
-              <div className="flex items-center gap-1.5 text-caption text-inkMuted mt-0.5">
+              <div className="flex items-center gap-2 border-l border-hairline/8 pl-6">
+                <span className="text-bodyStrong text-ink">플로우 러너:</span>
                 <span className={`w-2 h-2 rounded-full shrink-0 ${status?.runner_running ? 'bg-success' : 'bg-inkFaint'}`} />
-                <span>{status?.runner_running ? `실행 중 (PID ${status.runner_pid})` : '중지됨'}</span>
+                <span className="text-caption text-inkMuted">{status?.runner_running ? `실행 중 (PID ${status.runner_pid})` : '중지됨'}</span>
               </div>
             </div>
+
             {status?.runner_running ? (
               <button
                 type="button"
                 onClick={() => stopRunner()}
                 disabled={stoppingRunner}
-                className="py-2 px-3.5 bg-surface hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed text-ink text-bodyStrong rounded-md transition-all flex items-center gap-1.5 shrink-0 border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                className="py-1.5 px-3 bg-surface hover:brightness-95 disabled:opacity-50 text-ink text-caption font-medium rounded-md transition-all flex items-center gap-1.5 shrink-0 border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
-                {stoppingRunner ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Square className="w-3.5 h-3.5" />}
+                {stoppingRunner ? <Loader2 className="w-3 h-3 animate-spin" /> : <Square className="w-3 h-3" />}
                 <span>중지</span>
               </button>
             ) : (
@@ -185,9 +181,9 @@ export const OrchestrationCard: React.FC = () => {
                 type="button"
                 onClick={() => startRunner()}
                 disabled={startingRunner || !status?.env_installed}
-                className="py-2 px-3.5 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+                className="py-1.5 px-3 bg-primaryStrong hover:brightness-110 disabled:opacity-50 text-inverse text-caption font-medium rounded-md transition-all flex items-center gap-1.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
-                {startingRunner ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                {startingRunner ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
                 <span>시작</span>
               </button>
             )}
