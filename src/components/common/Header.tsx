@@ -11,7 +11,7 @@ export const Header: React.FC = () => {
         <div>
           <h1 className="text-display text-ink flex items-center gap-2">
             KubeMetal
-            <span className="text-caption font-normal text-inkFaint">v0.1.0 MVP</span>
+            <span className="text-caption font-normal text-inkFaint">v0.1.0</span>
           </h1>
           <p className="text-caption text-inkMuted">
             macOS Host (MLX) + Colima K3s Hybrid MLOps Architecture
