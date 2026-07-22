@@ -2,6 +2,7 @@ import React from 'react';
 import { useColima } from '../../hooks/useColima';
 import { useMetrics } from '../../hooks/useMetrics';
 import { recommendVmResources } from '../../lib/recommendVmResources';
+import { useTranslation } from '../../i18n/i18nContext';
 import { Server, Play, Square, Loader2, ShieldCheck } from 'lucide-react';
 
 interface ClusterControlProps {
@@ -12,6 +13,7 @@ interface ClusterControlProps {
 export const ClusterControl: React.FC<ClusterControlProps> = ({ compact = false }) => {
   const { status, loading, actionMessage, startCluster, stopCluster } = useColima();
   const metrics = useMetrics();
+  const { t } = useTranslation();
 
   const totalRam = metrics?.total_memory_gb ?? 16;
   const { cpu, memoryGb } = recommendVmResources(totalRam);
@@ -24,14 +26,14 @@ export const ClusterControl: React.FC<ClusterControlProps> = ({ compact = false 
       <div className="animate-card-in rounded-xl bg-surface p-4 shadow-panel flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
           <Server className="w-4 h-4 text-primary shrink-0" />
-          <span className="text-bodyStrong text-ink truncate">Colima K8s Control</span>
+          <span className="text-bodyStrong text-ink truncate">{t('cluster.title')}</span>
           <span className="flex items-center gap-1.5 text-caption text-inkMuted shrink-0">
             <span className={`w-2 h-2 rounded-full ${isRunning ? 'bg-success' : 'bg-danger'}`} />
-            <span>{isRunning ? 'RUNNING (vz)' : 'STOPPED'}</span>
+            <span>{isRunning ? t('cluster.running') : t('cluster.stopped')}</span>
           </span>
           <span className="flex items-center gap-1.5 text-caption text-inkFaint shrink-0">
             <span className={`w-1.5 h-1.5 rounded-full ${k8sActive ? 'bg-success' : 'bg-inkFaint'}`} />
-            <span>{k8sActive ? 'K3s Enabled' : 'Disabled'}</span>
+            <span>{k8sActive ? t('cluster.k3sEnabled') : t('cluster.k3sDisabled')}</span>
           </span>
         </div>
         {isRunning && (
@@ -41,7 +43,7 @@ export const ClusterControl: React.FC<ClusterControlProps> = ({ compact = false 
             className="shrink-0 px-3 py-1.5 bg-surfaceRaised hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed text-inkMuted text-caption rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Square className="w-3.5 h-3.5" />}
-            <span>정지</span>
+            <span>{t('cluster.stop')}</span>
           </button>
         )}
       </div>
@@ -54,29 +56,29 @@ export const ClusterControl: React.FC<ClusterControlProps> = ({ compact = false 
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-heading text-ink flex items-center gap-2">
             <Server className="w-4 h-4 text-primary" />
-            <span>Colima K8s Control</span>
+            <span>{t('cluster.title')}</span>
           </h2>
 
           <div className="flex items-center gap-1.5 text-caption text-inkMuted">
             <span
               className={`w-2 h-2 rounded-full ${isRunning ? 'bg-success' : 'bg-danger'}`}
             />
-            <span>{isRunning ? 'RUNNING (vz)' : 'STOPPED'}</span>
+            <span>{isRunning ? t('cluster.running') : t('cluster.stopped')}</span>
           </div>
         </div>
 
         {/* 상태 세부사항 */}
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div className="p-3 rounded-lg bg-surfaceRaised">
-            <div className="text-label uppercase text-inkFaint mb-1">VM 엔진 스펙</div>
+            <div className="text-label uppercase text-inkFaint mb-1">{t('cluster.vmSpecLabel')}</div>
             <div className="text-bodyStrong text-ink">vz + virtiofs</div>
           </div>
           <div className="p-3 rounded-lg bg-surfaceRaised">
-            <div className="text-label uppercase text-inkFaint mb-1">Kubernetes Active</div>
+            <div className="text-label uppercase text-inkFaint mb-1">{t('cluster.k8sActiveLabel')}</div>
             <div className="flex items-center gap-1.5">
               <span className={`w-1.5 h-1.5 rounded-full ${k8sActive ? 'bg-success' : 'bg-inkFaint'}`} />
               <span className="text-bodyStrong text-ink">
-                {k8sActive ? 'K3s Enabled' : 'Disabled / Inactive'}
+                {k8sActive ? t('cluster.k3sEnabled') : t('cluster.k3sInactive')}
               </span>
             </div>
           </div>
@@ -86,11 +88,7 @@ export const ClusterControl: React.FC<ClusterControlProps> = ({ compact = false 
         <div className="p-3 rounded-lg bg-surfaceRaised text-caption text-inkMuted mb-4 flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-primary shrink-0" />
           <span>
-            자동 산정 VM 스펙:{' '}
-            <span className="text-bodyStrong text-ink tabular-nums">
-              {cpu} CPU 코어 / {memoryGb}GB RAM
-            </span>{' '}
-            (호스트 {totalRam}GB RAM 기준)
+            {t('cluster.autoSpecInfo', { cpu, memoryGb, totalRam })}
           </span>
         </div>
       </div>
@@ -115,7 +113,7 @@ export const ClusterControl: React.FC<ClusterControlProps> = ({ compact = false 
             ) : (
               <Play className="w-4 h-4 fill-current" />
             )}
-            <span>Apple vz 기반 K8s 스타트</span>
+            <span>{t('cluster.startBtn')}</span>
           </button>
         ) : (
           <button
@@ -128,7 +126,7 @@ export const ClusterControl: React.FC<ClusterControlProps> = ({ compact = false 
             ) : (
               <Square className="w-4 h-4 fill-current" />
             )}
-            <span>Colima 정지</span>
+            <span>{t('cluster.stopBtn')}</span>
           </button>
         )}
       </div>

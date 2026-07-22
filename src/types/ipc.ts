@@ -8,6 +8,8 @@ export interface SystemMetrics {
   used_memory_gb: number;
   memory_usage_percentage: number;
   cpu_usage_percentage: number;
+  gpu_usage_percentage?: number;
+  gpu_memory_used_gb?: number;
 }
 
 export interface ClusterStatus {

@@ -13,27 +13,14 @@ import { AccessConsole } from './components/access/AccessConsole';
 import { useColima } from './hooks/useColima';
 import { useMlx } from './hooks/useMlx';
 import { useServiceAccess } from './hooks/useServiceAccess';
+import { useTranslation } from './i18n/i18nContext';
 import { Shield, Sparkles } from 'lucide-react';
 
 type Tab = 'dashboard' | 'modelhub' | 'mlx' | 'pipeline' | 'access';
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'dashboard', label: '대시보드' },
-  { id: 'modelhub', label: '모델 허브' },
-  { id: 'mlx', label: 'MLX 스튜디오' },
-  { id: 'pipeline', label: '파이프라인' },
-  { id: 'access', label: '접근 콘솔' },
-];
-
 // 접근 콘솔이 포트포워딩으로 회복되는 서비스와 동일한 집합(AccessConsole.tsx 참조) —
 // 이 서비스들의 health로 "포워딩 활성" 여부를 근사한다(별도 IPC 없이 기존 데이터 재사용).
 const FORWARDING_SERVICE_NAMES = new Set(['MLflow', 'SeaweedFS S3 API', 'SeaweedFS Filer UI']);
-
-const BANNER_COPY: Record<'bootstrap' | 'provision' | 'ready', string> = {
-  bootstrap: 'K8s 컨트롤 플레인(Colima vz VM)을 시작하면 하이브리드 MLOps 스택을 구성할 수 있습니다.',
-  provision: '클러스터가 기동되었습니다 — MLOps 스택을 배포하고 포트포워딩을 연결하세요.',
-  ready: 'K8s 컨트롤 플레인과 MLOps 스택, 호스트 연동까지 모두 준비되었습니다.',
-};
 
 /** 탭 라벨 옆에 붙는 가벼운 상태 dot — 색만으로 상태를 전달하지 않도록 title로 텍스트를 함께 제공한다. */
 const TabDot: React.FC<{ color: 'success' | 'warning' | 'danger'; title: string; pulse?: boolean }> = ({
@@ -51,6 +38,21 @@ const TabDot: React.FC<{ color: 'success' | 'warning' | 'danger'; title: string;
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const { t } = useTranslation();
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: 'dashboard', label: t('tabs.dashboard') },
+    { id: 'modelhub', label: t('tabs.modelhub') },
+    { id: 'mlx', label: t('tabs.mlx') },
+    { id: 'pipeline', label: t('tabs.pipeline') },
+    { id: 'access', label: t('tabs.access') },
+  ];
+
+  const bannerCopy: Record<'bootstrap' | 'provision' | 'ready', string> = {
+    bootstrap: t('dashboard.bannerBootstrap'),
+    provision: t('dashboard.bannerProvision'),
+    ready: t('dashboard.bannerReady'),
+  };
 
   // 대시보드 여정 분기와 탭 배지에 쓰는 상태 — 각 카드가 이미 자체적으로 useColima/useMlx를
   // 구독하므로(예: ClusterControl, ProvisionPanel) 여기서도 동일 훅을 재사용한다.
@@ -95,7 +97,7 @@ export const App: React.FC = () => {
         <Header />
         <nav className="border-b border-hairline/8 bg-surface px-6">
           <div className="w-full flex gap-1">
-            {TABS.map((tab) => (
+            {tabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
@@ -108,18 +110,18 @@ export const App: React.FC = () => {
               >
                 <span>{tab.label}</span>
                 {tab.id === 'mlx' && trainingActive && (
-                  <TabDot color="warning" title="파인튜닝 진행 중" pulse />
+                  <TabDot color="warning" title={t('tabs.dotFineTuning')} pulse />
                 )}
                 {tab.id === 'pipeline' && (trainingActive || servingActive) && (
                   <TabDot
                     color={servingActive ? 'success' : 'warning'}
-                    title={servingActive ? '서빙 중' : '파이프라인 진행 중'}
+                    title={servingActive ? t('tabs.dotServing') : t('tabs.dotPipeline')}
                     pulse={trainingActive && !servingActive}
                   />
                 )}
                 {tab.id === 'access' && unreachableCount > 0 && (
                   <span
-                    title={`연결 불가 서비스 ${unreachableCount}개`}
+                    title={t('tabs.unreachableCount', { count: unreachableCount })}
                     className="min-w-[16px] h-4 px-1 rounded-full bg-danger text-inverse text-[10px] leading-4 font-semibold flex items-center justify-center"
                   >
                     {unreachableCount}
@@ -143,14 +145,14 @@ export const App: React.FC = () => {
                   </div>
                   <div>
                     <h2 className="text-heading text-ink">
-                      Hybrid MLOps Control Dashboard
+                      {t('dashboard.bannerTitle')}
                     </h2>
-                    <p className="text-caption text-inkMuted mt-0.5">{BANNER_COPY[journeyStage]}</p>
+                    <p className="text-caption text-inkMuted mt-0.5">{bannerCopy[journeyStage]}</p>
                   </div>
                 </div>
                 <div className="hidden sm:flex items-center gap-2 text-caption text-inkMuted bg-surfaceRaised px-3 py-1.5 rounded-md">
                   <Shield className="w-3.5 h-3.5 text-success" />
-                  <span>Apple Silicon Metal Safe</span>
+                  <span>{t('header.metalSafe')}</span>
                 </div>
               </div>
 
@@ -161,7 +163,7 @@ export const App: React.FC = () => {
                     <MetricsPanel />
                     <ClusterControl />
                   </div>
-                  <LockedPreview caption="클러스터를 시작하면 MLOps 스택 배포와 포트포워딩을 진행할 수 있습니다">
+                  <LockedPreview caption={t('dashboard.lockedBootstrap')}>
                     <ProvisionPanel />
                   </LockedPreview>
                 </>
@@ -208,7 +210,7 @@ export const App: React.FC = () => {
       </main>
 
       <footer className="border-t border-hairline/8 py-3 px-6 text-center text-caption text-inkFaint">
-        KubeMetal &copy; 2026 — Apple Silicon Hybrid MLOps Architecture
+        {t('dashboard.footer')}
       </footer>
     </div>
   );
