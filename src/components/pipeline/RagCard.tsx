@@ -8,7 +8,7 @@ const labelClass = 'text-label uppercase text-inkFaint mb-1 block';
 
 export const RagCard: React.FC = () => {
   const { status, indexing, searching, searchResults, triggerIndex, search } = useRAG(true);
-  const [docPath, setDocPath] = useState('./data/docs');
+  const [docPath, setDocPath] = useState('docs');
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleIndexSubmit = (e: React.FormEvent) => {

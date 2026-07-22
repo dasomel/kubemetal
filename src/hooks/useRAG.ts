@@ -19,14 +19,24 @@ export function useRAG(active: boolean = false) {
     }
   }, []);
 
+  const setupEnv = useCallback(async () => {
+    try {
+      const res = await invoke<string>('setup_rag_env');
+      await message(res, { title: 'KubeMetal', kind: 'info' });
+      await fetchStatus();
+    } catch (err) {
+      await message(`RAG 환경 설치 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+    }
+  }, [fetchStatus]);
+
   const triggerIndex = useCallback(
-    async (documentPath?: string) => {
+    async (docsPath?: string) => {
       setIndexing(true);
       try {
-        const res = await invoke<string>('index_rag_documents', {
-          documentPath: documentPath || './data/docs',
+        const res = await invoke<{ status: string; collection: string; indexed_docs: number; total_chunks: number; db_path: string }>('index_documents', {
+          docsPath: docsPath || 'docs',
         });
-        await message(res || '문서 인덱싱을 시작했습니다.', { title: 'KubeMetal', kind: 'info' });
+        await message(`문서 인덱싱 완료 (${res.indexed_docs} 문서, ${res.total_chunks} 청크)`, { title: 'KubeMetal', kind: 'info' });
         await fetchStatus();
       } catch (err) {
         await message(`문서 인덱싱 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
@@ -37,11 +47,11 @@ export function useRAG(active: boolean = false) {
     [fetchStatus],
   );
 
-  const search = useCallback(async (query: string, limit: number = 5) => {
+  const search = useCallback(async (query: string, topK: number = 3) => {
     if (!query.trim()) return;
     setSearching(true);
     try {
-      const res = await invoke<RagSearchResult[]>('search_rag', { query, limit });
+      const res = await invoke<RagSearchResult[]>('query_rag', { query, topK });
       setSearchResults(res);
     } catch (err) {
       await message(`시맨틱 검색 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
@@ -69,6 +79,7 @@ export function useRAG(active: boolean = false) {
     indexing,
     searching,
     searchResults,
+    setupEnv,
     triggerIndex,
     search,
     refresh: fetchStatus,
