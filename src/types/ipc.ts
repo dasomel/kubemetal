@@ -137,3 +137,37 @@ export interface EvalMetric {
   value: number;
   timestamp_ms: number;
 }
+
+export interface RagSearchResult {
+  id: string;
+  text: string;
+  score: number;
+  source?: string;
+}
+
+export interface RagIndexStatus {
+  document_count: number;
+  total_chunks: number;
+  last_indexed_at?: string;
+  index_path?: string;
+  status: 'idle' | 'indexing' | 'ready' | 'error';
+  error?: string;
+}
+
+export interface DvcVersionTag {
+  tag: string;
+  commit_hash: string;
+  message: string;
+  created_at?: string;
+  dataset_path?: string;
+}
+
+export interface DvcStatus {
+  initialized: boolean;
+  remote_url?: string;
+  current_tag?: string;
+  dataset_path?: string;
+  tags: DvcVersionTag[];
+  last_error?: string;
+}
+

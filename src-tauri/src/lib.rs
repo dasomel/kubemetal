@@ -26,6 +26,9 @@ use commands::prefect::{
     PrefectState,
 };
 use commands::provision::provision_mlops_stack;
+use commands::rag::{
+    dvc_commit_dataset, get_rag_status, index_documents, query_rag, setup_rag_env, RagState,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,6 +41,7 @@ pub fn run() {
         .manage(MlxState::default())
         .manage(GuardrailState::default())
         .manage(PrefectState::default())
+        .manage(RagState::default())
         .invoke_handler(tauri::generate_handler![
             get_system_metrics,
             get_cluster_status,
@@ -74,6 +78,11 @@ pub fn run() {
             setup_eval_env,
             trigger_evaluate_flow,
             get_eval_results,
+            get_rag_status,
+            setup_rag_env,
+            index_documents,
+            query_rag,
+            dvc_commit_dataset,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

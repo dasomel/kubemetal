@@ -7,6 +7,8 @@ import { useMlx } from '../../hooks/useMlx';
 import { useRegisteredModels } from '../../hooks/useRegisteredModels';
 import { usePrefect } from '../../hooks/usePrefect';
 import { OrchestrationCard } from './OrchestrationCard';
+import { RagCard } from './RagCard';
+import { DvcCard } from './DvcCard';
 
 type DotColor = 'success' | 'warning' | 'danger' | 'inkFaint';
 
@@ -290,6 +292,11 @@ export const PipelineView: React.FC = () => {
       </div>
 
       <OrchestrationCard />
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <RagCard />
+        <DvcCard />
+      </div>
 
       <div className="flex flex-col md:flex-row items-stretch gap-1">
         {stages.map((stage, i) => (
