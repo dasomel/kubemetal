@@ -180,10 +180,7 @@ export function useMlx() {
   }, [fetchStatus, fetchGuardrailStatus]);
 
   useEffect(() => {
-    // 이미 캐시된 환경 상태가 있으면(예: 탭 재진입) 재확인하지 않는다.
-    if (!hasCachedEnvStatus) {
-      checkEnv();
-    }
+    checkEnv();
     fetchStatus();
     fetchLocalModels();
   }, [checkEnv, fetchStatus, fetchLocalModels]);
