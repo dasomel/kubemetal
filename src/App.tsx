@@ -91,46 +91,47 @@ export const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-base text-ink flex flex-col font-sans">
-      <Header />
+      <div className="sticky top-0 z-40 bg-surface shadow-sm">
+        <Header />
+        <nav className="border-b border-hairline/8 bg-surface px-6">
+          <div className="w-full flex gap-1">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-3 text-label uppercase border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary flex items-center gap-1.5 ${
+                  activeTab === tab.id
+                    ? 'text-primary border-primary'
+                    : 'text-inkFaint border-transparent hover:text-inkMuted'
+                }`}
+              >
+                <span>{tab.label}</span>
+                {tab.id === 'mlx' && trainingActive && (
+                  <TabDot color="warning" title="파인튜닝 진행 중" pulse />
+                )}
+                {tab.id === 'pipeline' && (trainingActive || servingActive) && (
+                  <TabDot
+                    color={servingActive ? 'success' : 'warning'}
+                    title={servingActive ? '서빙 중' : '파이프라인 진행 중'}
+                    pulse={trainingActive && !servingActive}
+                  />
+                )}
+                {tab.id === 'access' && unreachableCount > 0 && (
+                  <span
+                    title={`연결 불가 서비스 ${unreachableCount}개`}
+                    className="min-w-[16px] h-4 px-1 rounded-full bg-danger text-inverse text-[10px] leading-4 font-semibold flex items-center justify-center"
+                  >
+                    {unreachableCount}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </nav>
+      </div>
 
-      <nav className="border-b border-hairline/8 bg-surface px-6">
-        <div className="max-w-7xl w-full mx-auto flex gap-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-3 text-label uppercase border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary flex items-center gap-1.5 ${
-                activeTab === tab.id
-                  ? 'text-primary border-primary'
-                  : 'text-inkFaint border-transparent hover:text-inkMuted'
-              }`}
-            >
-              <span>{tab.label}</span>
-              {tab.id === 'mlx' && trainingActive && (
-                <TabDot color="warning" title="파인튜닝 진행 중" pulse />
-              )}
-              {tab.id === 'pipeline' && (trainingActive || servingActive) && (
-                <TabDot
-                  color={servingActive ? 'success' : 'warning'}
-                  title={servingActive ? '서빙 중' : '파이프라인 진행 중'}
-                  pulse={trainingActive && !servingActive}
-                />
-              )}
-              {tab.id === 'access' && unreachableCount > 0 && (
-                <span
-                  title={`연결 불가 서비스 ${unreachableCount}개`}
-                  className="min-w-[16px] h-4 px-1 rounded-full bg-danger text-inverse text-[10px] leading-4 font-semibold flex items-center justify-center"
-                >
-                  {unreachableCount}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      </nav>
-
-      <main className="flex-1 p-6 space-y-4 max-w-7xl w-full mx-auto">
+      <main className="flex-1 p-6 space-y-4 w-full">
         <ErrorBoundary resetKey={activeTab}>
           {activeTab === 'dashboard' ? (
             <>

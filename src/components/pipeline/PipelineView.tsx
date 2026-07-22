@@ -45,23 +45,23 @@ const StageCard: React.FC<{ stage: StageInfo }> = ({ stage }) => {
 
       <div className="flex items-center gap-1.5 text-caption text-inkMuted mb-1.5">
         <span className={`w-2 h-2 rounded-full shrink-0 ${dotClass[stage.dot]}`} />
-        <span>{stage.statusText}</span>
+        <span className="break-words leading-tight">{stage.statusText}</span>
       </div>
 
-      {stage.detail && <div className="text-caption text-inkFaint mb-1.5 break-words">{stage.detail}</div>}
+      {stage.detail && <div className="text-caption text-inkFaint mb-1.5 break-all leading-tight">{stage.detail}</div>}
 
       {stage.link && (
         <button
           type="button"
           onClick={() => openEndpoint(stage.link!.url)}
-          className="mt-1 px-2.5 py-1 rounded-md bg-surfaceRaised hover:brightness-95 text-primary text-caption flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          className="mt-1 px-2.5 py-1 rounded-md bg-surfaceRaised hover:brightness-95 text-primary text-caption flex items-center gap-1 max-w-full text-left break-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
-          {stage.link.label}
-          <ArrowUpRight className="w-3 h-3" />
+          <span className="truncate">{stage.link.label}</span>
+          <ArrowUpRight className="w-3 h-3 shrink-0" />
         </button>
       )}
 
-      {stage.hint && <div className="text-caption text-inkFaint mt-2 pt-2 border-t border-hairline/8">{stage.hint}</div>}
+      {stage.hint && <div className="text-caption text-inkFaint mt-2 pt-2 border-t border-hairline/8 break-words">{stage.hint}</div>}
     </div>
   );
 };
