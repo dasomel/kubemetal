@@ -13,6 +13,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'tabs.dashboard': '대시보드',
     'tabs.modelhub': '모델 허브',
     'tabs.mlx': 'MLX 스튜디오',
+    'tabs.data': '데이터',
     'tabs.pipeline': '파이프라인',
     'tabs.access': '접근 콘솔',
     'tabs.dotFineTuning': '파인튜닝 진행 중',
@@ -79,6 +80,8 @@ export const translations: Record<Language, Record<string, string>> = {
 
     // Pipeline View Stages
     'pipeline.title': '파이프라인 가시화',
+    'data.title': '데이터 관리',
+    'data.subtitle': '데이터 수집 파이프라인, LanceDB RAG 다큐멘트 인덱싱, DVC 데이터셋 버전 관리를 통합 관리합니다.',
     'pipeline.subtitle': '인프라 → 모델 준비 → 학습 → 등록 → 서빙까지 앱 내 오케스트레이션 상태를 한눈에 확인합니다.',
     'pipeline.infraTitle': '인프라',
     'pipeline.infraWaiting': '대기',
@@ -312,6 +315,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'tabs.dashboard': 'Dashboard',
     'tabs.modelhub': 'Model Hub',
     'tabs.mlx': 'MLX Studio',
+    'tabs.data': 'Data',
     'tabs.pipeline': 'Pipeline',
     'tabs.access': 'Access Console',
     'tabs.dotFineTuning': 'Fine-tuning in progress',
@@ -378,6 +382,8 @@ export const translations: Record<Language, Record<string, string>> = {
 
     // Pipeline View Stages
     'pipeline.title': 'Pipeline Visualization',
+    'data.title': 'Data Management',
+    'data.subtitle': 'Manage data ingestion pipelines, LanceDB RAG document indexing, and DVC dataset versioning in one place.',
     'pipeline.subtitle': 'Visualize orchestration across Infra → Model Prep → Training → Registration → Serving at a glance.',
     'pipeline.infraTitle': 'Infrastructure',
     'pipeline.infraWaiting': 'Waiting',

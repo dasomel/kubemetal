@@ -161,7 +161,7 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
       </form>
 
       {serving && (
-        <div className="pt-4 border-t border-hairline/8 space-y-4">
+        <div className="pt-4 border-t border-hairline/8 space-y-4 min-w-0 overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-1.5 text-caption text-inkMuted">
               <span className="w-2 h-2 rounded-full bg-success" />

@@ -9,6 +9,7 @@ import { ProvisionPanel } from './components/services/ProvisionPanel';
 import { ModelHub } from './components/modelhub/ModelHub';
 import { MlxStudio } from './components/mlx/MlxStudio';
 import { PipelineView } from './components/pipeline/PipelineView';
+import { DataView } from './components/data/DataView';
 import { AccessConsole } from './components/access/AccessConsole';
 import { useColima } from './hooks/useColima';
 import { useMlx } from './hooks/useMlx';
@@ -16,7 +17,7 @@ import { useServiceAccess } from './hooks/useServiceAccess';
 import { useTranslation } from './i18n/i18nContext';
 import { Shield, Sparkles } from 'lucide-react';
 
-type Tab = 'dashboard' | 'modelhub' | 'mlx' | 'pipeline' | 'access';
+type Tab = 'dashboard' | 'modelhub' | 'mlx' | 'data' | 'pipeline' | 'access';
 
 // 접근 콘솔이 포트포워딩으로 회복되는 서비스와 동일한 집합(AccessConsole.tsx 참조) —
 // 이 서비스들의 health로 "포워딩 활성" 여부를 근사한다(별도 IPC 없이 기존 데이터 재사용).
@@ -44,6 +45,7 @@ export const App: React.FC = () => {
     { id: 'dashboard', label: t('tabs.dashboard') },
     { id: 'modelhub', label: t('tabs.modelhub') },
     { id: 'mlx', label: t('tabs.mlx') },
+    { id: 'data', label: t('tabs.data') },
     { id: 'pipeline', label: t('tabs.pipeline') },
     { id: 'access', label: t('tabs.access') },
   ];
@@ -201,6 +203,8 @@ export const App: React.FC = () => {
             <ModelHub />
           ) : activeTab === 'mlx' ? (
             <MlxStudio />
+          ) : activeTab === 'data' ? (
+            <DataView />
           ) : activeTab === 'pipeline' ? (
             <PipelineView />
           ) : (

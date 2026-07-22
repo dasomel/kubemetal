@@ -323,7 +323,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
   };
 
   return (
-    <div className="rounded-xl border border-hairline/12 bg-surface shadow-panel overflow-hidden flex flex-col h-[620px] transition-all">
+    <div className="rounded-xl border border-hairline/12 bg-surface shadow-panel overflow-hidden flex flex-col h-[520px] min-w-0 w-full transition-all">
       {/* 1. Header */}
       <div className="px-4 py-3 bg-surfaceRaised border-b border-hairline/8 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
@@ -468,9 +468,9 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
       )}
 
       {/* 3. Messages Chat Body */}
-      <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-surface/50">
+      <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-surface/50 min-w-0">
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4">
+          <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4 min-w-0 overflow-hidden">
             <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center">
               <Bot className="w-6 h-6" />
             </div>
@@ -484,7 +484,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
             </div>
 
             {/* Presets */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-md w-full pt-2">
+            <div className="grid grid-cols-2 gap-2 max-w-md w-full pt-2 min-w-0">
               {PRESET_PROMPTS.map((preset, idx) => (
                 <button
                   key={idx}

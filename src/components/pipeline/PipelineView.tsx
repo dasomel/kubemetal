@@ -8,9 +8,6 @@ import { useRegisteredModels } from '../../hooks/useRegisteredModels';
 import { usePrefect } from '../../hooks/usePrefect';
 import { useTranslation } from '../../i18n/i18nContext';
 import { OrchestrationCard } from './OrchestrationCard';
-import { DataIngestionDagCard } from './DataIngestionDagCard';
-import { RagCard } from './RagCard';
-import { DvcCard } from './DvcCard';
 
 type DotColor = 'success' | 'warning' | 'danger' | 'inkFaint';
 
@@ -297,14 +294,7 @@ export const PipelineView: React.FC = () => {
         </p>
       </div>
 
-      <DataIngestionDagCard />
-
       <OrchestrationCard />
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <RagCard />
-        <DvcCard />
-      </div>
 
       <div className="flex flex-col md:flex-row items-stretch gap-1">
         {stages.map((stage, i) => (
