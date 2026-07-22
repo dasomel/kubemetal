@@ -30,7 +30,8 @@ Changing a D1–D12 decision requires updating all affected docs in the same tas
 
 - **K8s never runs compute** — MLX/Metal work is host processes spawned by the Rust backend.
 - **Ports (D1)**: MLflow host-forward **5001** (AirPlay owns 5000), SeaweedFS S3 8333,
-  Filer UI 8888, model serving 8080. Object storage is SeaweedFS.
+  Filer UI 8888, Prefect 4200, model serving 8080 (serving URLs always `127.0.0.1`,
+  never `localhost`). Object storage is SeaweedFS; orchestration is Prefect 3 (D19).
 - **Phase 1 metrics = sysinfo RAM/CPU only (D2)** — no `powermetrics`/sudo/root paths
   before the Phase 3 privileged helper.
 - **VM sizing derived from detected RAM (D4)**: 16GB→4GB/2CPU, 32–48GB→8GB/4CPU,

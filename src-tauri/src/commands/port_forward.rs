@@ -7,15 +7,20 @@ use crate::services::process::external_command;
 #[derive(Default)]
 pub struct PortForwardState(pub Mutex<HashMap<&'static str, Child>>);
 
-const JOBS: [(&str, &str, &str); 3] = [
+const JOBS: [(&str, &str, &str); 4] = [
     ("mlflow", "svc/mlflow", "5001:5000"),
     ("seaweedfs-s3", "svc/seaweedfs", "8333:8333"),
     ("seaweedfs-filer", "svc/seaweedfs", "8888:8888"),
+    ("prefect", "svc/prefect", "4200:4200"),
 ];
 
 /// 우리 앱이 관리하는 서비스만 대상으로 하는 pgrep 패턴. 무관한 kubectl 포워드는
 /// 매칭되지 않도록 서비스명을 포함시킨다(불가침 경계).
-const SERVICE_PATTERNS: [&str; 2] = ["port-forward.*svc/mlflow", "port-forward.*svc/seaweedfs"];
+const SERVICE_PATTERNS: [&str; 3] = [
+    "port-forward.*svc/mlflow",
+    "port-forward.*svc/seaweedfs",
+    "port-forward.*svc/prefect",
+];
 
 /// `pgrep -f <pattern>`으로 매칭되는 pid 목록을 반환. 실패 시 빈 벡터(포워드 없음으로 취급).
 async fn find_pids_by_pattern(pattern: &str) -> Vec<i32> {

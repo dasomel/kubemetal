@@ -1,6 +1,7 @@
 import React from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useColima } from '../../hooks/useColima';
+import { usePrefect } from '../../hooks/usePrefect';
 import { Boxes, ExternalLink, RefreshCw, Zap, ArrowUpRight, Radio } from 'lucide-react';
 
 const openEndpoint = (url: string) => {
@@ -24,6 +25,10 @@ export const ProvisionPanel: React.FC = () => {
   const seaweedfsReady = status?.seaweedfs_ready ?? false;
   const artifactStoreWired = status?.artifact_store_wired ?? false;
 
+  // 파이프라인 탭이 아닌 대시보드 카드이므로 5초 폴링 없이 마운트(탭 진입) 시 1회만 조회한다.
+  const { status: prefectStatus } = usePrefect(false);
+  const prefectReady = prefectStatus?.server_ready ?? false;
+
   return (
     <div className="rounded-xl bg-surface p-4 shadow-panel">
       <div className="flex items-center justify-between mb-4">
@@ -42,7 +47,7 @@ export const ProvisionPanel: React.FC = () => {
       </div>
 
       {/* 스택 준비 상태 목록 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 mb-4">
         {/* MLflow */}
         <div className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between">
           <div>
@@ -80,6 +85,18 @@ export const ProvisionPanel: React.FC = () => {
             <div className="text-caption text-inkFaint mt-0.5">host.lima.internal</div>
           </div>
           <span className="text-caption text-primary">ExternalName</span>
+        </div>
+
+        {/* Prefect */}
+        <div className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between">
+          <div>
+            <div className="text-bodyStrong text-ink">Prefect Orchestration</div>
+            <div className="text-caption text-inkFaint mt-0.5">Port 4200</div>
+          </div>
+          <div className="flex items-center gap-1.5 text-caption text-inkMuted">
+            <span className={`w-2 h-2 rounded-full ${prefectReady ? 'bg-success' : 'bg-inkFaint'}`} />
+            <span>{prefectReady ? 'Ready' : 'Not Ready'}</span>
+          </div>
         </div>
       </div>
 

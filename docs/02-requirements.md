@@ -179,6 +179,11 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 | `set_guardrail_config` (Phase 3) | `{ battery_pause: bool }` | `Result<(), String>` | 배터리 구동 시 학습 자동 일시정지 여부를 `GuardrailState`에 저장 (FR-05.3) |
 | `pause_mlx_training` (Phase 3) | None | `Result<bool, String>` | 진행 중인 MLX 학습 pid에 SIGSTOP 전송, `TrainingStatus.status`를 `paused`로 갱신 |
 | `resume_mlx_training` (Phase 3) | None | `Result<bool, String>` | 일시정지된 MLX 학습 pid에 SIGCONT 전송, `TrainingStatus.status`를 `running`으로 갱신 |
+| `get_prefect_status` (Phase 4a) | None | `PrefectStatus {server_ready, env_installed, runner_running, runner_pid, recent_runs: Vec<FlowRunInfo{id,name,state_type,state_name}>}` | `kubectl get deploy prefect -o json`의 `status.availableReplicas>0`(colima.rs 패턴)로 `server_ready`, venv `python -c "import prefect"`로 `env_installed` 판정. `server_ready`일 때만 Prefect REST `POST /flow_runs/filter`(`{"limit":5,"sort":"START_TIME_DESC"}`)로 `recent_runs` 최신 5건 조회, 실패 시 빈 배열 |
+| `setup_prefect_env` (Phase 4a) | None | `Result<String, String>` | 기존 MLX venv(~/.kubemetal/venv, D15)에 백그라운드로 `pip install -U prefect` 실행, 진행 상태를 `PrefectState.env_setup`에 기록(`setup_mlx_env`와 동일 패턴). venv 자체가 없으면(=`setup_mlx_env` 미실행) 즉시 Err |
+| `start_prefect_runner` (Phase 4a) | None | `Result<String, String>` | venv python으로 번들 리소스 `scripts/prefect/host_runner.py`를 `process_group(0)`으로 스폰(D17과 동일 원칙 — 내부에서 띄우는 `finetune_wrapper.py`/`mlx_lm` 자식까지 그룹 상속), `PREFECT_API_URL=http://127.0.0.1:4200/api` 주입, PID를 `PrefectState.runner_pid`에 기록. reaper 태스크가 예기치 않은 종료 시 `PrefectState.last_runner_error`에 원인 기록 |
+| `stop_prefect_runner` (Phase 4a) | None | `Result<String, String>` | `runner_pid`가 이끄는 프로세스 그룹 전체에 SIGTERM→(1s)→SIGKILL 전송(D17), State 정리 |
+| `trigger_finetune_flow` (Phase 4a) | `FineTuneConfig {model_path, data_path, iters, batch_size, learning_rate, adapter_name}`(mlx.rs와 동일 타입 재사용) | `Result<String, String>` | `validate_home_subpath`/`validate_adapter_name`(mlx.rs 재사용, D15) 검증 후 Prefect REST `GET /deployments/name/finetune/finetune`로 deployment id 조회 → `POST /deployments/{id}/create_flow_run`(body `{"parameters": {...}}`)로 flow run 생성, flow run id 리턴. 실기기 실측(2026-07-23): 5-iter 스모크 학습이 이 경로로 완주(state COMPLETED)함을 확인 |
 
 ### 4.2 K8s External Service Manifest Spec (`mac-gpu-bridge.yaml`)
 

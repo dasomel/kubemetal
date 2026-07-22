@@ -79,21 +79,23 @@ pub struct MlxState {
     pub last_serving_error: Mutex<Option<String>>,
 }
 
-fn home_dir() -> Result<PathBuf, String> {
+pub(crate) fn home_dir() -> Result<PathBuf, String> {
     std::env::var("HOME")
         .map(PathBuf::from)
         .map_err(|_| "HOME 환경변수를 찾을 수 없습니다.".to_string())
 }
 
-fn venv_dir() -> Result<PathBuf, String> {
+pub(crate) fn venv_dir() -> Result<PathBuf, String> {
     Ok(home_dir()?.join(".kubemetal").join("venv"))
 }
 
-fn venv_python() -> Result<PathBuf, String> {
+/// prefect.rs 등 다른 커맨드 모듈도 동일한 앱 전용 venv(~/.kubemetal/venv)를 사용한다(D15) —
+/// venv 경로를 분산시키지 않도록 mlx.rs를 단일 출처로 두고 pub(crate)로 재사용한다.
+pub(crate) fn venv_python() -> Result<PathBuf, String> {
     Ok(venv_dir()?.join("bin").join("python"))
 }
 
-fn venv_pip() -> Result<PathBuf, String> {
+pub(crate) fn venv_pip() -> Result<PathBuf, String> {
     Ok(venv_dir()?.join("bin").join("pip"))
 }
 
@@ -101,7 +103,7 @@ fn venv_pip() -> Result<PathBuf, String> {
 /// `canonicalize()`가 존재 검증과 `..`/심볼릭 링크 정규화를 동시에 수행하므로,
 /// 정규화된 경로가 홈 디렉터리 하위인지만 재확인하면 된다(safe 원칙).
 /// 선행 `~`는 셸이 아닌 앱 입력이라 확장되지 않은 채 도달하므로 여기서 HOME으로 치환한다.
-fn validate_home_subpath(p: &str) -> Result<PathBuf, String> {
+pub(crate) fn validate_home_subpath(p: &str) -> Result<PathBuf, String> {
     let home = home_dir()?
         .canonicalize()
         .map_err(|e| format!("HOME 경로 확인 실패: {e}"))?;
@@ -136,7 +138,7 @@ fn read_adapter_base_model(adapter_dir: &std::path::Path) -> Option<String> {
     parsed.model
 }
 
-fn validate_adapter_name(name: &str) -> Result<(), String> {
+pub(crate) fn validate_adapter_name(name: &str) -> Result<(), String> {
     let is_valid = !name.is_empty()
         && name
             .chars()

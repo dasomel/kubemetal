@@ -32,7 +32,8 @@
     ],
     "resources": [
       "../scripts/k8s/*",
-      "../scripts/mlx/*"
+      "../scripts/mlx/*",
+      "../scripts/prefect/*"
     ]
   },
   "plugins": {}

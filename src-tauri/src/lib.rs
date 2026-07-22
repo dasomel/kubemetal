@@ -20,6 +20,10 @@ use commands::modelhub::{
     register_model_mlflow, search_hf_models, upload_model_to_storage, ModelHubState,
 };
 use commands::port_forward::{start_port_forward, stop_port_forward, PortForwardState};
+use commands::prefect::{
+    get_prefect_status, setup_prefect_env, start_prefect_runner, stop_prefect_runner,
+    trigger_finetune_flow, PrefectState,
+};
 use commands::provision::provision_mlops_stack;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -32,6 +36,7 @@ pub fn run() {
         .manage(ModelHubState::default())
         .manage(MlxState::default())
         .manage(GuardrailState::default())
+        .manage(PrefectState::default())
         .invoke_handler(tauri::generate_handler![
             get_system_metrics,
             get_cluster_status,
@@ -60,6 +65,11 @@ pub fn run() {
             set_guardrail_config,
             pause_mlx_training,
             resume_mlx_training,
+            get_prefect_status,
+            setup_prefect_env,
+            start_prefect_runner,
+            stop_prefect_runner,
+            trigger_finetune_flow,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

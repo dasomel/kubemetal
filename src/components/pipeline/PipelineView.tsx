@@ -5,6 +5,7 @@ import { useColima } from '../../hooks/useColima';
 import { useModelHub } from '../../hooks/useModelHub';
 import { useMlx } from '../../hooks/useMlx';
 import { useRegisteredModels } from '../../hooks/useRegisteredModels';
+import { OrchestrationCard } from './OrchestrationCard';
 
 type DotColor = 'success' | 'warning' | 'danger' | 'inkFaint';
 
@@ -261,6 +262,8 @@ export const PipelineView: React.FC = () => {
           인프라 → 모델 준비 → 학습 → 등록 → 서빙까지 앱 내 오케스트레이션 상태를 한눈에 확인합니다.
         </p>
       </div>
+
+      <OrchestrationCard />
 
       <div className="flex flex-col md:flex-row items-stretch gap-1">
         {stages.map((stage, i) => (

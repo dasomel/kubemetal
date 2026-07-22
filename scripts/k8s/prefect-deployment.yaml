@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prefect-data
+  namespace: default
+spec:
+  # k3s 기본 StorageClass(local-path)가 default로 지정돼 있어 storageClassName 생략.
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prefect
+  namespace: default
+  labels:
+    app: prefect
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prefect
+  template:
+    metadata:
+      labels:
+        app: prefect
+    spec:
+      containers:
+        - name: prefect
+          # 태그 3.7.8-python3.12는 2026-07-23 Docker Hub API(hub.docker.com/v2/repositories/
+          # prefecthq/prefect/tags)로 실존 확인한 최신 안정 릴리스(3-latest 별칭과 동일 다이제스트).
+          image: prefecthq/prefect:3.7.8-python3.12
+          command: ["prefect", "server", "start", "--host", "0.0.0.0"]
+          env:
+            # PREFECT_HOME 하위에 SQLite DB(prefect.db)가 생성되므로 PVC를 여기에 마운트해야
+            # 파드 재시작 후에도 플로우/배포 메타데이터가 유지된다.
+            - name: PREFECT_HOME
+              value: /data
+          ports:
+            - containerPort: 4200
+          resources:
+            requests:
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 4200
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: prefect-data
+              mountPath: /data
+      volumes:
+        - name: prefect-data
+          persistentVolumeClaim:
+            claimName: prefect-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prefect
+  namespace: default
+spec:
+  selector:
+    app: prefect
+  ports:
+    - protocol: TCP
+      port: 4200
+      targetPort: 4200

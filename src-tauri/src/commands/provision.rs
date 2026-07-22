@@ -1,13 +1,14 @@
 use tauri::Manager;
 use crate::services::process::{external_command, resolve_bundled_resource};
 
-const MANIFESTS: [&str; 4] = [
+const MANIFESTS: [&str; 5] = [
     // Secret을 먼저 적용해 mlflow-deployment.yaml의 secretKeyRef가 기동 시점에
     // 즉시 해석되도록 한다(D13 — SeaweedFS S3 크리덴셜 자동 와이어링).
     "scripts/k8s/seaweedfs-s3-credentials.yaml",
     "scripts/k8s/mlflow-deployment.yaml",
     "scripts/k8s/seaweedfs-deployment.yaml",
     "scripts/k8s/mac-gpu-bridge.yaml",
+    "scripts/k8s/prefect-deployment.yaml",
 ];
 
 #[tauri::command]

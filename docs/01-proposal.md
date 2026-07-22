@@ -183,6 +183,11 @@ Mac mini, Mac Studio뿐만 아니라 **MacBook Air/Pro 라인업** 지원을 위
 └── (선택) 발열 가드레일(고온 시 배치 크기 자동 축소) 및 powermetrics 기반 Metal GPU
     점유율 모니터링 — 둘 다 미착수 (후자는 privileged helper 방식, root 권한 필요)
 
+[Phase 4a: 파이프라인 오케스트레이션] — 진행 중 (docs/05-mlops-research.md Q1, D19)
+└── Prefect 3 서버 파드(4200, ~512Mi) + 호스트 venv Process Worker(`host_runner.py`)
+    로 파인튜닝 flow를 REST로 트리거·추적. `finetune`/`evaluate`(placeholder) 2개
+    deployment 등록, 워크풀 미사용(연산은 항상 macOS 호스트)
+
 [검토 항목 / Backlog]
 └── 16GB급 저사양 기기 대상 "K8s 없이 Docker 런타임만 사용하는 Lite 모드" 도입 검토
 ```

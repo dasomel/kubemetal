@@ -113,3 +113,18 @@ export interface GuardrailStatus {
   training_paused: boolean;
   caffeinate_active: boolean;
 }
+
+export interface FlowRunInfo {
+  id: string;
+  name: string;
+  state_type: string;
+  state_name: string;
+}
+
+export interface PrefectStatus {
+  server_ready: boolean;
+  env_installed: boolean;
+  runner_running: boolean;
+  runner_pid?: number;
+  recent_runs: FlowRunInfo[];
+}
