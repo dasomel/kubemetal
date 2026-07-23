@@ -8,7 +8,7 @@ KUBECTL := kubectl --context colima -n default
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev build bin app install-app check test lint fmt verify \
+.PHONY: help install dev build bin app install-app check test lint fmt verify clean-light \
         cluster-up cluster-down provision forward forward-stop status clean
 
 help: ## 타깃 목록
@@ -20,16 +20,16 @@ install: ## 프론트엔드 의존성 설치 (pnpm)
 dev: ## 앱 개발 모드 실행 (vite는 beforeDevCommand로 자동 기동)
 	pnpm tauri dev
 
-build: clean ## 릴리스 번들(.app/.dmg) 빌드 — 헤드리스 dmg 이슈는 README 참고
+build: clean-light ## 릴리스 번들(.app/.dmg) 빌드 — 헤드리스 dmg 이슈는 README 참고
 	pnpm tauri build
 
-bin: clean ## 순수 실행 바이너리 생성 (src-tauri/target/release/kubemetal)
+bin: clean-light ## 순수 실행 바이너리 생성 (src-tauri/target/release/kubemetal)
 	# 플레인 `cargo build`는 custom-protocol 피처가 빠져 devUrl(5173)을 바라보는
 	# 빈 화면 바이너리가 된다 — 반드시 tauri CLI 경유로 빌드한다.
 	pnpm tauri build --no-bundle
 	@echo "실행 파일: src-tauri/target/release/kubemetal"
 
-app: clean ## .app 번들만 생성 (dmg 생략 — 헤드리스 안전)
+app: clean-light ## .app 번들만 생성 (dmg 생략 — 헤드리스 안전)
 	pnpm tauri build --bundles app
 	@echo "번들: src-tauri/target/release/bundle/macos/KubeMetal.app"
 
@@ -80,11 +80,17 @@ status: ## 클러스터·파드 상태 요약
 	-colima status --json
 	-$(KUBECTL) get pods
 
-clean: ## 빌드 캐시·산출물 전체 제거 (프론트엔드 + Rust incremental)
-	rm -rf dist
-	rm -rf node_modules/.vite
+clean-light: ## 최소 캐시 정리 — 최신 반영 보장 + 의존성 캐시 유지 (기본 빌드 선행)
+	# 프론트 산출물은 항상 새로 (vite build는 수 초).
+	rm -rf dist node_modules/.vite
 	rm -f tsconfig.tsbuildinfo
+	# 의존성 크레이트 캐시는 유지하고, kubemetal 크레이트의 fingerprint만 제거해
+	# 임베드 자산(dist) 재포함을 포함한 자기 크레이트 재컴파일을 강제한다.
+	rm -rf src-tauri/target/release/.fingerprint/kubemetal-*
+	@echo "✓ 최소 캐시 정리 완료 (의존성 캐시 유지)"
+
+clean: clean-light ## 전체 캐시 제거 — 이상 징후 시 수동 실행 (풀 리빌드, 수 분)
 	rm -rf src-tauri/target/release/build
 	rm -rf src-tauri/target/release/incremental
 	rm -rf src-tauri/target/release/.fingerprint
-	@echo "✓ 캐시 정리 완료"
+	@echo "✓ 전체 캐시 정리 완료"
