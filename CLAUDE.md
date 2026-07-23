@@ -32,8 +32,9 @@ Changing a D1–D12 decision requires updating all affected docs in the same tas
 - **Ports (D1)**: MLflow host-forward **5001** (AirPlay owns 5000), SeaweedFS S3 8333,
   Filer UI 8888, Prefect 4200, model serving 8080 (serving URLs always `127.0.0.1`,
   never `localhost`). Object storage is SeaweedFS; orchestration is Prefect 3 (D19).
-- **Phase 1 metrics = sysinfo RAM/CPU only (D2)** — no `powermetrics`/sudo/root paths
-  before the Phase 3 privileged helper.
+- **Metrics (D2, amended)**: sysinfo RAM/CPU + sudo-free GPU via `ioreg -c IOAccelerator`
+  (through `external_command`). `powermetrics`/sudo/root paths remain forbidden without
+  a privileged helper.
 - **VM sizing derived from detected RAM (D4)**: 16GB→4GB/2CPU, 32–48GB→8GB/4CPU,
   64GB+→12GB/6CPU — never hardcoded, backend clamps frontend input.
 - **Pod→host bridge (D10)**: ExternalName `mac-gpu-service` (ns `default`) →
@@ -91,6 +92,7 @@ against real colima (`kubectl --context colima get pods -n default`).
 
 | Date | Change |
 |------|--------|
+| 2026-07-24 | Audit of 20 takeover-session commits (Phase 4b~5a): fake DAG wiring, clippy/design/docs gates skipped, ioreg PATH regression, SSRF gap — fixes + D2 amended (sudo-free ioreg GPU), 3 process lessons logged |
 | 2026-07-20 | Slimmed guide: Mistakes Log → `docs/mistakes-log.md`, harness detail → `.claude/rules/harness.md` (user directive: keep CLAUDE.md small) |
 | 2026-07-20 | Design source → root `DESIGN.md` (Google standard, lint gate); visual reset to graphite "precision instrument"; endpoint links must use opener plugin |
 | 2026-07-20 | Runtime verification pass: colima JSON schema corrected, tauri dev/plugin config fixed, D10 bridge + SeaweedFS verified on-device |
