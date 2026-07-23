@@ -18,6 +18,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  HardDrive,
 } from 'lucide-react';
 import { useDataIngest } from '../../hooks/useDataIngest';
 import { useTranslation } from '../../i18n/i18nContext';
@@ -76,16 +77,16 @@ const SvgDagConnector: React.FC<{ fromStatus: DagNodeStatus; toStatus: DagNodeSt
   toStatus,
   active,
 }) => {
-  let strokeColor = '#94a3b8'; // default slate-400
+  let strokeColor = 'var(--color-inkFaint)'; // default
   let isAnimated = false;
 
   if (fromStatus === 'success' && (toStatus === 'running' || active)) {
-    strokeColor = '#3b82f6'; // active primary blue
+    strokeColor = 'var(--color-primary)';
     isAnimated = true;
   } else if (fromStatus === 'success' && toStatus === 'success') {
-    strokeColor = '#22c55e'; // success green
+    strokeColor = 'var(--color-success)';
   } else if (toStatus === 'error' || fromStatus === 'error') {
-    strokeColor = '#ef4444'; // danger red
+    strokeColor = 'var(--color-danger)';
   }
 
   return (
@@ -93,7 +94,7 @@ const SvgDagConnector: React.FC<{ fromStatus: DagNodeStatus; toStatus: DagNodeSt
       <svg className="w-full h-8 overflow-visible" viewBox="0 0 32 32" fill="none">
         <defs>
           <linearGradient id={`grad-${fromStatus}-${toStatus}`} x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor={fromStatus === 'success' ? '#22c55e' : strokeColor} />
+            <stop offset="0%" stopColor={fromStatus === 'success' ? 'var(--color-success)' : strokeColor} />
             <stop offset="100%" stopColor={strokeColor} />
           </linearGradient>
         </defs>
@@ -126,6 +127,8 @@ export const DataIngestionDagCard: React.FC = () => {
     isPipelineRunning,
     triggerPipelineRun,
     resetPipeline,
+    datasets,
+    loadingDatasets,
   } = useDataIngest();
   const { t } = useTranslation();
 
@@ -489,20 +492,20 @@ export const DataIngestionDagCard: React.FC = () => {
           )}
 
           {/* Log Console Window */}
-          <div className="rounded-lg bg-gray-950 p-3.5 text-gray-200 font-mono text-caption min-h-[140px] max-h-[220px] overflow-y-auto space-y-1 shadow-inner border border-gray-800">
+          <div className="rounded-lg bg-ink p-3.5 text-inverse/80 font-mono text-caption min-h-[140px] max-h-[220px] overflow-y-auto space-y-1 shadow-inner border border-hairline/20">
             {activeMetric && activeMetric.logs.length > 0 ? (
               activeMetric.logs.map((log, i) => (
                 <div key={i} className="flex gap-2 leading-relaxed break-words">
-                  <span className="text-gray-600 select-none shrink-0">{i + 1}</span>
+                  <span className="text-inverse/35 select-none shrink-0">{i + 1}</span>
                   <span
                     className={
                       log.includes('[오류]') || log.includes('[Error]')
-                        ? 'text-red-400 font-semibold'
+                        ? 'text-danger font-semibold'
                         : log.includes('완료') || log.includes('성공') || log.includes('completed') || log.includes('Success')
-                        ? 'text-emerald-400 font-medium'
+                        ? 'text-success font-medium'
                         : log.includes('실행 중') || log.includes('시작') || log.includes('running')
-                        ? 'text-blue-300'
-                        : 'text-gray-300'
+                        ? 'text-primary'
+                        : 'text-inverse/80'
                     }
                   >
                     {log}
@@ -510,11 +513,45 @@ export const DataIngestionDagCard: React.FC = () => {
                 </div>
               ))
             ) : (
-              <div className="text-gray-500 italic py-6 text-center">{t('dataIngest.noLogs')}</div>
+              <div className="text-inverse/40 italic py-6 text-center">{t('dataIngest.noLogs')}</div>
             )}
           </div>
         </div>
       )}
+
+      {/* Ingested Datasets History */}
+      <div className="rounded-xl bg-surfaceRaised/60 p-4 border border-hairline/20 space-y-2.5">
+        <div className="flex items-center gap-2 pb-2 border-b border-hairline/10">
+          <HardDrive className="w-4 h-4 text-primary" />
+          <h3 className="text-bodyStrong text-ink font-semibold">{t('dataIngest.historyTitle')}</h3>
+        </div>
+
+        {loadingDatasets ? (
+          <div className="flex items-center gap-2 text-caption text-inkMuted py-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>{t('dataIngest.historyLoading')}</span>
+          </div>
+        ) : datasets.length === 0 ? (
+          <div className="text-caption text-inkFaint py-2">{t('dataIngest.historyEmpty')}</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {datasets.map((ds) => (
+              <div
+                key={ds.collection_name}
+                className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-surface border border-hairline/15 text-caption"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Database className="w-3.5 h-3.5 text-primary shrink-0" />
+                  <span className="text-ink font-medium truncate">{ds.collection_name}</span>
+                </div>
+                <span className="text-inkFaint shrink-0">
+                  {ds.is_lance_table ? 'LanceDB' : 'fallback JSON'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

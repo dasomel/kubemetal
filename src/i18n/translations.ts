@@ -154,6 +154,9 @@ export const translations: Record<Language, Record<string, string>> = {
     'dataIngest.statusSuccess': '성공',
     'dataIngest.statusError': '오류',
     'dataIngest.statusIdle': '대기',
+    'dataIngest.historyTitle': '수집 이력',
+    'dataIngest.historyLoading': '수집 이력을 불러오는 중...',
+    'dataIngest.historyEmpty': '아직 수집된 데이터셋이 없습니다.',
 
     // Pipeline Card - Orchestration
     'orch.title': '오케스트레이션',
@@ -456,6 +459,9 @@ export const translations: Record<Language, Record<string, string>> = {
     'dataIngest.statusSuccess': 'Success',
     'dataIngest.statusError': 'Error',
     'dataIngest.statusIdle': 'Idle',
+    'dataIngest.historyTitle': 'Ingestion History',
+    'dataIngest.historyLoading': 'Loading ingestion history...',
+    'dataIngest.historyEmpty': 'No datasets ingested yet.',
 
     // Pipeline Card - Orchestration
     'orch.title': 'Orchestration',

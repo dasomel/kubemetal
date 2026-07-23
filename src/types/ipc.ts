@@ -211,4 +211,46 @@ export interface DataIngestPipelineRun {
   nodes: Record<DagNodeId, DagNodeMetric>;
 }
 
+/**
+ * run_data_ingest / get_ingest_status 원본 응답 (src-tauri/src/commands/data_ingest.rs 1:1).
+ * 프론트 표시용 DagNodeMetric/DataIngestPipelineRun과는 별개 — useDataIngest에서 매핑한다.
+ */
+export interface BackendDagNodeState {
+  node_id: string;
+  name: string;
+  status: string;
+  duration_sec: number;
+  items_processed: number;
+  details: string;
+}
+
+export interface BackendIngestFlowResult {
+  status: string;
+  dataset_name: string;
+  source_type: string;
+  source_path: string;
+  total_duration_sec: number;
+  total_items_extracted: number;
+  total_chunks_created: number;
+  lancedb_collection: string;
+  db_path: string;
+  dvc_backed_up: boolean;
+  dag_nodes: BackendDagNodeState[];
+  error?: string;
+}
+
+export interface IngestedDatasetInfo {
+  collection_name: string;
+  total_chunks: number;
+  db_path: string;
+  is_lance_table: boolean;
+}
+
+export interface IngestStatusResponse {
+  env_installed: boolean;
+  default_db_path: string;
+  active_collections: IngestedDatasetInfo[];
+  last_result?: BackendIngestFlowResult;
+}
+
 

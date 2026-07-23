@@ -36,6 +36,12 @@ interface ModelChatPlaygroundProps {
 const DEFAULT_SYSTEM_PROMPT =
   'You are a helpful, accurate, and concise AI assistant running locally on macOS Apple Silicon via MLX.';
 
+// 프롬프트 상한: 컨텍스트 폭주를 막기 위한 히스토리/RAG 절단 기준.
+const MAX_HISTORY_MESSAGES = 8;
+const RAG_MAX_CHUNKS = 3;
+const RAG_MAX_CHARS = 2000;
+const RAG_TRUNCATION_MARK = '… [문자 수 상한으로 절단됨]';
+
 const PRESET_PROMPTS = [
   {
     title: 'KubeMetal 요약',
@@ -90,6 +96,13 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
     scrollToBottom();
   }, [messages, loading]);
 
+  // 언마운트 시 진행 중인 스트림/요청을 중단해 백그라운드에서 상태 업데이트가 발생하지 않도록 한다.
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   const handleCopy = (id: string, text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
@@ -126,14 +139,26 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
           topK: ragTopK,
         });
         if (results && results.length > 0) {
-          retrievedSources = results;
-          const contextBlocks = results
-            .map(
-              (r, idx) =>
-                `[문맥 ${idx + 1} (출처: ${r.filename || r.source || '문서'}, 유사도 거리: ${r.score.toFixed(3)})]\n${r.text}`,
-            )
-            .join('\n\n');
-          augmentedPrompt = `[LanceDB RAG 참조 문맥]:\n${contextBlocks}\n\n[사용자 질의]:\n${textToSend.trim()}`;
+          // 상위 3청크만 사용하고, 합산 2,000자 상한을 넘는 부분은 절단 표기와 함께 잘라낸다.
+          const limitedResults = results.slice(0, RAG_MAX_CHUNKS);
+          let remainingChars = RAG_MAX_CHARS;
+          const contextBlocks = limitedResults
+            .map((r, idx) => {
+              const header = `[문맥 ${idx + 1} (출처: ${r.filename || r.source || '문서'}, 유사도 거리: ${r.score.toFixed(3)})]\n`;
+              const budget = remainingChars - header.length;
+              if (budget <= 0) return null;
+              const text =
+                r.text.length > budget ? `${r.text.slice(0, budget)}${RAG_TRUNCATION_MARK}` : r.text;
+              remainingChars -= header.length + text.length;
+              return `${header}${text}`;
+            })
+            .filter((block): block is string => block !== null);
+
+          retrievedSources = limitedResults.slice(0, contextBlocks.length);
+
+          if (contextBlocks.length > 0) {
+            augmentedPrompt = `[LanceDB RAG 참조 문맥]:\n${contextBlocks.join('\n\n')}\n\n[사용자 질의]:\n${textToSend.trim()}`;
+          }
         }
       } catch (err) {
         console.warn('RAG Context Injection 건너뜀 (질의 실패 또는 미설치):', err);
@@ -164,11 +189,12 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
-    // Prepare API history
+    // Prepare API history — 최근 8턴(메시지)만 유지해 프롬프트 폭주를 방지한다.
     const apiMessages = [
       { role: 'system', content: systemPrompt },
       ...messages
         .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .slice(-MAX_HISTORY_MESSAGES)
         .map((m) => ({ role: m.role, content: m.content })),
       { role: 'user', content: augmentedPrompt },
     ];
