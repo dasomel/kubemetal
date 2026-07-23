@@ -207,7 +207,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'mlx',
+            model: modelPath || 'default',
             messages: apiMessages,
             temperature,
             max_tokens: maxTokens,
@@ -286,7 +286,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'mlx',
+            model: modelPath || 'default',
             messages: apiMessages,
             temperature,
             max_tokens: maxTokens,
@@ -364,7 +364,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                 Live (Port {port})
               </span>
             </div>
-            <p className="text-caption text-inkMuted text-[11px] truncate max-w-md">
+            <p className="text-caption text-inkMuted text-[11px] truncate max-w-[28rem]">
               OpenAI 호환 API · {modelPath || 'MLX Model'}
               {adapterPath ? ` (${adapterPath.split('/').pop()})` : ''}
             </p>
@@ -504,13 +504,13 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
               <h4 className="text-bodyStrong text-ink font-semibold mb-1">
                 로컬 MLX 챗 플레이그라운드가 준비되었습니다
               </h4>
-              <p className="text-caption text-inkMuted max-w-sm">
+              <p className="text-caption text-inkMuted max-w-[24rem]">
                 질문을 입력하거나 아래 프롬프트 프리셋을 클릭하여 MLX 서빙 모델과의 대화를 시작하세요.
               </p>
             </div>
 
             {/* Presets */}
-            <div className="grid grid-cols-2 gap-2 max-w-md w-full pt-2 min-w-0">
+            <div className="grid grid-cols-2 gap-2 max-w-[28rem] w-full pt-2 min-w-0">
               {PRESET_PROMPTS.map((preset, idx) => (
                 <button
                   key={idx}
@@ -581,7 +581,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                       </button>
 
                       {expandedSources[msg.id] && (
-                        <div className="mt-1.5 p-2.5 rounded-lg bg-surfaceRaised border border-hairline/8 text-caption text-ink space-y-2 text-left max-w-lg w-full animate-in fade-in duration-150">
+                        <div className="mt-1.5 p-2.5 rounded-lg bg-surfaceRaised border border-hairline/8 text-caption text-ink space-y-2 text-left max-w-[32rem] w-full animate-in fade-in duration-150">
                           <div className="text-[11px] font-semibold text-inkFaint uppercase flex items-center gap-1">
                             <FileText className="w-3 h-3 text-primary" />
                             LanceDB RAG 주입 검색 결과

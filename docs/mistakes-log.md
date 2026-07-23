@@ -36,6 +36,13 @@
 | 2026-07-21 | SIGSTOP sent to only the MLX finetune wrapper pid — the wrapper spawns the real `mlx_lm` training subprocess via `subprocess.Popen` without its own process group, so it just inherits whichever group the wrapper was already in; signaling the wrapper alone freezes it but the `mlx_lm` child keeps running the actual GPU work to completion (confirmed on real hardware: 60-iter smoke run finished normally while the "paused" wrapper sat frozen). Same gap for SIGTERM/SIGKILL — the child survives as an orphan | Spawn the wrapper with `tokio::process::Command::process_group(0)` so it leads its own process group (child inherits it), then target `-pid` (the group) for SIGSTOP/SIGCONT/SIGTERM/SIGKILL (D17) |
 | 2026-07-21 | `resolve_cli_path`로 바이너리 절대경로만 해석 — colima처럼 **자식 프로세스(limactl)를 PATH로 찾는 도구**는 GUI 앱의 빈 PATH에서 여전히 실패(실기기 재현: `env PATH=/usr/bin:/bin colima status` → fatal, `/opt/homebrew/bin` 추가 시 정상) | 모든 외부 스폰에 보강 PATH env 주입(`external_command` 헬퍼가 `resolve_cli_path` + `.env("PATH", augmented_path())`를 함께 적용; venv python처럼 절대경로를 직접 구성하는 스폰에도 `augmented_path()`를 동일하게 주입) |
 
+## Frontend / Design system
+
+| Date | Mistake | Fix |
+|------|---------|-----|
+| 2026-07-24 | Tailwind v4 resolves `max-w-sm/md/…` against the **spacing scale** — our DESIGN.md `--spacing-sm/md` (8/12px) shadowed the defaults, so `max-w-sm` compiled to `max-width: 8px` and Korean text rendered one character per line (user-reported "세로 깨짐", chased as a flex bug twice before the compiled CSS was checked) | Named `max-w-*` is forbidden while spacing tokens reuse those names — use arbitrary values (`max-w-[24rem]`); when a layout bug defies flex logic, grep the COMPILED dist CSS for the utility before theorizing |
+| 2026-07-24 | Chat playground sent `model: 'mlx'` — mlx_lm.server treats an unknown model name as a HuggingFace repo id and phones home (401/404 from HF mid-chat) | The `model` field must be the exact id the server reports at `/v1/models` (= serving.model_path); pass it as a prop, never a made-up label |
+
 ## Kubernetes / MLOps stack
 
 | Date | Mistake | Fix |
