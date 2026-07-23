@@ -51,3 +51,31 @@ UI 라벨·IPC 이름·문서에서 이 혼용이 이미 사용자 혼란("서�
    `docs/ontology/`에 보관 가능).
 
 **Fabric IQ는 불채택**(유료·MS 데이터 플랫폼 종속 — 로컬-퍼스트 원칙과 불일치).
+
+## 5. 비교 검증 추가: Obsidian 로컬 온톨로지 vs MS Ontology Playground
+
+Obsidian으로 로컬 온톨로지를 구축하는 실무 사례가 실제로 많다 — frontmatter 속성 +
+위키링크를 관계로 쓰고, [typed link/그래프 뷰](https://volodymyrpavlyshyn.medium.com/personal-knowledge-graphs-in-obsidian-528a0f4584b9),
+Dataview 질의, Breadcrumbs/ExcaliBrain 플러그인으로 유형화하며,
+[RDF 내보내기 경로](https://volodymyrpavlyshyn.medium.com/how-to-export-your-obsidian-vault-to-rdf-00fb2539ed18)와
+[다국어 제품 온톨로지 사례](https://juliadiez.substack.com/p/building-a-multilingual-product-ontology),
+[LLM 엔티티 추출로 그래프를 만드는 플러그인](https://github.com/junhewk/simple-graph-builder)까지 존재한다.
+
+| 축 | Obsidian 방식 | MS Ontology Playground |
+|----|---------------|------------------------|
+| 형식성 | 자유 md+frontmatter, 링크는 기본 무유형(플러그인으로 유형화) | 엔티티/속성/관계/카디널리티 정식 모델, RDF/OWL 네이티브 |
+| 정합 검증 | 강제 없음 — Dataview 질의로 반(半)검증 | 스키마 수준 모델링(단, 실데이터 연결은 양쪽 다 없음) |
+| 시각화 | 그래프 뷰·ExcaliBrain(연상 중심) | Cytoscape 다이어그램(모델 중심) |
+| 로컬-퍼스트·버전관리 | md+git — 최상 | 정적 웹(산출 RDF를 git 보관하는 식) |
+| 에이전트/RAG 친화 | **md 자체가 LLM 컨텍스트·RAG 인덱싱에 최적** | RDF는 파서 필요 |
+| 의존성 | Obsidian 앱(개인 도구 성격) | 브라우저만(무설치) |
+
+### 검증 결론 (KubeMetal 맥락)
+
+- 우리가 채택한 **`docs/10-glossary.md`(md+git+mermaid)** 방식은 사실상 "Obsidian식
+  로컬 온톨로지의 저장소-네이티브 형태"다 — 앱 의존을 제거하고도 같은 이점(로컬 파일,
+  버전관리, LLM 친화)을 얻으며, **우리 RAG 파이프라인이 docs/를 인덱싱하므로 용어집이
+  자동으로 에이전트의 지식이 된다**(Obsidian 사례들이 별도 플러그인으로 얻으려는 것).
+- 역할 분담: **repo-md 용어집(주 채택)** / Playground(형식 RDF 산출·시각 편집이 필요할
+  때 보조) / Obsidian(사용자 개인 지식 큐레이션 선택지 — 저장소 표준으로는 불채택,
+  앱 종속·정합 강제 부재).
