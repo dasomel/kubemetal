@@ -13,10 +13,13 @@ Returns detailed DAG node execution states (status, duration, items processed).
 
 import argparse
 import html
+import ipaddress
 import json
 import os
 import re
 import shutil
+import socket
+import subprocess
 import sys
 import time
 import urllib.request
@@ -37,35 +40,81 @@ def get_dvc_bin() -> str:
     return "dvc"
 
 
-import ssl
+# D21: scheme allowlist + private-network denylist (SSRF guard). Mirrored in
+# data_ingest.rs on the Rust side as a second line of defense (double-check
+# principle — this Python process is reachable directly too, e.g. for the
+# manual verification run, so the guard must not live in Rust alone).
+_BLOCKED_NETS = [
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
 
 
-def get_ssl_context():
-    """Create SSL context with unverified fallback for macOS local python envs."""
+def _is_blocked_host(hostname: str) -> bool:
+    if not hostname:
+        return True
+    host = hostname.strip(".").lower()
+    if host in ("localhost",) or host.endswith(".internal") or host.endswith(".local"):
+        return True
     try:
-        return ssl.create_default_context()
-    except Exception:
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        return ctx
+        ip = ipaddress.ip_address(host)
+        return any(ip in net for net in _BLOCKED_NETS)
+    except ValueError:
+        pass
+    # DNS 이름: 해석된 "모든" 주소를 검사한다 — evil.example.com → 127.0.0.1 류의
+    # 사설망 해석 우회를 차단(보안 리뷰 지적). 해석 실패는 차단으로 취급.
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return True
+    for _family, _t, _p, _c, sockaddr in infos:
+        try:
+            ip = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            return True
+        if any(ip in net for net in _BLOCKED_NETS):
+            return True
+    return False
+
+
+def _validate_url(url: str) -> None:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"허용되지 않은 URL 스킴입니다: {parsed.scheme or '(none)'}")
+    if _is_blocked_host(parsed.hostname or ""):
+        raise ValueError(f"사설/루프백 네트워크 대상은 허용되지 않습니다: {parsed.hostname}")
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """리다이렉트를 따라가며 검증을 우회하는 경로를 차단한다(보안 리뷰 지적).
+    수집 용도에선 리다이렉트 불허가 단순·안전 — 최종 URL을 직접 지정하게 안내한다."""
+
+    def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+        raise ValueError(
+            f"리다이렉트가 차단되었습니다({code}): 최종 URL을 직접 입력하세요 → {newurl}"
+        )
+
+
+_opener = urllib.request.build_opener(_NoRedirect)
 
 
 def fetch_url_bytes(url: str, headers: dict = None, timeout: int = 15) -> bytes:
-    """Fetch URL bytes with SSL fallback."""
+    """Fetch URL bytes. Scheme/host allowlist + DNS 해석 검사 + 리다이렉트 차단;
+    TLS verification is never bypassed."""
+    _validate_url(url)
     req_headers = {"User-Agent": "Mozilla/5.0 (KubeMetal-DataIngest/1.0)"}
     if headers:
         req_headers.update(headers)
     req = urllib.request.Request(url, headers=req_headers)
-    
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read()
-    except Exception:
-        # Fallback to unverified SSL context
-        ctx = ssl._create_unverified_context()
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-            return resp.read()
+    with _opener.open(req, timeout=timeout) as resp:
+        _validate_url(resp.geturl())  # 방어적 재검증(핸들러 변경에 대비)
+        return resp.read()
 
 
 def clean_html_text(raw_html: str) -> str:
@@ -299,10 +348,15 @@ def main():
     parser.add_argument("--dvc-backup", action="store_true", help="Perform DVC backup & push to S3")
     parser.add_argument("--remote-url", default="http://127.0.0.1:8333", help="DVC S3 remote URL")
     parser.add_argument("--bucket", default="dvc-repo", help="DVC S3 bucket name")
-    parser.add_argument("--access-key", default="seaweedfsadmin", help="DVC S3 access key")
-    parser.add_argument("--secret-key", default="seaweedfsadmin", help="DVC S3 secret key")
 
     args = parser.parse_args()
+
+    # D13/D21: S3 크리덴셜은 CLI 인자로 전달하지 않는다(프로세스 인자는 `ps`로 노출됨).
+    # Rust 스폰 시 KUBEMETAL_S3_ACCESS_KEY/KUBEMETAL_S3_SECRET_KEY 환경변수로 주입되며,
+    # 기본값은 seaweedfs-s3-credentials.yaml의 stringData(SeaweedFS 무인증 모드 더미값)와
+    # 동일하게 맞춰 이 스크립트를 Rust 없이 단독 실행해도 동작하게 한다.
+    args.access_key = os.environ.get("KUBEMETAL_S3_ACCESS_KEY", "kubemetal")
+    args.secret_key = os.environ.get("KUBEMETAL_S3_SECRET_KEY", "kubemetal-local")
 
     overall_start = time.time()
     dag_nodes = []

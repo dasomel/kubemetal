@@ -66,7 +66,7 @@ async fn check_serving_health(base_url: &str) -> String {
 /// `scripts/k8s/seaweedfs-s3-credentials.yaml`로 프로비저닝됨)에서 조회한다.
 /// `kubectl get secret -o json`의 `data` 필드는 K8s가 항상 base64 인코딩해 반환하므로
 /// (매니페스트가 `stringData`를 쓰더라도) 여기서 디코드가 필요하다.
-async fn fetch_seaweedfs_credentials() -> (Vec<CredentialItem>, Option<String>) {
+pub(crate) async fn fetch_seaweedfs_credentials() -> (Vec<CredentialItem>, Option<String>) {
     let mut cmd = match external_command("kubectl") {
         Ok(c) => c,
         Err(e) => return (Vec::new(), Some(format!("kubectl 실행 파일을 찾을 수 없습니다: {e}"))),
@@ -124,6 +124,26 @@ async fn fetch_seaweedfs_credentials() -> (Vec<CredentialItem>, Option<String>) 
     } else {
         (creds, None)
     }
+}
+
+/// `data_ingest.rs`/`rag.rs`가 DVC S3 원격 자격증명으로 쓸 (access_key, secret_key)를
+/// 리턴한다. `fetch_seaweedfs_credentials`가 시크릿을 읽지 못하면(K8s 미기동/미프로비저닝)
+/// `seaweedfs-s3-credentials.yaml`의 `stringData` 기본값(`kubemetal`/`kubemetal-local`)으로
+/// 대체한다 — SeaweedFS S3 게이트웨이는 IAM 미설정 시 어떤 자격증명이든 수락하므로 이 값으로도
+/// DVC push가 동작한다(D13/D21). CLI 인자 대신 호출부가 env var로 자식 프로세스에 주입한다
+/// (`ps`로 프로세스 인자가 노출되는 경로를 피하기 위함).
+pub(crate) async fn resolve_s3_credentials() -> (String, String) {
+    let (creds, _) = fetch_seaweedfs_credentials().await;
+    let mut access_key = "kubemetal".to_string();
+    let mut secret_key = "kubemetal-local".to_string();
+    for c in creds {
+        match c.key.as_str() {
+            "access-key-id" => access_key = c.value,
+            "secret-access-key" => secret_key = c.value,
+            _ => {}
+        }
+    }
+    (access_key, secret_key)
 }
 
 #[tauri::command]

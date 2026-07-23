@@ -183,8 +183,12 @@ def cmd_dvc_commit(args):
     data_dir = Path(args.data_dir).expanduser().resolve()
     remote_url = args.remote_url
     bucket = args.bucket
-    access_key = args.access_key
-    secret_key = args.secret_key
+    # D13/D21: S3 크리덴셜은 CLI 인자로 받지 않는다(ps 노출 방지) — Rust 스폰 시
+    # KUBEMETAL_S3_ACCESS_KEY/KUBEMETAL_S3_SECRET_KEY 환경변수로 주입된다. 기본값은
+    # seaweedfs-s3-credentials.yaml의 stringData(SeaweedFS 무인증 모드 더미값)와 동일하게
+    # 맞춰 Rust 없이 단독 실행해도 동작한다.
+    access_key = os.environ.get("KUBEMETAL_S3_ACCESS_KEY", "kubemetal")
+    secret_key = os.environ.get("KUBEMETAL_S3_SECRET_KEY", "kubemetal-local")
 
     if not data_dir.exists():
         print(json.dumps({"status": "error", "error": f"데이터 경로가 존재하지 않습니다: {data_dir}"}))
@@ -255,8 +259,6 @@ def main():
     p_dvc.add_argument("--data-dir", required=True)
     p_dvc.add_argument("--remote-url", default="http://127.0.0.1:8333")
     p_dvc.add_argument("--bucket", default="dvc-repo")
-    p_dvc.add_argument("--access-key", default="seaweedfsadmin")
-    p_dvc.add_argument("--secret-key", default="seaweedfsadmin")
     p_dvc.add_argument("--message", default="Commit dataset")
 
     args = parser.parse_args()

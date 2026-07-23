@@ -1,13 +1,14 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
+use crate::commands::access::resolve_s3_credentials;
 use crate::commands::mlx::{
     home_dir, validate_home_subpath, venv_pip, venv_python, EnvSetupStatus,
 };
-use crate::services::process::{augmented_path, resolve_bundled_resource};
+use crate::services::process::{augmented_path, external_command, resolve_bundled_resource};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RagSearchResult {
@@ -62,21 +63,105 @@ pub(crate) fn default_lancedb_dir() -> Result<PathBuf, String> {
     Ok(home_dir()?.join(".kubemetal").join("lancedb"))
 }
 
+/// `.dvc/config`에서 `endpointurl` 값을 읽는다(`dvc remote modify <name> endpointurl <url>`로
+/// 기록된 형식, ingest_host.py/rag_host.py의 dvc-commit 경로가 남기는 실제 파일). 없거나
+/// 파싱 불가면 `None` — 호출부는 이를 "조회 불가"로 정직하게 리턴해야 한다.
+fn parse_dvc_remote_url(config_path: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(config_path).ok()?;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        let rest = trimmed.strip_prefix("endpointurl")?;
+        if let Some(val) = rest.trim_start().strip_prefix('=') {
+            let val = val.trim();
+            if !val.is_empty() {
+                return Some(val.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// `ingest_host.py`/`rag_host.py`의 `dvc init`은 항상 `--no-scm`(git 저장소 미생성)으로
+/// 실행되므로, 실제 파이프라인에서는 git 태그가 존재하지 않는 것이 정상이다. `git` 실행
+/// 실패·비-git 디렉터리 모두 빈 벡터로 수렴시켜 "조회 불가 = 정직하게 빈 값" 규칙을 따른다.
+async fn fetch_git_tags(dir: &Path) -> Vec<DvcVersionTag> {
+    let Ok(mut cmd) = external_command("git") else {
+        return Vec::new();
+    };
+    let output = cmd
+        .arg("-C")
+        .arg(dir)
+        .args([
+            "for-each-ref",
+            "refs/tags",
+            "--sort=-creatordate",
+            "--format=%(refname:short)%09%(objectname:short)%09%(subject)%09%(creatordate:iso-strict)",
+        ])
+        .output()
+        .await;
+    let Ok(out) = output else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new();
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.splitn(4, '\t');
+            let tag = parts.next()?.to_string();
+            let commit_hash = parts.next()?.to_string();
+            let message = parts.next().unwrap_or("").to_string();
+            let created_at = parts.next().map(|s| s.to_string());
+            Some(DvcVersionTag {
+                tag,
+                commit_hash,
+                message,
+                created_at,
+                dataset_path: None,
+            })
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub async fn get_dvc_status() -> Result<DvcStatus, String> {
-    let remote_url = Some("http://127.0.0.1:8333".to_string());
+    let Ok(db_dir) = default_lancedb_dir() else {
+        return Ok(DvcStatus {
+            initialized: false,
+            remote_url: None,
+            current_tag: None,
+            dataset_path: None,
+            tags: Vec::new(),
+            last_error: Some("LanceDB 기본 경로를 확인할 수 없습니다.".into()),
+        });
+    };
+    let dataset_path = Some(db_dir.to_string_lossy().to_string());
+
+    let dvc_dir = db_dir.join(".dvc");
+    if !dvc_dir.is_dir() {
+        return Ok(DvcStatus {
+            initialized: false,
+            remote_url: None,
+            current_tag: None,
+            dataset_path,
+            tags: Vec::new(),
+            last_error: Some(
+                "DVC가 아직 초기화되지 않았습니다 — dvc_commit_dataset을 먼저 실행하세요.".into(),
+            ),
+        });
+    }
+
+    let remote_url = parse_dvc_remote_url(&dvc_dir.join("config"));
+    let tags = fetch_git_tags(&db_dir).await;
+    let current_tag = tags.first().map(|t| t.tag.clone());
+
     Ok(DvcStatus {
         initialized: true,
         remote_url,
-        current_tag: Some("v1.0".to_string()),
-        dataset_path: default_lancedb_dir().ok().map(|p| p.to_string_lossy().to_string()),
-        tags: vec![DvcVersionTag {
-            tag: "v1.0".to_string(),
-            commit_hash: "72f359c".to_string(),
-            message: "Initial dataset versioning".to_string(),
-            created_at: Some("2026-07-23".to_string()),
-            dataset_path: default_lancedb_dir().ok().map(|p| p.to_string_lossy().to_string()),
-        }],
+        current_tag,
+        dataset_path,
+        tags,
         last_error: None,
     })
 }
@@ -384,6 +469,8 @@ pub async fn dvc_commit_dataset(
 
     let bucket = bucket_name.unwrap_or_else(|| "dvc-repo".to_string());
     let message = commit_message.unwrap_or_else(|| "Dataset update".to_string());
+    // D13/D21: 크리덴셜은 CLI 인자(ps로 노출됨)가 아니라 env var로 자식 프로세스에 주입한다.
+    let (s3_access_key, s3_secret_key) = resolve_s3_credentials().await;
 
     let output = tokio::process::Command::new(&venv_py)
         .arg(&rag_script)
@@ -394,13 +481,11 @@ pub async fn dvc_commit_dataset(
         .arg("http://127.0.0.1:8333")
         .arg("--bucket")
         .arg(&bucket)
-        .arg("--access-key")
-        .arg("seaweedfsadmin")
-        .arg("--secret-key")
-        .arg("seaweedfsadmin")
         .arg("--message")
         .arg(&message)
         .env("PATH", augmented_path())
+        .env("KUBEMETAL_S3_ACCESS_KEY", &s3_access_key)
+        .env("KUBEMETAL_S3_SECRET_KEY", &s3_secret_key)
         .output()
         .await
         .map_err(|e| format!("DVC 커밋 프로세스 실행 실패: {e}"))?;

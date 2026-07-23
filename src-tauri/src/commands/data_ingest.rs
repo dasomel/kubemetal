@@ -1,14 +1,101 @@
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
+use crate::commands::access::resolve_s3_credentials;
 use crate::commands::mlx::{
     validate_home_subpath, venv_python,
 };
 use crate::commands::rag::default_lancedb_dir;
 use crate::services::process::{augmented_path, resolve_bundled_resource};
+
+/// `run_data_ingest`의 IPC 계약(프론트 레인과 합의): 커맨드 인자는 단일 `config` 객체이며,
+/// 프론트는 camelCase 필드로 전달한다(`#[serde(rename_all = "camelCase")]`) — 같은 패턴을
+/// 쓰는 `mlx.rs::FineTuneConfig`(snake_case 그대로)와는 의도적으로 다르다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IngestConfig {
+    pub source_type: String,
+    pub source_path: String,
+    pub collection_name: Option<String>,
+    pub embedding_model: Option<String>,
+    pub chunk_size: Option<u32>,
+    pub chunk_overlap: Option<u32>,
+    pub enable_dvc_backup: Option<bool>,
+    pub dvc_remote_url: Option<String>,
+    pub dvc_bucket: Option<String>,
+}
+
+/// D21 SSRF 가드: scheme allowlist(http/https) + 사설/루프백 호스트 거부. `scripts/data/ingest_host.py`
+/// 의 `_validate_url`과 동일 규칙을 Rust 측에서도 적용한다(이중 방어 — 스폰 이전에 걸러
+/// 프로세스 기동 자체를 막는다). `source_type`이 web/rss일 때만 호출부에서 사용한다.
+fn validate_ingest_url(url: &str) -> Result<String, String> {
+    let (scheme, rest) = url
+        .split_once("://")
+        .ok_or_else(|| format!("허용되지 않은 URL 형식입니다: {url}"))?;
+    if scheme != "http" && scheme != "https" {
+        return Err(format!("허용되지 않은 URL 스킴입니다: {scheme}"));
+    }
+
+    let host_port_path = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host_port = host_port_path.rsplit('@').next().unwrap_or(host_port_path);
+    let host = if let Some(bracket_end) = host_port.strip_prefix('[').and_then(|s| s.find(']')) {
+        host_port[1..=bracket_end].to_string()
+    } else {
+        host_port.split(':').next().unwrap_or(host_port).to_string()
+    };
+    let host_lower = host.to_lowercase();
+
+    if host_lower.is_empty()
+        || host_lower == "localhost"
+        || host_lower.ends_with(".internal")
+        || host_lower.ends_with(".local")
+    {
+        return Err(format!("사설/루프백 네트워크 대상은 허용되지 않습니다: {host}"));
+    }
+
+    if let Ok(ip) = host_lower.parse::<IpAddr>() {
+        let blocked = ip_blocked(ip);
+        if blocked {
+            return Err(format!("사설/루프백 네트워크 대상은 허용되지 않습니다: {host}"));
+        }
+    }
+
+    Ok(host_lower)
+}
+
+/// 사설/루프백/링크로컬/ULA 판정 — 리터럴 IP 검사와 DNS 해석 검사가 공유한다.
+fn ip_blocked(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || v4.is_link_local(),
+        IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || (v6.segments()[0] & 0xfe00) == 0xfc00 // fc00::/7 (unique local)
+                || (v6.segments()[0] & 0xffc0) == 0xfe80 // fe80::/10 (link local)
+        }
+    }
+}
+
+/// DNS-name 우회 차단(보안 리뷰 지적): 리터럴 IP가 아닌 호스트는 해석된 **모든** 주소를
+/// 검사한다 — `evil.example.com → 127.0.0.1` 류가 리터럴 검사만으로는 통과하기 때문.
+/// 해석 실패도 차단으로 취급한다(파이썬 측 `_is_blocked_host`와 동일 규칙, 이중 방어).
+async fn ensure_public_resolution(host: &str) -> Result<(), String> {
+    if host.parse::<IpAddr>().is_ok() {
+        return Ok(()); // 리터럴 IP는 validate_ingest_url에서 이미 검사됨
+    }
+    let addrs = tokio::net::lookup_host((host, 443u16))
+        .await
+        .map_err(|e| format!("호스트 해석 실패(차단): {host} ({e})"))?;
+    for sa in addrs {
+        if ip_blocked(sa.ip()) {
+            return Err(format!("차단된 IP로 해석되는 호스트입니다: {host} -> {}", sa.ip()));
+        }
+    }
+    Ok(())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DagNodeState {
@@ -111,25 +198,34 @@ pub fn list_datasets_in_db() -> Vec<IngestedDatasetInfo> {
 pub async fn run_data_ingest(
     app: tauri::AppHandle,
     state: State<'_, DataIngestState>,
-    source_type: String,
-    source_path: String,
-    collection_name: Option<String>,
-    embedding_model: Option<String>,
-    chunk_size: Option<u32>,
-    chunk_overlap: Option<u32>,
-    enable_dvc_backup: Option<bool>,
-    dvc_remote_url: Option<String>,
-    dvc_bucket: Option<String>,
+    config: IngestConfig,
 ) -> Result<IngestFlowResult, String> {
+    let IngestConfig {
+        source_type,
+        source_path,
+        collection_name,
+        embedding_model,
+        chunk_size,
+        chunk_overlap,
+        enable_dvc_backup,
+        dvc_remote_url,
+        dvc_bucket,
+    } = config;
+
     if source_path.trim().is_empty() {
         return Err("소스 경로는 비어 있을 수 없습니다.".into());
     }
 
-    let target_source_path = if source_type.to_lowercase() == "local" {
+    let stype_lower = source_type.to_lowercase();
+    let target_source_path = if stype_lower == "local" {
         validate_home_subpath(&source_path)?
             .to_string_lossy()
             .to_string()
     } else {
+        if stype_lower == "web" || stype_lower == "rss" {
+            let host = validate_ingest_url(&source_path)?;
+            ensure_public_resolution(&host).await?;
+        }
         source_path.clone()
     };
 
@@ -181,6 +277,10 @@ pub async fn run_data_ingest(
         if let Some(ref bucket) = dvc_bucket {
             cmd.arg("--bucket").arg(bucket);
         }
+        // D13/D21: 크리덴셜은 CLI 인자(ps로 노출됨)가 아니라 env var로 주입한다.
+        let (s3_access_key, s3_secret_key) = resolve_s3_credentials().await;
+        cmd.env("KUBEMETAL_S3_ACCESS_KEY", &s3_access_key)
+            .env("KUBEMETAL_S3_SECRET_KEY", &s3_secret_key);
     }
 
     let output = cmd
@@ -231,4 +331,40 @@ pub async fn get_ingest_status(
 #[tauri::command]
 pub async fn list_ingested_datasets() -> Result<Vec<IngestedDatasetInfo>, String> {
     Ok(list_datasets_in_db())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_ingest_url_accepts_public_https() {
+        assert!(validate_ingest_url("https://docs.kubemetal.io/feed.xml").is_ok());
+    }
+
+    #[test]
+    fn validate_ingest_url_rejects_non_http_scheme() {
+        assert!(validate_ingest_url("file:///etc/passwd").is_err());
+        assert!(validate_ingest_url("ftp://example.com/x").is_err());
+    }
+
+    #[test]
+    fn validate_ingest_url_rejects_loopback_and_private_hosts() {
+        for url in [
+            "http://127.0.0.1:4200",
+            "http://localhost:8080",
+            "http://10.0.0.5/",
+            "http://172.16.0.5/",
+            "http://192.168.1.1/",
+            "http://169.254.169.254/latest/meta-data",
+            "http://svc.internal/x",
+        ] {
+            assert!(validate_ingest_url(url).is_err(), "should reject {url}");
+        }
+    }
+
+    #[test]
+    fn validate_ingest_url_rejects_malformed_url() {
+        assert!(validate_ingest_url("not-a-url").is_err());
+    }
 }

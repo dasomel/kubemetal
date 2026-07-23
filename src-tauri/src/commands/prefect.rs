@@ -405,56 +405,79 @@ pub async fn start_prefect_runner(
     app: tauri::AppHandle,
     state: State<'_, PrefectState>,
 ) -> Result<String, String> {
-    {
-        let guard = state.runner_pid.lock().map_err(|e| e.to_string())?;
+    // "이미 실행 중" 체크와 상태 세팅을 같은 락 스코프 안에서 원자적으로 수행해 TOCTOU를
+    // 없앤다(mlx.rs::run_mlx_finetune과 동일 패턴) — 체크 이후 스폰 이전에 락을 놓아버리면
+    // 동시에 들어온 두 번째 호출이 같은 체크를 통과해 러너를 중복 기동할 수 있다. sentinel
+    // `Some(0)`을 먼저 심어 그 창을 없애고, 스폰 실패 시 이전 값(`prev_runner_pid`)으로
+    // 롤백한다.
+    let prev_runner_pid = {
+        let mut guard = state.runner_pid.lock().map_err(|e| e.to_string())?;
         if guard.is_some() {
             return Err("Prefect 러너가 이미 실행 중입니다.".into());
         }
+        let prev = *guard;
+        *guard = Some(0);
+        prev
+    };
+
+    let spawn_result = (|| -> Result<(u32, tokio::process::Child), String> {
+        let venv_py = venv_python()?;
+        if !venv_py.is_file() {
+            return Err("MLX venv가 없습니다. setup_mlx_env를 먼저 실행하세요.".into());
+        }
+
+        let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
+        let runner_script =
+            resolve_bundled_resource(&resource_dir, "scripts/prefect/host_runner.py");
+        if !runner_script.is_file() {
+            return Err(format!(
+                "Prefect 러너 스크립트를 찾을 수 없습니다: {}",
+                runner_script.display()
+            ));
+        }
+
+        // finetune_wrapper.py(및 그 mlx_lm 학습 자식)를 서브프로세스로 띄우는 러너이므로
+        // D17과 동일하게 새 프로세스 그룹의 리더로 기동해, 정지 시 그룹 전체(-pid)로
+        // 시그널을 보내면 트리 전체가 함께 종료되도록 한다.
+        let child = tokio::process::Command::new(&venv_py)
+            .arg(&runner_script)
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .env("PATH", augmented_path())
+            .env("PREFECT_API_URL", PREFECT_API_URL)
+            .process_group(0)
+            .spawn()
+            .map_err(|e| format!("Prefect 러너 실행 실패: {e}"))?;
+
+        let pid = child
+            .id()
+            .ok_or_else(|| "PID를 가져올 수 없습니다.".to_string())?;
+
+        Ok((pid, child))
+    })();
+
+    match spawn_result {
+        Ok((pid, child)) => {
+            {
+                let mut guard = state.runner_pid.lock().map_err(|e| e.to_string())?;
+                *guard = Some(pid);
+            }
+            {
+                let mut err_guard = state.last_runner_error.lock().map_err(|e| e.to_string())?;
+                *err_guard = None;
+            }
+
+            tokio::spawn(run_runner_reader(app, child, pid));
+
+            Ok(format!("Prefect 러너를 시작했습니다(PID {pid})."))
+        }
+        Err(e) => {
+            if let Ok(mut guard) = state.runner_pid.lock() {
+                *guard = prev_runner_pid;
+            }
+            Err(e)
+        }
     }
-
-    let venv_py = venv_python()?;
-    if !venv_py.is_file() {
-        return Err("MLX venv가 없습니다. setup_mlx_env를 먼저 실행하세요.".into());
-    }
-
-    let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
-    let runner_script = resolve_bundled_resource(&resource_dir, "scripts/prefect/host_runner.py");
-    if !runner_script.is_file() {
-        return Err(format!(
-            "Prefect 러너 스크립트를 찾을 수 없습니다: {}",
-            runner_script.display()
-        ));
-    }
-
-    // finetune_wrapper.py(및 그 mlx_lm 학습 자식)를 서브프로세스로 띄우는 러너이므로
-    // D17과 동일하게 새 프로세스 그룹의 리더로 기동해, 정지 시 그룹 전체(-pid)로
-    // 시그널을 보내면 트리 전체가 함께 종료되도록 한다.
-    let child = tokio::process::Command::new(&venv_py)
-        .arg(&runner_script)
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .env("PATH", augmented_path())
-        .env("PREFECT_API_URL", PREFECT_API_URL)
-        .process_group(0)
-        .spawn()
-        .map_err(|e| format!("Prefect 러너 실행 실패: {e}"))?;
-
-    let pid = child
-        .id()
-        .ok_or_else(|| "PID를 가져올 수 없습니다.".to_string())?;
-
-    {
-        let mut guard = state.runner_pid.lock().map_err(|e| e.to_string())?;
-        *guard = Some(pid);
-    }
-    {
-        let mut err_guard = state.last_runner_error.lock().map_err(|e| e.to_string())?;
-        *err_guard = None;
-    }
-
-    tokio::spawn(run_runner_reader(app, child, pid));
-
-    Ok(format!("Prefect 러너를 시작했습니다(PID {pid})."))
 }
 
 fn terminate_process_group(pid: u32) {

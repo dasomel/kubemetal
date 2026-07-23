@@ -102,8 +102,8 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 
 ### FR-05: 하드웨어 모니터링 및 안전 가드레일 (Hardware Guardrails)
 
-* **FR-05.1 (Phase 1 · MVP)**: `sysinfo` 크레이트를 사용해 RAM 사용량과 CPU 사용률을 1초 주기로 측정하여 스트리밍해야 한다. MVP 범위에서는 Metal GPU 점유율을 측정하지 않는다.
-* **FR-05.4 (Phase 3 · 선택 기능)**: Metal GPU 점유율은 macOS `powermetrics` CLI(공개된 C API가 아닌 커맨드라인 도구이며, 실행에 root 권한이 필요함)의 출력을 파싱하여 측정한다. 이를 위해 별도의 privileged helper 프로세스(예: SMJobBless 또는 launchd privileged helper)를 통해 권한을 격리하여 실행해야 하며, 사용자에게 root 권한 요구 사실과 설치 절차를 명시적으로 고지해야 한다. 본 기능은 Phase 1(MVP) 범위에서 제외한다.
+* **FR-05.1 (Phase 1 · MVP)**: `sysinfo` 크레이트를 사용해 RAM 사용량과 CPU 사용률을 1초 주기로 측정하여 스트리밍해야 한다.
+* **FR-05.4 (Phase 4 · 구현됨, 2026-07-24 개정)**: Metal GPU 점유율/메모리는 sudo 없이 접근 가능한 `ioreg -l -d 1 -r -c IOAccelerator`(D16과 동일한 sudo-free 원칙) 출력을 파싱하여 `get_system_metrics`의 `gpu_usage_percentage`/`gpu_memory_used_gb` 필드로 제공한다. root 권한이 필요한 `powermetrics` CLI 기반 측정 및 별도 privileged helper는 채택하지 않으며(D2), 앞으로도 사용하지 않는다.
 * **FR-05.2 (OOM Protection · Phase 3)**: macOS의 **memory pressure 레벨**(`warn` 또는 `critical`)이 감지되면 진행 중인 MLX 학습 프로세스를 일시정지(Pause)하고 사용자에게 대화상자 경고를 출력해야 한다. macOS는 파일 캐시로 인해 가용 RAM 비율만으로는 상시 오탐이 발생하므로, 단순 "가용 RAM 10% 이하"와 같은 비율 임계값을 트리거 기준으로 사용해서는 안 된다.
 * **FR-05.3 (Power/Thermal Guard · Phase 3)**: 배터리 구동 감지 시 학습 일시정지 옵션을 제공하며, 학습 중 슬립 모드 진입을 방지하기 위해 `caffeinate` 어서션을 실행해야 한다.
 
@@ -152,7 +152,7 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 
 | Command 이름 | Input Parameters | Output Return | 설명 |
 | --- | --- | --- | --- |
-| `get_system_metrics` | None | `SystemMetricsJSON` | RAM, CPU 실시간 사용량 리턴 (Metal GPU는 Phase 3, FR-05.4) |
+| `get_system_metrics` | None | `SystemMetricsJSON` | RAM/CPU 실시간 사용량 + Metal GPU 사용률/메모리(`ioreg` 기반, Phase 4, FR-05.4) 리턴 |
 | `get_cluster_status` | None | `ClusterStatusJSON` | colima 상태 + MLflow/SeaweedFS 배포 준비 여부(`mlflow_ready`/`seaweedfs_ready`) 리턴 |
 | `start_cluster` | `{ cpu: u32, memory: u32 }` | `Result<String, String>` | Colima `vz` K8s 클러스터 구동 |
 | `stop_cluster` | None | `Result<String, String>` | Colima K8s 클러스터 중지 |
@@ -187,6 +187,15 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 | `setup_eval_env` (Phase 4b) | None | `Result<String, String>` | 기존 MLX venv에 백그라운드로 `pip install -U "lm-eval[api]"` 실행(`api` extra 필수 — 실기기 실측 2026-07-23, 없으면 `local-completions` 모델 타입이 `tenacity` 미설치로 즉시 실패), 진행 상태를 `PrefectState.eval_env_setup`에 기록(`setup_prefect_env`와 동일 패턴, venv 자체가 없으면 즉시 Err). D20 |
 | `trigger_evaluate_flow` (Phase 4b) | `{ tasks: String, limit: u32, serving_port: u16 }` | `Result<String, String>` | `serving_url = http://127.0.0.1:{serving_port}/v1` 구성(mlx_lm.server는 IPv4 전용이라 `127.0.0.1` 고정) 후 Prefect REST `GET /deployments/name/evaluate/evaluate`로 deployment id 조회 → `POST /deployments/{id}/create_flow_run`(body `{"parameters": {"serving_url", "tasks", "limit"}}`)로 flow run 생성, flow run id 리턴. 실기기 실측(2026-07-23): tasks=gsm8k, limit=4로 트리거해 flow run이 COMPLETED로 완주함을 확인. D20 |
 | `get_eval_results` (Phase 4b) | None | `Result<Vec<EvalMetric>, String>` | MLflow REST `experiments/get-by-name`(`kubemetal-eval`) → `runs/search`(`max_results:10`, `order_by:["attribute.start_time DESC"]`)로 최근 10 run을 조회해 `EvalMetric {run_id, task, metric, value, timestamp_ms}`로 평탄화(`host_runner.py`가 남기는 `"task/metric/filter"` 메트릭 키의 첫 `/`를 기준으로 task/metric 분리). experiment 미생성·MLflow 연결 실패 시 빈 배열. D20 |
+| `get_rag_status` (Phase 4c) | `State<RagState>`(암묵) | `Result<RagStatus {env_installed, env_setup: EnvSetupStatus, indexed_collections: Vec<String>}, String>` | venv `python -c "import lancedb; import sentence_transformers"` 성공 여부로 `env_installed`, `RagState.env_setup`으로 `setup_rag_env` 진행 상태를, LanceDB 디렉터리의 `*.lance` 서브디렉터리를 스캔해 `indexed_collections`를 조회 |
+| `setup_rag_env` (Phase 4c) | None | `Result<String, String>` | 기존 MLX venv(D15)에 백그라운드로 `pip install -U lancedb sentence-transformers "dvc[s3]"` 실행, 진행 상태를 `RagState.env_setup`에 기록(`setup_mlx_env`와 동일 패턴). venv 자체가 없으면 즉시 Err |
+| `index_documents` (Phase 4c) | `{ docsPath: String, collectionName: Option<String>, embeddingModel: Option<String> }` | `Result<IndexResult {status, collection, indexed_docs, total_chunks, db_path}, String>` | venv python으로 번들 리소스 `scripts/rag/rag_host.py index` 실행 — `docs_path` 하위 문서를 청킹 후 sentence-transformers로 임베딩해 LanceDB 컬렉션에 저장 |
+| `query_rag` (Phase 4c) | `{ query: String, collectionName: Option<String>, topK: Option<u32>, embeddingModel: Option<String> }` | `Result<Vec<RagSearchResult {text, filename, source, chunk_index, score}>, String>` | venv python으로 `rag_host.py query` 실행 — 질의를 임베딩해 LanceDB 벡터 검색, 상위 K개 청크를 리턴 |
+| `dvc_commit_dataset` (Phase 4c) | `{ dataPath: Option<String>, bucketName: Option<String>, commitMessage: Option<String> }` | `Result<String, String>` | venv python으로 `rag_host.py dvc-commit` 실행 — 대상 디렉터리를 DVC `init --no-scm` + `add` + SeaweedFS S3 리모트로 `push`. S3 크리덴셜은 CLI 인자가 아니라 `KUBEMETAL_S3_ACCESS_KEY`/`KUBEMETAL_S3_SECRET_KEY` 환경변수로 자식 프로세스에 주입한다(D21, ps 노출 방지) |
+| `get_dvc_status` (Phase 4c) | None | `Result<DvcStatus {initialized, remote_url: Option<String>, current_tag: Option<String>, dataset_path: Option<String>, tags: Vec<DvcVersionTag>, last_error: Option<String>}, String>` | LanceDB 디렉터리의 `.dvc` 존재 여부로 `initialized`, `.dvc/config`의 `endpointurl` 값을 파싱해 `remote_url`, `git for-each-ref refs/tags`로 `tags`/`current_tag`를 실측 조회한다. 파이프라인의 `dvc init`은 항상 `--no-scm`(git 미생성)이므로 실제 운용에서 `tags`는 통상 빈 배열이 정상이며, 조회 불가 항목은 하드코딩 대신 정직하게 `None`/빈 값을 리턴한다 |
+| `run_data_ingest` (Phase 5a) | `{ config: IngestConfig }` — `IngestConfig`는 camelCase 필드(`sourceType, sourcePath, collectionName?, embeddingModel?, chunkSize?, chunkOverlap?, enableDvcBackup?, dvcRemoteUrl?, dvcBucket?`) | `Result<IngestFlowResult, String>` | 번들 리소스 `scripts/data/ingest_host.py`를 venv python으로 실행 — extract → clean_chunk → lancedb_index → dvc_backup 4-노드 DAG를 순차 실행해 노드별 상태(`DagNodeState {node_id, name, status, duration_sec, items_processed, details}`)를 포함한 `IngestFlowResult`를 리턴. `source_type`이 web/rss면 Rust(`validate_ingest_url`)와 Python(`ingest_host.py::_validate_url`) 양쪽에서 scheme allowlist(http/https만)+사설/루프백 호스트 거부(D21) 이중 검증을 수행한다. DVC 백업 크리덴셜은 `dvc_commit_dataset`과 동일하게 env var로 주입 |
+| `get_ingest_status` (Phase 5a) | `State<DataIngestState>`(암묵) | `Result<IngestStatusResponse {env_installed, default_db_path, active_collections: Vec<IngestedDatasetInfo>, last_result: Option<IngestFlowResult>}, String>` | venv 존재 여부로 `env_installed`, LanceDB 디렉터리 스캔으로 `active_collections`, 가장 최근 `run_data_ingest` 결과를 `DataIngestState.last_result`에서 조회 |
+| `list_ingested_datasets` (Phase 5a) | None | `Result<Vec<IngestedDatasetInfo {collection_name, total_chunks, db_path, is_lance_table}>, String>` | LanceDB 디렉터리를 스캔해 `.lance` 서브디렉터리(테이블) 및 `_fallback.json`(lancedb 패키지 미설치 시 폴백) 파일을 데이터셋으로 나열 |
 
 ### 4.2 K8s External Service Manifest Spec (`mac-gpu-bridge.yaml`)
 
