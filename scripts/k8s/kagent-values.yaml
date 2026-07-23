@@ -1,0 +1,27 @@
+# kagent 리소스 최적화 values (2026-07-24 실측 기반)
+# 근거: 에이전트 파드 각 ~200Mi 실사용. 우리 스택에 해당 시스템이 없는 에이전트를
+# 비활성화한다(istio/cilium/argo/promql/observability/kgateway/grafana 부재).
+# 유지: k8s-agent(핵심), helm-agent(유용), 코어(controller/ui/tools/kmcp/postgres).
+# 적용: helm upgrade kagent oci://ghcr.io/kagent-dev/kagent/helm/kagent \
+#        --version 0.9.12 -n kagent -f scripts/k8s/kagent-values.yaml --reuse-values
+
+kgateway-agent:
+  enabled: false
+istio-agent:
+  enabled: false
+promql-agent:
+  enabled: false
+observability-agent:
+  enabled: false
+argo-rollouts-agent:
+  enabled: false
+cilium-policy-agent:
+  enabled: false
+cilium-manager-agent:
+  enabled: false
+cilium-debug-agent:
+  enabled: false
+grafana-mcp:
+  enabled: false
+querydoc:
+  enabled: false
