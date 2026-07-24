@@ -5,7 +5,11 @@ use std::sync::Mutex;
 use sysinfo::System;
 
 use commands::access::get_service_access;
-use commands::colima::{get_cluster_status, start_cluster, stop_cluster};
+use commands::colima::{
+    check_latest_airgap_versions, get_airgap_status, get_cluster_status, get_kagent_diagnostics,
+    list_kubeconfig_contexts, start_cluster, stop_cluster, toggle_kagent_agent,
+    trigger_airgap_download, trigger_airgap_install,
+};
 use commands::data_ingest::{
     get_ingest_status, list_ingested_datasets, run_data_ingest, DataIngestState,
 };
@@ -13,7 +17,7 @@ use commands::guardrails::{
     get_guardrail_status, pause_mlx_training, resume_mlx_training, set_guardrail_config,
     GuardrailState,
 };
-use commands::metrics::get_system_metrics;
+use commands::metrics::{get_hardware_spec, get_system_metrics};
 use commands::mlx::{
     check_mlx_env, get_mlx_status, kill_mlx_process, run_mlx_finetune, setup_mlx_env,
     start_model_serving, stop_model_serving, suggest_serving_port, MlxState,
@@ -49,9 +53,17 @@ pub fn run() {
         .manage(DataIngestState::default())
         .invoke_handler(tauri::generate_handler![
             get_system_metrics,
+            get_hardware_spec,
             get_cluster_status,
             start_cluster,
             stop_cluster,
+            list_kubeconfig_contexts,
+            get_kagent_diagnostics,
+            toggle_kagent_agent,
+            get_airgap_status,
+            trigger_airgap_download,
+            trigger_airgap_install,
+            check_latest_airgap_versions,
             provision_mlops_stack,
             start_port_forward,
             stop_port_forward,

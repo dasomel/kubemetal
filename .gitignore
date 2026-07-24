@@ -25,3 +25,6 @@ src-tauri/gen/
 
 # Python
 __pycache__/
+
+# CodeGraph local index (docs/18) — machine-local DB/cache, never committed
+.codegraph/

@@ -6,6 +6,90 @@ use tauri::State;
 
 use crate::services::process::external_command;
 
+/// 정적 하드웨어 스펙. `gpu_cores`만 `Option`인 이유 — sysctl은 어떤 Mac에서도 CPU/RAM을
+/// 돌려주지만 GPU 코어 수는 `system_profiler` 출력 포맷에 의존해 파싱이 실패할 수 있다.
+/// 실패 시 스펙을 **추정해 채우지 않는다**(다른 기기에서 허위 스펙이 표시된다).
+#[derive(Clone, Serialize, Debug)]
+pub struct HardwareSpec {
+    pub brand_name: String,
+    pub cpu_cores: u32,
+    pub total_memory_gb: u32,
+    pub gpu_cores: Option<u32>,
+}
+
+/// 정적 값이므로 프로세스 수명 동안 1회만 조회한다(`system_profiler`는 수 초가 걸린다).
+static HARDWARE_SPEC_CACHE: Mutex<Option<HardwareSpec>> = Mutex::new(None);
+
+async fn sysctl_value(key: &str) -> Result<String, String> {
+    let out = external_command("sysctl")?
+        .args(["-n", key])
+        .output()
+        .await
+        .map_err(|e| format!("sysctl {key} 실행 실패: {e}"))?;
+
+    if !out.status.success() {
+        return Err(format!(
+            "sysctl {key} 실패: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// D2 규약: 하드웨어 조회도 sudo 없이 `external_command`(절대경로 + 보강 PATH)로만 스폰한다.
+/// 블로킹 `std::process::Command`는 async 커맨드에서 런타임 스레드를 점유하므로 금지.
+#[tauri::command]
+pub async fn get_hardware_spec() -> Result<HardwareSpec, String> {
+    if let Some(cached) = HARDWARE_SPEC_CACHE
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+    {
+        return Ok(cached);
+    }
+
+    let brand_name = sysctl_value("machdep.cpu.brand_string").await?;
+    let cpu_cores = sysctl_value("hw.ncpu")
+        .await?
+        .parse::<u32>()
+        .map_err(|e| format!("hw.ncpu 파싱 실패: {e}"))?;
+    let total_memory_gb = (sysctl_value("hw.memsize")
+        .await?
+        .parse::<u64>()
+        .map_err(|e| format!("hw.memsize 파싱 실패: {e}"))?
+        / 1024
+        / 1024
+        / 1024) as u32;
+
+    // GPU 코어 수는 부가 정보 — 실패해도 나머지 스펙은 유효하므로 None으로 둔다.
+    let gpu_cores = match external_command("system_profiler") {
+        Ok(mut cmd) => cmd
+            .arg("SPDisplaysDataType")
+            .output()
+            .await
+            .ok()
+            .filter(|out| out.status.success())
+            .and_then(|out| {
+                String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    .find(|l| l.contains("Total Number of Cores"))
+                    .and_then(|l| l.split(':').nth(1))
+                    .and_then(|s| s.trim().parse::<u32>().ok())
+            }),
+        Err(_) => None,
+    };
+
+    let spec = HardwareSpec {
+        brand_name,
+        cpu_cores,
+        total_memory_gb,
+        gpu_cores,
+    };
+
+    *HARDWARE_SPEC_CACHE.lock().map_err(|e| e.to_string())? = Some(spec.clone());
+    Ok(spec)
+}
+
 #[derive(Serialize)]
 pub struct SystemMetrics {
     pub total_memory_gb: f64,

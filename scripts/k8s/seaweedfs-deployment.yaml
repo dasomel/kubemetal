@@ -28,6 +28,16 @@ spec:
             - containerPort: 8333
             - containerPort: 8888
             - containerPort: 9333
+          # 실측(kubectl top, 2026-07-24, D14): RSS 105Mi/CPU 2m(저부하 상태, S3+filer
+          # +volume 통합 프로세스). requests=실사용+headroom(향후 아티팩트 업로드 트래픽
+          # 대비), limits=4.8x(파일 업로드/피어 동기화 스파이크 대응). D4 12GB VM 예산
+          # 내에서 mlflow(3072Mi)+seaweedfs(512Mi)+prefect(1Gi, 기존)=합계 4608Mi limits
+          # < 12288Mi로 안전.
+          resources:
+            requests:
+              memory: 128Mi
+            limits:
+              memory: 512Mi
           volumeMounts:
             - name: seaweedfs-data
               mountPath: /data

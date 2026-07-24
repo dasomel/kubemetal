@@ -24,10 +24,10 @@ import { useDataIngest } from '../../hooks/useDataIngest';
 import { useTranslation } from '../../i18n/i18nContext';
 import type { DataIngestSourceType, DagNodeId, DagNodeStatus } from '../../types/ipc';
 
-const sourceOptions: { id: DataIngestSourceType; label: string; icon: React.ElementType; example: string }[] = [
-  { id: 'web', label: 'Web URL', icon: Globe, example: 'https://docs.kubemetal.io' },
-  { id: 'file', label: 'Local Directory', icon: FileText, example: 'docs/' },
-  { id: 'huggingface', label: 'HuggingFace Dataset', icon: Database, example: 'wikitext/wikitext-2-raw-v1' },
+const sourceOptions: { id: DataIngestSourceType; labelKey: string; icon: React.ElementType; example: string }[] = [
+  { id: 'web', labelKey: 'dataIngest.sourceWeb', icon: Globe, example: 'https://docs.kubemetal.io' },
+  { id: 'file', labelKey: 'dataIngest.sourceFile', icon: FileText, example: 'docs/' },
+  { id: 'huggingface', labelKey: 'dataIngest.sourceHuggingface', icon: Database, example: 'wikitext/wikitext-2-raw-v1' },
 ];
 
 const dagNodeDefinitions: {
@@ -38,25 +38,25 @@ const dagNodeDefinitions: {
 }[] = [
   {
     id: 'ingest',
-    titleKey: '1. Source Ingestion',
+    titleKey: 'dataIngest.nodeIngestTitle',
     subtitle: 'Web / File / HuggingFace',
     icon: Globe,
   },
   {
     id: 'clean_chunk',
-    titleKey: '2. Clean & Chunk',
+    titleKey: 'dataIngest.nodeCleanChunkTitle',
     subtitle: 'Recursive Character Splitter',
     icon: Scissors,
   },
   {
     id: 'lancedb_store',
-    titleKey: '3. LanceDB RAG Store',
+    titleKey: 'dataIngest.nodeLancedbTitle',
     subtitle: 'all-MiniLM-L6-v2 Embeddings',
     icon: Layers,
   },
   {
     id: 'dvc_backup',
-    titleKey: '4. SeaweedFS DVC Backup',
+    titleKey: 'dataIngest.nodeDvcBackupTitle',
     subtitle: 'S3 Remote Versioning',
     icon: CloudUpload,
   },
@@ -274,7 +274,7 @@ export const DataIngestionDagCard: React.FC = () => {
                       }`}
                     >
                       <Icon className="w-4 h-4 shrink-0" />
-                      <span>{opt.label}</span>
+                      <span>{t(opt.labelKey)}</span>
                     </button>
                   );
                 })}
@@ -429,7 +429,7 @@ export const DataIngestionDagCard: React.FC = () => {
                   </div>
 
                   <div>
-                    <h4 className="text-bodyStrong text-ink font-semibold leading-snug truncate">{node.titleKey}</h4>
+                    <h4 className="text-bodyStrong text-ink font-semibold leading-snug truncate">{t(node.titleKey)}</h4>
                     <p className="text-caption text-inkFaint truncate mt-0.5">{node.subtitle}</p>
                   </div>
 
@@ -455,7 +455,10 @@ export const DataIngestionDagCard: React.FC = () => {
               <h3 className="text-bodyStrong text-ink font-semibold">
                 {t('dataIngest.nodeLogsTitle')}{' '}
                 <span className="text-primary font-bold">
-                  {dagNodeDefinitions.find((n) => n.id === activeNodeId)?.titleKey}
+                  {(() => {
+                    const activeTitleKey = dagNodeDefinitions.find((n) => n.id === activeNodeId)?.titleKey;
+                    return activeTitleKey ? t(activeTitleKey) : '';
+                  })()}
                 </span>
               </h3>
             </div>

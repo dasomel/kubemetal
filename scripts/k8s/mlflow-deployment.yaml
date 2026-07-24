@@ -65,6 +65,16 @@ spec:
                   key: secret-access-key
           ports:
             - containerPort: 5000
+          # 실측(kubectl top, 2026-07-24, D14): 정상 가동 3일차 RSS 2235Mi/CPU 17m —
+          # sqlite 백엔드+아티팩트 프록시 특성상 상시 높음. requests=실사용 근접(스케줄링
+          # 안정성), limits=1.4x 헤드룸(런 목록 조회 등 순간 스파이크 대응). kagent A2A
+          # 진단(k8s-agent)은 requests/limits 미설정만 정확히 짚었고 kubectl top 툴
+          # 부재로 구체값은 못 냈다 — 사람이 재실측해 아래 값 확정(docs/08 참고).
+          resources:
+            requests:
+              memory: 2048Mi
+            limits:
+              memory: 3072Mi
           volumeMounts:
             - name: mlflow-data
               mountPath: /tmp

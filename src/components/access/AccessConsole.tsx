@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { Archive, Database, HardDrive, Rocket, ArrowUpRight, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { Archive, Database, HardDrive, Rocket, ArrowUpRight, Eye, EyeOff, RefreshCw, Bot } from 'lucide-react';
 import { useServiceAccess } from '../../hooks/useServiceAccess';
 import type { ServiceAccess, CredentialItem } from '../../types/ipc';
 
@@ -13,6 +13,7 @@ const SERVICE_ICON: Record<string, React.ElementType> = {
   'SeaweedFS S3 API': Database,
   'SeaweedFS Filer UI': HardDrive,
   'Model Serving': Rocket,
+  'kagent UI': Bot,
 };
 
 const MASK = '••••••••••';

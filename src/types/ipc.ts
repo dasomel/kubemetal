@@ -12,12 +12,54 @@ export interface SystemMetrics {
   gpu_memory_used_gb?: number;
 }
 
+export interface HardwareSpec {
+  brand_name: string;
+  cpu_cores: number;
+  total_memory_gb: number;
+  /** system_profiler 파싱 실패 시 null — 값을 추정해 채우지 않는다. */
+  gpu_cores: number | null;
+}
+
 export interface ClusterStatus {
   is_running: boolean;
   kubernetes_active: boolean;
   mlflow_ready: boolean;
   seaweedfs_ready: boolean;
   artifact_store_wired: boolean;
+}
+
+export interface KagentDiagnosticReport {
+  target_context: string;
+  kagent_ready: boolean;
+  pod_issues_count: number;
+  recent_diagnosis: string;
+  recommended_action: string;
+  active_agents: string[];
+  available_agents: string[];
+}
+
+export interface AirgapAssetItem {
+  category: string;
+  name: string;
+  version: string;
+  file_name: string;
+  exists: boolean;
+  size_mb: number;
+}
+
+export interface AirgapStatusReport {
+  airgap_dir: string;
+  total_assets_count: number;
+  downloaded_count: number;
+  total_size_mb: number;
+  assets: AirgapAssetItem[];
+}
+
+export interface AirgapLatestVersionReport {
+  name: string;
+  current_version: string;
+  latest_version: string;
+  has_update: boolean;
 }
 
 export interface FineTuneConfig {

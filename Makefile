@@ -4,12 +4,14 @@
 # the VM size is auto-derived from detected RAM — the app remains canonical.
 
 CARGO_MANIFEST := src-tauri/Cargo.toml
-KUBECTL := kubectl --context colima -n default
+KUBECTL_CTX := kubectl --context colima
+KUBECTL := $(KUBECTL_CTX) -n default
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev build bin app install-app check test lint fmt verify clean-light \
-        cluster-up cluster-down provision forward forward-stop status clean
+.PHONY: help install dev build bin app install-app check test test-e2e lint fmt verify clean-light \
+        cluster-up cluster-down provision provision-all kagent-up forward forward-stop status \
+        index-code analyze-code serve-codegraph clean
 
 help: ## 타깃 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -44,6 +46,9 @@ check: ## Rust 타입/컴파일 체크
 test: ## Rust 단위 테스트 (경로 방어·가드레일 포함)
 	cargo test --manifest-path $(CARGO_MANIFEST) --lib
 
+test-e2e: ## 종합 E2E 자율 피드백 검증 스위트 실행 (합성데이터→파인튜닝→kagent진단→코딩패치)
+	./scripts/e2e/run_full_e2e_verification.sh
+
 lint: ## clippy(-D warnings) + tsc + DESIGN.md 토큰 린트
 	cargo clippy --manifest-path $(CARGO_MANIFEST) --all-targets -- -D warnings
 	npx tsc --noEmit
@@ -61,24 +66,48 @@ cluster-up: ## Colima K3s 시작 (vz/virtiofs, 6CPU/12GB — 64GB 호스트 D4 �
 cluster-down: ## Colima 정지
 	colima stop
 
-provision: ## MLOps 스택 매니페스트 적용 (mlflow/seaweedfs/bridge/secret)
+provision: ## MLOps 스택 매니페스트 적용 (mlflow/seaweedfs/bridge/prefect/secret)
 	$(KUBECTL) apply -f scripts/k8s/
 
-forward: ## 포트포워딩 시작 (5001 MLflow / 8333 S3 / 8888 Filer, nohup 상주)
+kagent-up: ## kagent 0.9.12 경량화 설치 (kagent-values.yaml 적용)
+	$(KUBECTL_CTX) create namespace kagent --dry-run=client -o yaml | $(KUBECTL_CTX) apply -f -
+	helm upgrade --install kagent oci://ghcr.io/kagent-dev/kagent/helm/kagent \
+	  --version 0.9.12 -n kagent -f scripts/k8s/kagent-values.yaml --kube-context colima --reuse-values
+
+provision-all: provision kagent-up ## MLOps 스택 + kagent 종합 환경 한 번에 프로비저닝
+
+# kagent UI는 8090 — 8080은 D1에서 모델 서빙(mlx_lm.server)이 선점하는 포트다.
+forward: ## 포트포워딩 시작 (5001 MLflow / 8333 S3 / 8888 Filer / 8090 kagent UI)
 	nohup $(KUBECTL) port-forward svc/mlflow 5001:5000 >/dev/null 2>&1 &
 	nohup $(KUBECTL) port-forward svc/seaweedfs 8333:8333 >/dev/null 2>&1 &
 	nohup $(KUBECTL) port-forward svc/seaweedfs 8888:8888 >/dev/null 2>&1 &
-	@sleep 2; for p in 5001 8333 8888; do \
+	nohup $(KUBECTL_CTX) -n kagent port-forward svc/kagent-ui 8090:8080 >/dev/null 2>&1 &
+	@sleep 2; for p in 5001 8333 8888 8090; do \
 	  curl -s -o /dev/null -m 3 -w "localhost:$$p -> HTTP %{http_code}\n" http://localhost:$$p/ || true; \
 	done
 
-forward-stop: ## 포트포워딩 프로세스 종료 (mlflow/seaweedfs 대상만, 인자 순서 무관)
+forward-stop: ## 포트포워딩 프로세스 종료 (mlflow/seaweedfs/kagent 대상)
 	-pkill -f "port-forward.*svc/mlflow"
 	-pkill -f "port-forward.*svc/seaweedfs"
+	-pkill -f "port-forward.*svc/kagent-ui"
 
 status: ## 클러스터·파드 상태 요약
 	-colima status --json
 	-$(KUBECTL) get pods
+
+# CodeGraph는 선택 도구다(docs/18). 미설치 환경에서 알 수 없는 오류로 죽지 않도록 먼저 안내한다.
+index-code: ## CodeGraph 코드베이스 심볼 인덱싱 및 지식 그래프 갱신
+	@command -v codegraph >/dev/null 2>&1 || { echo "codegraph CLI가 없습니다 — docs/18-codegraph-graphify-analysis.md 설치 절차 참고"; exit 1; }
+	codegraph init . || codegraph sync .
+
+analyze-code: index-code ## CodeGraph 상태 및 심볼 영향도 리포트 출력
+	codegraph status
+	@echo "=== Top Symbol Impact Analysis ==="
+	codegraph impact "get_cluster_status" || true
+
+serve-codegraph: ## AI 에이전트용 CodeGraph MCP 서버 시작
+	@command -v codegraph >/dev/null 2>&1 || { echo "codegraph CLI가 없습니다 — docs/18-codegraph-graphify-analysis.md 설치 절차 참고"; exit 1; }
+	codegraph serve
 
 clean-light: ## 최소 캐시 정리 — 최신 반영 보장 + 의존성 캐시 유지 (기본 빌드 선행)
 	# 프론트 산출물은 항상 새로 (vite build는 수 초).

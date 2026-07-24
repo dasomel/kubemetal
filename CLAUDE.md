@@ -30,8 +30,12 @@ Changing a D1–D12 decision requires updating all affected docs in the same tas
 
 - **K8s never runs compute** — MLX/Metal work is host processes spawned by the Rust backend.
 - **Ports (D1)**: MLflow host-forward **5001** (AirPlay owns 5000), SeaweedFS S3 8333,
-  Filer UI 8888, Prefect 4200, model serving 8080 (serving URLs always `127.0.0.1`,
-  never `localhost`). Object storage is SeaweedFS; orchestration is Prefect 3 (D19).
+  Filer UI 8888, Prefect 4200, model serving 8080, **kagent UI 8090** (never 8080 —
+  serving owns it). All local URLs use `127.0.0.1`, never `localhost`. Object storage is
+  SeaweedFS; orchestration is Prefect 3 (D19).
+- **Never fabricate state (D22–D24)**: when a probe fails, surface the failure — no
+  hardcoded device specs, invented kubeconfig contexts, canned log lines, assumed pod
+  readiness, or scripts that print success they did not verify.
 - **Metrics (D2, amended)**: sysinfo RAM/CPU + sudo-free GPU via `ioreg -c IOAccelerator`
   (through `external_command`). `powermetrics`/sudo/root paths remain forbidden without
   a privileged helper.
@@ -92,6 +96,7 @@ against real colima (`kubectl --context colima get pods -n default`).
 
 | Date | Change |
 |------|--------|
+| 2026-07-25 | Review of the uncommitted Phase 5b work (kagent Ops / Air-Gap / sidebar): removed fabricated diagnostics, hardware, dock logs and e2e "success" output; `get_hardware_spec` made non-blocking + PATH-safe; kagent UI moved 8080→8090 (D1 amended); D22–D24 added; new IPC commands documented in `docs/02` §4.1 |
 | 2026-07-24 | Audit of 20 takeover-session commits (Phase 4b~5a): fake DAG wiring, clippy/design/docs gates skipped, ioreg PATH regression, SSRF gap — fixes + D2 amended (sudo-free ioreg GPU), 3 process lessons logged |
 | 2026-07-20 | Slimmed guide: Mistakes Log → `docs/mistakes-log.md`, harness detail → `.claude/rules/harness.md` (user directive: keep CLAUDE.md small) |
 | 2026-07-20 | Design source → root `DESIGN.md` (Google standard, lint gate); visual reset to graphite "precision instrument"; endpoint links must use opener plugin |

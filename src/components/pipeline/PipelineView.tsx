@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { ChevronDown, ChevronRight, Server, Database, Cpu, Archive, Rocket, FlaskConical, ArrowUpRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Server, Database, Cpu, Archive, Rocket, FlaskConical, ArrowUpRight, Bot } from 'lucide-react';
 import { useColima } from '../../hooks/useColima';
 import { useModelHub } from '../../hooks/useModelHub';
 import { useMlx } from '../../hooks/useMlx';
@@ -283,7 +283,28 @@ export const PipelineView: React.FC = () => {
           hint: t('pipeline.evalHintOrch'),
         };
 
-  const stages = [infraStage, modelPrepStage, trainingStage, registerStage, servingStage, evalStage];
+  // ⑦ kagent 에이전틱 운영 — 이 뷰는 kagent 파드를 조회하지 않으므로 Ready/버전을
+  // 주장하지 않는다. 실제 상태는 kagent Ops 탭이 kubectl 실측으로 보여준다.
+  const kagentStage: StageInfo = cluster?.is_running
+    ? {
+        key: 'kagent',
+        icon: Bot,
+        title: t('pipeline.kagentTitle'),
+        dot: 'inkFaint',
+        statusText: t('pipeline.kagentCheckTab'),
+        hint: t('pipeline.kagentHint'),
+        link: { label: 'kagent UI', url: 'http://127.0.0.1:8090' },
+      }
+    : {
+        key: 'kagent',
+        icon: Bot,
+        title: t('pipeline.kagentTitle'),
+        dot: 'inkFaint',
+        statusText: t('pipeline.kagentClusterStopped'),
+        hint: t('pipeline.kagentStartHint'),
+      };
+
+  const stages = [infraStage, modelPrepStage, trainingStage, registerStage, servingStage, evalStage, kagentStage];
 
   return (
     <div className="space-y-4">

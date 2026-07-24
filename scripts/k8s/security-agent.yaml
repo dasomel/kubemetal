@@ -1,0 +1,36 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: security-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/name: security-agent
+    app.kubernetes.io/part-of: kagent
+spec:
+  type: Declarative
+  description: Kubernetes Security, Vulnerability, and RBAC Audit Agent powered by Kubescape & Trivy.
+  declarative:
+    runtime: python
+    modelConfig: default-model-config
+    systemMessage: |
+      You are SecurityAssist, a specialized AI agent for Kubernetes security, RBAC auditing, and vulnerability scanning.
+      You analyze Pod Security Standards, Container Vulnerabilities, and RBAC permissions.
+    deployment:
+      resources:
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 50m
+          memory: 128Mi
+    tools:
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: kagent-tool-server
+        toolNames:
+        - k8s_get_resources
+        - k8s_describe_resource
+        - k8s_get_events
