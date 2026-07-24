@@ -6,12 +6,14 @@
 CARGO_MANIFEST := src-tauri/Cargo.toml
 KUBECTL_CTX := kubectl --context colima
 KUBECTL := $(KUBECTL_CTX) -n default
+# vite.config.ts는 strictPort: true — 포트가 막혀 있으면 대체 포트로 넘어가지 않고 즉시 죽는다.
+VITE_PORT := 5173
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev build bin app install-app check test test-e2e lint fmt verify clean-light \
-        cluster-up cluster-down provision provision-all kagent-up forward forward-stop status \
-        index-code analyze-code serve-codegraph clean
+.PHONY: help install dev free-dev-port build bin app install-app check test test-e2e lint fmt verify \
+        clean-light cluster-up cluster-down provision provision-all kagent-up forward forward-stop \
+        status index-code analyze-code serve-codegraph clean
 
 help: ## 타깃 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -19,7 +21,30 @@ help: ## 타깃 목록
 install: ## 프론트엔드 의존성 설치 (pnpm)
 	pnpm install
 
-dev: ## 앱 개발 모드 실행 (vite는 beforeDevCommand로 자동 기동)
+# 앞선 `tauri dev`가 비정상 종료하면 vite만 살아남아 $(VITE_PORT)를 계속 물고 있고,
+# strictPort 때문에 다음 `make dev`가 "Port is already in use"로 즉시 죽는다.
+# 이 프로젝트 디렉터리에서 뜬 프로세스일 때만 정리한다 — 다른 프로젝트의 dev 서버는
+# 죽이지 않고 사실을 알린 뒤 중단한다(포트 소유자를 말없이 죽이지 않는다).
+free-dev-port: ## dev 포트(5173)를 물고 있는 이 프로젝트의 잔여 vite 정리
+	@pid=$$(lsof -ti tcp:$(VITE_PORT) -sTCP:LISTEN 2>/dev/null | head -1); \
+	if [ -z "$$pid" ]; then exit 0; fi; \
+	cwd=$$(lsof -a -p $$pid -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1); \
+	if [ "$$cwd" != "$(CURDIR)" ]; then \
+	  echo "포트 $(VITE_PORT)를 다른 디렉터리의 프로세스가 사용 중입니다 (pid $$pid, cwd=$${cwd:-확인불가})."; \
+	  echo "자동 종료하지 않습니다 — 직접 정리하거나 해당 서버를 멈춘 뒤 다시 실행하세요."; \
+	  exit 1; \
+	fi; \
+	echo "잔여 vite 정리: pid $$pid (cwd=$$cwd)"; \
+	kill $$pid 2>/dev/null || true; \
+	for i in 1 2 3 4 5; do \
+	  lsof -ti tcp:$(VITE_PORT) -sTCP:LISTEN >/dev/null 2>&1 || break; sleep 1; \
+	done; \
+	if lsof -ti tcp:$(VITE_PORT) -sTCP:LISTEN >/dev/null 2>&1; then kill -9 $$pid 2>/dev/null || true; sleep 1; fi; \
+	if lsof -ti tcp:$(VITE_PORT) -sTCP:LISTEN >/dev/null 2>&1; then \
+	  echo "포트 $(VITE_PORT) 해제 실패 — 수동 확인이 필요합니다."; exit 1; \
+	fi
+
+dev: free-dev-port ## 앱 개발 모드 실행 (vite는 beforeDevCommand로 자동 기동)
 	pnpm tauri dev
 
 build: clean-light ## 릴리스 번들(.app/.dmg) 빌드 — 헤드리스 dmg 이슈는 README 참고
