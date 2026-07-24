@@ -114,18 +114,41 @@ elif ! helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent \
 fi
 
 echo "[3/4] 컨테이너 이미지 수집 및 .tar.gz 압축..."
-IMAGES=(
+# 매니페스트가 요구하는 이미지는 **매니페스트에서 직접 뽑는다**. 목록을 여기에 손으로
+# 적어두면 매니페스트가 올라갈 때 조용히 어긋난다 — 실제로 mlflow(v2.10.0 vs v3.14.0)·
+# seaweedfs(3.60 vs 4.40)가 구버전으로 굳어 있었고 prefect·curl은 아예 빠져 있어서,
+# 폐쇄망 설치 시 세 파드가 ImagePullBackOff로 죽는 상태였다(2026-07-25).
+HELM_IMAGES=(
+  # kagent Helm 차트가 배포하는 이미지 — 어떤 매니페스트에도 선언되지 않으므로 여기서 관리한다.
   "cr.kagent.dev/kagent-dev/kagent/controller:0.9.12"
   "cr.kagent.dev/kagent-dev/kagent/app:0.9.12"
   "cr.kagent.dev/kagent-dev/kagent/ui:0.9.12"
   "ghcr.io/kagent-dev/kagent/tools:0.2.1"
   "ghcr.io/kagent-dev/kmcp/controller:0.3.0"
-  "ghcr.io/mlflow/mlflow:v2.10.0"
-  "chrislusf/seaweedfs:3.60"
   "postgres:16-alpine"
+  # 보안 스캐닝 도구(docs/11) — 매니페스트 배포는 아니지만 폐쇄망에서 필요하다.
   "aquasec/trivy:latest"
-  "nginx:alpine"
 )
+
+# bash 3.2(macOS 기본)에는 mapfile이 없다 — while-read로 채운다.
+MANIFEST_IMAGES=()
+while IFS= read -r img; do
+  [ -n "$img" ] && MANIFEST_IMAGES+=("$img")
+done < <(grep -rhoE 'image: *[^ ]+' "${PROJECT_ROOT}"/scripts/k8s/*.yaml | sed 's/image: *//' | sort -u)
+
+if [ ${#MANIFEST_IMAGES[@]} -eq 0 ]; then
+  echo "  !! 매니페스트에서 이미지를 하나도 찾지 못했습니다 — 경로/형식을 확인하세요." >&2
+  FAILED+=("manifest-images-empty")
+fi
+echo "  -> 매니페스트 유래 ${#MANIFEST_IMAGES[@]}개 + Helm/도구 ${#HELM_IMAGES[@]}개"
+
+# 중복 제거(매니페스트와 Helm 목록이 겹칠 수 있다).
+IMAGES=()
+for img in "${HELM_IMAGES[@]}" "${MANIFEST_IMAGES[@]}"; do
+  dup=0
+  for seen in ${IMAGES[@]+"${IMAGES[@]}"}; do [ "$seen" = "$img" ] && dup=1 && break; done
+  [ "$dup" -eq 0 ] && IMAGES+=("$img")
+done
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "  !! docker CLI가 없어 이미지 수집을 건너뜁니다." >&2

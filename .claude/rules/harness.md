@@ -36,17 +36,36 @@ not thorough.
 
 ## Rules
 
-- agy invocations: `agy --model "<model>" -p "<self-contained prompt>" --print-timeout 10m`,
-  worker writes its summary to `.omc/logs/agy-<lane>-result.md`; stdout →
+- agy invocations use **`agyp`**, not raw `agy -p`:
+  `agyp "<self-contained prompt>" --model "<model>" --print-timeout 10m`.
+  `agyp` applies `--add-dir "$PWD"` and `--dangerously-skip-permissions`, and injects this
+  repo's `CLAUDE.md` + unscoped `.claude/rules/*.md` — **including this file** — into the
+  prompt. Raw `agy -p` is for genuinely self-contained lanes only. Details/rationale live
+  in the global `<agy_cli>`; the two that bite hardest here:
+  - **`--add-dir` is mandatory**: agy's cwd is its own state dir, not your shell's, so
+    without it a lane sees zero project files (this is why project-scope `AGENTS.md` /
+    `GEMINI.md` canary-tested invisible — not a missing discovery feature).
+  - **headless auto-deny is silent**: without `--dangerously-skip-permissions` a tool
+    needing permission is denied and the run returns empty, which reads like a lazy model.
+    An empty agy result → suspect this first.
+  Use `agyp --show "<prompt>"` to dry-run what a lane will actually receive.
+  Do **not** combine `agyp` with `-c`/`--conversation` (context would be re-injected each
+  call); use raw `agy -c -p` for follow-ups.
+- Worker writes its summary to `.omc/logs/agy-<lane>-result.md`; stdout →
   `.omc/logs/agy-<lane>.log` (never into main context). Rotate models only on a genuine
   quota/limit signal; on ordinary failure follow the global fallback ladder (other model →
   native subagent → log cause in `.omc/logs/agy-fallback.log` and tell the user).
+  An invalid `--model` value now fails loudly (`Error: invalid model selection`) instead of
+  silently demoting the lane — but still pass it explicitly on every call.
 - Max 5 concurrent workers (agy + subagents combined). Lanes own disjoint paths;
   worktree isolation if scopes must overlap. Never two lanes on the same files —
   on lane silence, one follow-up + timeout, stop before replacing.
 - Every lane prompt cites as binding constraints: `docs/02-requirements.md` §4.1 (IPC
   names), `docs/03-mvp-design.md` §4 (**D1–D24**), and the no-fabrication rule
   (D22–D24: a failed probe surfaces as an error, never as a plausible value).
+  `agyp` injection is a floor, not a substitute — it hands the worker this file and
+  `CLAUDE.md`, but the docs above are **not** injected, so cite the specific decisions the
+  lane must honor inline rather than telling it to "follow the registry".
 - Lane prompts carry the completion contract explicitly — workers do not inherit the
   global `<procedural_completion>` doctrine for free. Each prompt states: goal, prior
   findings, disjoint file scope, what NOT to touch, the verification command to run,
@@ -65,7 +84,7 @@ not thorough.
 - Debugging: `trace`/`tracer` for cross-module root-cause; `debugger` for build errors.
 - Docs: `deepinit` at phase boundaries (hierarchical AGENTS.md), not per-commit.
 - agy runtime option: `omc-teams` (tmux panes) when a lane needs live monitoring;
-  detached `agy -p` + log files is the default.
+  detached `agyp` + log files is the default.
 - Autonomous modes (`autopilot`/`ralph`/`ultrawork`): keyword-triggered only.
 - Knowledge: defects → `docs/mistakes-log.md` (canonical); broader learnings → wiki /
   project-memory.

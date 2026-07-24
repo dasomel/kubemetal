@@ -482,34 +482,102 @@ pub struct AirgapStatusReport {
     pub assets: Vec<AirgapAssetItem>,
 }
 
+/// 매니페스트에 선언되지 않는 자산 — Helm 차트가 배포하는 이미지, 바이너리, 차트 자체.
+/// 형식: (category, 표시 이름, 버전, 번들 내 상대경로)
+const STATIC_AIRGAP_TARGETS: [(&str, &str, &str, &str); 9] = [
+    ("Binary", "K3s Kubernetes Engine", "v1.28.2 (arm64)", "binaries/k3s"),
+    ("Binary", "Kubescape Security CLI", "v3.0.0", "binaries/kubescape"),
+    ("Helm Chart", "kagent Helm Chart", "0.9.12", "charts/kagent-0.9.12.tgz"),
+    ("Container Image", "kagent Controller Image", "0.9.12", "images/cr.kagent.dev_kagent-dev_kagent_controller_0.9.12.tar.gz"),
+    ("Container Image", "kagent Declarative App Image", "0.9.12", "images/cr.kagent.dev_kagent-dev_kagent_app_0.9.12.tar.gz"),
+    ("Container Image", "kagent UI Dashboard Image", "0.9.12", "images/cr.kagent.dev_kagent-dev_kagent_ui_0.9.12.tar.gz"),
+    ("Container Image", "kagent Tools Server Image", "0.2.1", "images/ghcr.io_kagent-dev_kagent_tools_0.2.1.tar.gz"),
+    ("Container Image", "kmcp Controller Image", "0.3.0", "images/ghcr.io_kagent-dev_kmcp_controller_0.3.0.tar.gz"),
+    ("Container Image", "Trivy Vulnerability Scanner", "latest", "images/aquasec_trivy_latest.tar.gz"),
+];
+
+/// `docker save`가 만든 파일명 규칙 — 다운로더의 `tr '/:' '_'`와 동일해야 한다.
+fn image_archive_name(image: &str) -> String {
+    let safe: String = image
+        .chars()
+        .map(|c| if c == '/' || c == ':' { '_' } else { c })
+        .collect();
+    format!("images/{safe}.tar.gz")
+}
+
+/// K8s 매니페스트의 `image:` 라인에서 (이미지 전체, 태그)를 뽑는다. 번들에 무엇이 있어야
+/// 하는지의 **단일 출처는 매니페스트**다 — Rust와 셸에 목록을 따로 적어두면 매니페스트가
+/// 올라갈 때 조용히 어긋난다(실측 2026-07-25: mlflow/seaweedfs가 구버전으로 굳고
+/// prefect/curl은 누락돼 폐쇄망 설치가 ImagePullBackOff로 깨지는 상태였다).
+fn images_from_manifests(manifest_dir: &std::path::Path) -> Vec<String> {
+    let mut images = Vec::new();
+    let Ok(entries) = std::fs::read_dir(manifest_dir) else {
+        return images;
+    };
+    let mut files: Vec<_> = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("yaml"))
+        .collect();
+    files.sort();
+
+    for path in files {
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for line in text.lines() {
+            let trimmed = line.trim_start();
+            // 주석과 `imagePullPolicy:` 같은 유사 키를 배제하기 위해 정확히 `image:`만 본다.
+            if trimmed.starts_with('#') {
+                continue;
+            }
+            if let Some(rest) = trimmed.strip_prefix("image:") {
+                let image = rest.trim().trim_matches('"').trim_matches('\'');
+                if !image.is_empty() && !images.iter().any(|i| i == image) {
+                    images.push(image.to_string());
+                }
+            }
+        }
+    }
+    images
+}
+
 #[tauri::command]
-pub async fn get_airgap_status() -> Result<AirgapStatusReport, String> {
+pub async fn get_airgap_status(app: tauri::AppHandle) -> Result<AirgapStatusReport, String> {
     let home_str = std::env::var("HOME").map_err(|_| "HOME 환경변수를 찾을 수 없습니다.".to_string())?;
     let airgap_dir = std::path::PathBuf::from(home_str).join(".kubemetal").join("airgap");
 
-    let targets = vec![
-        ("Binary", "K3s Kubernetes Engine", "v1.28.2", "binaries/k3s"),
-        ("Binary", "Kubescape Security CLI", "v3.0.0", "binaries/kubescape"),
-        ("Helm Chart", "kagent Helm Chart", "0.9.12", "charts/kagent-0.9.12.tgz"),
-        ("Container Image", "kagent Controller Image", "0.9.12", "images/cr.kagent.dev_kagent-dev_kagent_controller_0.9.12.tar.gz"),
-        ("Container Image", "kagent Declarative App Image", "0.9.12", "images/cr.kagent.dev_kagent-dev_kagent_app_0.9.12.tar.gz"),
-        ("Container Image", "kagent UI Dashboard Image", "0.9.12", "images/cr.kagent.dev_kagent-dev_kagent_ui_0.9.12.tar.gz"),
-        ("Container Image", "kagent Tools Server Image", "0.2.1", "images/ghcr.io_kagent-dev_kagent_tools_0.2.1.tar.gz"),
-        ("Container Image", "kmcp Controller Image", "0.3.0", "images/ghcr.io_kagent-dev_kmcp_controller_0.3.0.tar.gz"),
-        ("Container Image", "MLflow Server Image", "v2.10.0", "images/ghcr.io_mlflow_mlflow_v2.10.0.tar.gz"),
-        ("Container Image", "SeaweedFS Storage Image", "3.60", "images/chrislusf_seaweedfs_3.60.tar.gz"),
-        ("Container Image", "PostgreSQL Database Image", "16-alpine", "images/postgres_16-alpine.tar.gz"),
-        ("Container Image", "Trivy Vulnerability Scanner", "latest", "images/aquasec_trivy_latest.tar.gz"),
-        ("Container Image", "Nginx Test Image", "alpine", "images/nginx_alpine.tar.gz"),
-    ];
+    let mut targets: Vec<(String, String, String, String)> = STATIC_AIRGAP_TARGETS
+        .iter()
+        .map(|(c, n, v, p)| (c.to_string(), n.to_string(), v.to_string(), p.to_string()))
+        .collect();
+
+    // 매니페스트 유래 이미지를 덧붙인다. 번들에 동봉된 매니페스트를 먼저 보고(설치 대상과
+    // 정확히 일치), 없으면 앱에 동봉된 리소스를 본다.
+    let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
+    let bundled_manifests = airgap_dir.join("manifests");
+    let manifest_dir = if bundled_manifests.is_dir() {
+        bundled_manifests
+    } else {
+        resolve_bundled_resource(&resource_dir, "scripts/k8s")
+    };
+
+    for image in images_from_manifests(&manifest_dir) {
+        let version = image.rsplit(':').next().unwrap_or("latest").to_string();
+        let name = image.rsplit('/').next().unwrap_or(&image).to_string();
+        let rel_path = image_archive_name(&image);
+        if targets.iter().any(|(_, _, _, p)| *p == rel_path) {
+            continue;
+        }
+        targets.push(("Container Image".into(), name, version, rel_path));
+    }
 
     let mut assets = Vec::new();
     let mut downloaded_count = 0;
     let mut total_size_mb = 0.0;
 
-    for (cat, name, ver, rel_path) in targets {
+    for (cat, name, ver, rel_path) in &targets {
         let full_path = airgap_dir.join(rel_path);
-        // .tar.gz 우선 확인, 없으면 .tar 가념 확인
+        // .tar.gz 우선 확인, 없으면 비압축 .tar 폴백 확인
         let target_file = if full_path.exists() {
             Some(full_path)
         } else {
@@ -539,10 +607,10 @@ pub async fn get_airgap_status() -> Result<AirgapStatusReport, String> {
         };
 
         assets.push(AirgapAssetItem {
-            category: cat.into(),
-            name: name.into(),
-            version: ver.into(),
-            file_name: rel_path.into(),
+            category: cat.clone(),
+            name: name.clone(),
+            version: ver.clone(),
+            file_name: rel_path.clone(),
             exists,
             size_mb,
             size_bytes,
@@ -697,4 +765,55 @@ pub async fn check_latest_airgap_versions() -> Result<Vec<AirgapLatestVersionRep
             has_update: ks_up,
         },
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repo_k8s_dir() -> std::path::PathBuf {
+        // 테스트 cwd는 src-tauri/ — 매니페스트는 리포 루트 아래에 있다.
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("리포 루트")
+            .join("scripts/k8s")
+    }
+
+    #[test]
+    fn image_archive_name_matches_downloader_convention() {
+        // 다운로더의 `echo "$img" | tr '/:' '_'`와 동일해야 한다.
+        assert_eq!(
+            image_archive_name("ghcr.io/mlflow/mlflow:v3.14.0"),
+            "images/ghcr.io_mlflow_mlflow_v3.14.0.tar.gz"
+        );
+        assert_eq!(image_archive_name("nginx:alpine"), "images/nginx_alpine.tar.gz");
+    }
+
+    #[test]
+    fn images_from_manifests_reads_real_manifests() {
+        let images = images_from_manifests(&repo_k8s_dir());
+        assert!(
+            !images.is_empty(),
+            "scripts/k8s에서 이미지를 하나도 못 읽었다 — 파싱이 깨졌다"
+        );
+        // 태그 없는 항목은 폐쇄망에서 latest를 끌어오므로 있으면 안 된다.
+        for image in &images {
+            assert!(
+                image.contains(':'),
+                "{image}: 태그가 없다 — 폐쇄망에서 재현 불가"
+            );
+        }
+    }
+
+    /// 이 테스트가 깨지면 `imagePullPolicy` 같은 유사 키를 이미지로 잘못 읽고 있다는 뜻이다.
+    #[test]
+    fn images_from_manifests_ignores_pull_policy_lines() {
+        let images = images_from_manifests(&repo_k8s_dir());
+        for image in &images {
+            assert!(
+                !image.contains("Always") && !image.contains("IfNotPresent"),
+                "{image}: imagePullPolicy 값을 이미지로 읽었다"
+            );
+        }
+    }
 }
