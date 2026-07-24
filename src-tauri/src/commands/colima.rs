@@ -461,7 +461,17 @@ pub struct AirgapAssetItem {
     pub file_name: String,
     pub exists: bool,
     pub size_mb: f64,
+    /// 손상 파일은 MB로 반올림하면 실제 크기가 0으로 뭉개진다 — 정확한 바이트를 함께 준다.
+    pub size_bytes: u64,
+    /// 파일은 있는데 유효한 산출물로 보기엔 너무 작은 경우. 실기기에서 발견(2026-07-25):
+    /// 구버전 다운로더의 `curl ... || true`가 남긴 9바이트 `Not Found` 본문이
+    /// `binaries/kubescape`로 저장돼 UI가 "보유 (0 MB)"로 보고하고 있었다.
+    pub corrupt: bool,
 }
+
+/// 이보다 작은 파일은 바이너리·차트(.tgz)·이미지 아카이브(.tar.gz) 어느 쪽으로도 유효할 수
+/// 없다. 자산별 실제 크기를 추정하는 대신, 어떤 산출물에도 적용되는 하한만 둔다.
+const MIN_VALID_ASSET_BYTES: u64 = 1024;
 
 #[derive(Debug, Serialize)]
 pub struct AirgapStatusReport {
@@ -511,15 +521,21 @@ pub async fn get_airgap_status() -> Result<AirgapStatusReport, String> {
             }
         };
 
-        let (exists, size_mb) = if let Some(p) = target_file {
-            let metadata = std::fs::metadata(&p).ok();
-            let bytes = metadata.map(|m| m.len()).unwrap_or(0);
-            let mb = (bytes as f64) / 1024.0 / 1024.0;
-            downloaded_count += 1;
-            total_size_mb += mb;
-            (true, (mb * 100.0).round() / 100.0)
-        } else {
-            (false, 0.0)
+        // 파일 존재만으로 "보유"로 세지 않는다 — 크기 하한을 못 넘기면 손상으로 분류하고
+        // 보유 수·총 용량에서도 제외한다(부분 수신 파일을 완료로 보고하지 않기 위함).
+        let (exists, corrupt, size_mb, size_bytes) = match target_file {
+            Some(p) => {
+                let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+                let mb = (bytes as f64) / 1024.0 / 1024.0;
+                if bytes >= MIN_VALID_ASSET_BYTES {
+                    downloaded_count += 1;
+                    total_size_mb += mb;
+                    (true, false, (mb * 100.0).round() / 100.0, bytes)
+                } else {
+                    (false, true, (mb * 100.0).round() / 100.0, bytes)
+                }
+            }
+            None => (false, false, 0.0, 0),
         };
 
         assets.push(AirgapAssetItem {
@@ -529,6 +545,8 @@ pub async fn get_airgap_status() -> Result<AirgapStatusReport, String> {
             file_name: rel_path.into(),
             exists,
             size_mb,
+            size_bytes,
+            corrupt,
         });
     }
 

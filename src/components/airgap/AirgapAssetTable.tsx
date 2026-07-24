@@ -56,6 +56,14 @@ export const AirgapAssetTable: React.FC<Props> = ({ assets }) => {
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         {t('airgap.stateHave', { size: formatStorageSize(asset.size_mb) })}
                       </span>
+                    ) : asset.corrupt ? (
+                      <span
+                        title={t('airgap.stateCorruptHint')}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-danger/10 text-danger font-bold text-caption"
+                      >
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        {t('airgap.stateCorrupt', { bytes: asset.size_bytes })}
+                      </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-warning/10 text-warning font-bold text-caption">
                         <AlertCircle className="w-3.5 h-3.5" />

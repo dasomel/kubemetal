@@ -45,6 +45,10 @@ export interface AirgapAssetItem {
   file_name: string;
   exists: boolean;
   size_mb: number;
+  /** 정확한 바이트 크기 — 손상 파일은 MB 반올림 시 0으로 뭉개진다. */
+  size_bytes: number;
+  /** 파일은 있으나 크기 하한(1KiB) 미만 — 부분 수신/에러 응답이 저장된 상태. */
+  corrupt: boolean;
 }
 
 export interface AirgapStatusReport {

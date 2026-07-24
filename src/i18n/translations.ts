@@ -449,6 +449,8 @@ export const translations: Record<Language, Record<string, string>> = {
     'airgap.colFile': '오프라인 파일명',
     'airgap.colState': '보유 상태',
     'airgap.stateHave': '보유 ({size})',
+    'airgap.stateCorrupt': '손상 ({bytes}B)',
+    'airgap.stateCorruptHint': '파일이 있으나 유효 크기 미만입니다 — 다운로드 실패 응답이 저장된 상태이니 다시 받으세요.',
     'airgap.stateMissing': '미보유',
   },
   en: {
@@ -901,6 +903,8 @@ export const translations: Record<Language, Record<string, string>> = {
     'airgap.colFile': 'Offline file',
     'airgap.colState': 'State',
     'airgap.stateHave': 'Present ({size})',
+    'airgap.stateCorrupt': 'Corrupt ({bytes}B)',
+    'airgap.stateCorruptHint': 'File exists but is below the valid size floor — a failed download response was saved; fetch it again.',
     'airgap.stateMissing': 'Missing',
   },
 };

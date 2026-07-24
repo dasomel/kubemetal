@@ -18,12 +18,27 @@ mkdir -p "${AIRGAP_DIR}/charts" "${AIRGAP_DIR}/images" "${AIRGAP_DIR}/binaries" 
 
 FAILED=()
 
+# get_airgap_status(Rust)의 MIN_VALID_ASSET_BYTES와 같은 하한. `-s`(0바이트 아님)만으로
+# 판정하면 9바이트짜리 "Not Found" 본문 같은 실패 응답을 "이미 보유"로 보고 건너뛴다
+# (실기기에서 binaries/kubescape가 이 상태였다, 2026-07-25).
+MIN_VALID_BYTES=1024
+
+is_valid() {
+  local f="$1"
+  [ -f "$f" ] || return 1
+  [ "$(wc -c < "$f" | tr -d ' ')" -ge "$MIN_VALID_BYTES" ]
+}
+
 fetch_binary() {
   local name="$1" url="$2"
   local dest="${AIRGAP_DIR}/binaries/${name}"
-  if [ -s "$dest" ]; then
+  if is_valid "$dest"; then
     echo "  -> 이미 보유: ${name}"
     return 0
+  fi
+  if [ -f "$dest" ]; then
+    echo "  -> 손상 파일 폐기 후 재수집: ${name} ($(wc -c < "$dest" | tr -d ' ')B)"
+    rm -f "$dest"
   fi
   echo "  -> 다운로드: ${name}"
   # -f: HTTP 에러를 실패로 처리(에러 페이지를 파일로 저장하지 않는다)
@@ -41,7 +56,7 @@ fetch_binary "k3s" "https://github.com/k3s-io/k3s/releases/download/v1.28.2%2Bk3
 fetch_binary "kubescape" "https://github.com/kubescape/kubescape/releases/download/v3.0.0/kubescape-macos-arm64"
 
 echo "[2/4] Helm 차트 오프라인 번들링..."
-if [ -s "${AIRGAP_DIR}/charts/kagent-0.9.12.tgz" ]; then
+if is_valid "${AIRGAP_DIR}/charts/kagent-0.9.12.tgz"; then
   echo "  -> 이미 보유: kagent-0.9.12.tgz"
 elif ! helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent \
        --version 0.9.12 --destination "${AIRGAP_DIR}/charts"; then
@@ -72,16 +87,17 @@ else
     tar_path="${AIRGAP_DIR}/images/${safe_name}.tar"
 
     # 이전 버전이 남긴 비압축 .tar가 있으면 .tar.gz로 전환한다.
-    if [ -s "$tar_path" ] && [ ! -s "$targz_path" ]; then
+    if is_valid "$tar_path" && ! is_valid "$targz_path"; then
       echo "  -> .tar → .tar.gz 전환: $(basename "$tar_path")"
       gzip -f "$tar_path" || FAILED+=("gzip:${safe_name}")
       continue
     fi
 
-    if [ -s "$targz_path" ]; then
+    if is_valid "$targz_path"; then
       echo "  -> 이미 보유: ${safe_name}.tar.gz"
       continue
     fi
+    rm -f "$targz_path"
 
     echo "  -> 수집: $img"
     if ! docker pull "$img"; then

@@ -16,7 +16,7 @@ processes — Metal GPU cannot be passed through to Linux VMs.
 |-------|----------------|
 | Proposal / roadmap | `docs/01-proposal.md` |
 | FR/NFR + IPC command table | `docs/02-requirements.md` (§4.1 = IPC names) |
-| MVP design + **decision registry D1–D12** | `docs/03-mvp-design.md` (§4 registry, §5 verified/unverified assumptions) |
+| MVP design + **decision registry D1–D24** | `docs/03-mvp-design.md` (§4 registry, §5 verified/unverified assumptions) |
 | Architecture overview | `docs/04-architecture.md` |
 | **Mistakes Log** | `docs/mistakes-log.md` — read the section matching your work area BEFORE touching it; add a row per new mistake |
 | Team harness / lanes / OMC / plan-mode | `.claude/rules/harness.md` — load when orchestrating |
@@ -24,7 +24,7 @@ processes — Metal GPU cannot be passed through to Linux VMs.
 | Run instructions | `README.md` |
 | Superseded drafts | `docs/archive/` — never implement from these |
 
-Changing a D1–D12 decision requires updating all affected docs in the same task.
+Changing a D1–D24 decision requires updating all affected docs in the same task.
 
 ## Architecture Invariants
 
@@ -47,8 +47,12 @@ Changing a D1–D12 decision requires updating all affected docs in the same tas
 
 ## Team & UI (summaries — detail in owning files)
 
-- Substantive work runs as lanes (agy-first, max 5 concurrent, disjoint file scopes,
-  authoring ≠ verification). Full rules: `.claude/rules/harness.md`.
+- **Team is the default for substantive work**, not a special mode: the session's top
+  model (Opus 5, or Fable 5 when it drives) orchestrates and reviews; lanes execute
+  (agy-first, max 5 concurrent, disjoint file scopes, authoring ≠ verification).
+  Pass the model **alias** explicitly on every lane (`sonnet` default worker, `opus` only
+  for the final approval / D1–D24 adjudication lane). Full rules + lane table:
+  `.claude/rules/harness.md`.
 - UI: `DESIGN.md` frontmatter is the only token source, mapped 1:1 into
   `tailwind.config.js`; no raw hex / default-palette classes in components;
   `npx @google/design.md lint DESIGN.md` must exit 0 after token changes; UI work is
@@ -96,6 +100,7 @@ against real colima (`kubectl --context colima get pods -n default`).
 
 | Date | Change |
 |------|--------|
+| 2026-07-25 | Harness re-tiered to the current lineup (Opus 5 / Fable 5 orchestrator, `sonnet` default worker, `opus` only on the approval lane, `fable` escalation-only); agy pinned to the 2-model rotation with explicit `--model`; registry references corrected D1–D12 → **D1–D24** |
 | 2026-07-25 | Review of the uncommitted Phase 5b work (kagent Ops / Air-Gap / sidebar): removed fabricated diagnostics, hardware, dock logs and e2e "success" output; `get_hardware_spec` made non-blocking + PATH-safe; kagent UI moved 8080→8090 (D1 amended); D22–D24 added; new IPC commands documented in `docs/02` §4.1 |
 | 2026-07-24 | Audit of 20 takeover-session commits (Phase 4b~5a): fake DAG wiring, clippy/design/docs gates skipped, ioreg PATH regression, SSRF gap — fixes + D2 amended (sudo-free ioreg GPU), 3 process lessons logged |
 | 2026-07-20 | Slimmed guide: Mistakes Log → `docs/mistakes-log.md`, harness detail → `.claude/rules/harness.md` (user directive: keep CLAUDE.md small) |
