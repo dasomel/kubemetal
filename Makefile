@@ -91,13 +91,24 @@ cluster-up: ## Colima K3s 시작 (vz/virtiofs, 6CPU/12GB — 64GB 호스트 D4 �
 cluster-down: ## Colima 정지
 	colima stop
 
+# 앱의 `provision.rs::MANIFESTS`와 **같은 5개, 같은 순서**여야 한다(Secret이 먼저 — D13).
+# 디렉터리 통째 apply는 금지: `scripts/k8s/`에는 default 네임스페이스가 아닌 매니페스트
+# (security-agent.yaml, ns kagent)와 E2E 산출물(e2e-remediated-nginx.yaml)이 함께 있어
+# `-n default`와 충돌하거나 원치 않는 리소스를 배포한다(실측 2026-07-25).
+PROVISION_MANIFESTS := \
+  scripts/k8s/seaweedfs-s3-credentials.yaml \
+  scripts/k8s/mlflow-deployment.yaml \
+  scripts/k8s/seaweedfs-deployment.yaml \
+  scripts/k8s/mac-gpu-bridge.yaml \
+  scripts/k8s/prefect-deployment.yaml
+
 provision: ## MLOps 스택 매니페스트 적용 (mlflow/seaweedfs/bridge/prefect/secret)
-	$(KUBECTL) apply -f scripts/k8s/
+	@for m in $(PROVISION_MANIFESTS); do $(KUBECTL) apply -f $$m || exit 1; done
 
 kagent-up: ## kagent 0.9.12 경량화 설치 (kagent-values.yaml 적용)
 	$(KUBECTL_CTX) create namespace kagent --dry-run=client -o yaml | $(KUBECTL_CTX) apply -f -
 	helm upgrade --install kagent oci://ghcr.io/kagent-dev/kagent/helm/kagent \
-	  --version 0.9.12 -n kagent -f scripts/k8s/kagent-values.yaml --kube-context colima --reuse-values
+	  --version 0.9.12 -n kagent -f scripts/helm/kagent-values.yaml --kube-context colima --reuse-values
 
 provision-all: provision kagent-up ## MLOps 스택 + kagent 종합 환경 한 번에 프로비저닝
 

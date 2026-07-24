@@ -20,6 +20,25 @@ fi
 
 FAILED=()
 
+# 폐쇄망 설치는 되돌리기 어렵다 — 로드를 시작하기 전에 번들이 수집 당시와 같은지 먼저 본다.
+# manifest는 download_airgap_bundle.sh가 생성한다. 없으면 검증을 조용히 건너뛰지 않고
+# 사실을 알린다(구버전 번들일 수 있으므로 중단까지는 하지 않는다).
+MANIFEST="${AIRGAP_DIR}/manifest.sha256"
+echo "[0/3] 번들 무결성 검증..."
+if [ ! -f "$MANIFEST" ]; then
+  echo "  !! manifest.sha256이 없습니다 — 무결성 검증 없이 진행합니다." >&2
+  echo "     (인터넷 연결 환경에서 패키지 다운로드를 다시 실행하면 생성됩니다.)" >&2
+else
+  if ( cd "$AIRGAP_DIR" && shasum -a 256 -c "$(basename "$MANIFEST")" --status ); then
+    echo "  -> $(wc -l < "$MANIFEST" | tr -d ' ')개 파일 해시 일치"
+  else
+    echo "  !! 번들이 수집 당시와 다릅니다 — 손상되었거나 변조되었습니다." >&2
+    ( cd "$AIRGAP_DIR" && shasum -a 256 -c "$(basename "$MANIFEST")" 2>/dev/null | grep -v ': OK$' | head -10 ) >&2
+    echo "     설치를 중단합니다. 번들을 다시 수집하세요." >&2
+    exit 1
+  fi
+fi
+
 echo "[1/3] .tar.gz 컨테이너 이미지 로드..."
 if ! command -v docker >/dev/null 2>&1; then
   echo "  !! docker CLI가 없습니다." >&2

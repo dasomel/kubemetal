@@ -23,39 +23,87 @@ FAILED=()
 # (실기기에서 binaries/kubescape가 이 상태였다, 2026-07-25).
 MIN_VALID_BYTES=1024
 
+# 번들 무결성 목록. 업스트림이 체크섬을 게시하는 자산은 받은 즉시 그것과 대조하고,
+# 우리가 만드는 아카이브(`docker save | gzip`은 바이트 재현성이 없다)는 생성 시점 해시를
+# 여기에 기록해 두어 설치 시 이송 중 손상·변조를 잡는다.
+MANIFEST="${AIRGAP_DIR}/manifest.sha256"
+
 is_valid() {
   local f="$1"
   [ -f "$f" ] || return 1
   [ "$(wc -c < "$f" | tr -d ' ')" -ge "$MIN_VALID_BYTES" ]
 }
 
+sha256_of() { shasum -a 256 "$1" | awk '{print $1}'; }
+
+# 업스트림이 게시한 기대 해시를 가져온다.
+#   bare  : 파일 전체가 sha256 한 줄 (kubescape의 `<asset>.sha256`)
+#   list  : `<sha>  <파일명>` 목록에서 해당 항목 (k3s의 `sha256sum-arm64.txt`)
+fetch_expected_sha() {
+  local kind="$1" url="$2" entry="${3:-}"
+  case "$kind" in
+    bare) curl -fsSL -m 30 "$url" 2>/dev/null | tr -d '[:space:]' ;;
+    list) curl -fsSL -m 30 "$url" 2>/dev/null | awk -v e="$entry" '$2 == e {print $1; exit}' ;;
+  esac
+}
+
+# 업스트림 체크섬이 있으면 반드시 대조한다 — 불일치 파일은 남기지 않고 폐기한다.
+# 기대 해시 조회 자체가 실패하면 검증 없이 통과시키지 않고 실패로 처리한다.
 fetch_binary() {
-  local name="$1" url="$2"
+  local name="$1" url="$2" sha_kind="$3" sha_url="$4" sha_entry="${5:-}"
   local dest="${AIRGAP_DIR}/binaries/${name}"
-  if is_valid "$dest"; then
-    echo "  -> 이미 보유: ${name}"
+
+  local expected
+  expected="$(fetch_expected_sha "$sha_kind" "$sha_url" "$sha_entry")"
+  if [ -z "$expected" ]; then
+    echo "  !! ${name}: 업스트림 체크섬을 가져오지 못했습니다 — 검증 없이 저장하지 않습니다." >&2
+    FAILED+=("checksum-unavailable:${name}")
+    return 0
+  fi
+
+  if is_valid "$dest" && [ "$(sha256_of "$dest")" = "$expected" ]; then
+    echo "  -> 이미 보유(체크섬 일치): ${name}"
     return 0
   fi
   if [ -f "$dest" ]; then
-    echo "  -> 손상 파일 폐기 후 재수집: ${name} ($(wc -c < "$dest" | tr -d ' ')B)"
+    echo "  -> 무효 파일 폐기 후 재수집: ${name} ($(wc -c < "$dest" | tr -d ' ')B)"
     rm -f "$dest"
   fi
+
   echo "  -> 다운로드: ${name}"
   # -f: HTTP 에러를 실패로 처리(에러 페이지를 파일로 저장하지 않는다)
-  if curl -fsSL "$url" -o "${dest}.part"; then
-    mv "${dest}.part" "$dest"
-    chmod +x "$dest"
-  else
+  if ! curl -fsSL "$url" -o "${dest}.part"; then
     rm -f "${dest}.part"
     FAILED+=("binary:${name}")
+    return 0
   fi
+
+  local actual
+  actual="$(sha256_of "${dest}.part")"
+  if [ "$actual" != "$expected" ]; then
+    echo "  !! ${name}: 체크섬 불일치 (기대 ${expected}, 실제 ${actual}) — 폐기합니다." >&2
+    rm -f "${dest}.part"
+    FAILED+=("checksum-mismatch:${name}")
+    return 0
+  fi
+
+  mv "${dest}.part" "$dest"
+  chmod +x "$dest"
+  echo "     체크섬 검증 통과: ${expected}"
 }
 
 echo "[1/4] K3s & Kubescape 바이너리 수집..."
-fetch_binary "k3s" "https://github.com/k3s-io/k3s/releases/download/v1.28.2%2Bk3s1/k3s"
+K3S_BASE="https://github.com/k3s-io/k3s/releases/download/v1.28.2%2Bk3s1"
+# Apple Silicon 전용 프로젝트다 — K3s는 Colima(vz)의 **arm64 리눅스 VM**에서 돈다.
+# 자산 `k3s`는 amd64라 이 VM에서 실행될 수 없다(실기기 확인 2026-07-25: 수집돼 있던
+# 파일이 `ELF 64-bit x86-64`였다). arm64 자산은 `k3s-arm64`이며, 로컬 파일명은
+# get_airgap_status가 기대하는 `binaries/k3s`를 유지한다.
+fetch_binary "k3s" "${K3S_BASE}/k3s-arm64" list "${K3S_BASE}/sha256sum-arm64.txt" "k3s-arm64"
 # 자산명은 `kubescape-arm64-macos-latest` — `kubescape-macos-arm64`는 존재하지 않는 이름이라
 # 404를 돌려주며, 구버전 스크립트는 그 "Not Found" 본문을 바이너리로 저장했다(D23, 2026-07-25).
-fetch_binary "kubescape" "https://github.com/kubescape/kubescape/releases/download/v3.0.0/kubescape-arm64-macos-latest"
+KS_BASE="https://github.com/kubescape/kubescape/releases/download/v3.0.0"
+fetch_binary "kubescape" "${KS_BASE}/kubescape-arm64-macos-latest" \
+  bare "${KS_BASE}/kubescape-arm64-macos-latest.sha256"
 
 echo "[2/4] Helm 차트 오프라인 번들링..."
 if is_valid "${AIRGAP_DIR}/charts/kagent-0.9.12.tgz"; then
@@ -115,11 +163,29 @@ else
   done
 fi
 
-echo "[4/4] K8s 매니페스트 복사..."
+echo "[4/4] K8s 매니페스트 동기화..."
 # CWD가 프로젝트 루트라는 보장이 없다 — 스크립트 위치 기준으로 해석한다.
+# 추가만 하면 소스에서 지워지거나 옮겨진 파일이 번들에 남아 설치 때 되살아난다
+# (kagent-values.yaml을 scripts/helm/으로 옮긴 뒤 실제로 재현됐다) — 매번 비우고 채운다.
+rm -f "${AIRGAP_DIR}/manifests/"*.yaml
 if ! cp "${PROJECT_ROOT}"/scripts/k8s/*.yaml "${AIRGAP_DIR}/manifests/"; then
   FAILED+=("manifests")
 fi
+
+echo "[5/5] 번들 무결성 목록 생성..."
+# 이송(외장 매체 → 폐쇄망) 중 손상·변조를 설치 시점에 잡기 위한 목록.
+# 경로는 AIRGAP_DIR 기준 상대경로여야 `shasum -c`가 그대로 검증할 수 있다.
+# 작성 중인 임시 파일은 **스캔 대상 밖**에 둔다 — AIRGAP_DIR 안에 두면 find가 그것까지
+# 목록에 넣고, 곧 rename으로 사라져 검증이 항상 깨진다(실측으로 확인).
+MANIFEST_TMP="$(mktemp -t kubemetal-airgap-manifest)"
+trap 'rm -f "$MANIFEST_TMP"' EXIT
+(
+  cd "${AIRGAP_DIR}" || exit 1
+  find . -type f ! -name "$(basename "$MANIFEST")" ! -name '*.part' -print0 \
+    | sort -z \
+    | xargs -0 shasum -a 256
+) > "$MANIFEST_TMP" && mv "$MANIFEST_TMP" "$MANIFEST"
+echo "  -> $(wc -l < "$MANIFEST" | tr -d ' ')개 파일 해시 기록: ${MANIFEST}"
 
 echo ""
 if [ ${#FAILED[@]} -eq 0 ]; then
