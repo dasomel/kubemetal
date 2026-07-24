@@ -1,0 +1,17 @@
+# 어떤 K8s 매니페스트도 선언하지 않는 이미지 — 폐쇄망 번들에 필요하지만
+# scripts/k8s/*.yaml에서 파생할 수 없는 것들만 여기서 관리한다.
+# 매니페스트가 선언하는 이미지는 절대 여기 적지 말 것(드리프트의 원인).
+#
+# 이 파일은 download_airgap_bundle.sh(수집)와 verify_offline_images.sh(검증)가
+# 함께 읽는 단일 출처다. 한 줄에 이미지 하나, `#` 주석과 빈 줄 허용.
+
+# kagent 0.9.12 Helm 차트가 배포하는 이미지
+cr.kagent.dev/kagent-dev/kagent/controller:0.9.12
+cr.kagent.dev/kagent-dev/kagent/app:0.9.12
+cr.kagent.dev/kagent-dev/kagent/ui:0.9.12
+ghcr.io/kagent-dev/kagent/tools:0.2.1
+ghcr.io/kagent-dev/kmcp/controller:0.3.0
+postgres:16-alpine
+
+# 보안 스캐닝 도구(docs/11) — 매니페스트 배포는 아니지만 폐쇄망에서 필요하다
+aquasec/trivy:latest

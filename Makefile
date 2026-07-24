@@ -11,9 +11,9 @@ VITE_PORT := 5173
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev free-dev-port build bin app install-app check test test-e2e lint fmt verify \
-        clean-light cluster-up cluster-down provision provision-all kagent-up forward forward-stop \
-        status index-code analyze-code serve-codegraph clean
+.PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap \
+        lint fmt verify clean-light cluster-up cluster-down provision provision-all kagent-up \
+        forward forward-stop status index-code analyze-code serve-codegraph clean
 
 help: ## 타깃 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -73,6 +73,10 @@ test: ## Rust 단위 테스트 (경로 방어·가드레일 포함)
 
 test-e2e: ## 종합 E2E 자율 피드백 검증 스위트 실행 (합성데이터→파인튜닝→kagent진단→코딩패치)
 	./scripts/e2e/run_full_e2e_verification.sh
+
+# 호스트 네트워크를 건드리지 않고 "레지스트리 접근 0" 조건을 kubelet에 강제해 판정한다.
+verify-airgap: ## 폐쇄망 기동 가능성 검증 (imagePullPolicy: Never 프로브)
+	./scripts/airgap/verify_offline_images.sh
 
 lint: ## clippy(-D warnings) + tsc + DESIGN.md 토큰 린트
 	cargo clippy --manifest-path $(CARGO_MANIFEST) --all-targets -- -D warnings

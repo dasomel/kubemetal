@@ -118,17 +118,14 @@ echo "[3/4] 컨테이너 이미지 수집 및 .tar.gz 압축..."
 # 적어두면 매니페스트가 올라갈 때 조용히 어긋난다 — 실제로 mlflow(v2.10.0 vs v3.14.0)·
 # seaweedfs(3.60 vs 4.40)가 구버전으로 굳어 있었고 prefect·curl은 아예 빠져 있어서,
 # 폐쇄망 설치 시 세 파드가 ImagePullBackOff로 죽는 상태였다(2026-07-25).
-HELM_IMAGES=(
-  # kagent Helm 차트가 배포하는 이미지 — 어떤 매니페스트에도 선언되지 않으므로 여기서 관리한다.
-  "cr.kagent.dev/kagent-dev/kagent/controller:0.9.12"
-  "cr.kagent.dev/kagent-dev/kagent/app:0.9.12"
-  "cr.kagent.dev/kagent-dev/kagent/ui:0.9.12"
-  "ghcr.io/kagent-dev/kagent/tools:0.2.1"
-  "ghcr.io/kagent-dev/kmcp/controller:0.3.0"
-  "postgres:16-alpine"
-  # 보안 스캐닝 도구(docs/11) — 매니페스트 배포는 아니지만 폐쇄망에서 필요하다.
-  "aquasec/trivy:latest"
-)
+# 매니페스트가 선언하지 않는 이미지는 verify_offline_images.sh와 공유하는 파일에서 읽는다
+# — 두 스크립트에 각각 적어두면 그 사이에서 또 어긋난다.
+HELM_IMAGES=()
+while IFS= read -r img; do
+  img="${img%%#*}"                       # 줄 끝 주석 제거
+  img="$(echo "$img" | tr -d '[:space:]')"
+  [ -n "$img" ] && HELM_IMAGES+=("$img")
+done < "${SCRIPT_DIR}/images-helm.txt"
 
 # bash 3.2(macOS 기본)에는 mapfile이 없다 — while-read로 채운다.
 MANIFEST_IMAGES=()
