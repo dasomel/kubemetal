@@ -53,7 +53,9 @@ fetch_binary() {
 
 echo "[1/4] K3s & Kubescape 바이너리 수집..."
 fetch_binary "k3s" "https://github.com/k3s-io/k3s/releases/download/v1.28.2%2Bk3s1/k3s"
-fetch_binary "kubescape" "https://github.com/kubescape/kubescape/releases/download/v3.0.0/kubescape-macos-arm64"
+# 자산명은 `kubescape-arm64-macos-latest` — `kubescape-macos-arm64`는 존재하지 않는 이름이라
+# 404를 돌려주며, 구버전 스크립트는 그 "Not Found" 본문을 바이너리로 저장했다(D23, 2026-07-25).
+fetch_binary "kubescape" "https://github.com/kubescape/kubescape/releases/download/v3.0.0/kubescape-arm64-macos-latest"
 
 echo "[2/4] Helm 차트 오프라인 번들링..."
 if is_valid "${AIRGAP_DIR}/charts/kagent-0.9.12.tgz"; then

@@ -2,11 +2,18 @@ use std::path::PathBuf;
 
 /// macOS .app 번들은 로그인 셸의 PATH를 상속하지 않는다.
 /// Homebrew/시스템 설치 경로를 직접 탐색해 실행 파일의 절대경로를 찾는다. (D5)
-const SEARCH_PATHS: [&str; 4] = [
+///
+/// `/bin`·`/sbin`이 포함돼야 한다 — macOS의 `bash`/`sh`는 `/bin`에만 있고 `/usr/bin`에는
+/// 없다. 이 두 경로가 빠져 있어 Air-Gap 스크립트 실행이 "'bash' 실행 파일을 찾을 수
+/// 없습니다"로 실패했다(실기기 재현, 2026-07-25). `augmented_path()`가 자식에게 물려주는
+/// `STANDARD_SYSTEM_PATHS`에는 이미 둘 다 있었으므로, 해석기와 자식 PATH가 어긋나 있었다.
+const SEARCH_PATHS: [&str; 6] = [
     "/opt/homebrew/bin", // Apple Silicon Homebrew
     "/usr/local/bin",    // Intel Homebrew / 수동 설치
     "/usr/bin",
+    "/bin",      // bash, sh 등 기본 셸
     "/usr/sbin", // sysctl 등 (G006 하드웨어 가드레일 — memory pressure 조회)
+    "/sbin",
 ];
 
 pub fn resolve_cli_path(bin: &str) -> Result<PathBuf, String> {
@@ -16,8 +23,11 @@ pub fn resolve_cli_path(bin: &str) -> Result<PathBuf, String> {
             return Ok(candidate);
         }
     }
+    // 탐색 경로를 함께 알려준다 — 시스템 바이너리까지 "Homebrew로 설치하세요"로 안내하면
+    // 원인을 엉뚱한 곳에서 찾게 된다.
     Err(format!(
-        "'{bin}' 실행 파일을 찾을 수 없습니다. Homebrew로 설치되어 있는지 확인하세요."
+        "'{bin}' 실행 파일을 찾을 수 없습니다. 탐색 경로: {}",
+        SEARCH_PATHS.join(", ")
     ))
 }
 
@@ -72,4 +82,39 @@ pub fn resolve_bundled_resource(resource_dir: &std::path::Path, relative: &str) 
         return flattened;
     }
     resource_dir.join(relative)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// macOS의 셸은 `/bin`에만 있다(`/usr/bin/bash`는 존재하지 않는다). Air-Gap 스크립트
+    /// 실행이 이 경로 누락으로 실패했으므로 회귀를 테스트로 고정한다.
+    #[test]
+    fn resolve_cli_path_finds_system_shells() {
+        for bin in ["bash", "sh"] {
+            let path = resolve_cli_path(bin)
+                .unwrap_or_else(|e| panic!("'{bin}' 해석 실패: {e}"));
+            assert!(path.is_absolute(), "{bin}: 절대경로가 아님 ({path:?})");
+            assert!(path.is_file(), "{bin}: 실행 파일이 아님 ({path:?})");
+        }
+    }
+
+    /// 자식에게 물려주는 PATH와 우리가 직접 탐색하는 경로가 어긋나면, 자식은 찾는 바이너리를
+    /// 우리는 못 찾는 상황이 생긴다(이번 회귀의 원인). 표준 시스템 경로는 모두 포함돼야 한다.
+    #[test]
+    fn search_paths_cover_standard_system_paths() {
+        for dir in STANDARD_SYSTEM_PATHS {
+            assert!(
+                SEARCH_PATHS.contains(&dir),
+                "SEARCH_PATHS에 {dir}가 없다 — augmented_path()와 불일치"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_cli_path_reports_searched_dirs_on_failure() {
+        let err = resolve_cli_path("kubemetal-definitely-not-a-real-binary").unwrap_err();
+        assert!(err.contains("/bin"), "탐색 경로 안내가 없다: {err}");
+    }
 }
