@@ -35,11 +35,23 @@ echo "======================================================================"
 # 수집 대상과 **같은 두 출처**를 읽는다(download_airgap_bundle.sh와 동일):
 # 매니페스트의 image: 라인 + 매니페스트가 선언하지 않는 이미지 목록.
 IMAGES=()
+
+# 이미지 문자열은 아래에서 heredoc YAML로 보간된다. 출처는 리포 내 매니페스트와
+# images-helm.txt뿐이지만, 레지스트리 참조에 쓰이는 문자만 통과시켜 YAML 구조를 깨뜨릴
+# 수 있는 입력이 애초에 배열에 들어오지 못하게 한다(오타도 여기서 걸린다).
+IMAGE_RE='^[A-Za-z0-9._/:@-]+$'
+
 add_image() {
   local img="$1"
+  if ! [[ "$img" =~ $IMAGE_RE ]]; then
+    echo "  !! 이미지 참조로 볼 수 없는 값을 건너뜁니다: '${img}'" >&2
+    SKIPPED+=("$img")
+    return 0
+  fi
   for seen in ${IMAGES[@]+"${IMAGES[@]}"}; do [ "$seen" = "$img" ] && return 0; done
   IMAGES+=("$img")
 }
+SKIPPED=()
 
 while IFS= read -r img; do
   [ -n "$img" ] && add_image "$img"
@@ -129,6 +141,7 @@ if [ ${#FAILED[@]} -eq 0 ]; then
   exit 0
 fi
 echo "  RESULT: FAIL — 레지스트리가 필요한 이미지 ${#FAILED[@]}개: ${FAILED[*]}" >&2
-echo "  `make`으로 번들을 다시 수집하고 오프라인 설치를 실행하세요." >&2
+# 안내 문구에 백틱을 쓰지 않는다 — 큰따옴표 안의 백틱은 명령 치환이라 실제로 실행된다.
+echo "  'make provision-all' 후 Air-Gap 탭에서 패키지 다운로드 → 오프라인 설치를 실행하세요." >&2
 echo "======================================================================"
 exit 1
