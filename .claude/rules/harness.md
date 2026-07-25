@@ -5,19 +5,6 @@ Model tiering, agy rotation, and the failure ladder are owned by the global
 `<routing_doctrine>` / `<agy_cli>` (`~/.claude/CLAUDE.md`) — this file pins only the
 **project-specific** lane → scope → worker → model mapping.
 
-## Orchestrator vs workers
-
-- The orchestrator is the session's top model (normally **Opus 5**, **Fable 5** when it
-  drives the session). Its job is planning, D1–D24 adjudication, review, synthesis —
-  **not authoring code**. Writing >20 lines of Rust/TS in main context is a misroute.
-- **Team is the default for substantive work.** Direct orchestrator work only for:
-  `CLAUDE.md`, `.claude/**`, `.omc/**` edits; ≤1-line patches at a known location;
-  single-fact reads; one-off commands (`colima status --json`, `git log -1`).
-- Always pass the model **alias** explicitly (`haiku`/`sonnet`/`opus`/`fable` — never a
-  pinned id like `claude-opus-5`); agy lanes always pass `--model` explicitly.
-- Tie-break is always the lower tier. Escalate one rung only on an **observed** failure,
-  never in anticipation.
-
 ## Lane table
 
 | Lane | Scope (disjoint — do not cross) | Worker | Model |
@@ -25,8 +12,8 @@ Model tiering, agy rotation, and the failure ladder are owned by the global
 | `rust-backend` | `src-tauri/**`, `scripts/**` (k8s manifests, mlx/prefect/ingest/airgap/e2e host scripts), `Cargo.toml`, `tauri.conf.json`, `capabilities/` | agy (primary) | `Gemini 3.6 Flash (High)` → `Claude Opus 4.6 (Thinking)` on quota exhaustion; native fallback `sonnet` |
 | `frontend` | `src/**`, `package.json`, `tsconfig.json`, `vite.config.ts`, `index.html` | agy (primary) | same rotation; native fallback `sonnet` |
 | `ui-design` | `DESIGN.md`, `tailwind.config.js`, component styling | `designer` subagent | `sonnet` |
-| `qa/verify` | `cargo check`/`clippy`, `tsc --noEmit`, DESIGN.md lint, doc↔code sync (D1–D24, IPC names) | `verifier` / `code-reviewer` subagent | `sonnet` (1st pass) |
-| `approve` | final approval pass on high-risk diffs — D1–D24 registry changes, colima lifecycle, guardrails (D11/D16/D17), credential & SSRF paths (D21), K8s↔host bridge (D10) | `critic` / `code-reviewer` subagent | `opus` |
+| `qa/verify` | `cargo check`/`clippy`, `tsc --noEmit`, DESIGN.md lint, doc↔code sync (D1–D25, IPC names) | `verifier` / `code-reviewer` subagent | `sonnet` (1st pass) |
+| `approve` | final approval pass on high-risk diffs — D1–D25 registry changes, colima lifecycle, guardrails (D11/D16/D17), credential & SSRF paths (D21), K8s↔host bridge (D10) | `critic` / `code-reviewer` subagent | `opus` |
 | `escalate` | only after an `opus` lane produced a demonstrably wrong/insufficient result on the hardest reasoning step | subagent | `fable` (rare) |
 
 Re-tiering note: lanes this harness once pinned to `opus` (code/YAML authoring, manifest
@@ -36,61 +23,34 @@ not thorough.
 
 ## Rules
 
-- agy invocations use **`agyp`**, not raw `agy -p`:
-  `agyp "<self-contained prompt>" --model "<model>" --print-timeout 10m`.
-  `agyp` applies `--add-dir "$PWD"` and `--dangerously-skip-permissions`, and injects this
-  repo's `CLAUDE.md` + unscoped `.claude/rules/*.md` — **including this file** — into the
-  prompt. Raw `agy -p` is for genuinely self-contained lanes only. Details/rationale live
-  in the global `<agy_cli>`; the two that bite hardest here:
-  - **`--add-dir` is mandatory**: agy's cwd is its own state dir, not your shell's, so
-    without it a lane sees zero project files (this is why project-scope `AGENTS.md` /
-    `GEMINI.md` canary-tested invisible — not a missing discovery feature).
-  - **headless auto-deny is silent**: without `--dangerously-skip-permissions` a tool
-    needing permission is denied and the run returns empty, which reads like a lazy model.
-    An empty agy result → suspect this first.
-  Use `agyp --show "<prompt>"` to dry-run what a lane will actually receive.
-  Do **not** combine `agyp` with `-c`/`--conversation` (context would be re-injected each
-  call); use raw `agy -c -p` for follow-ups.
-- Worker writes its summary to `.omc/logs/agy-<lane>-result.md`; stdout →
-  `.omc/logs/agy-<lane>.log` (never into main context). Rotate models only on a genuine
-  quota/limit signal; on ordinary failure follow the global fallback ladder (other model →
-  native subagent → log cause in `.omc/logs/agy-fallback.log` and tell the user).
-  An invalid `--model` value now fails loudly (`Error: invalid model selection`) instead of
-  silently demoting the lane — but still pass it explicitly on every call.
-- Max 5 concurrent workers (agy + subagents combined). Lanes own disjoint paths;
-  worktree isolation if scopes must overlap. Never two lanes on the same files —
-  on lane silence, one follow-up + timeout, stop before replacing.
-- Every lane prompt cites as binding constraints: `docs/02-requirements.md` §4.1 (IPC
-  names), `docs/03-mvp-design.md` §4 (**D1–D24**), and the no-fabrication rule
-  (D22–D24: a failed probe surfaces as an error, never as a plausible value).
-  `agyp` injection is a floor, not a substitute — it hands the worker this file and
-  `CLAUDE.md`, but the docs above are **not** injected, so cite the specific decisions the
-  lane must honor inline rather than telling it to "follow the registry".
-- Lane prompts carry the completion contract explicitly — workers do not inherit the
-  global `<procedural_completion>` doctrine for free. Each prompt states: goal, prior
-  findings, disjoint file scope, what NOT to touch, the verification command to run,
-  and "report under 200 words + final file paths:line numbers, no diff dumps".
-- Authoring and verification are ALWAYS separate lanes — a lane's self-reported success
-  is not evidence; the qa lane (or orchestrator) re-runs the checks. Never self-approve.
-- `ultrathink` / extended thinking is for architecture and root-cause only (D-registry
-  changes, cross-module regressions) — never for mechanical edits.
+Dispatch mechanics (`agyp` vs raw `agy`, `--add-dir`, permission flags, rotation, failure
+ladder) belong to the global `<agy_cli>` — don't restate them here. What this repo adds:
 
-## OMC plugin utilization
+- **`agyp` injection reaches `CLAUDE.md` + this file, and nothing else.** `docs/02` §4.1
+  (IPC names) and `docs/03` §4 (D1–D25) are *not* injected, so a prompt saying "follow the
+  registry" gives the worker nothing. Quote the specific decisions the lane must honor.
+- **Lanes own disjoint paths** (table above), max 5 concurrent. If scopes must overlap, use
+  worktree isolation. On lane silence: one follow-up with a timeout, and stop it before
+  starting a replacement — two lanes on one file has bitten this repo twice.
+- Worker summary → `.omc/logs/agy-<lane>-result.md`, stdout → `.omc/logs/agy-<lane>.log`.
+  Keep raw output out of main context.
+- **Workers inherit no doctrine.** Whatever the lane must satisfy — goal, file scope, what
+  not to touch, the verification command, report shape — says so in the prompt.
+- **Authoring never approves itself.** The qa lane re-runs the checks; a lane's own
+  "done" is not evidence.
 
-- Default lanes: `executor` (implementation, `sonnet`), `verifier`/`code-reviewer`
-  (qa 1st pass, `sonnet`), `designer` (UI, `sonnet`), `critic` (D-registry / architecture
-  review and final approval, `opus`).
-- QA cycling: `ultraqa` for test→verify→fix loops; `verify` gates "done" claims.
-- Debugging: `trace`/`tracer` for cross-module root-cause; `debugger` for build errors.
-- Docs: `deepinit` at phase boundaries (hierarchical AGENTS.md), not per-commit.
-- agy runtime option: `omc-teams` (tmux panes) when a lane needs live monitoring;
-  detached `agyp` + log files is the default.
-- Autonomous modes (`autopilot`/`ralph`/`ultrawork`): keyword-triggered only.
-- Knowledge: defects → `docs/mistakes-log.md` (canonical); broader learnings → wiki /
-  project-memory.
+## OMC agents for these lanes
+
+`executor` implements, `verifier`/`code-reviewer` take the qa pass, `designer` owns UI,
+`critic` takes the approval lane. Detached `agyp` + log files is the default runtime;
+`omc-teams` (tmux panes) only when a lane needs live watching. Autonomous modes
+(`autopilot`/`ralph`/`ultrawork`) are keyword-triggered, never assumed.
+
+Defects land in `docs/mistakes-log.md` — that file is the reason this repo stopped
+repeating the same class of mistake, so a fix without a row there is unfinished.
 
 ## Plan Mode
 
-Use for: new IPC commands or FR-level features, D1–D24 registry changes, Colima
-lifecycle logic, K8s↔host bridge, guardrails. Skip for: doc typos, styling,
-single-file refactors with tests.
+Worth it for new IPC commands, FR-level features, D-registry changes, colima lifecycle,
+the K8s↔host bridge and guardrails — anything where the wrong shape is expensive to undo.
+Skip it for typos, styling, and single-file refactors that tests already cover.

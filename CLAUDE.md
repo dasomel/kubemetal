@@ -16,7 +16,7 @@ processes — Metal GPU cannot be passed through to Linux VMs.
 |-------|----------------|
 | Proposal / roadmap | `docs/01-proposal.md` |
 | FR/NFR + IPC command table | `docs/02-requirements.md` (§4.1 = IPC names) |
-| MVP design + **decision registry D1–D24** | `docs/03-mvp-design.md` (§4 registry, §5 verified/unverified assumptions) |
+| MVP design + **decision registry D1–D25** | `docs/03-mvp-design.md` (§4 registry, §5 verified/unverified assumptions) |
 | Architecture overview | `docs/04-architecture.md` |
 | **Mistakes Log** | `docs/mistakes-log.md` — read the section matching your work area BEFORE touching it; add a row per new mistake |
 | Team harness / lanes / OMC / plan-mode | `.claude/rules/harness.md` — load when orchestrating |
@@ -24,7 +24,7 @@ processes — Metal GPU cannot be passed through to Linux VMs.
 | Run instructions | `README.md` |
 | Superseded drafts | `docs/archive/` — never implement from these |
 
-Changing a D1–D24 decision requires updating all affected docs in the same task.
+Changing a D1–D25 decision requires updating all affected docs in the same task.
 
 ## Architecture Invariants
 
@@ -33,9 +33,6 @@ Changing a D1–D24 decision requires updating all affected docs in the same tas
   Filer UI 8888, Prefect 4200, model serving 8080, **kagent UI 8090** (never 8080 —
   serving owns it). All local URLs use `127.0.0.1`, never `localhost`. Object storage is
   SeaweedFS; orchestration is Prefect 3 (D19).
-- **Never fabricate state (D22–D24)**: when a probe fails, surface the failure — no
-  hardcoded device specs, invented kubeconfig contexts, canned log lines, assumed pod
-  readiness, or scripts that print success they did not verify.
 - **Metrics (D2, amended)**: sysinfo RAM/CPU + sudo-free GPU via `ioreg -c IOAccelerator`
   (through `external_command`). `powermetrics`/sudo/root paths remain forbidden without
   a privileged helper.
@@ -45,66 +42,48 @@ Changing a D1–D24 decision requires updating all affected docs in the same tas
   `host.lima.internal`, no `ports` field. Verified on-device 2026-07-20
   (CoreDNS → 192.168.5.2); never `host.docker.internal`.
 
-## Team & UI (summaries — detail in owning files)
+## Team & UI
 
-- **Team is the default for substantive work**, not a special mode: the session's top
-  model (Opus 5, or Fable 5 when it drives) orchestrates and reviews; lanes execute
-  (agy-first, max 5 concurrent, disjoint file scopes, authoring ≠ verification).
-  Pass the model **alias** explicitly on every lane (`sonnet` default worker, `opus` only
-  for the final approval / D1–D24 adjudication lane). Full rules + lane table:
+- Substantive work runs as lanes, not solo. Lane table, scopes and worker/model mapping:
   `.claude/rules/harness.md`.
-- UI: `DESIGN.md` frontmatter is the only token source, mapped 1:1 into
-  `tailwind.config.js`; no raw hex / default-palette classes in components;
-  `npx @google/design.md lint DESIGN.md` must exit 0 after token changes; UI work is
-  done only after visual confirmation in the running app or vite preview.
+- `DESIGN.md` frontmatter is the only token source, mapped 1:1 into `tailwind.config.js`.
+  Components use tokens — a raw hex or a default-palette class is a defect the lint gate
+  will not always catch for you.
 
-## Development Commands
+## Commands
 
-```bash
-pnpm tauri dev                                        # run app (colima required for cluster features)
-pnpm tauri build                                      # .app/.dmg
-cargo check  --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
-npx tsc --noEmit
-colima status --json                                  # cluster ground truth
-npx @google/design.md lint DESIGN.md                  # design token gate
-```
+`make help` is the entrypoint — recipes there are canonical, so read them rather than
+reconstructing flags. The gates worth knowing by name: `make verify` (tests + clippy +
+tsc + design lint + web build), `make verify-airgap` (offline-startup probe, D25).
 
-Type-check passing ≠ feature working: verify UI/IPC in the running app, cluster changes
-against real colima (`kubectl --context colima get pods -n default`).
+## Evidence
 
-## Permissions
+Green gates say the code compiles, not that the feature works. Anything user-facing gets
+observed in the running app; anything cluster-facing gets checked against real colima as
+the user would see it. When you report a URL as reachable, say which process owns the
+forward — forwards die with their parent.
 
-- Allowed: `src/`, `src-tauri/`, `scripts/`, `docs/`, `DESIGN.md`, root configs;
-  new deps when justified.
-- Forbidden: blocking calls in async commands; `alert()`; shell-PATH assumptions
-  (use `resolve_cli_path`); sudo/`powermetrics` before Phase 3; hardcoded ports/VM
-  sizes/CLI paths; secrets in source; starting Colima above the D4 profile;
-  implementing from `docs/archive/`.
+## What bites here
 
-## Style & Commits
+- **Never fabricate state (D22–D25)** — when a probe fails, surface the failure. No
+  hardcoded device specs, invented kubeconfig contexts, canned log lines, assumed pod
+  readiness, or scripts printing success they did not verify. This is the mistake this
+  repo has made most; `docs/mistakes-log.md` is mostly instances of it.
+- **The same fact in two places is already wrong.** Image lists, provision manifests,
+  port assignments and search paths have each drifted between a script and its Rust or
+  Makefile twin. Derive from one source; when you cannot, add the test that fails on
+  divergence.
+- Spawn external CLIs through `resolve_cli_path`/`external_command`, never a bare binary
+  name — a `.app` inherits no shell PATH, and its search paths must cover the PATH we
+  hand to children.
+- No blocking calls inside async commands; no `alert()` (wry has none — use the dialog
+  plugin); no sudo or `powermetrics`; no secrets in source; never implement from
+  `docs/archive/`.
+- colima is not reentrant — one lifecycle op at a time, and never above the D4 profile.
+- Files past ~300 lines want splitting. Formatting is rustfmt/clippy/lint's job, not
+  yours to police in prose.
 
-- Rust: rustfmt defaults, edition 2021, clippy-clean. TS/YAML/JSON/TOML: 2-space;
-  imports external → internal → relative. Files >300 lines: split.
-- Conventional Commits, scoped per task, commit after each verified task.
-  **LOCAL commits only** — no push/remote unless explicitly asked.
+## Commits
 
-## Resource Safety
-
-- One cluster lifecycle op at a time (colima is not reentrant); VM allocation follows D4.
-- After cluster changes verify as the user: `colima status --json`, pods, curl 5001/8333/8888.
-- Port-forwards are process-bound — say which process owns a forward when reporting
-  URLs as reachable.
-
-## Changelog (newest first; keep ≤10 rows, fold older into a summary row)
-
-| Date | Change |
-|------|--------|
-| 2026-07-25 | Harness re-tiered to the current lineup (Opus 5 / Fable 5 orchestrator, `sonnet` default worker, `opus` only on the approval lane, `fable` escalation-only); agy pinned to the 2-model rotation with explicit `--model`; registry references corrected D1–D12 → **D1–D24** |
-| 2026-07-25 | Review of the uncommitted Phase 5b work (kagent Ops / Air-Gap / sidebar): removed fabricated diagnostics, hardware, dock logs and e2e "success" output; `get_hardware_spec` made non-blocking + PATH-safe; kagent UI moved 8080→8090 (D1 amended); D22–D24 added; new IPC commands documented in `docs/02` §4.1 |
-| 2026-07-24 | Audit of 20 takeover-session commits (Phase 4b~5a): fake DAG wiring, clippy/design/docs gates skipped, ioreg PATH regression, SSRF gap — fixes + D2 amended (sudo-free ioreg GPU), 3 process lessons logged |
-| 2026-07-20 | Slimmed guide: Mistakes Log → `docs/mistakes-log.md`, harness detail → `.claude/rules/harness.md` (user directive: keep CLAUDE.md small) |
-| 2026-07-20 | Design source → root `DESIGN.md` (Google standard, lint gate); visual reset to graphite "precision instrument"; endpoint links must use opener plugin |
-| 2026-07-20 | Runtime verification pass: colima JSON schema corrected, tauri dev/plugin config fixed, D10 bridge + SeaweedFS verified on-device |
-| 2026-07-20 | MinIO → SeaweedFS (D1 amended: 8333/8888); team harness (agy-first) + OMC policy added; MVP implemented via agy lanes + QA |
-| 2026-07-20 | Initial guide (idp-style), docs v0.2 baseline, decision registry D1–D12, git repo initialized |
+Conventional Commits, scoped per verified task. **LOCAL only** — never push unless asked.
+History lives in `git log` and `docs/mistakes-log.md`; don't maintain a changelog here.
