@@ -4,8 +4,25 @@
 # the VM size is auto-derived from detected RAM — the app remains canonical.
 
 CARGO_MANIFEST := src-tauri/Cargo.toml
-KUBECTL_CTX := kubectl --context colima
-KUBECTL := $(KUBECTL_CTX) -n default
+
+# 배포 대상(D26). 기본값은 colima — 지정하지 않으면 기존 동작 그대로다.
+# 외부 클러스터 예: make provision CONTEXT=narwhal NAMESPACE=kubemetal \
+#                     BRIDGE_HOST=192.168.56.1 STORAGE_CLASS=nfs-csi
+CONTEXT ?= colima
+NAMESPACE ?= $(if $(filter colima,$(CONTEXT)),default,kubemetal)
+STORAGE_CLASS ?=
+IMAGE_REGISTRY ?=
+BRIDGE_HOST ?=
+
+KUBECTL_CTX := kubectl --context $(CONTEXT)
+KUBECTL := $(KUBECTL_CTX) -n $(NAMESPACE)
+
+# colima는 D10 실측값(host.lima.internal)을 그대로 쓴다. 그 외 컨텍스트는 BRIDGE_HOST가
+# 필수 — render.sh가 미지정을 거부한다(추측 주소를 클러스터에 실으면 파드가 조용히 죽는다).
+RENDER_FLAGS := --namespace $(NAMESPACE) \
+  $(if $(filter colima,$(CONTEXT)),--keep-bridge,--bridge-host $(BRIDGE_HOST)) \
+  $(if $(STORAGE_CLASS),--storage-class $(STORAGE_CLASS)) \
+  $(if $(IMAGE_REGISTRY),--image-registry $(IMAGE_REGISTRY))
 # vite.config.ts는 strictPort: true — 포트가 막혀 있으면 대체 포트로 넘어가지 않고 즉시 죽는다.
 VITE_PORT := 5173
 
@@ -13,6 +30,7 @@ VITE_PORT := 5173
 
 .PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap \
         lint fmt verify clean-light cluster-up cluster-down provision provision-all kagent-up \
+        preflight render export-gitops \
         forward forward-stop status index-code analyze-code serve-codegraph clean
 
 help: ## 타깃 목록
@@ -95,26 +113,57 @@ cluster-up: ## Colima K3s 시작 (vz/virtiofs, 6CPU/12GB — 64GB 호스트 D4 �
 cluster-down: ## Colima 정지
 	colima stop
 
-# 앱의 `provision.rs::MANIFESTS`와 **같은 5개, 같은 순서**여야 한다(Secret이 먼저 — D13).
-# 디렉터리 통째 apply는 금지: `scripts/k8s/`에는 default 네임스페이스가 아닌 매니페스트
-# (security-agent.yaml, ns kagent)와 E2E 산출물(e2e-remediated-nginx.yaml)이 함께 있어
-# `-n default`와 충돌하거나 원치 않는 리소스를 배포한다(실측 2026-07-25).
-PROVISION_MANIFESTS := \
-  scripts/k8s/seaweedfs-s3-credentials.yaml \
-  scripts/k8s/mlflow-deployment.yaml \
-  scripts/k8s/seaweedfs-deployment.yaml \
-  scripts/k8s/mac-gpu-bridge.yaml \
-  scripts/k8s/prefect-deployment.yaml
+# 매니페스트 목록은 `scripts/k8s/kustomization.yaml`이 단일 출처다 — 예전에는 여기와
+# `provision.rs::MANIFESTS`에 같은 목록이 이중으로 있어 한쪽만 바뀌면 조용히 어긋났다.
+# 렌더링(ns/브리지/StorageClass/레지스트리 치환)은 render.sh가 소유한다.
 
-provision: ## MLOps 스택 매니페스트 적용 (mlflow/seaweedfs/bridge/prefect/secret)
-	@for m in $(PROVISION_MANIFESTS); do $(KUBECTL) apply -f $$m || exit 1; done
+preflight: ## 배포 대상 사전점검 (도달성/기본SC/ArgoCD 소유권/Kyverno Enforce/브리지 후보)
+	@echo "== 컨텍스트: $(CONTEXT) / 네임스페이스: $(NAMESPACE) =="
+	@$(KUBECTL_CTX) --request-timeout=20s get nodes \
+	  -o custom-columns=NODE:.metadata.name,IP:.status.addresses[?\(@.type==\"InternalIP\"\)].address
+	@echo "-- StorageClass (default 표시 확인) --"; $(KUBECTL_CTX) get sc
+	@echo "-- 이 네임스페이스를 소유한 ArgoCD Application (비어야 직접 apply 가능) --"
+	@$(KUBECTL_CTX) get applications -A \
+	  -o jsonpath='{range .items[?(@.spec.destination.namespace=="$(NAMESPACE)")]}{.metadata.name}{"\n"}{end}' \
+	  2>/dev/null || echo "(ArgoCD 없음)"
+	@echo "-- Kyverno Enforce 정책 --"
+	@$(KUBECTL_CTX) get cpol -o jsonpath='{range .items[?(@.spec.validationFailureAction=="Enforce")]}{.metadata.name}{"\n"}{end}' \
+	  2>/dev/null || echo "(Kyverno 없음)"
+	@echo "-- 노드 서브넷과 겹치는 호스트 인터페이스 (브리지 후보) --"
+	@ifconfig -a | awk '/^[a-z0-9]+:/{ifn=$$1} /inet /{print ifn, $$2, $$4}' | grep -v 127.0.0.1
+
+render: ## 대상에 맞춰 매니페스트만 렌더링해 표준출력으로 (적용하지 않음)
+	@./scripts/k8s/render.sh $(RENDER_FLAGS)
+
+provision: ## MLOps 스택 적용 (mlflow/seaweedfs/bridge/prefect/secret)
+	@$(KUBECTL_CTX) create namespace $(NAMESPACE) --dry-run=client -o yaml | $(KUBECTL_CTX) apply -f -
+	@./scripts/k8s/render.sh $(RENDER_FLAGS) | $(KUBECTL_CTX) apply -f -
 
 kagent-up: ## kagent 0.9.12 경량화 설치 (kagent-values.yaml 적용)
 	$(KUBECTL_CTX) create namespace kagent --dry-run=client -o yaml | $(KUBECTL_CTX) apply -f -
 	helm upgrade --install kagent oci://ghcr.io/kagent-dev/kagent/helm/kagent \
-	  --version 0.9.12 -n kagent -f scripts/helm/kagent-values.yaml --kube-context colima --reuse-values
+	  --version 0.9.12 -n kagent -f scripts/helm/kagent-values.yaml --kube-context $(CONTEXT) --reuse-values
 
 provision-all: provision kagent-up ## MLOps 스택 + kagent 종합 환경 한 번에 프로비저닝
+
+# GitOps 편입(D27). kubemetal은 Gitea에 **쓰지 않는다** — 파일만 narwhal 레포에 내려놓고,
+# 실제 반영은 사용자가 narwhal의 scripts/gitops/push-to-gitea.sh로 수행한다. 그 경계 덕분에
+# kubemetal이 Gitea 자격증명·포트포워딩·narwhal 레포 구조에 의존하지 않는다.
+export-gitops: ## narwhal 레포에 ArgoCD Application + 렌더된 매니페스트 내보내기 (NARWHAL_DIR 필수)
+	@test -n "$(NARWHAL_DIR)" || { echo "NARWHAL_DIR=/path/to/narwhal 를 지정하세요"; exit 1; }
+	@test -d "$(NARWHAL_DIR)/gitops" || { echo "$(NARWHAL_DIR)/gitops 가 없습니다 — 경로를 확인하세요"; exit 1; }
+	@test -n "$(BRIDGE_HOST)" || { echo "BRIDGE_HOST 미지정 — 검증된 브리지 주소 없이는 내보내지 않습니다 (make preflight로 후보 확인)"; exit 1; }
+	@./scripts/k8s/render.sh $(RENDER_FLAGS) > "$(NARWHAL_DIR)/gitops/resources/kubemetal.yaml"
+	@cp scripts/k8s/gitops/kubemetal-application.yaml \
+	   "$(NARWHAL_DIR)/gitops/charts/narwhal-apps/templates/kubemetal.yaml"
+	@echo "내보냄:"
+	@echo "  $(NARWHAL_DIR)/gitops/resources/kubemetal.yaml"
+	@echo "  $(NARWHAL_DIR)/gitops/charts/narwhal-apps/templates/kubemetal.yaml"
+	@echo ""
+	@echo "남은 단계 (narwhal 레포에서 직접):"
+	@echo "  1) values.yaml 에 'kubemetal: {enabled: true}' 추가"
+	@echo "  2) scripts/airgap/images.txt 에 kubemetal 이미지 4개 추가"
+	@echo "  3) scripts/gitops/push-to-gitea.sh 'feat(kubemetal): MLOps 스택 편입'"
 
 # kagent UI는 8090 — 8080은 D1에서 모델 서빙(mlx_lm.server)이 선점하는 포트다.
 forward: ## 포트포워딩 시작 (5001 MLflow / 8333 S3 / 8888 Filer / 8090 kagent UI)

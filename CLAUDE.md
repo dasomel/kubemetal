@@ -38,9 +38,16 @@ Changing a D1–D25 decision requires updating all affected docs in the same tas
   a privileged helper.
 - **VM sizing derived from detected RAM (D4)**: 16GB→4GB/2CPU, 32–48GB→8GB/4CPU,
   64GB+→12GB/6CPU — never hardcoded, backend clamps frontend input.
-- **Pod→host bridge (D10)**: ExternalName `mac-gpu-service` (ns `default`) →
-  `host.lima.internal`, no `ports` field. Verified on-device 2026-07-20
-  (CoreDNS → 192.168.5.2); never `host.docker.internal`.
+- **Pod→host bridge (D10)**: ExternalName `mac-gpu-service` → `host.lima.internal`,
+  no `ports` field. Verified on-device 2026-07-20 (CoreDNS → 192.168.5.2); never
+  `host.docker.internal`. **ExternalName takes a DNS name, never an IP** — a CNAME to
+  an IP is NXDOMAIN, and nothing fails loudly when you try. IP targets get a
+  selector-less Service + EndpointSlice instead; `render.sh` switches automatically.
+- **Deploy target (D26)**: the cluster is configuration, not a constant. `render.sh`
+  owns every per-target substitution (namespace, bridge, StorageClass, image
+  registry) and `scripts/k8s/kustomization.yaml` is the only manifest list. External
+  clusters get their own `kubemetal` namespace — `default` stays colima-only. An
+  unverified bridge address refuses to render rather than shipping a guess.
 
 ## Team & UI
 

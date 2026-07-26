@@ -61,11 +61,46 @@ GPU 서버나 멀티노드 K3s 클러스터로 자연스럽게 확장할 수 있
    실행합니다. 전체 흐름은 **파이프라인** 탭에서, 서비스 접근은 **접근 콘솔** 탭에서
    각각 확인할 수 있습니다.
 
+## 기존 클러스터에 배포하기 (D26)
+
+Colima를 새로 띄우지 않고 **이미 있는 Kubernetes 클러스터**에 MLOps 스택을 올릴 수
+있습니다. 배포 대상은 kubeconfig 컨텍스트로 지정하며, 외부 클러스터는 `default`가 아닌
+전용 `kubemetal` 네임스페이스를 씁니다.
+
+1. 사전점검 — 도달성, 기본 StorageClass, 대상 ns를 소유한 ArgoCD Application,
+   Kyverno Enforce 정책, 호스트 브리지 후보를 실측으로 확인합니다.
+   ```bash
+   make preflight CONTEXT=<컨텍스트> NAMESPACE=kubemetal
+   ```
+2. 렌더링 확인 — 적용하지 않고 결과만 봅니다.
+   ```bash
+   make render CONTEXT=<컨텍스트> BRIDGE_HOST=<호스트IP> STORAGE_CLASS=<SC>
+   ```
+   `BRIDGE_HOST`는 **1단계에서 확인한 후보 중 실제로 도달이 검증된 주소**여야 합니다.
+   생략하면 렌더가 거부됩니다 — 지정하지 않으면 colima 전용 주소가 그대로 실려 나가
+   파드가 조용히 죽기 때문입니다.
+3. 적용
+   ```bash
+   make provision CONTEXT=<컨텍스트> BRIDGE_HOST=<호스트IP> STORAGE_CLASS=<SC>
+   ```
+
+**사내 레지스트리/미러가 필요한 경우** `IMAGE_REGISTRY=<호스트[/프로젝트]>`를 붙이면
+Docker Hub 이미지가 그쪽으로 재지정됩니다(폐쇄망이거나 Docker Hub 익명 pull 제한에
+걸리는 클러스터).
+
+**ArgoCD가 대상 네임스페이스를 소유한 경우** 직접 apply는 selfHeal이 되돌립니다.
+이때는 GitOps 경로를 씁니다(D27) — kubemetal은 파일만 내려놓고 Gitea push는 하지 않습니다.
+```bash
+make export-gitops NARWHAL_DIR=/path/to/narwhal CONTEXT=<컨텍스트> BRIDGE_HOST=<호스트IP>
+```
+
 ### 트러블슈팅 (CLI로 직접 확인)
 
 ```bash
 colima status --json
 kubectl --context colima get pods -n default
+# 외부 클러스터
+kubectl --context <컨텍스트> get pods -n kubemetal
 ```
 
 ## 빌드 / 패키징

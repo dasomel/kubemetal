@@ -14,11 +14,16 @@ spec:
     metadata:
       labels:
         app: mlflow
+        # selector(matchLabels)는 불변 필드라 `app:`을 그대로 두고 여기에만 덧붙인다.
+        # 외부 클러스터의 Kyverno `require-labels`가 파드에 이 라벨을 요구한다(D26 실측).
+        app.kubernetes.io/name: mlflow
     spec:
       # SeaweedFS S3(무인증)가 뜰 때까지 대기 후 아티팩트 버킷(mlflow)을 보장 생성 (D13/FR-06).
       initContainers:
         - name: ensure-artifact-bucket
-          image: curlimages/curl:8.21.0
+          # 레지스트리를 명시한다 — 외부 클러스터의 Kyverno `restrict-image-registries`가
+          # `docker.io/*` 같은 정규화된 접두사만 승인한다(D26 실측). 짧은 이름은 위반.
+          image: docker.io/curlimages/curl:8.21.0
           command:
             - sh
             - -c

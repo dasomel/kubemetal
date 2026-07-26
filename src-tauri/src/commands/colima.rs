@@ -50,8 +50,12 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
     let kubernetes_active = raw.kubernetes;
 
     let (mlflow_ready, seaweedfs_ready, artifact_store_wired) = if kubernetes_active {
+        // 이 함수는 colima 수명주기 상태(`colima status`)를 다루므로 컨텍스트도 colima가
+        // 맞다. 다만 네임스페이스는 활성 대상을 따른다 — colima를 쓰면서 전용 ns에
+        // 배포한 경우까지 default로 조회하면 스택이 없다고 오판한다.
+        let (_, namespace) = crate::services::deploy_target::active_context();
         let deploy_out = external_command("kubectl")?
-            .args(["--context", "colima", "get", "deploy", "-n", "default", "-o", "json"])
+            .args(["--context", "colima", "get", "deploy", "-n", &namespace, "-o", "json"])
             .output()
             .await
             .map_err(|e| format!("kubectl get deploy 실패: {e}"))?;
@@ -484,7 +488,7 @@ pub struct AirgapStatusReport {
 
 /// 매니페스트에 선언되지 않는 자산 — Helm 차트가 배포하는 이미지, 바이너리, 차트 자체.
 /// 형식: (category, 표시 이름, 버전, 번들 내 상대경로)
-const STATIC_AIRGAP_TARGETS: [(&str, &str, &str, &str); 9] = [
+const STATIC_AIRGAP_TARGETS: [(&str, &str, &str, &str); 10] = [
     ("Binary", "K3s Kubernetes Engine", "v1.28.2 (arm64)", "binaries/k3s"),
     ("Binary", "Kubescape Security CLI", "v3.0.0", "binaries/kubescape"),
     ("Helm Chart", "kagent Helm Chart", "0.9.12", "charts/kagent-0.9.12.tgz"),
@@ -493,6 +497,9 @@ const STATIC_AIRGAP_TARGETS: [(&str, &str, &str, &str); 9] = [
     ("Container Image", "kagent UI Dashboard Image", "0.9.12", "images/cr.kagent.dev_kagent-dev_kagent_ui_0.9.12.tar.gz"),
     ("Container Image", "kagent Tools Server Image", "0.2.1", "images/ghcr.io_kagent-dev_kagent_tools_0.2.1.tar.gz"),
     ("Container Image", "kmcp Controller Image", "0.3.0", "images/ghcr.io_kagent-dev_kmcp_controller_0.3.0.tar.gz"),
+    // kagent이 요구하는 Postgres. 다운로더는 받아왔지만 이 목록에 없어 상태 화면이 존재를
+    // 검사하지 않던 자산이다 — static_airgap_targets_match_images_helm_txt가 잡아냈다.
+    ("Container Image", "kagent Postgres Database", "16-alpine", "images/postgres_16-alpine.tar.gz"),
     ("Container Image", "Trivy Vulnerability Scanner", "latest", "images/aquasec_trivy_latest.tar.gz"),
 ];
 
@@ -803,6 +810,54 @@ mod tests {
                 "{image}: 태그가 없다 — 폐쇄망에서 재현 불가"
             );
         }
+    }
+
+    fn repo_images_helm_txt() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("리포 루트")
+            .join("scripts/airgap/images-helm.txt")
+    }
+
+    /// `scripts/airgap/images-helm.txt`의 파싱 규칙(줄 끝 `#` 주석 제거 + 모든 공백 제거)은
+    /// `scripts/airgap/lib.sh`의 `read_image_list`와 같아야 한다.
+    fn images_helm_txt_entries() -> Vec<String> {
+        let text = std::fs::read_to_string(repo_images_helm_txt()).expect("images-helm.txt 읽기");
+        text.lines()
+            .map(|line| {
+                let mut s = line.split('#').next().unwrap_or("").to_string();
+                s.retain(|c| !c.is_whitespace());
+                s
+            })
+            .filter(|s| !s.is_empty())
+            .collect()
+    }
+
+    /// `images-helm.txt`는 폐쇄망 번들의 비매니페스트 이미지에 대한 단일 출처지만, 그 파일을
+    /// 읽는 것은 셸 스크립트 둘(수집·검증)뿐이고 여기 `STATIC_AIRGAP_TARGETS`는 같은 사실을
+    /// 따로 들고 있다. 상태 조회를 런타임 파일 존재에 묶지 않으려는 의도적 중복이므로,
+    /// CLAUDE.md가 요구하는 "파생할 수 없으면 어긋남에 실패하는 테스트"를 대신 둔다.
+    /// 이 테스트가 깨지면 한쪽만 버전을 올렸다는 뜻이다(D23이 mlflow·seaweedfs로 겪은 그 실패).
+    #[test]
+    fn static_airgap_targets_match_images_helm_txt() {
+        let mut expected: Vec<String> = images_helm_txt_entries()
+            .iter()
+            .map(|image| image_archive_name(image))
+            .collect();
+        expected.sort();
+
+        let mut actual: Vec<String> = STATIC_AIRGAP_TARGETS
+            .iter()
+            .filter(|(category, ..)| *category == "Container Image")
+            .map(|(.., path)| (*path).to_string())
+            .collect();
+        actual.sort();
+
+        assert_eq!(
+            expected, actual,
+            "images-helm.txt와 STATIC_AIRGAP_TARGETS가 어긋났다 — 한쪽만 갱신되면 \
+             번들은 새 버전을 받고 Air-Gap 상태 화면은 옛 버전을 찾는다"
+        );
     }
 
     /// 이 테스트가 깨지면 `imagePullPolicy` 같은 유사 키를 이미지로 잘못 읽고 있다는 뜻이다.

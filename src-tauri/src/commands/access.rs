@@ -71,15 +71,16 @@ pub(crate) async fn fetch_seaweedfs_credentials() -> (Vec<CredentialItem>, Optio
         Ok(c) => c,
         Err(e) => return (Vec::new(), Some(format!("kubectl 실행 파일을 찾을 수 없습니다: {e}"))),
     };
+    let (context, namespace) = crate::services::deploy_target::active_context();
     let output = match cmd
         .args([
             "--context",
-            "colima",
+            &context,
             "get",
             "secret",
             "seaweedfs-s3-credentials",
             "-n",
-            "default",
+            &namespace,
             "-o",
             "json",
         ])

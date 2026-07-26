@@ -4,7 +4,9 @@ metadata:
   name: prefect-data
   namespace: default
 spec:
-  # k3s 기본 StorageClass(local-path)가 default로 지정돼 있어 storageClassName 생략.
+  # storageClassName은 의도적으로 생략 — 대상 클러스터의 기본 StorageClass를 따른다.
+  # colima k3s는 local-path, narwhal은 nfs-csi가 각각 default로 지정돼 있다(2026-07-26 실측).
+  # 기본 SC가 없는 클러스터에서는 render.sh의 STORAGE_CLASS로 주입한다(D26).
   accessModes:
     - ReadWriteOnce
   resources:
@@ -27,12 +29,16 @@ spec:
     metadata:
       labels:
         app: prefect
+        # selector(matchLabels)는 불변 필드라 `app:`을 그대로 두고 여기에만 덧붙인다.
+        # 외부 클러스터의 Kyverno `require-labels`가 파드에 이 라벨을 요구한다(D26 실측).
+        app.kubernetes.io/name: prefect
     spec:
       containers:
         - name: prefect
           # 태그 3.7.8-python3.12는 2026-07-23 Docker Hub API(hub.docker.com/v2/repositories/
           # prefecthq/prefect/tags)로 실존 확인한 최신 안정 릴리스(3-latest 별칭과 동일 다이제스트).
-          image: prefecthq/prefect:3.7.8-python3.12
+          # 레지스트리를 명시한다 — Kyverno `restrict-image-registries`는 `docker.io/*`만 승인.
+          image: docker.io/prefecthq/prefect:3.7.8-python3.12
           command: ["prefect", "server", "start", "--host", "0.0.0.0"]
           env:
             # PREFECT_HOME 하위에 SQLite DB(prefect.db)가 생성되므로 PVC를 여기에 마운트해야

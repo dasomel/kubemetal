@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# MLOps 스택의 **단일 출처**. 예전에는 같은 목록이 `provision.rs::MANIFESTS`와 Makefile
+# `PROVISION_MANIFESTS`에 각각 있어 한쪽만 바뀌면 조용히 어긋났다(CLAUDE.md: "같은 사실이
+# 두 곳에 있으면 이미 틀렸다"). 이제 Rust·Makefile·GitOps export가 모두 여기서 파생한다.
+#
+# 순서가 의미를 가진다(D13): Secret이 먼저 적용돼야 mlflow의 secretKeyRef가 기동 시점에
+# 즉시 해석된다. kustomize는 apply 순서를 kind별로 정렬하지만(Secret이 Deployment보다
+# 앞), 이 목록의 순서도 그 의도를 문서로 남긴다.
+#
+# 이 디렉터리의 나머지 YAML은 의도적으로 제외한다 — security-agent.yaml은 ns가 kagent이고,
+# e2e-remediated-nginx.yaml은 E2E 산출물이다. 디렉터리 통째 apply가 금지인 이유다.
+resources:
+  - seaweedfs-s3-credentials.yaml
+  - mlflow-deployment.yaml
+  - seaweedfs-deployment.yaml
+  - mac-gpu-bridge.yaml
+  - prefect-deployment.yaml

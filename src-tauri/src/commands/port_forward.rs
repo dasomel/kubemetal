@@ -94,9 +94,10 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
     // 3. 신규 spawn.
     {
         let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        let (context, namespace) = crate::services::deploy_target::active_context();
         for (key, svc, ports) in JOBS {
             let child = external_command("kubectl")?
-                .args(["--context", "colima", "port-forward", "-n", "default", svc, ports])
+                .args(["--context", &context, "port-forward", "-n", &namespace, svc, ports])
                 .spawn()
                 .map_err(|e| format!("port-forward({key}) 실행 실패: {e}"))?;
             guard.insert(key, child);

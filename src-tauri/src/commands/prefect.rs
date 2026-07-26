@@ -100,9 +100,10 @@ async fn check_prefect_server_ready() -> bool {
     let Ok(mut cmd) = external_command("kubectl") else {
         return false;
     };
+    let (context, namespace) = crate::services::deploy_target::active_context();
     let output = cmd
         .args([
-            "--context", "colima", "get", "deploy", "prefect", "-n", "default", "-o", "json",
+            "--context", &context, "get", "deploy", "prefect", "-n", &namespace, "-o", "json",
         ])
         .output()
         .await;

@@ -1,0 +1,44 @@
+# narwhal app-of-apps에 kubemetal MLOps 스택을 편입시키는 ArgoCD Application.
+#
+# 배치 위치: narwhal 레포의 `gitops/charts/narwhal-apps/templates/kubemetal.yaml`
+# 짝이 되는 매니페스트: `gitops/resources/kubemetal.yaml` (make export-gitops가 생성)
+#
+# narwhal의 `network-policies.yaml`과 같은 패턴이다 — `path: resources` +
+# `directory.include`로 리소스 파일 하나만 집어간다.
+#
+# 기본 비활성이다. narwhal의 기존 동작을 바꾸지 않기 위한 opt-in이며,
+# 켜려면 app-of-apps의 valuesObject에 `kubemetal: {enabled: true}`를 넣는다.
+#
+# ⚠️ 이 앱을 켜면 kubemetal 앱에서의 직접 apply는 selfHeal이 되돌린다. 둘 중 하나만 쓴다.
+{{- if .Values.kubemetal.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kubemetal
+  namespace: devtools
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: HEAD
+    path: resources
+    directory:
+      include: "kubemetal.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    # kubemetal 전용 네임스페이스. default를 쓰지 않는다 — 공유 클러스터의 default는
+    # 남의 영역이고 prune 반경이 너무 넓다.
+    namespace: kubemetal
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # ⚠️ 이 네임스페이스에 istio.io/dataplane-mode: ambient 라벨을 붙이지 말 것.
+      # ambient에 편입되면 ztunnel HBONE이 mlflow/prefect의 plain-HTTP kubelet 프로브를
+      # 깬다(narwhal 실측: ambient는 ns opt-in이라 라벨을 안 붙이면 메시 밖이다).
+      - CreateNamespace=true
+      - ServerSideApply=true
+{{- end }}

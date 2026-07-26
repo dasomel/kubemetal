@@ -1,6 +1,7 @@
 pub mod access;
 pub mod colima;
 pub mod data_ingest;
+pub mod deploy_target;
 pub mod guardrails;
 pub mod metrics;
 pub mod mlx;

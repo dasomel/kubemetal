@@ -14,11 +14,15 @@ spec:
     metadata:
       labels:
         app: seaweedfs
+        # selector(matchLabels)는 불변 필드라 `app:`을 그대로 두고 여기에만 덧붙인다.
+        # 외부 클러스터의 Kyverno `require-labels`가 파드에 이 라벨을 요구한다(D26 실측).
+        app.kubernetes.io/name: seaweedfs
     spec:
       containers:
         - name: seaweedfs
           # 태그 4.40은 2026-07-21 Docker Hub API로 실존 확인(chrislusf/seaweedfs tags).
-          image: chrislusf/seaweedfs:4.40
+          # 레지스트리를 명시한다 — Kyverno `restrict-image-registries`는 `docker.io/*`만 승인.
+          image: docker.io/chrislusf/seaweedfs:4.40
           args:
             - server
             - -dir=/data
