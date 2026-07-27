@@ -1,7 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
-import type { MlxEnvStatus, MlxStatus, FineTuneConfig, LocalModel, GuardrailStatus } from '../types/ipc';
+import type {
+  MlxEnvStatus,
+  MlxStatus,
+  FineTuneConfig,
+  LocalModel,
+  GuardrailStatus,
+  ServingRuntime,
+} from '../types/ipc';
 
 // 모듈 레벨 캐시 — 탭을 벗어났다 재진입해도 이미 확인된 MLX 환경 상태를 재사용해
 // 불필요한 재확인 호출을 피한다. 환경 설치가 완료됐을 때만(useMlx 내부에서) 갱신한다.
@@ -97,13 +104,20 @@ export function useMlx() {
   }, [fetchStatus]);
 
   const startServing = useCallback(
-    async (modelPath: string, adapterPath: string | undefined, port: number) => {
+    async (
+      modelPath: string,
+      adapterPath: string | undefined,
+      port: number,
+      runtime?: ServingRuntime,
+    ) => {
       setStartingServing(true);
       try {
         const res = await invoke<string>('start_model_serving', {
           modelPath,
           adapterPath: adapterPath || null,
           port,
+          // 생략하면 백엔드 기본(mlx-lm) — 기존 호출부의 동작이 바뀌지 않는다(D29).
+          runtime: runtime ?? null,
         });
         await message(res || '모델 서빙을 시작했습니다.', { title: 'KubeMetal', kind: 'info' });
         await fetchStatus();

@@ -420,7 +420,10 @@ pub fn list_local_models() -> Result<Vec<LocalModel>, String> {
     let entries = std::fs::read_dir(&root).map_err(|e| format!("모델 디렉터리 조회 실패: {e}"))?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
-        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+        // `entry.file_type()`은 심볼릭 링크를 따라가지 않는다 — HF 캐시의 모델을 수 GB
+        // 복사하는 대신 링크해 둔 디렉터리가 목록에서 조용히 빠졌다(2026-07-27 실측,
+        // Qwen2-VL 링크가 서빙 카드에 안 보임). `path().is_dir()`는 링크를 따라간다.
+        if entry.path().is_dir() {
             let dir_name = entry.file_name().to_string_lossy().to_string();
             let size_bytes = dir_size(&entry.path()).unwrap_or(0);
             result.push(LocalModel {

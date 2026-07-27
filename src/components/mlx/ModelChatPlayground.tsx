@@ -16,8 +16,9 @@ import {
   Zap,
   Copy,
   Check,
+  ImagePlus,
 } from 'lucide-react';
-import type { RagSearchResult } from '../../types/ipc';
+import type { RagSearchResult, ServingRuntime } from '../../types/ipc';
 
 /**
  * 서빙 품질 계측. 스트리밍 응답에서만 채워진다.
@@ -33,6 +34,11 @@ interface MessagePerf {
   tokensPerSec: number;
   tokens: number;
   exactTokens: boolean;
+  /**
+   * tok/s가 서버 보고값인가. mlx-vlm 서버는 매 청크 `timings.predicted_per_second`를
+   * 보낸다(실측 0.6.7) — 서버가 직접 잰 값이라 클라이언트 근사보다 정확하므로 우선한다.
+   */
+  serverTps: boolean;
 }
 
 interface Message {
@@ -42,12 +48,24 @@ interface Message {
   timestamp: number;
   ragSources?: RagSearchResult[];
   perf?: MessagePerf;
+  /** 사용자 메시지에 첨부된 이미지(data URL). 표시용이자 API 전송 원본이다. */
+  images?: string[];
 }
+
+/** OpenAI 호환 멀티모달 콘텐츠. 서버 실측(mlx-vlm 0.6.7)으로 확인한 형태 그대로다. */
+type ApiContent =
+  | string
+  | Array<
+      | { type: 'image_url'; image_url: { url: string } }
+      | { type: 'text'; text: string }
+    >;
 
 interface ModelChatPlaygroundProps {
   port: number;
   modelPath?: string;
   adapterPath?: string;
+  /** 'mlx-vlm'일 때만 이미지 첨부가 열린다 — mlx-lm 서버는 image_url을 이해하지 못한다. */
+  runtime?: ServingRuntime;
 }
 
 const DEFAULT_SYSTEM_PROMPT =
@@ -82,6 +100,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
   port,
   modelPath,
   adapterPath,
+  runtime,
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -99,6 +118,10 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
   // Generation state
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // 첨부 대기 이미지(data URL). VLM 런타임에서만 채워진다.
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const vlmActive = runtime === 'mlx-vlm';
   const [expandedSources, setExpandedSources] = useState<Record<string, boolean>>({});
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -130,6 +153,57 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
     setExpandedSources((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const MAX_ATTACHED_IMAGES = 3;
+
+  /** 파일 선택·클립보드 붙여넣기·드래그앤드롭이 전부 이 하나의 수집기를 지난다 —
+   *  이미지 타입 필터와 첨부 상한을 한 곳에서만 지키기 위해서다. */
+  const addImageFiles = (files: File[]) => {
+    if (!vlmActive) return;
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) continue;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const url = reader.result;
+        if (typeof url === 'string') {
+          setPendingImages((prev) =>
+            prev.length >= MAX_ATTACHED_IMAGES ? prev : [...prev, url],
+          );
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handlePickImages = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = ''; // 같은 파일 재선택도 change로 잡히게 리셋
+    addImageFiles(files);
+  };
+
+  /** 클립보드의 이미지(스크린샷 등)를 붙여넣는다. 텍스트 붙여넣기는 건드리지 않는다 —
+   *  items에 이미지가 있을 때만 소비하고, 그 경우에도 기본 동작을 막지 않으면
+   *  파일명이 텍스트로 함께 들어오는 브라우저가 있어 preventDefault 한다. */
+  const handlePaste = (e: React.ClipboardEvent) => {
+    if (!vlmActive) return;
+    const imageFiles = Array.from(e.clipboardData.items)
+      .filter((it) => it.kind === 'file' && it.type.startsWith('image/'))
+      .map((it) => it.getAsFile())
+      .filter((f): f is File => f !== null);
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      addImageFiles(imageFiles);
+    }
+  };
+
+  /** HTML5 드롭. tauri.conf.json에서 dragDropEnabled:false를 명시해야 동작한다 —
+   *  Tauri v2 기본값(true)은 네이티브 핸들러가 드롭을 가로채 JS drop 이벤트가 아예
+   *  발생하지 않는다. */
+  const handleDrop = (e: React.DragEvent) => {
+    if (!vlmActive) return;
+    e.preventDefault();
+    addImageFiles(Array.from(e.dataTransfer.files));
+  };
+
   const handleClearHistory = () => {
     if (loading) {
       abortControllerRef.current?.abort();
@@ -140,6 +214,8 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
   const handleSend = async (userPromptText?: string) => {
     const textToSend = userPromptText || input;
     if (!textToSend.trim() || loading) return;
+    // 전송 시점 스냅샷 — 스트리밍 도중 새 첨부가 이번 요청에 섞이지 않게 한다.
+    const imagesToSend = vlmActive ? [...pendingImages] : [];
 
     const userMsgId = `user-${Date.now()}`;
     const assistantMsgId = `assistant-${Date.now()}`;
@@ -190,6 +266,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
       content: textToSend.trim(),
       timestamp: Date.now(),
       ragSources: retrievedSources.length > 0 ? retrievedSources : undefined,
+      images: imagesToSend.length > 0 ? imagesToSend : undefined,
     };
 
     const newAssistantMsg: Message = {
@@ -201,19 +278,29 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
 
     setMessages((prev) => [...prev, newUserMsg, newAssistantMsg]);
     setInput('');
+    setPendingImages([]);
     setLoading(true);
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
     // Prepare API history — 최근 8턴(메시지)만 유지해 프롬프트 폭주를 방지한다.
-    const apiMessages = [
+    // 과거 턴의 이미지는 다시 보내지 않는다(같은 상한 원칙): 이미지 토큰이 텍스트보다
+    // 수십 배 크고, 실측상 후속 질문은 직전 응답 텍스트로 충분히 이어진다.
+    const userContent: ApiContent =
+      imagesToSend.length > 0
+        ? [
+            ...imagesToSend.map((url) => ({ type: 'image_url' as const, image_url: { url } })),
+            { type: 'text' as const, text: augmentedPrompt },
+          ]
+        : augmentedPrompt;
+    const apiMessages: Array<{ role: string; content: ApiContent }> = [
       { role: 'system', content: systemPrompt },
       ...messages
         .filter((m) => m.role === 'user' || m.role === 'assistant')
         .slice(-MAX_HISTORY_MESSAGES)
-        .map((m) => ({ role: m.role, content: m.content })),
-      { role: 'user', content: augmentedPrompt },
+        .map((m) => ({ role: m.role, content: m.content as ApiContent })),
+      { role: 'user', content: userContent },
     ];
 
     const endpoint = `http://127.0.0.1:${port}/v1/chat/completions`;
@@ -224,6 +311,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
         let tFirstToken: number | null = null;
         let deltaChunks = 0;
         let usageTokens: number | null = null;
+        let serverTps: number | null = null;
 
         const response = await fetch(endpoint, {
           method: 'POST',
@@ -272,6 +360,10 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                 // 서버가 usage를 실어 보내면 그게 토큰 수의 정확한 출처다.
                 if (typeof parsed.usage?.completion_tokens === 'number') {
                   usageTokens = parsed.usage.completion_tokens;
+                }
+                // 마지막 청크의 값이 전체 생성 구간을 가장 잘 대표한다 — 계속 덮어쓴다.
+                if (typeof parsed.timings?.predicted_per_second === 'number') {
+                  serverTps = parsed.timings.predicted_per_second;
                 }
                 const delta = parsed.choices?.[0]?.delta?.content;
                 if (delta) {
@@ -322,12 +414,16 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                     perf: {
                       ttftMs: Math.round(tFirstToken! - t0),
                       tokens,
-                      // 첫 토큰 자체는 생성 구간에 포함되지 않으므로 tokens-1을 genMs로 나눈다.
+                      // 서버 보고값이 있으면 그것이 정답이다. 없을 때만 클라이언트 근사 —
+                      // 첫 토큰은 생성 구간 밖이므로 tokens-1을 genMs로 나눈다.
                       tokensPerSec:
-                        genMs > 0 && tokens > 1
-                          ? Math.round(((tokens - 1) / (genMs / 1000)) * 10) / 10
-                          : 0,
+                        serverTps !== null
+                          ? Math.round(serverTps * 10) / 10
+                          : genMs > 0 && tokens > 1
+                            ? Math.round(((tokens - 1) / (genMs / 1000)) * 10) / 10
+                            : 0,
                       exactTokens: usageTokens !== null,
+                      serverTps: serverTps !== null,
                     },
                   }
                 : msg,
@@ -403,7 +499,11 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
   };
 
   return (
-    <div className="rounded-xl border border-hairline/12 bg-surface shadow-panel overflow-hidden flex flex-col h-[520px] min-w-0 w-full transition-all">
+    <div
+      className="rounded-xl border border-hairline/12 bg-surface shadow-panel overflow-hidden flex flex-col h-[520px] min-w-0 w-full transition-all"
+      onDragOver={(e) => { if (vlmActive) e.preventDefault(); }}
+      onDrop={handleDrop}
+    >
       {/* 1. Header */}
       <div className="px-4 py-3 bg-surfaceRaised border-b border-hairline/8 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
@@ -618,6 +718,19 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                   </div>
 
                   {/* RAG Context badge & inspection for User message */}
+                  {isUser && msg.images && msg.images.length > 0 && (
+                    <div className="flex gap-1.5 px-1">
+                      {msg.images.map((url, i) => (
+                        <img
+                          key={i}
+                          src={url}
+                          alt={`전송 이미지 ${i + 1}`}
+                          className="w-16 h-16 rounded-md object-cover border border-hairline/12"
+                        />
+                      ))}
+                    </div>
+                  )}
+
                   {isUser && msg.ragSources && msg.ragSources.length > 0 && (
                     <div className="flex flex-col items-end">
                       <button
@@ -688,12 +801,15 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                           {msg.perf.tokensPerSec > 0 && (
                             <span
                               title={
-                                msg.perf.exactTokens
-                                  ? '서버가 보고한 completion_tokens 기준'
-                                  : '서버가 usage를 보내지 않아 스트림 청크 수로 근사한 값'
+                                msg.perf.serverTps
+                                  ? '서버가 매 청크 보고한 timings.predicted_per_second 기준'
+                                  : msg.perf.exactTokens
+                                    ? '서버가 보고한 completion_tokens 기준'
+                                    : '서버가 usage를 보내지 않아 스트림 청크 수로 근사한 값'
                               }
                             >
-                              {msg.perf.tokensPerSec} {msg.perf.exactTokens ? 'tok/s' : 'tok/s≈'}
+                              {msg.perf.tokensPerSec}{' '}
+                              {msg.perf.serverTps || msg.perf.exactTokens ? 'tok/s' : 'tok/s≈'}
                             </span>
                           )}
                           <span>
@@ -728,13 +844,56 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
 
       {/* 4. Input Bar */}
       <div className="p-3 bg-surfaceRaised border-t border-hairline/8 shrink-0">
+        {vlmActive && pendingImages.length > 0 && (
+          <div className="flex gap-2 mb-2">
+            {pendingImages.map((url, i) => (
+              <div key={i} className="relative">
+                <img
+                  src={url}
+                  alt={`첨부 이미지 ${i + 1}`}
+                  className="w-12 h-12 rounded-md object-cover border border-hairline/12"
+                />
+                <button
+                  type="button"
+                  onClick={() => setPendingImages((prev) => prev.filter((_, j) => j !== i))}
+                  aria-label="첨부 제거"
+                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-surface text-inkMuted hover:text-danger flex items-center justify-center text-[10px] shadow-panel"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="flex gap-2 items-end">
+          {vlmActive && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handlePickImages}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={loading || pendingImages.length >= MAX_ATTACHED_IMAGES}
+                title={`이미지 첨부 (최대 ${MAX_ATTACHED_IMAGES}장)`}
+                className="py-2.5 px-3 bg-surface hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed text-inkMuted hover:text-ink rounded-lg border border-hairline/8 transition-all shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <ImagePlus className="w-4 h-4" />
+              </button>
+            </>
+          )}
           <textarea
             ref={inputRef}
             rows={2}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={
               loading
                 ? '모델이 응답을 생성하는 중입니다...'

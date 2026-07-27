@@ -82,7 +82,13 @@ export interface MlxEnvStatus {
   venv_exists: boolean;
   mlx_lm_installed: boolean;
   mlx_lm_version?: string;
+  /** VLM 런타임(D29). mlx-vlm은 mlx-lm과 같은 venv에 공존한다. */
+  mlx_vlm_installed: boolean;
+  mlx_vlm_version?: string;
 }
+
+/** 서빙 런타임(D29). 값은 Rust enum의 kebab-case 직렬화와 1:1이다. */
+export type ServingRuntime = 'mlx-lm' | 'mlx-vlm';
 
 export interface MlxEnvSetupState {
   state: string;
@@ -104,6 +110,7 @@ export interface MlxServingState {
   port: number;
   model_path: string;
   adapter_path?: string;
+  runtime: ServingRuntime;
 }
 
 export interface MlxStatus {

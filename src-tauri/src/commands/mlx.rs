@@ -16,6 +16,10 @@ pub struct MlxEnvStatus {
     pub venv_exists: bool,
     pub mlx_lm_installed: bool,
     pub mlx_lm_version: Option<String>,
+    /// VLM 런타임(D29). mlx-vlm은 mlx-lm을 의존성으로 끌고 오므로(실측 0.6.7 → mlx-lm
+    /// 0.31.3) 같은 venv에 공존한다 — 별도 venv를 만들지 않는다.
+    pub mlx_vlm_installed: bool,
+    pub mlx_vlm_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -54,12 +58,34 @@ pub struct TrainingStatus {
     pub error: Option<String>,
 }
 
+/// 서빙 런타임(D29). 둘 다 OpenAI 호환 HTTP 서버라 D10 브리지·kagent·평가(D20) 소비자는
+/// 이 선택을 모른다 — 차이는 스폰 인자와 입력 모달리티(vlm은 이미지)뿐이다.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ServingRuntime {
+    MlxLm,
+    MlxVlm,
+}
+
+impl ServingRuntime {
+    /// 스폰 인자. 실측(2026-07-27, mlx-vlm 0.6.7): `mlx_vlm.server`의 기본 host는
+    /// **0.0.0.0**이다 — 명시하지 않으면 서빙이 LAN에 노출된다. 루프백을 강제한다.
+    /// mlx_lm은 기본이 127.0.0.1이지만 같은 이유로 양쪽 다 명시한다.
+    fn server_args(&self) -> &'static [&'static str] {
+        match self {
+            ServingRuntime::MlxLm => &["-m", "mlx_lm", "server", "--host", "127.0.0.1"],
+            ServingRuntime::MlxVlm => &["-m", "mlx_vlm.server", "--host", "127.0.0.1"],
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ServingStatus {
     pub pid: u32,
     pub port: u16,
     pub model_path: String,
     pub adapter_path: Option<String>,
+    pub runtime: ServingRuntime,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -156,55 +182,56 @@ fn wrapper_script_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(resolve_bundled_resource(&resource_dir, "scripts/mlx/finetune_wrapper.py"))
 }
 
+/// venv 패키지 존재/버전 프로브. 블록 들여쓰기를 포함하므로 Rust `\` 줄 연속으로 재작성하면
+/// 안 된다 — 연속은 다음 줄 선행 공백을 제거해 IndentationError가 되고, 그 실패는 "두 패키지
+/// 모두 미설치"라는 조용한 오판으로 나타난다. 구문 유효성은 단위 테스트가 고정한다.
+const ENV_PROBE_SNIPPET: &str = "import importlib.metadata as m\nfor pkg in ('mlx-lm', 'mlx-vlm'):\n    try: print(pkg + '=' + m.version(pkg))\n    except m.PackageNotFoundError: pass";
+
 async fn check_mlx_env_inner() -> MlxEnvStatus {
     let python_ok = resolve_cli_path("python3").is_ok();
-    let venv_py = match venv_python() {
-        Ok(p) => p,
-        Err(_) => {
-            return MlxEnvStatus {
-                python_ok,
-                venv_exists: false,
-                mlx_lm_installed: false,
-                mlx_lm_version: None,
-            }
-        }
+    let mut status = MlxEnvStatus {
+        python_ok,
+        venv_exists: false,
+        mlx_lm_installed: false,
+        mlx_lm_version: None,
+        mlx_vlm_installed: false,
+        mlx_vlm_version: None,
     };
-    let venv_exists = venv_py.is_file();
-    if !venv_exists {
-        return MlxEnvStatus {
-            python_ok,
-            venv_exists,
-            mlx_lm_installed: false,
-            mlx_lm_version: None,
-        };
+
+    let Ok(venv_py) = venv_python() else {
+        return status;
+    };
+    status.venv_exists = venv_py.is_file();
+    if !status.venv_exists {
+        return status;
     }
 
+    // 두 패키지를 한 번의 파이썬 기동으로 조회한다(각각 스폰하면 인터프리터 기동 비용 2배).
+    // 한쪽이 없어도 다른 쪽 버전은 나와야 하므로 스니펫이 개별 try로 감싼다.
     let output = tokio::process::Command::new(&venv_py)
-        .args([
-            "-c",
-            "import mlx_lm, importlib.metadata; print(importlib.metadata.version('mlx-lm'))",
-        ])
+        .args(["-c", ENV_PROBE_SNIPPET])
         .env("PATH", augmented_path())
         .output()
         .await;
 
-    match output {
-        Ok(out) if out.status.success() => {
-            let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            MlxEnvStatus {
-                python_ok,
-                venv_exists,
-                mlx_lm_installed: true,
-                mlx_lm_version: Some(version),
+    if let Ok(out) = output {
+        if out.status.success() {
+            for line in String::from_utf8_lossy(&out.stdout).lines() {
+                match line.trim().split_once('=') {
+                    Some(("mlx-lm", v)) => {
+                        status.mlx_lm_installed = true;
+                        status.mlx_lm_version = Some(v.to_string());
+                    }
+                    Some(("mlx-vlm", v)) => {
+                        status.mlx_vlm_installed = true;
+                        status.mlx_vlm_version = Some(v.to_string());
+                    }
+                    _ => {}
+                }
             }
         }
-        _ => MlxEnvStatus {
-            python_ok,
-            venv_exists,
-            mlx_lm_installed: false,
-            mlx_lm_version: None,
-        },
     }
+    status
 }
 
 #[tauri::command]
@@ -231,15 +258,18 @@ async fn run_setup_inner() -> Result<(), String> {
     }
 
     let pip = venv_pip()?;
+    // mlx-vlm[train]은 mlx-lm을 의존성으로 끌고 오지만(실측: 0.6.7 → mlx-lm 0.31.3),
+    // 버전 pin 없이 최신 mlx-lm을 함께 올리기 위해 둘 다 명시한다. [train] extra가 없으면
+    // `mlx_vlm.lora`가 ImportError로 죽는다(실측 — datasets 미설치).
     let out = tokio::process::Command::new(&pip)
-        .args(["install", "-U", "mlx-lm"])
+        .args(["install", "-U", "mlx-lm", "mlx-vlm[train]"])
         .env("PATH", augmented_path())
         .output()
         .await
         .map_err(|e| format!("pip install 실행 실패: {e}"))?;
     if !out.status.success() {
         return Err(format!(
-            "mlx-lm 설치 실패: {}",
+            "mlx-lm/mlx-vlm 설치 실패: {}",
             String::from_utf8_lossy(&out.stderr)
         ));
     }
@@ -670,7 +700,10 @@ pub async fn start_model_serving(
     model_path: String,
     adapter_path: Option<String>,
     port: u16,
+    runtime: Option<ServingRuntime>,
 ) -> Result<String, String> {
+    // 지정이 없으면 mlx-lm — 기존 사용자·기존 프런트 호출의 동작이 바뀌지 않는다(D29).
+    let runtime = runtime.unwrap_or(ServingRuntime::MlxLm);
     {
         let mut guard = state.serving.lock().map_err(|e| e.to_string())?;
         if guard.is_some() {
@@ -681,6 +714,7 @@ pub async fn start_model_serving(
             port,
             model_path: model_path.clone(),
             adapter_path: adapter_path.clone(),
+            runtime,
         });
     }
 
@@ -715,7 +749,8 @@ pub async fn start_model_serving(
         }
 
         let mut cmd = tokio::process::Command::new(&venv_py);
-        cmd.args(["-m", "mlx_lm", "server", "--model"])
+        cmd.args(runtime.server_args())
+            .arg("--model")
             .arg(&base_model)
             .args(["--port", &port.to_string()]);
         if let Some(ref adapter) = effective_adapter {
@@ -750,6 +785,7 @@ pub async fn start_model_serving(
                     port,
                     model_path: base_model_str,
                     adapter_path: effective_adapter_str.clone(),
+                    runtime,
                 });
             }
             {
@@ -869,5 +905,22 @@ mod tests {
 
         assert_ne!(result, occupied_port);
         drop(occupied);
+    }
+
+    /// ENV_PROBE_SNIPPET이 유효한 파이썬인지 고정한다. 이 스니펫이 깨지는 실패 모드는
+    /// 예외가 아니라 "두 패키지 모두 미설치"라는 조용한 오판이다 — Rust `\` 줄 연속으로
+    /// 재작성하면 들여쓰기가 사라져 정확히 그렇게 된다(작성 시점 셸 재현으로 확인).
+    /// 시스템 python3에는 mlx가 없으므로 기대 출력은 빈 stdout + exit 0이다.
+    #[test]
+    fn env_probe_snippet_is_valid_python() {
+        let out = std::process::Command::new("python3")
+            .args(["-c", ENV_PROBE_SNIPPET])
+            .output()
+            .expect("python3 실행");
+        assert!(
+            out.status.success(),
+            "프로브 스니펫이 파이썬 구문 오류로 죽었다: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 }

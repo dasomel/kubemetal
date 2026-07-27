@@ -70,6 +70,7 @@ export const MlxStudio: React.FC = () => {
       stopping={stoppingServing}
       onStart={startServing}
       onStop={stopServing}
+      vlmAvailable={!!envStatus?.mlx_vlm_installed}
     />
   );
 

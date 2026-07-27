@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Rocket, Loader2, Play, Square, ArrowUpRight, AlertTriangle } from 'lucide-react';
-import type { LocalModel, MlxServingState } from '../../types/ipc';
+import type { LocalModel, MlxServingState, ServingRuntime } from '../../types/ipc';
 import { ModelChatPlayground } from './ModelChatPlayground';
 import { useTranslation } from '../../i18n/i18nContext';
 
@@ -13,7 +13,14 @@ interface MlxServingCardProps {
   adapterPathHint?: string;
   starting: boolean;
   stopping: boolean;
-  onStart: (modelPath: string, adapterPath: string | undefined, port: number) => void;
+  onStart: (
+    modelPath: string,
+    adapterPath: string | undefined,
+    port: number,
+    runtime?: ServingRuntime,
+  ) => void;
+  /** mlx-vlm 미설치면 VLM 선택지를 잠근다 — 스폰 후 ModuleNotFoundError로 죽는 것보다 낫다. */
+  vlmAvailable: boolean;
   onStop: () => void;
 }
 
@@ -34,11 +41,13 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
   stopping,
   onStart,
   onStop,
+  vlmAvailable,
 }) => {
   const { t, language } = useTranslation();
   const [modelPath, setModelPath] = useState('');
   const [adapterPath, setAdapterPath] = useState('');
   const [port, setPort] = useState(8080);
+  const [runtime, setRuntime] = useState<ServingRuntime>('mlx-lm');
   const prefilledRef = useRef(false);
   const portEditedRef = useRef(false);
 
@@ -72,7 +81,7 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!modelPath) return;
-    onStart(modelPath, adapterPath || undefined, port);
+    onStart(modelPath, adapterPath || undefined, port, runtime);
   };
 
   return (
@@ -120,6 +129,33 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
             placeholder={language === 'en' ? 'e.g. ~/.kubemetal/adapters/my-adapter' : '예: ~/.kubemetal/adapters/my-adapter'}
             className={inputClass}
           />
+        </div>
+
+        <div>
+          <label className={labelClass}>{t('mlx.runtimeLabel')}</label>
+          <div className="flex gap-2" role="radiogroup" aria-label={t('mlx.runtimeLabel')}>
+            {(['mlx-lm', 'mlx-vlm'] as const).map((rt) => {
+              const locked = rt === 'mlx-vlm' && !vlmAvailable;
+              return (
+                <button
+                  key={rt}
+                  type="button"
+                  role="radio"
+                  aria-checked={runtime === rt}
+                  disabled={!!serving || locked}
+                  title={locked ? t('mlx.runtimeVlmLocked') : undefined}
+                  onClick={() => setRuntime(rt)}
+                  className={`px-3 py-1.5 rounded-md text-caption transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    runtime === rt
+                      ? 'bg-primaryStrong text-inverse'
+                      : 'bg-surfaceRaised text-inkMuted hover:brightness-95'
+                  } ${locked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {rt === 'mlx-lm' ? t('mlx.runtimeText') : t('mlx.runtimeVision')}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="max-w-[160px]">
@@ -185,6 +221,7 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
             port={serving.port}
             modelPath={serving.model_path}
             adapterPath={serving.adapter_path}
+            runtime={serving.runtime}
           />
         </div>
       )}
