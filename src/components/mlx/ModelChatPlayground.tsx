@@ -19,12 +19,29 @@ import {
 } from 'lucide-react';
 import type { RagSearchResult } from '../../types/ipc';
 
+/**
+ * 서빙 품질 계측. 스트리밍 응답에서만 채워진다.
+ *
+ * `exactTokens`가 왜 필요한가: 토큰 수의 정확한 출처는 서버가 보내는 `usage.completion_tokens`
+ * 뿐이다. mlx_lm.server가 스트리밍에서 usage를 안 보내는 경우가 있어, 그때는 content delta
+ * 청크 수로 근사한다. 근사값을 tok/s라고 단정해 표시하면 안 되므로 플래그로 구분한다.
+ */
+interface MessagePerf {
+  /** 요청 전송부터 첫 content delta까지. 체감 반응성을 가장 잘 나타내는 값이다. */
+  ttftMs: number;
+  /** 첫 토큰 이후 생성 구간의 처리량 — TTFT를 포함하면 짧은 응답에서 값이 왜곡된다. */
+  tokensPerSec: number;
+  tokens: number;
+  exactTokens: boolean;
+}
+
 interface Message {
   id: string;
   role: 'system' | 'user' | 'assistant';
   content: string;
   timestamp: number;
   ragSources?: RagSearchResult[];
+  perf?: MessagePerf;
 }
 
 interface ModelChatPlaygroundProps {
@@ -203,6 +220,11 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
 
     try {
       if (isStreaming) {
+        const t0 = performance.now();
+        let tFirstToken: number | null = null;
+        let deltaChunks = 0;
+        let usageTokens: number | null = null;
+
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -247,8 +269,14 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
               const jsonStr = trimmed.slice(6);
               try {
                 const parsed = JSON.parse(jsonStr);
+                // 서버가 usage를 실어 보내면 그게 토큰 수의 정확한 출처다.
+                if (typeof parsed.usage?.completion_tokens === 'number') {
+                  usageTokens = parsed.usage.completion_tokens;
+                }
                 const delta = parsed.choices?.[0]?.delta?.content;
                 if (delta) {
+                  if (tFirstToken === null) tFirstToken = performance.now();
+                  deltaChunks += 1;
                   accumulated += delta;
                   setMessages((prev) =>
                     prev.map((msg) =>
@@ -279,6 +307,32 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
           } catch (e) {
             // ignore
           }
+        }
+
+        // 계측 확정. 토큰이 하나도 안 온 응답은 계측할 게 없으므로 perf를 붙이지 않는다 —
+        // 0 tok/s를 표시하면 "느리다"로 읽히지만 실제로는 "측정 불가"다.
+        if (tFirstToken !== null) {
+          const genMs = performance.now() - tFirstToken;
+          const tokens = usageTokens ?? deltaChunks;
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMsgId
+                ? {
+                    ...msg,
+                    perf: {
+                      ttftMs: Math.round(tFirstToken! - t0),
+                      tokens,
+                      // 첫 토큰 자체는 생성 구간에 포함되지 않으므로 tokens-1을 genMs로 나눈다.
+                      tokensPerSec:
+                        genMs > 0 && tokens > 1
+                          ? Math.round(((tokens - 1) / (genMs / 1000)) * 10) / 10
+                          : 0,
+                      exactTokens: usageTokens !== null,
+                    },
+                  }
+                : msg,
+            ),
+          );
         }
       } else {
         // Non-streaming fallback
@@ -622,6 +676,32 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                           </>
                         )}
                       </button>
+
+                      {/* 서빙 품질 계측. 스트리밍 응답에만 붙는다 — 값이 없으면 아무것도
+                          표시하지 않는다(0으로 채우면 "느림"으로 오독된다). */}
+                      {msg.perf && (
+                        <span className="flex items-center gap-2 text-inkFaint">
+                          <span className="w-px h-3 bg-hairline/20" />
+                          <span title="첫 토큰까지 걸린 시간 — 체감 반응성">
+                            TTFT {msg.perf.ttftMs}ms
+                          </span>
+                          {msg.perf.tokensPerSec > 0 && (
+                            <span
+                              title={
+                                msg.perf.exactTokens
+                                  ? '서버가 보고한 completion_tokens 기준'
+                                  : '서버가 usage를 보내지 않아 스트림 청크 수로 근사한 값'
+                              }
+                            >
+                              {msg.perf.tokensPerSec} {msg.perf.exactTokens ? 'tok/s' : 'tok/s≈'}
+                            </span>
+                          )}
+                          <span>
+                            {msg.perf.tokens}
+                            {msg.perf.exactTokens ? ' 토큰' : ' 청크'}
+                          </span>
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>

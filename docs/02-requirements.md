@@ -152,7 +152,7 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 
 | Command 이름 | Input Parameters | Output Return | 설명 |
 | --- | --- | --- | --- |
-| `get_system_metrics` | None | `SystemMetricsJSON` | RAM/CPU 실시간 사용량 + Metal GPU 사용률/메모리(`ioreg` 기반, Phase 4, FR-05.4) 리턴 |
+| `get_system_metrics` | None | `SystemMetricsJSON` | RAM/CPU 실시간 사용량 + Metal GPU 사용률/메모리(`ioreg` 기반, Phase 4, FR-05.4) + 발열 압력(`thermal_state`, `NSProcessInfo` 기반 — CLI 경로가 전부 비어 있음을 실측, D2 개정) 리턴. 발열은 읽기 실패 시 null이며 "정상"으로 폴백하지 않는다 |
 | `get_cluster_status` | None | `ClusterStatusJSON` | colima 상태 + MLflow/SeaweedFS 배포 준비 여부(`mlflow_ready`/`seaweedfs_ready`) 리턴 |
 | `start_cluster` | `{ cpu: u32, memory: u32 }` | `Result<String, String>` | Colima `vz` K8s 클러스터 구동 |
 | `stop_cluster` | None | `Result<String, String>` | Colima K8s 클러스터 중지 |

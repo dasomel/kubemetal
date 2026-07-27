@@ -10,6 +10,8 @@ export interface SystemMetrics {
   cpu_usage_percentage: number;
   gpu_usage_percentage?: number;
   gpu_memory_used_gb?: number;
+  /** null이면 조회 실패 — "정상"으로 폴백하지 않는다(D22). */
+  thermal_state?: 'nominal' | 'fair' | 'serious' | 'critical' | null;
 }
 
 export interface HardwareSpec {
@@ -160,6 +162,8 @@ export interface GuardrailStatus {
   battery_pause_enabled: boolean;
   training_paused: boolean;
   caffeinate_active: boolean;
+  thermal_state?: 'nominal' | 'fair' | 'serious' | 'critical' | null;
+  thermal_pause_enabled: boolean;
 }
 
 export interface FlowRunInfo {

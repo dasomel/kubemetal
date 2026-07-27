@@ -98,6 +98,36 @@ pub struct SystemMetrics {
     pub cpu_usage_percentage: f32,
     pub gpu_usage_percentage: f32,
     pub gpu_memory_used_gb: f64,
+    /// `nominal` | `fair` | `serious` | `critical`. 값을 못 읽으면 None —
+    /// "정상"으로 폴백하지 않는다(D22, 발열은 가드레일 판정에 쓰인다).
+    pub thermal_state: Option<String>,
+}
+
+/// macOS의 발열 압력 단계.
+///
+/// CLI로는 읽을 수 없다 — 이 기기 실측(2026-07-27, M4 Pro / macOS 26):
+/// `pmset -g therm`은 "No thermal warning level has been recorded"만 내고,
+/// `sysctl -a`에 thermal 키가 없으며, `ioreg -c AppleSMC`에 온도 항목이 0개다.
+/// 유일한 sudo-free 경로가 NSProcessInfo.thermalState라 objc 바인딩을 쓴다.
+///
+/// 발열이 왜 필요한가: 메모리 압력(D16)은 "RAM이 모자란가"를 말할 뿐, 장시간 파인튜닝에서
+/// 실제로 스로틀링을 유발하는 신호는 발열이다. Nativ가 tok/s와 함께 이 값을 표면화하는
+/// 이유이기도 하다.
+pub fn read_thermal_state() -> Option<String> {
+    use objc2_foundation::{NSProcessInfo, NSProcessInfoThermalState};
+
+    let info = NSProcessInfo::processInfo();
+    Some(
+        match info.thermalState() {
+            NSProcessInfoThermalState::Nominal => "nominal",
+            NSProcessInfoThermalState::Fair => "fair",
+            NSProcessInfoThermalState::Serious => "serious",
+            NSProcessInfoThermalState::Critical => "critical",
+            // 애플이 단계를 추가하면 이름을 지어내지 않고 미상으로 둔다.
+            _ => return None,
+        }
+        .to_string(),
+    )
 }
 
 /// 1초 주기로 폴링되는 커맨드이므로 파싱/실행 실패를 매 틱 로그하면 스팸이 된다 — 최초
@@ -200,5 +230,28 @@ pub async fn get_system_metrics(state: State<'_, Mutex<System>>) -> Result<Syste
         cpu_usage_percentage,
         gpu_usage_percentage,
         gpu_memory_used_gb,
+        thermal_state: read_thermal_state(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 이 테스트는 발열 값이 **실제로 읽히는지**를 확인한다. CLI 경로가 전부 비어 있는
+    /// 것을 실측으로 확인하고 objc로 넘어온 것이므로, 여기서 None이 나오면 그 전제가
+    /// 깨졌다는 뜻이고 UI에 "미상"만 뜨게 된다.
+    #[test]
+    fn thermal_state_is_actually_readable() {
+        let state = read_thermal_state();
+        assert!(
+            state.is_some(),
+            "NSProcessInfo.thermalState를 읽지 못했다 — CLI 대체 경로가 없으므로 \
+             발열 표시가 통째로 죽는다"
+        );
+        assert!(
+            ["nominal", "fair", "serious", "critical"].contains(&state.as_deref().unwrap()),
+            "예상 밖의 발열 단계: {state:?}"
+        );
+    }
 }

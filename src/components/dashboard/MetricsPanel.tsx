@@ -2,7 +2,7 @@ import React from 'react';
 import { useMetrics } from '../../hooks/useMetrics';
 import { recommendVmResources } from '../../lib/recommendVmResources';
 import { useTranslation } from '../../i18n/i18nContext';
-import { Cpu, Database, Activity, Info } from 'lucide-react';
+import { Cpu, Database, Activity, Info, Thermometer } from 'lucide-react';
 
 interface MetricsPanelProps {
   /** 여정상 보조 정보로 물러설 때 한 줄 요약으로 축소한다. */
@@ -19,6 +19,20 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ compact = false }) =
   const cpuPercent = metrics?.cpu_usage_percentage ?? 0;
 
   const gpuPercent = metrics?.gpu_usage_percentage ?? 0;
+  // 발열은 값이 없을 때 "정상"으로 채우지 않는다 — 스로틀링 판단에 쓰이는 값이다(D22).
+  const thermal = metrics?.thermal_state ?? null;
+  const thermalTone: Record<string, string> = {
+    nominal: 'text-success',
+    fair: 'text-success',
+    serious: 'text-warning',
+    critical: 'text-danger',
+  };
+  const thermalText: Record<string, string> = {
+    nominal: '정상',
+    fair: '보통',
+    serious: '높음',
+    critical: '위험',
+  };
   const gpuMemGb = metrics?.gpu_memory_used_gb ?? 0;
 
   const vmRec = recommendVmResources(totalRam);
@@ -147,6 +161,14 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ compact = false }) =
             <p className="text-caption text-inkFaint flex items-center gap-1">
               <Info className="w-3.5 h-3.5 shrink-0" />
               ioreg Metal 가속 모니터링
+            </p>
+            {/* 발열 — 장시간 학습에서 처리량을 떨어뜨리는 신호. NSProcessInfo 기반(D2 개정). */}
+            <p className="text-caption text-inkFaint flex items-center gap-1 mt-1">
+              <Thermometer className="w-3.5 h-3.5 shrink-0" />
+              발열{' '}
+              <span className={thermal ? thermalTone[thermal] : 'text-inkFaint'}>
+                {thermal ? thermalText[thermal] : '조회 불가'}
+              </span>
             </p>
           </div>
         </div>

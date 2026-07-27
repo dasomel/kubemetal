@@ -14,12 +14,26 @@ pub struct GuardrailStatus {
     pub battery_pause_enabled: bool,
     pub training_paused: bool,
     pub caffeinate_active: bool,
+    /// "nominal" | "fair" | "serious" | "critical", 읽기 실패 시 None(D22).
+    /// 메모리 압력이 "RAM이 모자란가"를 말한다면 이쪽은 "지금 스로틀링되고 있는가"다 —
+    /// 장시간 파인튜닝에서 실제로 처리량을 떨어뜨리는 신호다.
+    pub thermal_state: Option<String>,
+    pub thermal_pause_enabled: bool,
 }
 
 #[derive(Default)]
 pub struct GuardrailState {
     pub battery_pause_enabled: Mutex<bool>,
     pub caffeinate_active: Mutex<bool>,
+    /// 기본 off — 배터리 일시정지와 같은 취급이다. 발열은 정상적인 학습 부하에서도
+    /// fair까지 흔히 올라가므로, 켤지 말지는 사용자가 정한다.
+    pub thermal_pause_enabled: Mutex<bool>,
+}
+
+/// 학습을 멈춰야 할 발열 단계. `serious`부터다 — `fair`는 부하가 걸린 정상 상태에서도
+/// 흔히 나타나서 여기서 멈추면 학습이 사실상 불가능해진다.
+fn thermal_should_pause(state: Option<&str>) -> bool {
+    matches!(state, Some("serious") | Some("critical"))
 }
 
 /// `sysctl -n kern.memorystatus_vm_pressure_level` 원시 출력을 정규화한다(D16).
@@ -88,6 +102,11 @@ pub async fn get_guardrail_status(app: tauri::AppHandle) -> Result<GuardrailStat
         .caffeinate_active
         .lock()
         .map_err(|e| e.to_string())?;
+    let thermal_pause_enabled = *guardrail_state
+        .thermal_pause_enabled
+        .lock()
+        .map_err(|e| e.to_string())?;
+    let thermal_state = crate::commands::metrics::read_thermal_state();
 
     let mlx_state = app.state::<MlxState>();
     let training_paused = {
@@ -104,6 +123,8 @@ pub async fn get_guardrail_status(app: tauri::AppHandle) -> Result<GuardrailStat
         battery_pause_enabled,
         training_paused,
         caffeinate_active,
+        thermal_state,
+        thermal_pause_enabled,
     })
 }
 
@@ -111,13 +132,25 @@ pub async fn get_guardrail_status(app: tauri::AppHandle) -> Result<GuardrailStat
 pub async fn set_guardrail_config(
     app: tauri::AppHandle,
     battery_pause: bool,
+    thermal_pause: Option<bool>,
 ) -> Result<(), String> {
     let guardrail_state = app.state::<GuardrailState>();
-    let mut guard = guardrail_state
-        .battery_pause_enabled
-        .lock()
-        .map_err(|e| e.to_string())?;
-    *guard = battery_pause;
+    {
+        let mut guard = guardrail_state
+            .battery_pause_enabled
+            .lock()
+            .map_err(|e| e.to_string())?;
+        *guard = battery_pause;
+    }
+    // 호출자가 발열 항목을 안 보내면 기존 설정을 건드리지 않는다 — 프런트의 다른
+    // 토글이 이 값을 실수로 꺼버리지 않게 하기 위해서다.
+    if let Some(thermal_pause) = thermal_pause {
+        let mut guard = guardrail_state
+            .thermal_pause_enabled
+            .lock()
+            .map_err(|e| e.to_string())?;
+        *guard = thermal_pause;
+    }
     Ok(())
 }
 
@@ -265,6 +298,21 @@ async fn guardrail_loop(app: tauri::AppHandle, pid: u32) {
         };
         if battery_pause_enabled && measure_on_battery().await {
             let _ = pause_pid(&app, pid, "paused_battery").await;
+            continue;
+        }
+
+        // 발열은 옵트인이다. 켜져 있어도 serious 이상에서만 멈춘다 — fair는 부하가
+        // 걸린 정상 상태에서도 흔해서, 거기서 멈추면 학습이 사실상 불가능해진다.
+        let thermal_pause_enabled = {
+            match app.state::<GuardrailState>().thermal_pause_enabled.lock() {
+                Ok(g) => *g,
+                Err(_) => false,
+            }
+        };
+        if thermal_pause_enabled
+            && thermal_should_pause(crate::commands::metrics::read_thermal_state().as_deref())
+        {
+            let _ = pause_pid(&app, pid, "paused_thermal").await;
         }
     }
 }
@@ -280,6 +328,18 @@ mod tests {
         assert_eq!(map_pressure_level("4"), "critical");
         assert_eq!(map_pressure_level("99"), "unknown");
         assert_eq!(map_pressure_level(""), "unknown");
+    }
+
+    /// 임계선이 serious인 게 핵심이다 — fair에서 멈추면 정상 학습 부하에서도 계속
+    /// 일시정지가 걸린다. 값을 못 읽었을 때(None) 멈추지 않는 것도 의도다: 알 수 없음을
+    /// 위험으로 단정해 학습을 세우지 않는다.
+    #[test]
+    fn thermal_pauses_only_from_serious_up() {
+        assert!(!thermal_should_pause(Some("nominal")));
+        assert!(!thermal_should_pause(Some("fair")));
+        assert!(thermal_should_pause(Some("serious")));
+        assert!(thermal_should_pause(Some("critical")));
+        assert!(!thermal_should_pause(None));
     }
 
     #[test]

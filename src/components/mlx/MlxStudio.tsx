@@ -26,6 +26,7 @@ export const MlxStudio: React.FC = () => {
     guardrailStatus,
     settingBatteryPause,
     setBatteryPause,
+    setThermalPause,
     resumingTraining,
     resumeTraining,
   } = useMlx();
@@ -53,6 +54,7 @@ export const MlxStudio: React.FC = () => {
       training={mlxStatus?.training}
       settingBatteryPause={settingBatteryPause}
       onSetBatteryPause={setBatteryPause}
+      onSetThermalPause={setThermalPause}
       resumingTraining={resumingTraining}
       onResume={resumeTraining}
     />

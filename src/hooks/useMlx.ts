@@ -138,6 +138,23 @@ export function useMlx() {
     }
   }, []);
 
+  // 백엔드는 thermalPause를 Option으로 받는다 — 여기서 함께 보내지 않으면 발열 설정이
+  // 그대로 유지되고, 두 토글이 서로의 값을 덮어쓰지 않는다.
+  const setThermalPause = useCallback(
+    async (enabled: boolean) => {
+      try {
+        await invoke('set_guardrail_config', {
+          batteryPause: guardrailStatus?.battery_pause_enabled ?? false,
+          thermalPause: enabled,
+        });
+        await fetchGuardrailStatus();
+      } catch (err) {
+        await message(`발열 일시정지 설정 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      }
+    },
+    [fetchGuardrailStatus, guardrailStatus],
+  );
+
   const setBatteryPause = useCallback(
     async (enabled: boolean) => {
       setSettingBatteryPause(true);
@@ -231,6 +248,7 @@ export function useMlx() {
     guardrailStatus,
     settingBatteryPause,
     setBatteryPause,
+    setThermalPause,
     resumingTraining,
     resumeTraining,
     pausingTraining,
