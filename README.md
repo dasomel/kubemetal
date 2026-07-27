@@ -84,6 +84,12 @@ Colima를 새로 띄우지 않고 **이미 있는 Kubernetes 클러스터**에 M
    make provision CONTEXT=<컨텍스트> BRIDGE_HOST=<호스트IP> STORAGE_CLASS=<SC>
    ```
 
+> ⚠️ **현재 이 경로는 터미널에서만 동작합니다.** 패키징된 `.app` 안에서는 macOS 로컬
+> 네트워크 권한 때문에 LAN 클러스터로 나가는 kubectl이 `no route to host`로 막힙니다.
+> `NSLocalNetworkUsageDescription`은 추가했지만, 번들이 ad-hoc 서명(빌드마다 식별자가
+> 바뀜)이라 권한이 고정되지 않습니다. Developer ID 서명이 붙기 전까지는 터미널 경로를
+> 쓰세요. 자세한 내용은 `docs/mistakes-log.md` 2026-07-27 항목.
+
 **사내 레지스트리/미러가 필요한 경우** `IMAGE_REGISTRY=<호스트[/프로젝트]>`를 붙이면
 Docker Hub 이미지가 그쪽으로 재지정됩니다(폐쇄망이거나 Docker Hub 익명 pull 제한에
 걸리는 클러스터).

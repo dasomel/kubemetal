@@ -7,6 +7,7 @@ import { ClusterControl } from './components/dashboard/ClusterControl';
 import { LockedPreview } from './components/dashboard/LockedPreview';
 import { StatusSummaryStrip } from './components/dashboard/StatusSummaryStrip';
 import { ProvisionPanel } from './components/services/ProvisionPanel';
+import { DeployTargetCard } from './components/services/DeployTargetCard';
 import { ModelHub } from './components/modelhub/ModelHub';
 import { MlxStudio } from './components/mlx/MlxStudio';
 import { PipelineView } from './components/pipeline/PipelineView';
@@ -158,6 +159,10 @@ export const App: React.FC = () => {
                     <span>{t('header.metalSafe')}</span>
                   </div>
                 </div>
+
+                {/* 배포 대상은 여정 단계와 무관하게 항상 보인다 — 외부 클러스터를 고르려고
+                    colima를 먼저 띄워야 한다면 그 선택 자체가 불가능해진다(D26). */}
+                <DeployTargetCard />
 
                 {journeyStage === 'bootstrap' && (
                   <>

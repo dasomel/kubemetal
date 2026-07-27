@@ -16,8 +16,9 @@ pub const COLIMA_CONTEXT: &str = "colima";
 /// default는 남의 영역이고, prune/삭제 사고의 반경이 너무 넓다.
 pub const DEFAULT_EXTERNAL_NAMESPACE: &str = "kubemetal";
 
+// IPC 타입은 프로젝트 규약대로 snake_case를 유지한다(`src/types/ipc.ts` 상단 주석).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BridgeState {
     /// base 매니페스트의 `host.lima.internal`을 그대로 쓴다. colima 전용 —
     /// 2026-07-20 CoreDNS 실측(→192.168.5.2)으로 확인된 값이다(D10).
@@ -33,7 +34,6 @@ pub enum BridgeState {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
 pub struct DeployTarget {
     pub context: String,
     pub namespace: String,

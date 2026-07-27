@@ -1,6 +1,7 @@
 import React from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { useColima } from '../../hooks/useColima';
+import { useDeployTarget } from '../../hooks/useDeployTarget';
 import { usePrefect } from '../../hooks/usePrefect';
 import { useTranslation } from '../../i18n/i18nContext';
 import { Boxes, ExternalLink, RefreshCw, Zap, ArrowUpRight, Radio } from 'lucide-react';
@@ -21,8 +22,22 @@ export const ProvisionPanel: React.FC = () => {
   } = useColima();
   const { t } = useTranslation();
 
+  const { target, isColima } = useDeployTarget();
+
   const isRunning = status?.is_running ?? false;
   const k8sActive = status?.kubernetes_active ?? false;
+
+  // colima 대상일 때만 VM 기동을 전제로 한다. 외부 클러스터는 이 앱이 수명주기를
+  // 소유하지 않으므로 colima 상태로 버튼을 막으면 영영 배포할 수 없다(D26).
+  const clusterUsable = isColima ? isRunning && k8sActive : true;
+
+  // 브리지 주소를 하드코딩하지 않는다 — 대상마다 다르고, 미검증이면 그 사실을 드러내야 한다.
+  const bridgeLabel =
+    target?.bridge.kind === 'verified'
+      ? target.bridge.host
+      : target?.bridge.kind === 'unverified'
+        ? t('provision.bridgeUnverified')
+        : 'host.lima.internal';
   const mlflowReady = status?.mlflow_ready ?? false;
   const seaweedfsReady = status?.seaweedfs_ready ?? false;
   const artifactStoreWired = status?.artifact_store_wired ?? false;
@@ -84,9 +99,17 @@ export const ProvisionPanel: React.FC = () => {
         <div className="p-3 rounded-lg bg-surfaceRaised flex items-center justify-between">
           <div>
             <div className="text-bodyStrong text-ink">{t('provision.macGpuBridge')}</div>
-            <div className="text-caption text-inkFaint mt-0.5">host.lima.internal</div>
+            <div className="text-caption text-inkFaint mt-0.5">{bridgeLabel}</div>
           </div>
-          <span className="text-caption text-primary">{t('provision.externalName')}</span>
+          <span
+            className={`text-caption ${
+              target?.bridge.kind === 'unverified' ? 'text-warning' : 'text-primary'
+            }`}
+          >
+            {target?.bridge.kind === 'verified'
+              ? t('provision.bridgeEndpoints')
+              : t('provision.externalName')}
+          </span>
         </div>
 
         {/* Prefect */}
@@ -106,7 +129,7 @@ export const ProvisionPanel: React.FC = () => {
       <div className="flex flex-wrap gap-3 mb-4">
         <button
           onClick={() => provisionStack()}
-          disabled={loading || !isRunning || !k8sActive}
+          disabled={loading || !clusterUsable}
           className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           <Zap className="w-3.5 h-3.5" />
@@ -115,7 +138,7 @@ export const ProvisionPanel: React.FC = () => {
 
         <button
           onClick={() => startPortForward()}
-          disabled={loading || !isRunning || !k8sActive}
+          disabled={loading || !clusterUsable}
           className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed text-ink text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           <Radio
@@ -136,7 +159,7 @@ export const ProvisionPanel: React.FC = () => {
 
         <button
           onClick={() => stopPortForward()}
-          disabled={loading || !isRunning}
+          disabled={loading || !clusterUsable}
           className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed text-inkMuted text-bodyStrong rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           {t('provision.stopForwardingBtn')}

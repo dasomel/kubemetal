@@ -67,7 +67,6 @@ async fn kubectl_json(context: &str, args: &[&str]) -> Result<serde_json::Value,
 }
 
 #[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct PreflightReport {
     pub context: String,
     pub reachable: bool,
