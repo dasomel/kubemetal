@@ -7,7 +7,7 @@ import type {
   FineTuneConfig,
   LocalModel,
   GuardrailStatus,
-  ServingRuntime,
+  MlxRuntime,
 } from '../types/ipc';
 
 // 모듈 레벨 캐시 — 탭을 벗어났다 재진입해도 이미 확인된 MLX 환경 상태를 재사용해
@@ -108,7 +108,7 @@ export function useMlx() {
       modelPath: string,
       adapterPath: string | undefined,
       port: number,
-      runtime?: ServingRuntime,
+      runtime?: MlxRuntime,
     ) => {
       setStartingServing(true);
       try {

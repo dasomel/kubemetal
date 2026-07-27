@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Rocket, Loader2, Play, Square, ArrowUpRight, AlertTriangle } from 'lucide-react';
-import type { LocalModel, MlxServingState, ServingRuntime } from '../../types/ipc';
+import type { LocalModel, MlxServingState, MlxRuntime } from '../../types/ipc';
 import { ModelChatPlayground } from './ModelChatPlayground';
 import { useTranslation } from '../../i18n/i18nContext';
 
@@ -17,7 +17,7 @@ interface MlxServingCardProps {
     modelPath: string,
     adapterPath: string | undefined,
     port: number,
-    runtime?: ServingRuntime,
+    runtime?: MlxRuntime,
   ) => void;
   /** mlx-vlm 미설치면 VLM 선택지를 잠근다 — 스폰 후 ModuleNotFoundError로 죽는 것보다 낫다. */
   vlmAvailable: boolean;
@@ -47,7 +47,7 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
   const [modelPath, setModelPath] = useState('');
   const [adapterPath, setAdapterPath] = useState('');
   const [port, setPort] = useState(8080);
-  const [runtime, setRuntime] = useState<ServingRuntime>('mlx-lm');
+  const [runtime, setRuntime] = useState<MlxRuntime>('mlx-lm');
   const prefilledRef = useRef(false);
   const portEditedRef = useRef(false);
 

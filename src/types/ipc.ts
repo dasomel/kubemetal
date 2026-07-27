@@ -75,6 +75,8 @@ export interface FineTuneConfig {
   batch_size: number;
   learning_rate: number;
   adapter_name: string;
+  /** 미지정이면 mlx-lm(D29). mlx-vlm 학습 데이터는 question/answer(+image) jsonl 디렉터리. */
+  runtime?: MlxRuntime;
 }
 
 export interface MlxEnvStatus {
@@ -88,7 +90,7 @@ export interface MlxEnvStatus {
 }
 
 /** 서빙 런타임(D29). 값은 Rust enum의 kebab-case 직렬화와 1:1이다. */
-export type ServingRuntime = 'mlx-lm' | 'mlx-vlm';
+export type MlxRuntime = 'mlx-lm' | 'mlx-vlm';
 
 export interface MlxEnvSetupState {
   state: string;
@@ -110,7 +112,7 @@ export interface MlxServingState {
   port: number;
   model_path: string;
   adapter_path?: string;
-  runtime: ServingRuntime;
+  runtime: MlxRuntime;
 }
 
 export interface MlxStatus {

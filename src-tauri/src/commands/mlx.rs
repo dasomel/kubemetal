@@ -45,6 +45,8 @@ pub struct FineTuneConfig {
     pub batch_size: u32,
     pub learning_rate: f64,
     pub adapter_name: String,
+    /// 미지정이면 mlx-lm — 기존 호출의 동작이 바뀌지 않는다(D29).
+    pub runtime: Option<MlxRuntime>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -62,19 +64,19 @@ pub struct TrainingStatus {
 /// 이 선택을 모른다 — 차이는 스폰 인자와 입력 모달리티(vlm은 이미지)뿐이다.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum ServingRuntime {
+pub enum MlxRuntime {
     MlxLm,
     MlxVlm,
 }
 
-impl ServingRuntime {
+impl MlxRuntime {
     /// 스폰 인자. 실측(2026-07-27, mlx-vlm 0.6.7): `mlx_vlm.server`의 기본 host는
     /// **0.0.0.0**이다 — 명시하지 않으면 서빙이 LAN에 노출된다. 루프백을 강제한다.
     /// mlx_lm은 기본이 127.0.0.1이지만 같은 이유로 양쪽 다 명시한다.
     fn server_args(&self) -> &'static [&'static str] {
         match self {
-            ServingRuntime::MlxLm => &["-m", "mlx_lm", "server", "--host", "127.0.0.1"],
-            ServingRuntime::MlxVlm => &["-m", "mlx_vlm.server", "--host", "127.0.0.1"],
+            MlxRuntime::MlxLm => &["-m", "mlx_lm", "server", "--host", "127.0.0.1"],
+            MlxRuntime::MlxVlm => &["-m", "mlx_vlm.server", "--host", "127.0.0.1"],
         }
     }
 }
@@ -85,7 +87,7 @@ pub struct ServingStatus {
     pub port: u16,
     pub model_path: String,
     pub adapter_path: Option<String>,
-    pub runtime: ServingRuntime,
+    pub runtime: MlxRuntime,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -513,6 +515,11 @@ pub async fn run_mlx_finetune(
             .arg(config.learning_rate.to_string())
             .arg("--adapter-name")
             .arg(&config.adapter_name)
+            .arg("--runtime")
+            .arg(match config.runtime.unwrap_or(MlxRuntime::MlxLm) {
+                MlxRuntime::MlxLm => "mlx-lm",
+                MlxRuntime::MlxVlm => "mlx-vlm",
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env("PATH", augmented_path())
@@ -700,10 +707,10 @@ pub async fn start_model_serving(
     model_path: String,
     adapter_path: Option<String>,
     port: u16,
-    runtime: Option<ServingRuntime>,
+    runtime: Option<MlxRuntime>,
 ) -> Result<String, String> {
     // 지정이 없으면 mlx-lm — 기존 사용자·기존 프런트 호출의 동작이 바뀌지 않는다(D29).
-    let runtime = runtime.unwrap_or(ServingRuntime::MlxLm);
+    let runtime = runtime.unwrap_or(MlxRuntime::MlxLm);
     {
         let mut guard = state.serving.lock().map_err(|e| e.to_string())?;
         if guard.is_some() {

@@ -18,7 +18,7 @@ import {
   Check,
   ImagePlus,
 } from 'lucide-react';
-import type { RagSearchResult, ServingRuntime } from '../../types/ipc';
+import type { RagSearchResult, MlxRuntime } from '../../types/ipc';
 
 /**
  * 서빙 품질 계측. 스트리밍 응답에서만 채워진다.
@@ -65,7 +65,7 @@ interface ModelChatPlaygroundProps {
   modelPath?: string;
   adapterPath?: string;
   /** 'mlx-vlm'일 때만 이미지 첨부가 열린다 — mlx-lm 서버는 image_url을 이해하지 못한다. */
-  runtime?: ServingRuntime;
+  runtime?: MlxRuntime;
 }
 
 const DEFAULT_SYSTEM_PROMPT =

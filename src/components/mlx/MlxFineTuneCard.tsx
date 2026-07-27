@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Sliders, Loader2, Play, Square } from 'lucide-react';
-import type { LocalModel, MlxTrainingState, FineTuneConfig } from '../../types/ipc';
+import type { LocalModel, MlxTrainingState, FineTuneConfig, MlxRuntime } from '../../types/ipc';
 import { useTranslation } from '../../i18n/i18nContext';
 
 interface MlxFineTuneCardProps {
@@ -31,6 +31,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
   const [batchSize, setBatchSize] = useState(1);
   const [learningRate, setLearningRate] = useState(1e-5);
   const [adapterName, setAdapterName] = useState('my-adapter');
+  const [runtime, setRuntime] = useState<MlxRuntime>('mlx-lm');
 
   const isTraining = !!training && training.status !== 'done' && training.status !== 'error';
   const percent =
@@ -40,6 +41,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
     e.preventDefault();
     if (!modelPath) return;
     onStart({
+      runtime,
       model_path: modelPath,
       data_path: dataPath,
       iters,
@@ -52,7 +54,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
   return (
     <div className="rounded-xl bg-surface p-4 shadow-panel">
       <div className="mb-4">
-        <div className="text-label uppercase text-inkFaint mb-1">MLX-LM</div>
+        <div className="text-label uppercase text-inkFaint mb-1">MLX</div>
         <h2 className="text-heading text-ink flex items-center gap-2">
           <Sliders className="w-4 h-4 text-primary" />
           <span>{t('mlx.finetuneTitle')}</span>
@@ -80,6 +82,32 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className={labelClass}>{t('mlx.runtimeLabel')}</label>
+            <div className="flex gap-2" role="radiogroup" aria-label={t('mlx.runtimeLabel')}>
+              {(['mlx-lm', 'mlx-vlm'] as const).map((rt) => (
+                <button
+                  key={rt}
+                  type="button"
+                  role="radio"
+                  aria-checked={runtime === rt}
+                  disabled={isTraining}
+                  onClick={() => setRuntime(rt)}
+                  className={`px-3 py-1.5 rounded-md text-caption transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    runtime === rt
+                      ? 'bg-primaryStrong text-inverse'
+                      : 'bg-surfaceRaised text-inkMuted hover:brightness-95'
+                  }`}
+                >
+                  {rt === 'mlx-lm' ? t('mlx.runtimeText') : t('mlx.runtimeVision')}
+                </button>
+              ))}
+            </div>
+            {runtime === 'mlx-vlm' && (
+              <p className="text-caption text-inkFaint mt-1.5">{t('mlx.vlmDatasetHint')}</p>
+            )}
           </div>
 
           <div>
