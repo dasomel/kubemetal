@@ -47,6 +47,9 @@ pub struct FineTuneConfig {
     pub adapter_name: String,
     /// 미지정이면 mlx-lm — 기존 호출의 동작이 바뀌지 않는다(D29).
     pub runtime: Option<MlxRuntime>,
+    /// 미지정 false — 기존 호출 동작 불변. mlx-vlm 전용, 비양자화 모델 필요.
+    #[serde(default)]
+    pub train_vision: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -501,8 +504,8 @@ pub async fn run_mlx_finetune(
             ));
         }
 
-        let child = tokio::process::Command::new(&venv_py)
-            .arg(&wrapper)
+        let mut cmd = tokio::process::Command::new(&venv_py);
+        cmd.arg(&wrapper)
             .arg("--model")
             .arg(&model_path)
             .arg("--data")
@@ -519,7 +522,13 @@ pub async fn run_mlx_finetune(
             .arg(match config.runtime.unwrap_or(MlxRuntime::MlxLm) {
                 MlxRuntime::MlxLm => "mlx-lm",
                 MlxRuntime::MlxVlm => "mlx-vlm",
-            })
+            });
+
+        if config.train_vision {
+            cmd.arg("--train-vision");
+        }
+
+        let child = cmd
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env("PATH", augmented_path())
@@ -929,5 +938,31 @@ mod tests {
             "프로브 스니펫이 파이썬 구문 오류로 죽었다: {}",
             String::from_utf8_lossy(&out.stderr)
         );
+    }
+
+    #[test]
+    fn finetune_config_defaults_train_vision_to_false() {
+        let json = r#"{
+            "model_path": "/path/to/model",
+            "data_path": "/path/to/data",
+            "iters": 100,
+            "batch_size": 4,
+            "learning_rate": 0.0001,
+            "adapter_name": "test-adapter"
+        }"#;
+        let config: FineTuneConfig = serde_json::from_str(json).unwrap();
+        assert!(!config.train_vision);
+
+        let json_with_vision = r#"{
+            "model_path": "/path/to/model",
+            "data_path": "/path/to/data",
+            "iters": 100,
+            "batch_size": 4,
+            "learning_rate": 0.0001,
+            "adapter_name": "test-adapter",
+            "train_vision": true
+        }"#;
+        let config_vision: FineTuneConfig = serde_json::from_str(json_with_vision).unwrap();
+        assert!(config_vision.train_vision);
     }
 }

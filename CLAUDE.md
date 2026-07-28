@@ -92,7 +92,8 @@ forward — forwards die with their parent.
 - **Two MLX runtimes (D29)**: mlx-lm (text) and mlx-vlm (vision), one venv, default
   mlx-lm. Both servers get `--host 127.0.0.1` explicitly — mlx_vlm.server defaults to
   0.0.0.0. In `mlx_vlm.lora`, `--adapter-path` means *resume*, not output — output is
-  `--output-path`, and its adapter_config.json has no `model` key.
+  `--output-path`, and its adapter_config.json has no `model` key. `--train-vision`
+  needs a non-quantized (bf16) model — 4-bit dies on `QuantizedMatmul::vjp`.
 - colima is not reentrant — one lifecycle op at a time, and never above the D4 profile.
 - Files past ~300 lines want splitting. Formatting is rustfmt/clippy/lint's job, not
   yours to police in prose.

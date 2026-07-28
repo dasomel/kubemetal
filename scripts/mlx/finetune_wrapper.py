@@ -56,6 +56,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--adapter-name", required=True)
     p.add_argument("--runtime", choices=["mlx-lm", "mlx-vlm"], default="mlx-lm")
     p.add_argument("--mlflow-uri", default="http://localhost:5001")
+    p.add_argument("--train-vision", action="store_true")
     return p.parse_args()
 
 
@@ -66,6 +67,10 @@ def emit(event: dict) -> None:
 
 def main() -> int:
     args = parse_args()
+
+    if args.runtime == "mlx-lm" and args.train_vision:
+        emit({"type": "error", "message": "--train-vision은 mlx-vlm 런타임 전용입니다"})
+        return 2
 
     adapter_path = Path.home() / ".kubemetal" / "adapters" / args.adapter_name
     adapter_path.mkdir(parents=True, exist_ok=True)
@@ -86,6 +91,7 @@ def main() -> int:
             "learning_rate": args.learning_rate,
             "adapter_name": args.adapter_name,
             "runtime": args.runtime,
+            "train_vision": args.train_vision,
         },
     )
 
@@ -104,6 +110,8 @@ def main() -> int:
             "--output-path", str(adapter_path),
             "--steps-per-report", "1",
         ]
+        if args.train_vision:
+            cmd.append("--train-vision")
     else:
         cmd = [
             sys.executable,

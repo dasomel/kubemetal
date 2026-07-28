@@ -77,6 +77,8 @@ export interface FineTuneConfig {
   adapter_name: string;
   /** 미지정이면 mlx-lm(D29). mlx-vlm 학습 데이터는 question/answer(+image) jsonl 디렉터리. */
   runtime?: MlxRuntime;
+  /** mlx-vlm 전용, 비양자화(bf16) 모델 필요 — 4bit는 QuantizedMatmul::vjp로 실패(실측 2026-07-28). */
+  train_vision?: boolean;
 }
 
 export interface MlxEnvStatus {

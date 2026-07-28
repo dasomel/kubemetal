@@ -32,6 +32,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
   const [learningRate, setLearningRate] = useState(1e-5);
   const [adapterName, setAdapterName] = useState('my-adapter');
   const [runtime, setRuntime] = useState<MlxRuntime>('mlx-lm');
+  const [trainVision, setTrainVision] = useState(false);
 
   const isTraining = !!training && training.status !== 'done' && training.status !== 'error';
   const percent =
@@ -42,6 +43,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
     if (!modelPath) return;
     onStart({
       runtime,
+      train_vision: runtime === 'mlx-vlm' && trainVision,
       model_path: modelPath,
       data_path: dataPath,
       iters,
@@ -106,7 +108,22 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
               ))}
             </div>
             {runtime === 'mlx-vlm' && (
-              <p className="text-caption text-inkFaint mt-1.5">{t('mlx.vlmDatasetHint')}</p>
+              <>
+                <p className="text-caption text-inkFaint mt-1.5">{t('mlx.vlmDatasetHint')}</p>
+                <div className="mt-2.5 flex flex-col gap-1">
+                  <label className="flex items-center gap-2 cursor-pointer text-body text-ink">
+                    <input
+                      type="checkbox"
+                      checked={trainVision}
+                      onChange={(e) => setTrainVision(e.target.checked)}
+                      disabled={isTraining}
+                      className="w-4 h-4 rounded border-hairline accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50"
+                    />
+                    <span className="text-body text-ink">{t('mlx.trainVisionLabel')}</span>
+                  </label>
+                  <p className="text-caption text-inkFaint pl-6">{t('mlx.trainVisionHint')}</p>
+                </div>
+              </>
             )}
           </div>
 
