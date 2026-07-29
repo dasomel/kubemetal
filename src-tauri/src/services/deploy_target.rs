@@ -33,6 +33,13 @@ pub enum BridgeState {
     },
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum IntegrationLevel {
+    AgentOnly,
+    FullStack,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DeployTarget {
     pub context: String,
@@ -43,6 +50,9 @@ pub struct DeployTarget {
     /// 사내 레지스트리/미러. docker.io 이미지만 여기로 재지정된다.
     pub image_registry: Option<String>,
     pub bridge: BridgeState,
+    /// None=미지정 → 파생 기본값. 기존 deploy-target.json(필드 없음)은 None으로 역직렬화된다.
+    #[serde(default)]
+    pub integration_level: Option<IntegrationLevel>,
 }
 
 impl DeployTarget {
@@ -54,6 +64,7 @@ impl DeployTarget {
                 storage_class: None,
                 image_registry: None,
                 bridge: BridgeState::KeepBase,
+                integration_level: None,
             }
         } else {
             Self {
@@ -65,12 +76,35 @@ impl DeployTarget {
                     candidates: Vec::new(),
                     reason: "브리지 주소를 아직 탐지·검증하지 않았습니다.".into(),
                 },
+                integration_level: None,
             }
         }
     }
 
     pub fn is_colima(&self) -> bool {
         self.context == COLIMA_CONTEXT
+    }
+
+    /// D30: 자체 k3s가 스택의 정식 거처, 외부 기본은 에이전트 온리.
+    pub fn effective_integration_level(&self) -> IntegrationLevel {
+        match self.integration_level {
+            Some(level) => level,
+            None => {
+                if self.is_colima() {
+                    IntegrationLevel::FullStack
+                } else {
+                    IntegrationLevel::AgentOnly
+                }
+            }
+        }
+    }
+
+    pub fn full_stack_gate(&self) -> Result<(), String> {
+        if !self.is_colima() && self.effective_integration_level() == IntegrationLevel::AgentOnly {
+            Err("외부 클러스터의 기본 통합은 에이전트 온리입니다(D30) — 풀스택 배포는 배포 대상 카드에서 L2 풀스택을 명시적으로 선택한 뒤 저장하세요".into())
+        } else {
+            Ok(())
+        }
     }
 
     /// `render.sh`에 넘길 인자. 브리지가 미검증이면 인자를 만들지 않고 거부한다 —
@@ -319,5 +353,46 @@ en0: flags=8863<UP,BROADCAST>
                 "nfs-csi"
             ]
         );
+    }
+
+    #[test]
+    fn full_stack_gate_passes_for_colima_default() {
+        let t = DeployTarget::for_context(COLIMA_CONTEXT);
+        assert_eq!(t.effective_integration_level(), IntegrationLevel::FullStack);
+        assert!(t.full_stack_gate().is_ok());
+    }
+
+    #[test]
+    fn full_stack_gate_rejects_external_none() {
+        let t = DeployTarget::for_context("narwhal");
+        assert_eq!(t.effective_integration_level(), IntegrationLevel::AgentOnly);
+        let err = t.full_stack_gate().expect_err("외부+None은 차단되어야 한다");
+        assert!(err.contains("D30"), "D30 메시지가 포함되어야 한다: {err}");
+    }
+
+    #[test]
+    fn full_stack_gate_passes_external_full_stack() {
+        let mut t = DeployTarget::for_context("narwhal");
+        t.integration_level = Some(IntegrationLevel::FullStack);
+        assert_eq!(t.effective_integration_level(), IntegrationLevel::FullStack);
+        assert!(t.full_stack_gate().is_ok());
+    }
+
+    #[test]
+    fn deserializes_legacy_json_without_integration_level_to_none() {
+        let json = r#"{
+            "context": "narwhal",
+            "namespace": "kubemetal",
+            "storage_class": null,
+            "image_registry": null,
+            "bridge": {
+                "kind": "unverified",
+                "candidates": [],
+                "reason": "test"
+            }
+        }"#;
+        let t: DeployTarget = serde_json::from_str(json).expect("역직렬화 성공해야 함");
+        assert_eq!(t.integration_level, None);
+        assert_eq!(t.effective_integration_level(), IntegrationLevel::AgentOnly);
     }
 }

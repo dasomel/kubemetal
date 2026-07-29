@@ -11,6 +11,8 @@ const RENDER_SCRIPT: &str = "scripts/k8s/render.sh";
 #[tauri::command]
 pub async fn provision_mlops_stack(app: tauri::AppHandle) -> Result<String, String> {
     let target = get_deploy_target(app.clone()).await?;
+    // 외부 클러스터의 기본 통합은 에이전트 온리다 — 풀스택 프로비저닝을 차단한다(D30).
+    target.full_stack_gate()?;
     // 브리지가 미검증이면 여기서 막힌다 — 추측 주소를 클러스터로 보내지 않기 위해서다.
     let render_args = target.render_args()?;
 

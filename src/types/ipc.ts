@@ -335,6 +335,8 @@ export interface DeployTarget {
   /** 사내 레지스트리/미러. docker.io 이미지만 재지정된다. */
   image_registry: string | null;
   bridge: BridgeState;
+  /** None=파생 기본(외부 클러스터는 agent-only) — D30 */
+  integration_level?: 'agent-only' | 'full-stack' | null;
 }
 
 export interface PreflightReport {

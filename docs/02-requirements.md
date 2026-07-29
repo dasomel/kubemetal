@@ -156,9 +156,9 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 | `get_cluster_status` | None | `ClusterStatusJSON` | colima 상태 + MLflow/SeaweedFS 배포 준비 여부(`mlflow_ready`/`seaweedfs_ready`) 리턴 |
 | `start_cluster` | `{ cpu: u32, memory: u32 }` | `Result<String, String>` | Colima `vz` K8s 클러스터 구동 |
 | `stop_cluster` | None | `Result<String, String>` | Colima K8s 클러스터 중지 |
-| `provision_mlops_stack` | None | `Result<String, String>` | 활성 배포 대상(D26)에 MLOps 스택 적용. 매니페스트는 `scripts/k8s/render.sh`가 대상에 맞춰 렌더링하고(ns/브리지/StorageClass/레지스트리) 결과를 stdin으로 `kubectl apply`에 흘린다. 브리지가 미검증이면 렌더 전에 Err (FR-02.1) |
+| `provision_mlops_stack` | None | `Result<String, String>` | 활성 배포 대상(D26)에 MLOps 스택 적용. 매니페스트는 `scripts/k8s/render.sh`가 대상에 맞춰 렌더링하고(ns/브리지/StorageClass/레지스트리) 결과를 stdin으로 `kubectl apply`에 흘린다. 외부 대상이 L1 에이전트 온리면(`full_stack_gate`, D30) 렌더보다 먼저 Err, 브리지가 미검증이어도 렌더 전에 Err (FR-02.1) |
 | `get_deploy_target` (D26) | None | `Result<DeployTarget, String>` | 저장된 배포 대상을 읽는다. 없으면 colima 기본값 — 기존 사용자의 동작이 바뀌지 않는다. 읽는 즉시 활성 (context, namespace) 캐시에 반영해 포트포워드·크리덴셜 조회 경로가 따라간다 |
-| `save_deploy_target` (D26) | `{ target: DeployTarget }` | `Result<DeployTarget, String>` | 대상을 앱 설정 디렉터리(`deploy-target.json`)에 저장하고 활성 캐시를 갱신 |
+| `save_deploy_target` (D26) | `{ target: DeployTarget }` | `Result<DeployTarget, String>` | 대상을 앱 설정 디렉터리(`deploy-target.json`)에 저장하고 활성 캐시를 갱신. `integration_level`(`agent-only`/`full-stack`, 미지정 시 파생 기본: colima=full-stack, 외부=agent-only — D30)을 포함 |
 | `preflight_deploy_target` (D26) | `{ context: String, namespace: String }` | `Result<PreflightReport, String>` | 대상 클러스터 사전점검을 **전부 실측**으로 수행: 노드/InternalIP, StorageClass와 기본값 유무, ArgoCD CRD 및 대상 ns를 소유한 Application, Kyverno Enforce 정책 목록, 브리지 후보. 배포를 막아야 할 사유는 `blockers`로 올린다(기본 SC 없음 / ArgoCD 소유 / 브리지 후보 없음) |
 | `detect_host_bridge` (D26, D10 개정) | `{ context: String, namespace: String }` | `Result<BridgeState, String>` | 2단계 탐지. (1) `ifconfig -a`를 파싱해 노드 서브넷과 같은 대역의 **호스트 인터페이스 자기 주소**를 후보로 낸다 — `route -n get`은 쓰지 않는다(인터페이스가 내려가 있으면 기본 경로로 폴백해 LAN 공유기 주소를 호스트로 반환한다, 실측). (2) 후보 주소에만 임시 리스너를 바인드하고 클러스터 안에 프로브 파드를 띄워 도달을 확인한다 — 검증 주체는 호스트가 아니라 **클러스터**여야 한다. 성공한 후보만 `Verified`, 전부 실패하면 사유와 함께 `Unverified`(배포 거부 상태). colima는 D10 실측값이 있어 `KeepBase`로 즉시 반환 |
 | `start_port_forward` | None | `Result<String, String>` | MLflow(5001) · SeaweedFS(8333/8888) `kubectl port-forward` 자식 프로세스 기동 (FR-02.2) |

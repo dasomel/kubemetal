@@ -5,6 +5,13 @@ import type { BridgeState, DeployTarget, PreflightReport } from '../types/ipc';
 
 export const COLIMA_CONTEXT = 'colima';
 
+// 이 훅은 컴포넌트마다 독립 인스턴스다(DeployTargetCard와 ProvisionPanel이 각자 호출).
+// 한 인스턴스에서 저장해도 다른 인스턴스는 마운트 시점 복사본을 계속 렌더하므로 —
+// 쓰기와 렌더가 다른 복사본에 사는 07-27 결함 클래스 — 저장 성공을 모듈 수준으로
+// 브로드캐스트해 모든 인스턴스가 저장된 대상을 다시 읽게 한다.
+const saveListeners = new Set<() => void>();
+const notifyTargetSaved = () => saveListeners.forEach((fn) => fn());
+
 /**
  * 배포 대상(D26) 선택·사전점검·브리지 탐지.
  *
@@ -43,6 +50,14 @@ export function useDeployTarget() {
     void loadContexts();
   }, [loadTarget, loadContexts]);
 
+  useEffect(() => {
+    const onSaved = () => void loadTarget();
+    saveListeners.add(onSaved);
+    return () => {
+      saveListeners.delete(onSaved);
+    };
+  }, [loadTarget]);
+
   /** 컨텍스트를 바꾸면 이전 대상의 사전점검·브리지 검증 결과는 무효다. */
   const selectContext = useCallback((context: string) => {
     setPreflight(null);
@@ -56,6 +71,7 @@ export function useDeployTarget() {
         context === COLIMA_CONTEXT
           ? { kind: 'keep_base' }
           : { kind: 'unverified', candidates: [], reason: '아직 탐지·검증하지 않았습니다.' },
+      integration_level: null,
     });
   }, []);
 
@@ -104,6 +120,7 @@ export function useDeployTarget() {
     setBusy('save');
     try {
       setTarget(await invoke<DeployTarget>('save_deploy_target', { target }));
+      notifyTargetSaved();
       await message(`배포 대상을 [${target.context}] / ${target.namespace} 로 저장했습니다.`, {
         title: 'KubeMetal',
         kind: 'info',

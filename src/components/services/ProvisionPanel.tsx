@@ -30,6 +30,7 @@ export const ProvisionPanel: React.FC = () => {
   // colima 대상일 때만 VM 기동을 전제로 한다. 외부 클러스터는 이 앱이 수명주기를
   // 소유하지 않으므로 colima 상태로 버튼을 막으면 영영 배포할 수 없다(D26).
   const clusterUsable = isColima ? isRunning && k8sActive : true;
+  const isL1 = !isColima && (target?.integration_level ?? 'agent-only') === 'agent-only';
 
   // 브리지 주소를 하드코딩하지 않는다 — 대상마다 다르고, 미검증이면 그 사실을 드러내야 한다.
   const bridgeLabel =
@@ -129,7 +130,7 @@ export const ProvisionPanel: React.FC = () => {
       <div className="flex flex-wrap gap-3 mb-4">
         <button
           onClick={() => provisionStack()}
-          disabled={loading || !clusterUsable}
+          disabled={loading || !clusterUsable || isL1}
           className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           <Zap className="w-3.5 h-3.5" />
@@ -165,6 +166,12 @@ export const ProvisionPanel: React.FC = () => {
           {t('provision.stopForwardingBtn')}
         </button>
       </div>
+
+      {isL1 && (
+        <div className="p-3 rounded-lg bg-surfaceRaised text-caption text-warning mb-4">
+          {t('deployTarget.l1ProvisionBlocked')}
+        </div>
+      )}
 
       {/* 포트 바인딩 바로가기 가이드 */}
       <div className="pt-4 border-t border-hairline/8">
