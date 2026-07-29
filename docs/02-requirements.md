@@ -104,7 +104,7 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 
 * **FR-05.1 (Phase 1 · MVP)**: `sysinfo` 크레이트를 사용해 RAM 사용량과 CPU 사용률을 1초 주기로 측정하여 스트리밍해야 한다.
 * **FR-05.4 (Phase 4 · 구현됨, 2026-07-24 개정)**: Metal GPU 점유율/메모리는 sudo 없이 접근 가능한 `ioreg -l -d 1 -r -c IOAccelerator`(D16과 동일한 sudo-free 원칙) 출력을 파싱하여 `get_system_metrics`의 `gpu_usage_percentage`/`gpu_memory_used_gb` 필드로 제공한다. root 권한이 필요한 `powermetrics` CLI 기반 측정 및 별도 privileged helper는 채택하지 않으며(D2), 앞으로도 사용하지 않는다.
-* **FR-05.2 (OOM Protection · Phase 3)**: macOS의 **memory pressure 레벨**(`warn` 또는 `critical`)이 감지되면 진행 중인 MLX 학습 프로세스를 일시정지(Pause)하고 사용자에게 대화상자 경고를 출력해야 한다. macOS는 파일 캐시로 인해 가용 RAM 비율만으로는 상시 오탐이 발생하므로, 단순 "가용 RAM 10% 이하"와 같은 비율 임계값을 트리거 기준으로 사용해서는 안 된다.
+* **FR-05.2 (OOM Protection · Phase 3)**: macOS의 **memory pressure 레벨**(`warn` 또는 `critical`)이 감지되면 진행 중인 MLX 학습 프로세스를 일시정지(Pause)하고 사용자에게 대화상자 경고를 출력해야 한다. macOS는 파일 캐시로 인해 가용 RAM 비율만으로는 상시 오탐이 발생하므로, 단순 "가용 RAM 10% 이하"와 같은 비율 임계값을 트리거 기준으로 사용해서는 안 된다. 단, 사용자가 일시정지를 수동 재개하면 그 학습에서는 `warn`으로 다시 멈추지 않는다 — `critical`은 항상 멈춘다(D16 개정 2026-07-29).
 * **FR-05.3 (Power/Thermal Guard · Phase 3)**: 배터리 구동 감지 시 학습 일시정지 옵션을 제공하며, 학습 중 슬립 모드 진입을 방지하기 위해 `caffeinate` 어서션을 실행해야 한다.
 
 ### FR-06: 서비스 연동 자동 구성 (Phase 2a)

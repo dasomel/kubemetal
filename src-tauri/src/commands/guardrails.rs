@@ -325,9 +325,16 @@ pub fn spawn_guardrail_loop(app: tauri::AppHandle, pid: u32) {
     tokio::spawn(guardrail_loop(app, pid));
 }
 
-fn clear_resume_overrides(app: &tauri::AppHandle) {
+/// 이 루프(pid)의 오버라이드만 지운다. 무조건 비우면 학습 교체 직후 구 루프의 마지막
+/// 틱이 신규 학습의 오버라이드를 지울 수 있다(경합 — 재정지 1회로 자가 치유되지만
+/// 사용자 의사를 한 번 무시하게 된다).
+fn clear_resume_overrides_for_pid(app: &tauri::AppHandle, pid: u32) {
     if let Ok(mut guard) = app.state::<GuardrailState>().resume_overrides.lock() {
-        *guard = None;
+        if let Some((stored_pid, _)) = *guard {
+            if stored_pid == pid {
+                *guard = None;
+            }
+        }
     }
 }
 
@@ -366,21 +373,21 @@ async fn guardrail_loop(app: tauri::AppHandle, pid: u32) {
             let guard = match mlx_state.training.lock() {
                 Ok(g) => g,
                 Err(_) => {
-                    clear_resume_overrides(&app);
+                    clear_resume_overrides_for_pid(&app, pid);
                     return;
                 }
             };
             match guard.as_ref() {
                 Some(t) if t.pid == pid => t.status.clone(),
                 _ => {
-                    clear_resume_overrides(&app);
+                    clear_resume_overrides_for_pid(&app, pid);
                     return; // 학습 항목이 교체/삭제됨 -> 루프 종료
                 }
             }
         };
 
         if status == "done" || status == "error" || status == "killed" {
-            clear_resume_overrides(&app);
+            clear_resume_overrides_for_pid(&app, pid);
             return;
         }
         if status != "running" {
