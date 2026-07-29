@@ -72,8 +72,8 @@ make kagent-up CONTEXT=<kubeconfig-컨텍스트>   # kagent 0.9.12 helm 설치 (
 
 이후 앱의 **kagent 운영 탭**에서 컨텍스트별 진단 조회와 에이전트(security/promql/
 observability) 켜고 끄기를 수행합니다. kagent UI는 `make forward`로 8090에 열립니다.
-패키징 앱에서 LAN 클러스터에 접근하려면 Developer ID 서명이 필요하므로, 그 전까지는
-위처럼 터미널 경로를 사용합니다.
+패키징 앱의 LAN 클러스터 접근에는 안정된 코드 서명이 필요합니다 — 키체인에 유효한
+codesigning 아이덴티티가 있으면 `make app`이 자동 서명합니다(아래 D26 절 참고).
 
 ## 기존 클러스터에 배포하기 (D26 — 옵트인)
 
@@ -103,11 +103,12 @@ Colima를 새로 띄우지 않고 **이미 있는 Kubernetes 클러스터**에 M
    make provision CONTEXT=<컨텍스트> BRIDGE_HOST=<호스트IP> STORAGE_CLASS=<SC>
    ```
 
-> ⚠️ **현재 이 경로는 터미널에서만 동작합니다.** 패키징된 `.app` 안에서는 macOS 로컬
-> 네트워크 권한 때문에 LAN 클러스터로 나가는 kubectl이 `no route to host`로 막힙니다.
-> `NSLocalNetworkUsageDescription`은 추가했지만, 번들이 ad-hoc 서명(빌드마다 식별자가
-> 바뀜)이라 권한이 고정되지 않습니다. Developer ID 서명이 붙기 전까지는 터미널 경로를
-> 쓰세요. 자세한 내용은 `docs/mistakes-log.md` 2026-07-27 항목.
+> ℹ️ **서명된 빌드가 필요합니다.** ad-hoc 서명(빌드마다 식별자가 바뀜)에서는 macOS
+> 로컬 네트워크 권한이 고정되지 않아 LAN kubectl이 `no route to host`로 막힙니다.
+> 키체인에 유효한 codesigning 아이덴티티가 있으면 `make app`이 자동으로 그것으로
+> 서명합니다(자가서명 인증서로 충분 — 이 Mac 한정, 실측 2026-07-29). 타인 배포용은
+> Developer ID: `make app SIGNING_IDENTITY="Developer ID Application: …"`.
+> 자세한 내용은 `docs/mistakes-log.md` 2026-07-27 항목.
 
 **사내 레지스트리/미러가 필요한 경우** `IMAGE_REGISTRY=<호스트[/프로젝트]>`를 붙이면
 Docker Hub 이미지가 그쪽으로 재지정됩니다(폐쇄망이거나 Docker Hub 익명 pull 제한에

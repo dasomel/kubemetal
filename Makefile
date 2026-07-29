@@ -74,9 +74,15 @@ bin: clean-light ## 순수 실행 바이너리 생성 (src-tauri/target/release/
 	pnpm tauri build --no-bundle
 	@echo "실행 파일: src-tauri/target/release/kubemetal"
 
+# 서명: 키체인에 유효한 codesigning 아이덴티티가 있으면 그것으로 서명한다 — TCC
+# local-network 승인이 코드 아이덴티티에 묶이므로 ad-hoc(빌드마다 다른 식별자)로는
+# 승인이 고정되지 않는다(mistakes-log 2026-07-27). 없으면 기존 ad-hoc 그대로.
+# Developer ID로 교체할 때는 make app SIGNING_IDENTITY="Developer ID Application: ..."
+SIGNING_IDENTITY ?= $(shell security find-identity -v -p codesigning 2>/dev/null | awk -F'"' 'NR==1 && NF>1 {print $$2}')
+
 app: clean-light ## .app 번들만 생성 (dmg 생략 — 헤드리스 안전)
-	pnpm tauri build --bundles app
-	@echo "번들: src-tauri/target/release/bundle/macos/KubeMetal.app"
+	$(if $(SIGNING_IDENTITY),APPLE_SIGNING_IDENTITY="$(SIGNING_IDENTITY)") pnpm tauri build --bundles app
+	@echo "번들: src-tauri/target/release/bundle/macos/KubeMetal.app$(if $(SIGNING_IDENTITY), (서명: $(SIGNING_IDENTITY)))"
 
 install-app: app ## .app 빌드 후 /Applications에 설치(기존본 교체)
 	rm -rf /Applications/KubeMetal.app
