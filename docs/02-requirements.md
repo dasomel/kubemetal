@@ -83,7 +83,7 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 
 ### FR-02: MLOps 인프라 서비스 자동 프로비저닝
 
-* **FR-02.1**: K8s 클러스터 정상 구동 시, Helm/Kubectl을 통해 **MLflow Tracking Server**와 **SeaweedFS Object Storage**를 파드로 자동 배포해야 한다.
+* **FR-02.1**: K8s 클러스터 정상 구동 시, Helm/Kubectl을 통해 **MLflow Tracking Server**와 **SeaweedFS Object Storage**를 파드로 자동 배포해야 한다. 스택의 정식 배포 대상은 자체 k3s(colima)다 — 외부 클러스터의 기본 통합 수준은 에이전트 온리이며, 풀스택 외부 배포는 전제조건을 갖춘 옵트인 경로다(D26/D30).
 * **FR-02.2**: K8s 내 배포된 MLflow UI 및 SeaweedFS Filer UI/S3 API로 아래 포트를 호스트에 자동 포트포워딩 구성하고, 프론트엔드 Webview로 내장/웹 브라우저 오픈 기능을 제공해야 한다. 포트포워딩은 앱이 관리하는 `kubectl port-forward` 자식 프로세스로 구현하며(`start_port_forward`/`stop_port_forward`), 클러스터 중지 또는 앱 종료 시 해당 프로세스를 정리해야 한다.
   * MLflow UI: 호스트 **5001번 포트** (macOS AirPlay Receiver가 기본 5000번 포트를 점유하므로 5000 사용 금지)
   * SeaweedFS Filer UI: 호스트 **8888번 포트**

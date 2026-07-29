@@ -16,7 +16,7 @@ processes — Metal GPU cannot be passed through to Linux VMs.
 |-------|----------------|
 | Proposal / roadmap | `docs/01-proposal.md` |
 | FR/NFR + IPC command table | `docs/02-requirements.md` (§4.1 = IPC names) |
-| MVP design + **decision registry D1–D25** | `docs/03-mvp-design.md` (§4 registry, §5 verified/unverified assumptions) |
+| MVP design + **decision registry (D1…)** | `docs/03-mvp-design.md` (§4 registry, §5 verified/unverified assumptions) |
 | Architecture overview | `docs/04-architecture.md` |
 | **Mistakes Log** | `docs/mistakes-log.md` — read the section matching your work area BEFORE touching it; add a row per new mistake |
 | Team harness / lanes / OMC / plan-mode | `.claude/rules/harness.md` — load when orchestrating |
@@ -24,7 +24,7 @@ processes — Metal GPU cannot be passed through to Linux VMs.
 | Run instructions | `README.md` |
 | Superseded drafts | `docs/archive/` — never implement from these |
 
-Changing a D1–D25 decision requires updating all affected docs in the same task.
+Changing a D-registry decision requires updating all affected docs in the same task.
 
 ## Architecture Invariants
 
@@ -51,6 +51,10 @@ Changing a D1–D25 decision requires updating all affected docs in the same tas
   registry) and `scripts/k8s/kustomization.yaml` is the only manifest list. External
   clusters get their own `kubemetal` namespace — `default` stays colima-only. An
   unverified bridge address refuses to render rather than shipping a guess.
+- **Integration tiers (D30)**: the stack's home is the app's own k3s; external
+  clusters default to **agent-only (L1)** — kagent CRDs, no bridge, nothing in the
+  cluster may depend on the Mac's local stack. Full-stack external deploy with the
+  D10 bridge is the opt-in **L2** tier.
 
 ## Team & UI
 
