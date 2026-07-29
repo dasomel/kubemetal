@@ -175,6 +175,8 @@ export interface GuardrailStatus {
   caffeinate_active: boolean;
   thermal_state?: 'nominal' | 'fair' | 'serious' | 'critical' | null;
   thermal_pause_enabled: boolean;
+  /** D16 개정 — 수동 재개로 억제된 자동 일시정지 원인들. critical 메모리 압력은 억제 불가 */
+  resume_overrides: string[];
 }
 
 export interface FlowRunInfo {

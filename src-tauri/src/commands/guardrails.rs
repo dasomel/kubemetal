@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -19,6 +20,7 @@ pub struct GuardrailStatus {
     /// 장시간 파인튜닝에서 실제로 처리량을 떨어뜨리는 신호다.
     pub thermal_state: Option<String>,
     pub thermal_pause_enabled: bool,
+    pub resume_overrides: Vec<String>,
 }
 
 #[derive(Default)]
@@ -28,12 +30,36 @@ pub struct GuardrailState {
     /// 기본 off — 배터리 일시정지와 같은 취급이다. 발열은 정상적인 학습 부하에서도
     /// fair까지 흔히 올라가므로, 켤지 말지는 사용자가 정한다.
     pub thermal_pause_enabled: Mutex<bool>,
+    /// D16 개정: 수동 재개 오버라이드 저장소. (학습 pid, 억제된 원인 집합).
+    /// 수동 재개는 사용자 의사 표명이므로 같은 원인의 advisory 신호로 다시 멈추지 않는다, critical은 예외.
+    pub resume_overrides: Mutex<Option<(u32, HashSet<String>)>>,
 }
 
 /// 학습을 멈춰야 할 발열 단계. `serious`부터다 — `fair`는 부하가 걸린 정상 상태에서도
 /// 흔히 나타나서 여기서 멈추면 학습이 사실상 불가능해진다.
 fn thermal_should_pause(state: Option<&str>) -> bool {
     matches!(state, Some("serious") | Some("critical"))
+}
+
+/// D16 개정: 수동 재개는 사용자 의사 표명이므로 같은 원인의 advisory 신호(warn)로 다시 멈추지 않는다, critical은 예외.
+fn memory_should_auto_pause(level: &str, overridden: bool) -> bool {
+    level == "critical" || (level == "warn" && !overridden)
+}
+
+fn battery_should_auto_pause(
+    on_battery: bool,
+    battery_pause_enabled: bool,
+    overridden: bool,
+) -> bool {
+    battery_pause_enabled && on_battery && !overridden
+}
+
+fn thermal_should_auto_pause(
+    thermal_state: Option<&str>,
+    thermal_pause_enabled: bool,
+    overridden: bool,
+) -> bool {
+    thermal_pause_enabled && thermal_should_pause(thermal_state) && !overridden
 }
 
 /// `sysctl -n kern.memorystatus_vm_pressure_level` 원시 출력을 정규화한다(D16).
@@ -109,12 +135,29 @@ pub async fn get_guardrail_status(app: tauri::AppHandle) -> Result<GuardrailStat
     let thermal_state = crate::commands::metrics::read_thermal_state();
 
     let mlx_state = app.state::<MlxState>();
-    let training_paused = {
+    let (training_paused, active_pid) = {
         let guard = mlx_state.training.lock().map_err(|e| e.to_string())?;
-        guard
+        let paused = guard
             .as_ref()
             .map(|t| t.status.starts_with("paused"))
-            .unwrap_or(false)
+            .unwrap_or(false);
+        let pid = guard.as_ref().map(|t| t.pid);
+        (paused, pid)
+    };
+
+    let resume_overrides = {
+        let guard = guardrail_state
+            .resume_overrides
+            .lock()
+            .map_err(|e| e.to_string())?;
+        match (*guard).as_ref() {
+            Some((pid, set)) if active_pid == Some(*pid) => {
+                let mut list: Vec<String> = set.iter().cloned().collect();
+                list.sort();
+                list
+            }
+            _ => vec![],
+        }
     };
 
     Ok(GuardrailStatus {
@@ -125,6 +168,7 @@ pub async fn get_guardrail_status(app: tauri::AppHandle) -> Result<GuardrailStat
         caffeinate_active,
         thermal_state,
         thermal_pause_enabled,
+        resume_overrides,
     })
 }
 
@@ -207,14 +251,37 @@ pub async fn pause_mlx_training(app: tauri::AppHandle) -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn resume_mlx_training(app: tauri::AppHandle) -> Result<bool, String> {
-    let pid = {
+    let (pid, status) = {
         let mlx_state = app.state::<MlxState>();
         let guard = mlx_state.training.lock().map_err(|e| e.to_string())?;
         match guard.as_ref() {
-            Some(t) if t.status.starts_with("paused") => t.pid,
+            Some(t) if t.status.starts_with("paused") => (t.pid, t.status.clone()),
             _ => return Err("재개할 수 있는 일시정지된 학습이 없습니다.".into()),
         }
     };
+
+    // D16 개정: paused_<cause> 상태에서 수동 재개 시 해당 cause를 오버라이드 집합에 추가
+    if let Some(cause) = status.strip_prefix("paused_") {
+        if !cause.is_empty() {
+            let guardrail_state = app.state::<GuardrailState>();
+            let mut overrides_guard = guardrail_state
+                .resume_overrides
+                .lock()
+                .map_err(|e| e.to_string())?;
+
+            match overrides_guard.as_mut() {
+                Some((stored_pid, set)) if *stored_pid == pid => {
+                    set.insert(cause.to_string());
+                }
+                _ => {
+                    let mut set = HashSet::new();
+                    set.insert(cause.to_string());
+                    *overrides_guard = Some((pid, set));
+                }
+            }
+        }
+    }
+
     resume_pid(&app, pid).await?;
     Ok(true)
 }
@@ -258,7 +325,36 @@ pub fn spawn_guardrail_loop(app: tauri::AppHandle, pid: u32) {
     tokio::spawn(guardrail_loop(app, pid));
 }
 
+fn clear_resume_overrides(app: &tauri::AppHandle) {
+    if let Ok(mut guard) = app.state::<GuardrailState>().resume_overrides.lock() {
+        *guard = None;
+    }
+}
+
+fn clear_resume_overrides_if_not_pid(app: &tauri::AppHandle, pid: u32) {
+    if let Ok(mut guard) = app.state::<GuardrailState>().resume_overrides.lock() {
+        if let Some((stored_pid, _)) = *guard {
+            if stored_pid != pid {
+                *guard = None;
+            }
+        }
+    }
+}
+
+fn get_active_overrides(app: &tauri::AppHandle, pid: u32) -> HashSet<String> {
+    if let Ok(guard) = app.state::<GuardrailState>().resume_overrides.lock() {
+        if let Some((stored_pid, set)) = guard.as_ref() {
+            if *stored_pid == pid {
+                return set.clone();
+            }
+        }
+    }
+    HashSet::new()
+}
+
 async fn guardrail_loop(app: tauri::AppHandle, pid: u32) {
+    clear_resume_overrides_if_not_pid(&app, pid);
+
     let mut interval = tokio::time::interval(Duration::from_secs(5));
     interval.tick().await; // 첫 tick은 즉시 발생 — 소비만 하고 그 다음 tick부터 5초 간격 검사
 
@@ -269,23 +365,33 @@ async fn guardrail_loop(app: tauri::AppHandle, pid: u32) {
         let status = {
             let guard = match mlx_state.training.lock() {
                 Ok(g) => g,
-                Err(_) => return,
+                Err(_) => {
+                    clear_resume_overrides(&app);
+                    return;
+                }
             };
             match guard.as_ref() {
                 Some(t) if t.pid == pid => t.status.clone(),
-                _ => return, // 학습 항목이 교체/삭제됨 -> 루프 종료
+                _ => {
+                    clear_resume_overrides(&app);
+                    return; // 학습 항목이 교체/삭제됨 -> 루프 종료
+                }
             }
         };
 
         if status == "done" || status == "error" || status == "killed" {
+            clear_resume_overrides(&app);
             return;
         }
         if status != "running" {
             continue; // 이미 일시정지 상태(수동 포함) — 재개는 사용자 조작에 맡긴다
         }
 
+        let overrides = get_active_overrides(&app, pid);
+
         let level = measure_memory_pressure_level().await;
-        if level == "warn" || level == "critical" {
+        let mem_override = overrides.contains("memory_pressure");
+        if memory_should_auto_pause(&level, mem_override) {
             let _ = pause_pid(&app, pid, "paused_memory_pressure").await;
             continue;
         }
@@ -296,7 +402,12 @@ async fn guardrail_loop(app: tauri::AppHandle, pid: u32) {
                 Err(_) => false,
             }
         };
-        if battery_pause_enabled && measure_on_battery().await {
+        let bat_override = overrides.contains("battery");
+        if battery_should_auto_pause(
+            measure_on_battery().await,
+            battery_pause_enabled,
+            bat_override,
+        ) {
             let _ = pause_pid(&app, pid, "paused_battery").await;
             continue;
         }
@@ -309,9 +420,9 @@ async fn guardrail_loop(app: tauri::AppHandle, pid: u32) {
                 Err(_) => false,
             }
         };
-        if thermal_pause_enabled
-            && thermal_should_pause(crate::commands::metrics::read_thermal_state().as_deref())
-        {
+        let th_override = overrides.contains("thermal");
+        let thermal_st = crate::commands::metrics::read_thermal_state();
+        if thermal_should_auto_pause(thermal_st.as_deref(), thermal_pause_enabled, th_override) {
             let _ = pause_pid(&app, pid, "paused_thermal").await;
         }
     }
@@ -349,4 +460,38 @@ mod tests {
             "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=...)\t87%; discharging"
         ));
     }
+
+    #[test]
+    fn memory_should_auto_pause_handles_critical_and_warn_overrides() {
+        // critical은 오버라이드 여부와 무관하게 항상 pause
+        assert!(memory_should_auto_pause("critical", false));
+        assert!(memory_should_auto_pause("critical", true));
+
+        // warn은 오버라이드가 없을 때만 pause
+        assert!(memory_should_auto_pause("warn", false));
+        assert!(!memory_should_auto_pause("warn", true));
+
+        // normal/unknown은 항상 pause 안 함
+        assert!(!memory_should_auto_pause("normal", false));
+        assert!(!memory_should_auto_pause("normal", true));
+        assert!(!memory_should_auto_pause("unknown", false));
+    }
+
+    #[test]
+    fn battery_should_auto_pause_respects_override() {
+        assert!(battery_should_auto_pause(true, true, false));
+        assert!(!battery_should_auto_pause(true, true, true));
+        assert!(!battery_should_auto_pause(false, true, false));
+        assert!(!battery_should_auto_pause(true, false, false));
+    }
+
+    #[test]
+    fn thermal_should_auto_pause_respects_override() {
+        assert!(thermal_should_auto_pause(Some("serious"), true, false));
+        assert!(thermal_should_auto_pause(Some("critical"), true, false));
+        assert!(!thermal_should_auto_pause(Some("serious"), true, true));
+        assert!(!thermal_should_auto_pause(Some("fair"), true, false));
+        assert!(!thermal_should_auto_pause(Some("serious"), false, false));
+    }
 }
+

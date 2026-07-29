@@ -79,6 +79,15 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
   const isRunning = !!training && (training.status === 'running' || training.status === 'training');
   const level = guardrailStatus?.memory_pressure_level ?? 'unknown';
 
+  const causeLabelMap: Record<string, string> = {
+    memory_pressure: t('mlx.causeMemoryPressure'),
+    battery: t('mlx.causeBattery'),
+    thermal: t('mlx.causeThermal'),
+  };
+  const resumeOverrides = guardrailStatus?.resume_overrides ?? [];
+  const hasResumeOverrides = resumeOverrides.length > 0;
+  const causes = resumeOverrides.map((cause) => causeLabelMap[cause] ?? cause).join(', ');
+
   return (
     <div className="rounded-xl bg-surface p-4 shadow-panel">
       <div className="mb-4">
@@ -185,6 +194,13 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
                   ? 'caffeinate active — Prevents system sleep during training.'
                   : 'caffeinate 활성 — 학습 중 슬립 진입을 방지합니다.'}
               </span>
+            </div>
+          )}
+
+          {hasResumeOverrides && isRunning && (
+            <div className="flex items-center gap-1.5 text-caption text-inkMuted">
+              <ShieldCheck className="w-3.5 h-3.5 text-primary shrink-0" />
+              <span>{t('mlx.guardrailOverrideActive', { causes })}</span>
             </div>
           )}
 

@@ -38,7 +38,9 @@ Changing a D-registry decision requires updating all affected docs in the same t
   `powermetrics`/sudo/root paths remain forbidden without a privileged helper. Thermal has
   **no CLI source** on this hardware — `pmset -g therm`, `sysctl`, and `ioreg AppleSMC` are
   all empty, measured. Thermal-based training pause is opt-in and fires at `serious`, never
-  `fair` (D28) — `fair` is normal under load.
+  `fair` (D28) — `fair` is normal under load. Manual resume overrides that pause
+  cause for the rest of the run; memory-pressure `critical` alone is never
+  overridable (D16 amendment).
 - **VM sizing derived from detected RAM (D4)**: 16GB→4GB/2CPU, 32–48GB→8GB/4CPU,
   64GB+→12GB/6CPU — never hardcoded, backend clamps frontend input.
 - **Pod→host bridge (D10)**: ExternalName `mac-gpu-service` → `host.lima.internal`,
