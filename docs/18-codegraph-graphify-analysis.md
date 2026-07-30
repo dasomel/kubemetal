@@ -1,7 +1,7 @@
 # 18. CodeGraph & Graphify 코드베이스 지식 그래프 분석 및 에이전트 연동 보고서
 
 > 2026-07-24 · 작성: Antigravity AI  
-> 대상 프로젝트: **KubeMetal** (`/Users/m/Documents/IdeaProjects/20.dasomel/kubemetal`) & **Narwhal IDP** (`/Users/m/Documents/IdeaProjects/20.dasomel/idp`)  
+> 대상 프로젝트: **KubeMetal** (이 리포지터리) & **Narwhal IDP** (별도 로컬 프로젝트)  
 > 분석 도구: **CodeGraph** (AST/Tree-sitter 심볼 인텔리전스) + **Graphify** (시맨틱 지식 그래프 & 시각화)
 
 ---

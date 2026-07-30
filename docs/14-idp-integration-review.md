@@ -1,6 +1,6 @@
 # 14. Narwhal IDP 클러스터 적용 및 연계 방안 검토 — kagent · IDP 온톨로지 · AI 코딩 · 하이브리드 MLOps
 
-> 2026-07-24 · 대상: `/Users/m/Documents/IdeaProjects/20.dasomel/idp` (Narwhal K8s IDP + Narwhal-Portal)
+> 2026-07-24 · 대상: Narwhal IDP 리포지터리 — 별도 로컬 프로젝트 (Narwhal K8s IDP + Narwhal-Portal)
 > 기반: [11-kagent-mlops-integration.md](11-kagent-mlops-integration.md), [12-ontology-extended-usage.md](12-ontology-extended-usage.md), [13-agent-coding-review.md](13-agent-coding-review.md)
 
 > **서빙 포트 표기**: D1의 기본 서빙 포트는 **8080**이며 `suggest_serving_port`가 8080~8099에서 비어 있는 첫 포트를 제안한다. 본 문서의 `:8081`은 08문서 실험에서 8080이 선점돼 있어 실제로 사용된 포트이며, 아키텍처 기본값이 아니다(kagent UI는 8090 — D1 참조).
