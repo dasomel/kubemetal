@@ -13,6 +13,8 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+# shellcheck source=scripts/airgap/lib.sh
+. "${SCRIPT_DIR}/lib.sh"
 AIRGAP_DIR="${HOME}/.kubemetal/airgap"
 mkdir -p "${AIRGAP_DIR}/charts" "${AIRGAP_DIR}/images" "${AIRGAP_DIR}/binaries" "${AIRGAP_DIR}/manifests"
 
@@ -119,19 +121,17 @@ echo "[3/4] 컨테이너 이미지 수집 및 .tar.gz 압축..."
 # seaweedfs(3.60 vs 4.40)가 구버전으로 굳어 있었고 prefect·curl은 아예 빠져 있어서,
 # 폐쇄망 설치 시 세 파드가 ImagePullBackOff로 죽는 상태였다(2026-07-25).
 # 매니페스트가 선언하지 않는 이미지는 verify_offline_images.sh와 공유하는 파일에서 읽는다
-# — 두 스크립트에 각각 적어두면 그 사이에서 또 어긋난다.
+# — 두 스크립트에 각각 적어두면 그 사이에서 또 어긋난다. 읽는 규칙도 lib.sh 하나에 둔다.
+# bash 3.2(macOS 기본)에는 mapfile이 없다 — while-read로 채운다.
 HELM_IMAGES=()
 while IFS= read -r img; do
-  img="${img%%#*}"                       # 줄 끝 주석 제거
-  img="$(echo "$img" | tr -d '[:space:]')"
-  [ -n "$img" ] && HELM_IMAGES+=("$img")
-done < "${SCRIPT_DIR}/images-helm.txt"
+  HELM_IMAGES+=("$img")
+done < <(read_image_list "${SCRIPT_DIR}/images-helm.txt")
 
-# bash 3.2(macOS 기본)에는 mapfile이 없다 — while-read로 채운다.
 MANIFEST_IMAGES=()
 while IFS= read -r img; do
   [ -n "$img" ] && MANIFEST_IMAGES+=("$img")
-done < <(grep -rhoE 'image: *[^ ]+' "${PROJECT_ROOT}"/scripts/k8s/*.yaml | sed 's/image: *//' | sort -u)
+done < <(manifest_images "$PROJECT_ROOT")
 
 if [ ${#MANIFEST_IMAGES[@]} -eq 0 ]; then
   echo "  !! 매니페스트에서 이미지를 하나도 찾지 못했습니다 — 경로/형식을 확인하세요." >&2
