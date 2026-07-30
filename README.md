@@ -2,7 +2,7 @@
 
 **English** | [한국어](README_ko.md)
 
-![KubeMetal Dashboard — deployment target (external cluster preflight check) and host metrics](docs/images/dashboard.png)
+![KubeMetal Dashboard — deployment target (external cluster preflight check) and host metrics](docs/images/dashboard-en.png)
 
 An Apple Silicon-only hybrid MLOps desktop app — unifying a standard Kubernetes control
 plane and native macOS host MLX compute into a single Tauri v2 (Rust) + React/TypeScript app.
