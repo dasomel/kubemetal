@@ -163,6 +163,18 @@ kubemetal/
 | [docs/03-mvp-design.md](docs/03-mvp-design.md) | Phase 1 MVP 설계 — 디렉터리 구조, Rust/TS 참조 코드, 설계 결정 레지스트리(D1~D12) |
 | [docs/04-architecture.md](docs/04-architecture.md) | 전체 아키텍처 — 계층 다이어그램, IPC 흐름, 포트 맵, K8s↔호스트 브릿지 |
 
+## 실측 성능 (참고)
+
+Apple M4 Pro / 64GB, 패키징 앱 경유, 2026-07-27~28 측정값입니다. 모델·프롬프트·하드웨어에
+따라 달라집니다.
+
+| 항목 | 실측값 | 조건 |
+|------|--------|------|
+| VLM 서빙 처리량 | 196–198 tok/s (서버 보고값) | Qwen2-VL-2B-Instruct-4bit, mlx-vlm 0.6.7, 이미지 포함 OCR 요청 |
+| VLM 서빙 TTFT | 442–767 ms | 위와 동일 |
+| LoRA 파인튜닝 (비전 스택 포함) | 학습 파라미터 674.5M (30.5%), 피크 메모리 8.7GB | Qwen2-VL-2B bf16, `--train-vision` |
+| K8s VM 오버헤드 | 호스트 RAM 기반 자동 산정 (64GB 호스트 → VM 12GB/6CPU) | D4 프로파일 — 연산은 VM 밖 호스트에서 실행 |
+
 ## 개발 로드맵
 
 - **Phase 1 (완료)**: Tauri v2 백엔드 + Colima(vz) 원클릭 라이프사이클 제어, sysinfo 기반
