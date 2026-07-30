@@ -26,15 +26,18 @@ GPU 서버나 멀티노드 K3s 클러스터로 자연스럽게 확장할 수 있
 - Node 22+ / pnpm
 - Rust (rustup)
 
-## 앱 구성 — 5개 탭
+## 앱 구성 — 8개 탭
 
 | 탭 | 역할 |
 |----|------|
 | **대시보드** | RAM/CPU 실시간 모니터링, Colima(vz) K8s 클러스터 원클릭 시작/정지, MLOps 스택 프로비저닝, 포트포워딩 제어 |
+| **kagent 운영** | 클러스터 AIOps — 컨텍스트별 kagent 진단 조회, AI 에이전트(security / promql / observability) 켜고 끄기, kagent UI(8090) 연결. 외부 클러스터의 기본 통합 경로(D30 L1) |
+| **파이프라인** | 클러스터 구동 → 프로비저닝 → 모델 다운로드 → 파인튜닝 → MLflow 등록 → 서빙까지 단계별 상태를 카드로 시각화 |
 | **모델 허브** | Hugging Face 모델 검색 → 호스트 다운로드 → SeaweedFS S3 업로드 → MLflow Model Registry 등록까지 원클릭 흐름, 등록 모델 목록 조회 |
 | **MLX 스튜디오** | 호스트 MLX venv 환경 설치, 로컬 모델 기반 LoRA 파인튜닝 실행(진행률/손실 실시간 표시), `mlx_lm.server` 모델 서빙 시작/정지 |
-| **파이프라인** | 클러스터 구동 → 프로비저닝 → 모델 다운로드 → 파인튜닝 → MLflow 등록 → 서빙까지 단계별 상태를 카드로 시각화 |
+| **데이터** | 데이터 수집 DAG 파이프라인(웹/파일/HF → 청킹 → LanceDB RAG → SeaweedFS S3 백업), DVC 데이터셋 버전 관리 |
 | **접근 콘솔** | MLflow / SeaweedFS Filer 등 프로비저닝된 서비스로 크리덴셜 없이 원클릭 접근, 헬스 상태 조회 |
+| **Air-Gap 관리** | 폐쇄망용 오프라인 번들(이미지·차트·바이너리) 다운로드와 오프라인 설치, 자산 버전 확인 |
 
 ## 구동 방법
 
@@ -72,6 +75,8 @@ make kagent-up CONTEXT=<kubeconfig-컨텍스트>   # kagent 0.9.12 helm 설치 (
 
 이후 앱의 **kagent 운영 탭**에서 컨텍스트별 진단 조회와 에이전트(security/promql/
 observability) 켜고 끄기를 수행합니다. kagent UI는 `make forward`로 8090에 열립니다.
+이 경로는 실제 운영 중인 6노드 K3s HA 클러스터(narwhal)에서 검증됐습니다 — 서명된
+패키징 앱에서 사전점검·kagent 진단 조회까지 in-app 실측(2026-07-30).
 패키징 앱의 LAN 클러스터 접근에는 안정된 코드 서명이 필요합니다 — 키체인에 유효한
 codesigning 아이덴티티가 있으면 `make app`이 자동 서명합니다(아래 D26 절 참고).
 
@@ -102,6 +107,11 @@ Colima를 새로 띄우지 않고 **이미 있는 Kubernetes 클러스터**에 M
    ```bash
    make provision CONTEXT=<컨텍스트> BRIDGE_HOST=<호스트IP> STORAGE_CLASS=<SC>
    ```
+
+이 풀스택 경로는 같은 6노드 클러스터에서 Kyverno Enforce 정책·사설 미러 레지스트리
+(Docker Hub pull 제한 우회)·ArgoCD GitOps(selfHeal 경계, D27) 환경을 통과해 실측
+검증됐습니다(2026-07-26, 터미널 경로). 이 편입 비용이 클러스터 수에 비례해 반복된다는
+실측이 D30(기본 에이전트 온리)의 근거입니다.
 
 > ℹ️ **서명된 빌드가 필요합니다.** ad-hoc 서명(빌드마다 식별자가 바뀜)에서는 macOS
 > 로컬 네트워크 권한이 고정되지 않아 LAN kubectl이 `no route to host`로 막힙니다.
