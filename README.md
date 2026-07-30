@@ -1,24 +1,31 @@
 # KubeMetal
 
-Apple Silicon 전용 하이브리드 MLOps 데스크톱 앱 — Kubernetes 표준 제어면과 macOS 호스트
-네이티브 MLX 연산을 하나의 Tauri v2(Rust) + React/TypeScript 앱으로 통합합니다.
+**English** | [한국어](README_ko.md)
 
-## 핵심 컨셉: Control/Compute 분리
+![KubeMetal Dashboard — deployment target (external cluster preflight check) and host metrics](docs/images/dashboard.png)
 
-KubeMetal은 **제어(Control)와 연산(Compute)을 물리적으로 분리**합니다. MLflow, SeaweedFS
-같은 MLOps 스택은 Colima(`vz` + `virtiofs`) 위에서 구동되는 경량 K3s 클러스터 안에
-파드로 배포되어 표준 K8s 매니페스트로 관리됩니다. 반면 MLX 기반 파인튜닝·서빙 같은 실제
-연산은 K8s 파드 내부가 아니라 **macOS 호스트 프로세스**로 직접 실행됩니다.
+An Apple Silicon-only hybrid MLOps desktop app — unifying a standard Kubernetes control
+plane and native macOS host MLX compute into a single Tauri v2 (Rust) + React/TypeScript app.
 
-이렇게 나누는 이유는 선호가 아니라 하드웨어 제약입니다. Apple Silicon의 Metal GPU는 리눅스
-VM으로 패스스루할 수 없기 때문에, K8s Pod 안에서는 MLX 연산을 수행할 방법이 없습니다.
-따라서 K8s는 실험 추적(MLflow)·아티팩트 저장(SeaweedFS) 같은 표준 MLOps 제어면 역할만
-맡고, GPU를 쓰는 모든 작업은 Rust 백엔드가 스폰하는 호스트 프로세스로 위임됩니다.
+## Core Concept: Control/Compute Separation
 
-이 하이브리드 구조 덕분에 클라우드 GPU 비용 없이 로컬 데스크톱에서 시작해, 향후 원격
-GPU 서버나 멀티노드 K3s 클러스터로 자연스럽게 확장할 수 있는 경로를 열어둡니다.
+KubeMetal **physically separates Control and Compute**. The MLOps stack — MLflow,
+SeaweedFS — runs as pods, managed with standard K8s manifests, inside a lightweight K3s
+cluster running on Colima (`vz` + `virtiofs`). Actual compute, such as MLX-based
+fine-tuning and serving, is instead executed directly as a **macOS host process**, never
+inside a K8s pod.
 
-## 요구 사항
+This split is not a preference but a hardware constraint. Apple Silicon's Metal GPU cannot
+be passed through to a Linux VM, so there is no way to run MLX compute inside a K8s pod.
+K8s is therefore limited to the standard MLOps control-plane role — experiment tracking
+(MLflow), artifact storage (SeaweedFS) — while every GPU-bound task is delegated to a host
+process spawned by the Rust backend.
+
+This hybrid structure lets you start on a local desktop without cloud GPU cost, while
+leaving a natural path to scale out to a remote GPU server or a multi-node K3s cluster
+later on.
+
+## Requirements
 
 - macOS 14+ (Apple Silicon)
 - Homebrew
@@ -26,174 +33,185 @@ GPU 서버나 멀티노드 K3s 클러스터로 자연스럽게 확장할 수 있
 - Node 22+ / pnpm
 - Rust (rustup)
 
-## 앱 구성 — 8개 탭
+## App Layout — 8 Tabs
 
-| 탭 | 역할 |
+| Tab | Role |
 |----|------|
-| **대시보드** | RAM/CPU 실시간 모니터링, Colima(vz) K8s 클러스터 원클릭 시작/정지, MLOps 스택 프로비저닝, 포트포워딩 제어 |
-| **kagent 운영** | 클러스터 AIOps — 컨텍스트별 kagent 진단 조회, AI 에이전트(security / promql / observability) 켜고 끄기, kagent UI(8090) 연결. 외부 클러스터의 기본 통합 경로(D30 L1) |
-| **파이프라인** | 클러스터 구동 → 프로비저닝 → 모델 다운로드 → 파인튜닝 → MLflow 등록 → 서빙까지 단계별 상태를 카드로 시각화 |
-| **모델 허브** | Hugging Face 모델 검색 → 호스트 다운로드 → SeaweedFS S3 업로드 → MLflow Model Registry 등록까지 원클릭 흐름, 등록 모델 목록 조회 |
-| **MLX 스튜디오** | 호스트 MLX venv 환경 설치, 로컬 모델 기반 LoRA 파인튜닝 실행(진행률/손실 실시간 표시), `mlx_lm.server` 모델 서빙 시작/정지 |
-| **데이터** | 데이터 수집 DAG 파이프라인(웹/파일/HF → 청킹 → LanceDB RAG → SeaweedFS S3 백업), DVC 데이터셋 버전 관리 |
-| **접근 콘솔** | MLflow / SeaweedFS Filer 등 프로비저닝된 서비스로 크리덴셜 없이 원클릭 접근, 헬스 상태 조회 |
-| **Air-Gap 관리** | 폐쇄망용 오프라인 번들(이미지·차트·바이너리) 다운로드와 오프라인 설치, 자산 버전 확인 |
+| **Dashboard** | Real-time RAM/CPU monitoring, one-click start/stop of the Colima (vz) K8s cluster, MLOps stack provisioning, port-forward control |
+| **kagent Ops** | Cluster AIOps — per-context kagent diagnostics, toggling AI agents (security / promql / observability) on and off, kagent UI (8090) connection. The default integration path for external clusters (D30 L1) |
+| **Pipeline** | Visualizes stage-by-stage status as cards, from cluster startup → provisioning → model download → fine-tuning → MLflow registration → serving |
+| **Model Hub** | One-click flow from Hugging Face model search → host download → SeaweedFS S3 upload → MLflow Model Registry registration, plus a list of registered models |
+| **MLX Studio** | Installs the host MLX venv environment, runs LoRA fine-tuning on local models (real-time progress/loss display), starts/stops model serving via `mlx_lm.server` |
+| **Data** | Data ingestion DAG pipeline (web/file/HF → chunking → LanceDB RAG → SeaweedFS S3 backup), DVC dataset version management |
+| **Access Console** | Credential-free one-click access to provisioned services such as MLflow / SeaweedFS Filer, health status lookup |
+| **Air-Gap Management** | Download and offline install of an offline bundle (images, charts, binaries) for air-gapped networks, asset version verification |
 
-## 구동 방법
+## How to Run
 
-1. 의존성 설치
+1. Install dependencies
    ```bash
    pnpm install
    ```
-2. 개발 모드 실행 — `beforeDevCommand`로 vite 개발 서버가 자동 기동됩니다.
+2. Run in dev mode — the vite dev server auto-starts via `beforeDevCommand`.
    ```bash
    pnpm tauri dev
    ```
-3. **대시보드** 탭의 **클러스터 시작** 버튼을 누르면 감지된 호스트 RAM 기반으로 자동
-   산정된 CPU/메모리 값으로 다음 명령이 내부적으로 실행됩니다.
+3. Pressing the **Start Cluster** button on the **Dashboard** tab internally runs the
+   following command with CPU/memory values auto-derived from detected host RAM.
    ```bash
    colima start --cpu <N> --memory <M> --vm-type=vz --mount-type=virtiofs --kubernetes
    ```
-4. **MLOps 스택 프로비저닝** 버튼을 눌러 MLflow / SeaweedFS(+크리덴셜 Secret) /
-   mac-gpu-bridge 매니페스트를 클러스터에 적용합니다.
-5. **포트포워딩 시작** 버튼을 눌러 아래 주소로 접속합니다.
+4. Press **Provision MLOps Stack** to apply the MLflow / SeaweedFS (+ credential Secret) /
+   mac-gpu-bridge manifests to the cluster.
+5. Press **Start Port Forwarding** to reach the following addresses.
    - MLflow: http://localhost:5001
    - SeaweedFS S3 API: http://localhost:8333
    - SeaweedFS Filer UI: http://localhost:8888
-6. **모델 허브** 탭에서 모델을 다운로드하고, **MLX 스튜디오** 탭에서 파인튜닝/서빙을
-   실행합니다. 전체 흐름은 **파이프라인** 탭에서, 서비스 접근은 **접근 콘솔** 탭에서
-   각각 확인할 수 있습니다.
+6. Download a model in the **Model Hub** tab and run fine-tuning/serving in the **MLX
+   Studio** tab. The overall flow can be tracked in the **Pipeline** tab, and service
+   access can be checked in the **Access Console** tab.
 
-## 외부 클러스터 연결하기 (D30 — 기본: 에이전트 온리)
+## Connecting an External Cluster (D30 — default: agent-only)
 
-이미 있는 클러스터의 기본 통합은 **에이전트만 설치**하는 것입니다. MLOps 스택은 자체
-k3s(colima)에 두고, 외부 클러스터는 관찰·진단·운영 대상으로만 연결합니다(브리지 없음).
+The default integration for an existing cluster is to **install the agent only**. The
+MLOps stack stays on its own k3s (Colima); the external cluster is connected purely as an
+observation/diagnostics/ops target (no bridge).
 
 ```bash
-make kagent-up CONTEXT=<kubeconfig-컨텍스트>   # kagent 0.9.12 helm 설치 (kagent ns)
+make kagent-up CONTEXT=<kubeconfig-context>   # kagent 0.9.12 helm install (kagent ns)
 ```
 
-이후 앱의 **kagent 운영 탭**에서 컨텍스트별 진단 조회와 에이전트(security/promql/
-observability) 켜고 끄기를 수행합니다. kagent UI는 `make forward`로 8090에 열립니다.
-이 경로는 실제 운영 중인 6노드 K3s HA 클러스터(narwhal)에서 검증됐습니다 — 서명된
-패키징 앱에서 사전점검·kagent 진단 조회까지 in-app 실측(2026-07-30).
-패키징 앱의 LAN 클러스터 접근에는 안정된 코드 서명이 필요합니다 — 키체인에 유효한
-codesigning 아이덴티티가 있으면 `make app`이 자동 서명합니다(아래 D26 절 참고).
+From there, use the app's **kagent Ops tab** for per-context diagnostics lookups and to
+toggle agents (security/promql/observability) on and off. The kagent UI opens on 8090 via
+`make forward`. This path has been verified on a real production 6-node K3s HA cluster
+(narwhal) — preflight checks and kagent diagnostics lookups confirmed in-app, measured on
+device, from a signed packaged app (2026-07-30).
+LAN cluster access from the packaged app requires a stable code-signing identity — if a
+valid codesigning identity exists in the keychain, `make app` signs automatically with it
+(see the D26 section below).
 
-## 기존 클러스터에 배포하기 (D26 — 옵트인)
+## Deploying to an Existing Cluster (D26 — opt-in)
 
-> 외부 클러스터의 **기본 통합은 에이전트 온리**입니다(D30) — 스택은 자체 k3s에 두고
-> 외부 클러스터에는 kagent 에이전트만 설치하는 것이 기본 경로입니다. 아래 풀스택
-> 배포는 전제조건(터미널 경로, 미러 레지스트리, ArgoCD 경계)을 확인한 뒤 명시적으로
-> 선택하는 고급 경로입니다.
+> The **default integration for external clusters is agent-only** (D30) — the stack stays
+> on its own k3s, and installing only the kagent agent on the external cluster is the
+> default path. The full-stack deployment below is an advanced, opt-in path to be chosen
+> explicitly after confirming its prerequisites (terminal access, mirror registry, ArgoCD
+> boundaries).
 
-Colima를 새로 띄우지 않고 **이미 있는 Kubernetes 클러스터**에 MLOps 스택을 올릴 수
-있습니다. 배포 대상은 kubeconfig 컨텍스트로 지정하며, 외부 클러스터는 `default`가 아닌
-전용 `kubemetal` 네임스페이스를 씁니다.
+You can bring up the MLOps stack on an **existing Kubernetes cluster** without spinning up
+a new Colima instance. The deployment target is specified via a kubeconfig context, and
+external clusters use a dedicated `kubemetal` namespace instead of `default`.
 
-1. 사전점검 — 도달성, 기본 StorageClass, 대상 ns를 소유한 ArgoCD Application,
-   Kyverno Enforce 정책, 호스트 브리지 후보를 실측으로 확인합니다.
+1. Preflight check — confirms, on device, reachability, the default StorageClass, the
+   ArgoCD Application owning the target namespace, Kyverno Enforce policies, and host
+   bridge candidates.
    ```bash
-   make preflight CONTEXT=<컨텍스트> NAMESPACE=kubemetal
+   make preflight CONTEXT=<context> NAMESPACE=kubemetal
    ```
-2. 렌더링 확인 — 적용하지 않고 결과만 봅니다.
+2. Confirm the render — view the result without applying it.
    ```bash
-   make render CONTEXT=<컨텍스트> BRIDGE_HOST=<호스트IP> STORAGE_CLASS=<SC>
+   make render CONTEXT=<context> BRIDGE_HOST=<host-IP> STORAGE_CLASS=<SC>
    ```
-   `BRIDGE_HOST`는 **1단계에서 확인한 후보 중 실제로 도달이 검증된 주소**여야 합니다.
-   생략하면 렌더가 거부됩니다 — 지정하지 않으면 colima 전용 주소가 그대로 실려 나가
-   파드가 조용히 죽기 때문입니다.
-3. 적용
+   `BRIDGE_HOST` must be an address **whose reachability was actually verified among the
+   candidates from step 1**. Omitting it causes the render to be refused — otherwise the
+   Colima-only address would be carried through as-is and pods would die silently.
+3. Apply
    ```bash
-   make provision CONTEXT=<컨텍스트> BRIDGE_HOST=<호스트IP> STORAGE_CLASS=<SC>
+   make provision CONTEXT=<context> BRIDGE_HOST=<host-IP> STORAGE_CLASS=<SC>
    ```
 
-이 풀스택 경로는 같은 6노드 클러스터에서 Kyverno Enforce 정책·사설 미러 레지스트리
-(Docker Hub pull 제한 우회)·ArgoCD GitOps(selfHeal 경계, D27) 환경을 통과해 실측
-검증됐습니다(2026-07-26, 터미널 경로). 이 편입 비용이 클러스터 수에 비례해 반복된다는
-실측이 D30(기본 에이전트 온리)의 근거입니다.
+This full-stack path has been verified, measured on device, on the same 6-node cluster
+against a Kyverno Enforce policy, a private mirror registry (working around Docker Hub
+pull limits), and an ArgoCD GitOps environment (selfHeal boundary, D27) (2026-07-26,
+terminal access). The observation that this onboarding cost repeats proportionally to the
+number of clusters is the basis for D30 (agent-only by default).
 
-> ℹ️ **서명된 빌드가 필요합니다.** ad-hoc 서명(빌드마다 식별자가 바뀜)에서는 macOS
-> 로컬 네트워크 권한이 고정되지 않아 LAN kubectl이 `no route to host`로 막힙니다.
-> 키체인에 유효한 codesigning 아이덴티티가 있으면 `make app`이 자동으로 그것으로
-> 서명합니다(자가서명 인증서로 충분 — 이 Mac 한정, 실측 2026-07-29). 타인 배포용은
-> Developer ID: `make app SIGNING_IDENTITY="Developer ID Application: …"`.
-> 자세한 내용은 `docs/mistakes-log.md` 2026-07-27 항목.
+> ℹ️ **A signed build is required.** With ad-hoc signing (whose identifier changes on every
+> build), macOS local network permission is not pinned, and LAN kubectl is blocked with
+> `no route to host`. If a valid codesigning identity exists in the keychain, `make app`
+> signs automatically with it (a self-signed certificate is sufficient — limited to this
+> Mac, measured on device 2026-07-29). For distribution to others, use a Developer ID:
+> `make app SIGNING_IDENTITY="Developer ID Application: …"`.
+> See the 2026-07-27 entry in `docs/mistakes-log.md` for details.
 
-**사내 레지스트리/미러가 필요한 경우** `IMAGE_REGISTRY=<호스트[/프로젝트]>`를 붙이면
-Docker Hub 이미지가 그쪽으로 재지정됩니다(폐쇄망이거나 Docker Hub 익명 pull 제한에
-걸리는 클러스터).
+**If you need an internal registry/mirror**, append `IMAGE_REGISTRY=<host[/project]>` to
+redirect Docker Hub images there (for air-gapped networks, or clusters hitting Docker Hub
+anonymous pull limits).
 
-**ArgoCD가 대상 네임스페이스를 소유한 경우** 직접 apply는 selfHeal이 되돌립니다.
-이때는 GitOps 경로를 씁니다(D27) — kubemetal은 파일만 내려놓고 Gitea push는 하지 않습니다.
+**If ArgoCD owns the target namespace**, a direct apply will be reverted by selfHeal. Use
+the GitOps path instead (D27) — kubemetal only writes files locally and does not push to
+Gitea.
 ```bash
-make export-gitops NARWHAL_DIR=/path/to/narwhal CONTEXT=<컨텍스트> BRIDGE_HOST=<호스트IP>
+make export-gitops NARWHAL_DIR=/path/to/narwhal CONTEXT=<context> BRIDGE_HOST=<host-IP>
 ```
 
-### 트러블슈팅 (CLI로 직접 확인)
+### Troubleshooting (checking directly via CLI)
 
 ```bash
 colima status --json
 kubectl --context colima get pods -n default
-# 외부 클러스터
-kubectl --context <컨텍스트> get pods -n kubemetal
+# external cluster
+kubectl --context <context> get pods -n kubemetal
 ```
 
-## 빌드 / 패키징
+## Build / Packaging
 
 ```bash
-pnpm tauri build   # .app / .dmg 번들 생성 (서명 없음 로컬 빌드)
+pnpm tauri build   # produces .app / .dmg bundle (unsigned local build)
 ```
 
-산출물: `src-tauri/target/release/bundle/macos/KubeMetal.app`,
+Output: `src-tauri/target/release/bundle/macos/KubeMetal.app`,
 `src-tauri/target/release/bundle/dmg/KubeMetal_0.1.0_aarch64.dmg`
 
-> 비-GUI(헤드리스) 셸 세션에서는 `.dmg` 생성 단계가 Finder 아이콘 배치용 AppleScript에서
-> 멈출 수 있다(Automation 권한 프롬프트를 응답할 GUI 세션이 없기 때문). 이 경우
-> `src-tauri/target/release/bundle/dmg/bundle_dmg.sh`를 `--sandbox-safe` 옵션과 함께
-> 직접 실행하면 Finder 꾸미기 단계를 건너뛰고 동일한 `.dmg`를 생성할 수 있다.
+> In a non-GUI (headless) shell session, the `.dmg` creation step can hang on the
+> AppleScript used for Finder icon placement (there is no GUI session to respond to the
+> Automation permission prompt). In that case, running
+> `src-tauri/target/release/bundle/dmg/bundle_dmg.sh` directly with the `--sandbox-safe`
+> option skips the Finder decoration step and produces the same `.dmg`.
 
-## 프로젝트 구조
+## Project Structure
 
 ```text
 kubemetal/
 ├── src/               # Frontend (React + TypeScript + Tailwind)
 ├── src-tauri/         # Backend (Rust Native Control Agent)
-├── scripts/k8s/       # MLflow / SeaweedFS(+크리덴셜 Secret) / mac-gpu-bridge 매니페스트
-├── scripts/mlx/       # 호스트 MLX 파인튜닝 래퍼(finetune_wrapper.py)
-└── docs/              # 기획서 · 요구사항 · MVP 설계 · 아키텍처 문서
+├── scripts/k8s/       # MLflow / SeaweedFS(+credential Secret) / mac-gpu-bridge manifests
+├── scripts/mlx/       # Host MLX fine-tuning wrapper (finetune_wrapper.py)
+└── docs/              # Proposal · requirements · MVP design · architecture docs
 ```
 
-## 문서 안내
+## Documentation Guide
 
-| 문서 | 내용 |
+| Document | Contents |
 |------|------|
-| [docs/01-proposal.md](docs/01-proposal.md) | 프로젝트 기획서 — 문제 정의, 아키텍처, 기술 스택, 로드맵 |
-| [docs/02-requirements.md](docs/02-requirements.md) | OSS 리서치 + FR/NFR 명세, IPC 커맨드 표, 매니페스트 스펙 |
-| [docs/03-mvp-design.md](docs/03-mvp-design.md) | Phase 1 MVP 설계 — 디렉터리 구조, Rust/TS 참조 코드, 설계 결정 레지스트리(D1~D12) |
-| [docs/04-architecture.md](docs/04-architecture.md) | 전체 아키텍처 — 계층 다이어그램, IPC 흐름, 포트 맵, K8s↔호스트 브릿지 |
+| [docs/01-proposal.md](docs/01-proposal.md) (Korean) | Project proposal — problem definition, architecture, tech stack, roadmap |
+| [docs/02-requirements.md](docs/02-requirements.md) (Korean) | OSS research + FR/NFR spec, IPC command table, manifest spec |
+| [docs/03-mvp-design.md](docs/03-mvp-design.md) (Korean) | Phase 1 MVP design — directory structure, Rust/TS reference code, decision registry (D1–D12) |
+| [docs/04-architecture.md](docs/04-architecture.md) (Korean) | Overall architecture — layer diagram, IPC flow, port map, K8s↔host bridge |
 
-## 실측 성능 (참고)
+## Measured Performance (reference)
 
-Apple M4 Pro / 64GB, 패키징 앱 경유, 2026-07-27~28 측정값입니다. 모델·프롬프트·하드웨어에
-따라 달라집니다.
+Measured on an Apple M4 Pro / 64GB, via the packaged app, on 2026-07-27–28. Varies by
+model, prompt, and hardware.
 
-| 항목 | 실측값 | 조건 |
+| Item | Measured value | Condition |
 |------|--------|------|
-| VLM 서빙 처리량 | 196–198 tok/s (서버 보고값) | Qwen2-VL-2B-Instruct-4bit, mlx-vlm 0.6.7, 이미지 포함 OCR 요청 |
-| VLM 서빙 TTFT | 442–767 ms | 위와 동일 |
-| LoRA 파인튜닝 (비전 스택 포함) | 학습 파라미터 674.5M (30.5%), 피크 메모리 8.7GB | Qwen2-VL-2B bf16, `--train-vision` |
-| K8s VM 오버헤드 | 호스트 RAM 기반 자동 산정 (64GB 호스트 → VM 12GB/6CPU) | D4 프로파일 — 연산은 VM 밖 호스트에서 실행 |
+| VLM serving throughput | 196–198 tok/s (server-reported) | Qwen2-VL-2B-Instruct-4bit, mlx-vlm 0.6.7, OCR request with an image |
+| VLM serving TTFT | 442–767 ms | Same as above |
+| LoRA fine-tuning (including vision stack) | 674.5M trainable params (30.5%), peak memory 8.7GB | Qwen2-VL-2B bf16, `--train-vision` |
+| K8s VM overhead | Auto-derived from host RAM (64GB host → VM 12GB/6CPU) | D4 profile — compute runs on the host, outside the VM |
 
-## 개발 로드맵
+## Development Roadmap
 
-- **Phase 1 (완료)**: Tauri v2 백엔드 + Colima(vz) 원클릭 라이프사이클 제어, sysinfo 기반
-  RAM/CPU 모니터링, K8s 내 MLflow/SeaweedFS 1클릭 셋업
-- **Phase 2 (구현 완료)**: 서비스 연동 자동 구성(MLflow↔SeaweedFS S3 와이어링), 모델
-  허브(HF 검색→다운로드→업로드→등록), 호스트 MLX LoRA 파인튜닝 + 파이프라인 가시화,
-  통합 접근 콘솔
-- **Phase 3 (진행 중)**: 통합 대시보드 UI·`.dmg` 패키징·메모리 압박/배터리/슬립 방지
-  가드레일은 완료. 발열 가드레일(고온 시 배치 크기 축소)과 (선택) powermetrics 기반
-  Metal GPU 모니터링은 미착수
+- **Phase 1 (complete)**: Tauri v2 backend + Colima (vz) one-click lifecycle control,
+  sysinfo-based RAM/CPU monitoring, one-click MLflow/SeaweedFS setup in K8s
+- **Phase 2 (implementation complete)**: Automatic service-integration wiring
+  (MLflow↔SeaweedFS S3), Model Hub (HF search → download → upload → registration), host
+  MLX LoRA fine-tuning + pipeline visualization, unified Access Console
+- **Phase 3 (in progress)**: Unified dashboard UI, `.dmg` packaging, and memory
+  pressure/battery/sleep-prevention guardrails are complete. Thermal guardrails (reducing
+  batch size under high temperature) and optional powermetrics-based Metal GPU monitoring
+  are not yet started
 
-자세한 로드맵은 [docs/01-proposal.md §7](docs/01-proposal.md#7-단계별-개발-로드맵-roadmap) 참고.
+See [docs/01-proposal.md §7](docs/01-proposal.md#7-단계별-개발-로드맵-roadmap) (Korean)
+for the detailed roadmap.

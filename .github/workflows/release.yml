@@ -29,11 +29,15 @@ jobs:
       # .dmg 번들 단계는 헤드리스 세션에서 Finder AppleScript 대기로 멈춘다(README
       # "빌드 / 패키징" 절 실측) — 릴리스 산출물은 .app을 zip으로 배포한다.
       - run: pnpm tauri build --bundles app
-      - name: Zip app bundle
-        run: >
-          ditto -c -k --keepParent
-          src-tauri/target/release/bundle/macos/KubeMetal.app
-          "KubeMetal-${TAG}-aarch64.zip"
+      # 서드파티 고지는 lockfile에서 릴리스 시점에 도출한다 — 커밋해두면 어긋난다.
+      - name: Generate third-party notices
+        run: ./scripts/release/gen_third_party_notices.sh
+      - name: Zip app bundle with notices
+        run: |
+          mkdir -p stage
+          cp -R src-tauri/target/release/bundle/macos/KubeMetal.app stage/
+          cp LICENSE THIRD-PARTY-NOTICES.md stage/
+          ditto -c -k stage "KubeMetal-${TAG}-aarch64.zip"
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

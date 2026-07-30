@@ -28,3 +28,6 @@ __pycache__/
 
 # CodeGraph local index (docs/18) — machine-local DB/cache, never committed
 .codegraph/
+
+# 릴리스 시점에 lockfile에서 생성 — scripts/release/gen_third_party_notices.sh
+THIRD-PARTY-NOTICES.md
