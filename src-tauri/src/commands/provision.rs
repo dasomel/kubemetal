@@ -30,11 +30,11 @@ pub async fn provision_mlops_stack(app: tauri::AppHandle) -> Result<String, Stri
         .args(&render_args)
         .output()
         .await
-        .map_err(|e| format!("render.sh 실행 실패: {e}"))?;
+        .map_err(|e| format!("failed to run render.sh: {e}"))?;
 
     if !rendered.status.success() {
         return Err(format!(
-            "매니페스트 렌더링 실패: {}",
+            "manifest render failed: {}",
             String::from_utf8_lossy(&rendered.stderr).trim()
         ));
     }
@@ -42,7 +42,7 @@ pub async fn provision_mlops_stack(app: tauri::AppHandle) -> Result<String, Stri
     let applied = apply_stdin(&target.context, &rendered.stdout).await?;
 
     Ok(format!(
-        "[{}] 네임스페이스 {}에 MLOps 스택을 적용했습니다.\n{}",
+        "[{}] applied MLOps stack to namespace {}.\n{}",
         target.context,
         target.namespace,
         applied.trim()
@@ -57,11 +57,11 @@ async fn ensure_namespace(context: &str, namespace: &str) -> Result<(), String> 
         ])
         .output()
         .await
-        .map_err(|e| format!("네임스페이스 매니페스트 생성 실패: {e}"))?;
+        .map_err(|e| format!("failed to generate namespace manifest: {e}"))?;
 
     if !manifest.status.success() {
         return Err(format!(
-            "네임스페이스 매니페스트 생성 실패: {}",
+            "failed to generate namespace manifest: {}",
             String::from_utf8_lossy(&manifest.stderr).trim()
         ));
     }
@@ -82,24 +82,24 @@ async fn apply_stdin(context: &str, manifest: &[u8]) -> Result<String, String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("kubectl apply 실행 실패: {e}"))?;
+        .map_err(|e| format!("failed to run kubectl apply: {e}"))?;
 
     child
         .stdin
         .take()
-        .ok_or("kubectl stdin을 열 수 없습니다")?
+        .ok_or("could not open kubectl stdin")?
         .write_all(manifest)
         .await
-        .map_err(|e| format!("매니페스트 전달 실패: {e}"))?;
+        .map_err(|e| format!("failed to write manifest: {e}"))?;
 
     let output = child
         .wait_with_output()
         .await
-        .map_err(|e| format!("kubectl apply 대기 실패: {e}"))?;
+        .map_err(|e| format!("failed waiting for kubectl apply: {e}"))?;
 
     if !output.status.success() {
         return Err(format!(
-            "kubectl apply 실패: {}",
+            "kubectl apply failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
@@ -111,13 +111,13 @@ mod tests {
     fn repo_root() -> std::path::PathBuf {
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
-            .expect("리포 루트")
+            .expect("repo root")
             .to_path_buf()
     }
 
     fn kustomization_resources() -> Vec<String> {
         let text = std::fs::read_to_string(repo_root().join("scripts/k8s/kustomization.yaml"))
-            .expect("kustomization.yaml 읽기");
+            .expect("read kustomization.yaml");
         text.lines()
             .filter_map(|line| line.trim().strip_prefix("- ").map(str::to_string))
             .collect()
@@ -137,7 +137,7 @@ mod tests {
                 "mac-gpu-bridge.yaml",
                 "prefect-deployment.yaml",
             ],
-            "D13 순서가 깨졌다 — Secret이 먼저여야 mlflow secretKeyRef가 해석된다"
+            "D13 order broken — Secret must come first for mlflow's secretKeyRef to resolve"
         );
     }
 
@@ -150,7 +150,7 @@ mod tests {
         for excluded in ["security-agent.yaml", "e2e-remediated-nginx.yaml"] {
             assert!(
                 !resources.contains(&excluded.to_string()),
-                "{excluded}는 MLOps 스택이 아니다 — kustomization에 들어가면 안 된다"
+                "{excluded} is not part of the MLOps stack — must not be in kustomization"
             );
         }
     }
@@ -160,12 +160,12 @@ mod tests {
     #[test]
     fn render_script_exists_and_is_executable() {
         let path = repo_root().join(super::RENDER_SCRIPT);
-        assert!(path.is_file(), "{} 가 없다", path.display());
+        assert!(path.is_file(), "{} is missing", path.display());
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             let mode = std::fs::metadata(&path).expect("metadata").permissions().mode();
-            assert!(mode & 0o111 != 0, "render.sh에 실행 권한이 없다");
+            assert!(mode & 0o111 != 0, "render.sh is not executable");
         }
     }
 }

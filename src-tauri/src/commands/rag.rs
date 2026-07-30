@@ -133,7 +133,7 @@ pub async fn get_dvc_status() -> Result<DvcStatus, String> {
             current_tag: None,
             dataset_path: None,
             tags: Vec::new(),
-            last_error: Some("LanceDB 기본 경로를 확인할 수 없습니다.".into()),
+            last_error: Some("Cannot resolve default LanceDB path.".into()),
         });
     };
     let dataset_path = Some(db_dir.to_string_lossy().to_string());
@@ -147,7 +147,7 @@ pub async fn get_dvc_status() -> Result<DvcStatus, String> {
             dataset_path,
             tags: Vec::new(),
             last_error: Some(
-                "DVC가 아직 초기화되지 않았습니다 — dvc_commit_dataset을 먼저 실행하세요.".into(),
+                "DVC is not initialized yet — run dvc_commit_dataset first.".into(),
             ),
         });
     }
@@ -224,7 +224,7 @@ pub async fn get_rag_status(state: State<'_, RagState>) -> Result<RagStatus, Str
 async fn run_rag_env_setup_inner() -> Result<(), String> {
     let venv_py = venv_python()?;
     if !venv_py.is_file() {
-        return Err("MLX venv가 없습니다. setup_mlx_env를 먼저 실행하세요.".into());
+        return Err("MLX venv not found. Run setup_mlx_env first.".into());
     }
 
     let pip = venv_pip()?;
@@ -239,11 +239,11 @@ async fn run_rag_env_setup_inner() -> Result<(), String> {
         .env("PATH", augmented_path())
         .output()
         .await
-        .map_err(|e| format!("pip install 실행 실패: {e}"))?;
+        .map_err(|e| format!("pip install execution failed: {e}"))?;
 
     if !out.status.success() {
         return Err(format!(
-            "RAG 패키지 설치 실패: {}",
+            "RAG package installation failed: {}",
             String::from_utf8_lossy(&out.stderr)
         ));
     }
@@ -277,14 +277,14 @@ pub async fn setup_rag_env(
     {
         let mut guard = state.env_setup.lock().map_err(|e| e.to_string())?;
         if guard.state == "installing" {
-            return Err("RAG 환경 설치가 이미 진행 중입니다.".into());
+            return Err("RAG environment setup is already in progress.".into());
         }
         guard.state = "installing".into();
         guard.error = None;
     }
 
     tokio::spawn(run_rag_env_setup(app));
-    Ok("RAG 환경(LanceDB, sentence-transformers, DVC) 설치를 시작했습니다.".into())
+    Ok("Started RAG environment (LanceDB, sentence-transformers, DVC) setup.".into())
 }
 
 #[tauri::command]
@@ -297,14 +297,14 @@ pub async fn index_documents(
     let validated_docs = validate_home_subpath(&docs_path)?;
     let venv_py = venv_python()?;
     if !venv_py.is_file() {
-        return Err("MLX venv가 없습니다. setup_mlx_env 및 setup_rag_env를 실행하세요.".into());
+        return Err("MLX venv not found. Run setup_mlx_env and setup_rag_env.".into());
     }
 
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
     let rag_script = resolve_bundled_resource(&resource_dir, "scripts/rag/rag_host.py");
     if !rag_script.is_file() {
         return Err(format!(
-            "RAG 스크립트를 찾을 수 없습니다: {}",
+            "RAG script not found: {}",
             rag_script.display()
         ));
     }
@@ -327,12 +327,12 @@ pub async fn index_documents(
         .env("PATH", augmented_path())
         .output()
         .await
-        .map_err(|e| format!("RAG 인덱싱 프로세스 실행 실패: {e}"))?;
+        .map_err(|e| format!("Failed to run RAG indexing process: {e}"))?;
 
     let stdout_str = String::from_utf8_lossy(&output.stdout);
     if !output.status.success() {
         return Err(format!(
-            "인덱싱 실패: {}",
+            "Indexing failed: {}",
             if stdout_str.trim().is_empty() {
                 String::from_utf8_lossy(&output.stderr).to_string()
             } else {
@@ -342,18 +342,18 @@ pub async fn index_documents(
     }
 
     let res: serde_json::Value = serde_json::from_str(&stdout_str)
-        .map_err(|e| format!("JSON 파싱 실패 ({e}): {stdout_str}"))?;
+        .map_err(|e| format!("JSON parse failed ({e}): {stdout_str}"))?;
 
     if res.get("status").and_then(|v| v.as_str()) != Some("ok") {
         let err_msg = res
             .get("error")
             .and_then(|v| v.as_str())
-            .unwrap_or("알 수 없는 오류가 발생했습니다.");
-        return Err(format!("인덱싱 오류: {err_msg}"));
+            .unwrap_or("An unknown error occurred.");
+        return Err(format!("Indexing error: {err_msg}"));
     }
 
     let result: IndexResult = serde_json::from_value(res)
-        .map_err(|e| format!("IndexResult 구조체 변환 실패: {e}"))?;
+        .map_err(|e| format!("Failed to convert to IndexResult struct: {e}"))?;
 
     Ok(result)
 }
@@ -367,19 +367,19 @@ pub async fn query_rag(
     embedding_model: Option<String>,
 ) -> Result<Vec<RagSearchResult>, String> {
     if query.trim().is_empty() {
-        return Err("질의 내용은 비어 있을 수 없습니다.".into());
+        return Err("Query text cannot be empty.".into());
     }
 
     let venv_py = venv_python()?;
     if !venv_py.is_file() {
-        return Err("MLX venv가 없습니다.".into());
+        return Err("MLX venv not found.".into());
     }
 
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
     let rag_script = resolve_bundled_resource(&resource_dir, "scripts/rag/rag_host.py");
     if !rag_script.is_file() {
         return Err(format!(
-            "RAG 스크립트를 찾을 수 없습니다: {}",
+            "RAG script not found: {}",
             rag_script.display()
         ));
     }
@@ -405,12 +405,12 @@ pub async fn query_rag(
         .env("PATH", augmented_path())
         .output()
         .await
-        .map_err(|e| format!("RAG 질의 프로세스 실행 실패: {e}"))?;
+        .map_err(|e| format!("Failed to run RAG query process: {e}"))?;
 
     let stdout_str = String::from_utf8_lossy(&output.stdout);
     if !output.status.success() {
         return Err(format!(
-            "질의 실패: {}",
+            "Query failed: {}",
             if stdout_str.trim().is_empty() {
                 String::from_utf8_lossy(&output.stderr).to_string()
             } else {
@@ -420,23 +420,23 @@ pub async fn query_rag(
     }
 
     let res: serde_json::Value = serde_json::from_str(&stdout_str)
-        .map_err(|e| format!("JSON 파싱 실패 ({e}): {stdout_str}"))?;
+        .map_err(|e| format!("JSON parse failed ({e}): {stdout_str}"))?;
 
     if res.get("status").and_then(|v| v.as_str()) != Some("ok") {
         let err_msg = res
             .get("error")
             .and_then(|v| v.as_str())
-            .unwrap_or("알 수 없는 오류가 발생했습니다.");
-        return Err(format!("질의 오류: {err_msg}"));
+            .unwrap_or("An unknown error occurred.");
+        return Err(format!("Query error: {err_msg}"));
     }
 
     let raw_results = res
         .get("results")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| "결과 배열을 읽을 수 없습니다.".to_string())?;
+        .ok_or_else(|| "Cannot read results array.".to_string())?;
 
     let search_results: Vec<RagSearchResult> = serde_json::from_value(serde_json::Value::Array(raw_results.clone()))
-        .map_err(|e| format!("RagSearchResult 변환 실패: {e}"))?;
+        .map_err(|e| format!("Failed to convert to RagSearchResult: {e}"))?;
 
     Ok(search_results)
 }
@@ -450,14 +450,14 @@ pub async fn dvc_commit_dataset(
 ) -> Result<String, String> {
     let venv_py = venv_python()?;
     if !venv_py.is_file() {
-        return Err("MLX venv가 없습니다.".into());
+        return Err("MLX venv not found.".into());
     }
 
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
     let rag_script = resolve_bundled_resource(&resource_dir, "scripts/rag/rag_host.py");
     if !rag_script.is_file() {
         return Err(format!(
-            "RAG 스크립트를 찾을 수 없습니다: {}",
+            "RAG script not found: {}",
             rag_script.display()
         ));
     }
@@ -488,12 +488,12 @@ pub async fn dvc_commit_dataset(
         .env("KUBEMETAL_S3_SECRET_KEY", &s3_secret_key)
         .output()
         .await
-        .map_err(|e| format!("DVC 커밋 프로세스 실행 실패: {e}"))?;
+        .map_err(|e| format!("Failed to run DVC commit process: {e}"))?;
 
     let stdout_str = String::from_utf8_lossy(&output.stdout);
     if !output.status.success() {
         return Err(format!(
-            "DVC 커밋 실패: {}",
+            "DVC commit failed: {}",
             if stdout_str.trim().is_empty() {
                 String::from_utf8_lossy(&output.stderr).to_string()
             } else {
@@ -503,20 +503,20 @@ pub async fn dvc_commit_dataset(
     }
 
     let res: serde_json::Value = serde_json::from_str(&stdout_str)
-        .map_err(|e| format!("JSON 파싱 실패 ({e}): {stdout_str}"))?;
+        .map_err(|e| format!("JSON parse failed ({e}): {stdout_str}"))?;
 
     if res.get("status").and_then(|v| v.as_str()) != Some("ok") {
         let err_msg = res
             .get("error")
             .and_then(|v| v.as_str())
-            .unwrap_or("알 수 없는 오류가 발생했습니다.");
-        return Err(format!("DVC 오류: {err_msg}"));
+            .unwrap_or("An unknown error occurred.");
+        return Err(format!("DVC error: {err_msg}"));
     }
 
     let msg = res
         .get("message")
         .and_then(|v| v.as_str())
-        .unwrap_or("DVC 데이터셋 버저닝 완료");
+        .unwrap_or("DVC dataset versioning complete");
 
     Ok(msg.to_string())
 }

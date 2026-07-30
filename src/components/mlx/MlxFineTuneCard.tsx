@@ -24,7 +24,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
   onStart,
   onKill,
 }) => {
-  const { t, language } = useTranslation();
+  const { t } = useTranslation();
   const [modelPath, setModelPath] = useState('');
   const [dataPath, setDataPath] = useState('~/.kubemetal/datasets/smoke');
   const [iters, setIters] = useState(100);
@@ -237,19 +237,19 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
             {isTraining && (
               <div className="flex items-center gap-1.5 text-caption text-inkMuted">
                 <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                <span>{language === 'en' ? `Training in progress (PID ${training.pid})` : `학습 중 (PID ${training.pid})`}</span>
+                <span>{t('mlx.finetune.trainingInProgress', { pid: training.pid })}</span>
               </div>
             )}
             {training.status === 'done' && (
               <div className="flex items-center gap-1.5 text-caption text-inkMuted">
                 <span className="w-2 h-2 rounded-full bg-success" />
-                <span>{language === 'en' ? 'Completed' : '완료'}{training.adapter_path ? ` · ${training.adapter_path}` : ''}</span>
+                <span>{t('pipeline.trainDone')}{training.adapter_path ? ` · ${training.adapter_path}` : ''}</span>
               </div>
             )}
             {training.status === 'error' && (
               <div className="flex items-center gap-1.5 text-caption text-danger">
                 <span className="w-2 h-2 rounded-full bg-danger" />
-                <span>{language === 'en' ? 'Error' : '오류'}: {training.error ?? (language === 'en' ? 'Unknown error' : '알 수 없는 오류')}</span>
+                <span>{t('dataIngest.statusError')}: {training.error ?? t('modelhub.dl.unknownError')}</span>
               </div>
             )}
           </div>

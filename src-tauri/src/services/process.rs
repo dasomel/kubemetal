@@ -26,7 +26,7 @@ pub fn resolve_cli_path(bin: &str) -> Result<PathBuf, String> {
     // 탐색 경로를 함께 알려준다 — 시스템 바이너리까지 "Homebrew로 설치하세요"로 안내하면
     // 원인을 엉뚱한 곳에서 찾게 된다.
     Err(format!(
-        "'{bin}' 실행 파일을 찾을 수 없습니다. 탐색 경로: {}",
+        "could not find executable '{bin}'. Search paths: {}",
         SEARCH_PATHS.join(", ")
     ))
 }
@@ -94,9 +94,9 @@ mod tests {
     fn resolve_cli_path_finds_system_shells() {
         for bin in ["bash", "sh"] {
             let path = resolve_cli_path(bin)
-                .unwrap_or_else(|e| panic!("'{bin}' 해석 실패: {e}"));
-            assert!(path.is_absolute(), "{bin}: 절대경로가 아님 ({path:?})");
-            assert!(path.is_file(), "{bin}: 실행 파일이 아님 ({path:?})");
+                .unwrap_or_else(|e| panic!("failed to resolve '{bin}': {e}"));
+            assert!(path.is_absolute(), "{bin}: not an absolute path ({path:?})");
+            assert!(path.is_file(), "{bin}: not an executable file ({path:?})");
         }
     }
 
@@ -107,7 +107,7 @@ mod tests {
         for dir in STANDARD_SYSTEM_PATHS {
             assert!(
                 SEARCH_PATHS.contains(&dir),
-                "SEARCH_PATHS에 {dir}가 없다 — augmented_path()와 불일치"
+                "SEARCH_PATHS is missing {dir} — disagrees with augmented_path()"
             );
         }
     }
@@ -115,6 +115,6 @@ mod tests {
     #[test]
     fn resolve_cli_path_reports_searched_dirs_on_failure() {
         let err = resolve_cli_path("kubemetal-definitely-not-a-real-binary").unwrap_err();
-        assert!(err.contains("/bin"), "탐색 경로 안내가 없다: {err}");
+        assert!(err.contains("/bin"), "search paths are not listed: {err}");
     }
 }

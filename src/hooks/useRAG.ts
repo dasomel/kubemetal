@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
 import type { RagIndexStatus, RagSearchResult } from '../types/ipc';
+import { useTranslation } from '../i18n/i18nContext';
 
 export function useRAG(active: boolean = false) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<RagIndexStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [indexing, setIndexing] = useState(false);
@@ -15,9 +17,9 @@ export function useRAG(active: boolean = false) {
       const res = await invoke<RagIndexStatus>('get_rag_status');
       setStatus(res);
     } catch (err) {
-      console.error('RAG 상태 로드 오류:', err);
+      console.error(t('rag.err.statusLoad'), err);
     }
-  }, []);
+  }, [t]);
 
   const setupEnv = useCallback(async () => {
     try {
@@ -25,9 +27,9 @@ export function useRAG(active: boolean = false) {
       await message(res, { title: 'KubeMetal', kind: 'info' });
       await fetchStatus();
     } catch (err) {
-      await message(`RAG 환경 설치 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('rag.toast.envSetupFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, t]);
 
   const triggerIndex = useCallback(
     async (docsPath?: string) => {
@@ -36,15 +38,15 @@ export function useRAG(active: boolean = false) {
         const res = await invoke<{ status: string; collection: string; indexed_docs: number; total_chunks: number; db_path: string }>('index_documents', {
           docsPath: docsPath || 'docs',
         });
-        await message(`문서 인덱싱 완료 (${res.indexed_docs} 문서, ${res.total_chunks} 청크)`, { title: 'KubeMetal', kind: 'info' });
+        await message(t('rag.toast.indexingDone', { docs: res.indexed_docs, chunks: res.total_chunks }), { title: 'KubeMetal', kind: 'info' });
         await fetchStatus();
       } catch (err) {
-        await message(`문서 인덱싱 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+        await message(t('rag.toast.indexingFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
       } finally {
         setIndexing(false);
       }
     },
-    [fetchStatus],
+    [fetchStatus, t],
   );
 
   const search = useCallback(async (query: string, topK: number = 3) => {
@@ -54,11 +56,11 @@ export function useRAG(active: boolean = false) {
       const res = await invoke<RagSearchResult[]>('query_rag', { query, topK });
       setSearchResults(res);
     } catch (err) {
-      await message(`시맨틱 검색 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('rag.toast.searchFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setSearching(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     setLoading(true);

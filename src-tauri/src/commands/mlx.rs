@@ -113,7 +113,7 @@ pub struct MlxState {
 pub(crate) fn home_dir() -> Result<PathBuf, String> {
     std::env::var("HOME")
         .map(PathBuf::from)
-        .map_err(|_| "HOME 환경변수를 찾을 수 없습니다.".to_string())
+        .map_err(|_| "Could not find HOME environment variable.".to_string())
 }
 
 pub(crate) fn venv_dir() -> Result<PathBuf, String> {
@@ -137,7 +137,7 @@ pub(crate) fn venv_pip() -> Result<PathBuf, String> {
 pub(crate) fn validate_home_subpath(p: &str) -> Result<PathBuf, String> {
     let home = home_dir()?
         .canonicalize()
-        .map_err(|e| format!("HOME 경로 확인 실패: {e}"))?;
+        .map_err(|e| format!("Failed to resolve HOME path: {e}"))?;
     let expanded: PathBuf = if p == "~" {
         home.clone()
     } else if let Some(rest) = p.strip_prefix("~/") {
@@ -147,9 +147,9 @@ pub(crate) fn validate_home_subpath(p: &str) -> Result<PathBuf, String> {
     };
     let canonical = expanded
         .canonicalize()
-        .map_err(|e| format!("경로를 찾을 수 없습니다: {p} ({e})"))?;
+        .map_err(|e| format!("Path not found: {p} ({e})"))?;
     if !canonical.starts_with(&home) {
-        return Err(format!("허용되지 않은 경로입니다(홈 디렉터리 하위만 허용): {p}"));
+        return Err(format!("Path not allowed (only paths under the home directory are allowed): {p}"));
     }
     Ok(canonical)
 }
@@ -178,7 +178,7 @@ pub(crate) fn validate_adapter_name(name: &str) -> Result<(), String> {
     if is_valid {
         Ok(())
     } else {
-        Err(format!("잘못된 adapter_name입니다: {name}"))
+        Err(format!("Invalid adapter_name: {name}"))
     }
 }
 
@@ -253,10 +253,10 @@ async fn run_setup_inner() -> Result<(), String> {
             .arg(&venv)
             .output()
             .await
-            .map_err(|e| format!("venv 생성 실행 실패: {e}"))?;
+            .map_err(|e| format!("Failed to run venv creation: {e}"))?;
         if !out.status.success() {
             return Err(format!(
-                "venv 생성 실패: {}",
+                "venv creation failed: {}",
                 String::from_utf8_lossy(&out.stderr)
             ));
         }
@@ -271,10 +271,10 @@ async fn run_setup_inner() -> Result<(), String> {
         .env("PATH", augmented_path())
         .output()
         .await
-        .map_err(|e| format!("pip install 실행 실패: {e}"))?;
+        .map_err(|e| format!("Failed to run pip install: {e}"))?;
     if !out.status.success() {
         return Err(format!(
-            "mlx-lm/mlx-vlm 설치 실패: {}",
+            "Failed to install mlx-lm/mlx-vlm: {}",
             String::from_utf8_lossy(&out.stderr)
         ));
     }
@@ -308,14 +308,14 @@ pub async fn setup_mlx_env(
     {
         let mut guard = state.env_setup.lock().map_err(|e| e.to_string())?;
         if guard.state == "installing" {
-            return Err("MLX 환경 설치가 이미 진행 중입니다.".into());
+            return Err("MLX environment setup is already in progress.".into());
         }
         guard.state = "installing".into();
         guard.error = None;
     }
 
     tokio::spawn(run_setup(app));
-    Ok("MLX venv 설치를 시작했습니다.".into())
+    Ok("Started MLX venv installation.".into())
 }
 
 fn apply_training_event(app: &tauri::AppHandle, value: &serde_json::Value) {
@@ -418,14 +418,14 @@ fn finalize_training(
         Ok(status) => {
             training.status = "error".into();
             training.error = Some(if stderr_text.trim().is_empty() {
-                format!("학습 프로세스가 비정상 종료되었습니다({status})")
+                format!("Training process exited abnormally ({status})")
             } else {
                 stderr_text.trim().to_string()
             });
         }
         Err(e) => {
             training.status = "error".into();
-            training.error = Some(format!("프로세스 대기 실패: {e}"));
+            training.error = Some(format!("Failed to wait for process: {e}"));
         }
     }
 }
@@ -460,7 +460,7 @@ pub async fn run_mlx_finetune(
         let mut guard = state.training.lock().map_err(|e| e.to_string())?;
         if let Some(t) = guard.as_ref() {
             if t.status == "running" {
-                return Err(format!("이미 학습이 진행 중입니다(PID {}).", t.pid));
+                return Err(format!("Training is already in progress (PID {}).", t.pid));
             }
         }
         let prev = guard.clone();
@@ -478,13 +478,13 @@ pub async fn run_mlx_finetune(
 
     let res = (|| -> Result<(u32, tokio::process::Child), String> {
         if config.iters == 0 {
-            return Err("iters는 1 이상이어야 합니다.".into());
+            return Err("iters must be at least 1.".into());
         }
         if config.batch_size == 0 {
-            return Err("batch_size는 1 이상이어야 합니다.".into());
+            return Err("batch_size must be at least 1.".into());
         }
         if !(config.learning_rate.is_finite() && config.learning_rate > 0.0) {
-            return Err("learning_rate는 0보다 큰 유한한 값이어야 합니다.".into());
+            return Err("learning_rate must be a finite value greater than 0.".into());
         }
         validate_adapter_name(&config.adapter_name)?;
 
@@ -493,13 +493,13 @@ pub async fn run_mlx_finetune(
 
         let venv_py = venv_python()?;
         if !venv_py.is_file() {
-            return Err("MLX venv가 없습니다. setup_mlx_env를 먼저 실행하세요.".into());
+            return Err("MLX venv does not exist. Run setup_mlx_env first.".into());
         }
 
         let wrapper = wrapper_script_path(&app)?;
         if !wrapper.is_file() {
             return Err(format!(
-                "파인튜닝 래퍼 스크립트를 찾을 수 없습니다: {}",
+                "Could not find the fine-tuning wrapper script: {}",
                 wrapper.display()
             ));
         }
@@ -534,11 +534,11 @@ pub async fn run_mlx_finetune(
             .env("PATH", augmented_path())
             .process_group(0)
             .spawn()
-            .map_err(|e| format!("파인튜닝 프로세스 실행 실패: {e}"))?;
+            .map_err(|e| format!("Failed to launch fine-tuning process: {e}"))?;
 
         let pid = child
             .id()
-            .ok_or_else(|| "PID를 가져올 수 없습니다.".to_string())?;
+            .ok_or_else(|| "Could not get PID.".to_string())?;
 
         Ok((pid, child))
     })();
@@ -627,7 +627,7 @@ pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bo
 
     tokio::task::spawn_blocking(move || terminate_pid(pid, is_training))
         .await
-        .map_err(|e| format!("프로세스 종료 대기 실패: {e}"))?;
+        .map_err(|e| format!("Failed to wait for process termination: {e}"))?;
 
     {
         let mut guard = state.training.lock().map_err(|e| e.to_string())?;
@@ -695,16 +695,16 @@ async fn run_serving_reader(app: tauri::AppHandle, mut child: tokio::process::Ch
         }
         Ok(status) => {
             *err_guard = Some(if stderr_text.trim().is_empty() {
-                format!("서빙 프로세스가 예기치 않게 종료되었습니다({status})")
+                format!("Serving process exited unexpectedly ({status})")
             } else {
                 format!(
-                    "서빙 프로세스가 예기치 않게 종료되었습니다({status}): {}",
+                    "Serving process exited unexpectedly ({status}): {}",
                     stderr_text.trim()
                 )
             });
         }
         Err(e) => {
-            *err_guard = Some(format!("서빙 프로세스 대기 실패: {e}"));
+            *err_guard = Some(format!("Failed to wait for serving process: {e}"));
         }
     }
 }
@@ -723,7 +723,7 @@ pub async fn start_model_serving(
     {
         let mut guard = state.serving.lock().map_err(|e| e.to_string())?;
         if guard.is_some() {
-            return Err("이미 모델 서빙이 진행 중입니다.".into());
+            return Err("Model serving is already in progress.".into());
         }
         *guard = Some(ServingStatus {
             pid: 0,
@@ -738,7 +738,7 @@ pub async fn start_model_serving(
         // 8080은 개발 환경에서 다른 서비스(예: Tomcat)가 선점하고 있는 경우가 흔하다.
         // bind 성공 시 리스너를 즉시 drop해 포트를 반납하고 그 사이에 실제 서빙 프로세스를 스폰한다.
         let listener = std::net::TcpListener::bind(("127.0.0.1", port)).map_err(|_| {
-            format!("포트 {port}는 다른 프로세스가 사용 중입니다. 서빙 카드에서 다른 포트(예: 8081)를 지정하세요.")
+            format!("Port {port} is in use by another process. Specify a different port (e.g. 8081) in the serving card.")
         })?;
         drop(listener);
 
@@ -747,7 +747,7 @@ pub async fn start_model_serving(
 
         let (base_model, effective_adapter): (PathBuf, Option<PathBuf>) = if is_adapter_dir {
             let base = read_adapter_base_model(&validated_model_dir).ok_or_else(|| {
-                "어댑터 디렉터리입니다 — 베이스 모델을 함께 지정하세요.".to_string()
+                "This is an adapter directory — specify the base model as well.".to_string()
             })?;
             let validated_base = validate_home_subpath(&base)?;
             (validated_base, Some(validated_model_dir.clone()))
@@ -761,7 +761,7 @@ pub async fn start_model_serving(
 
         let venv_py = venv_python()?;
         if !venv_py.is_file() {
-            return Err("MLX venv가 없습니다. setup_mlx_env를 먼저 실행하세요.".into());
+            return Err("MLX venv does not exist. Run setup_mlx_env first.".into());
         }
 
         let mut cmd = tokio::process::Command::new(&venv_py);
@@ -778,11 +778,11 @@ pub async fn start_model_serving(
             .stderr(Stdio::piped())
             .env("PATH", augmented_path())
             .spawn()
-            .map_err(|e| format!("서빙 프로세스 실행 실패: {e}"))?;
+            .map_err(|e| format!("Failed to launch serving process: {e}"))?;
 
         let pid = child
             .id()
-            .ok_or_else(|| "PID를 가져올 수 없습니다.".to_string())?;
+            .ok_or_else(|| "Could not get PID.".to_string())?;
 
         Ok((
             pid,
@@ -812,10 +812,10 @@ pub async fn start_model_serving(
             tokio::spawn(run_serving_reader(app, child, pid));
 
             let adapter_note = effective_adapter_str
-                .map(|p| format!(" · 어댑터 {p}"))
+                .map(|p| format!(" · adapter {p}"))
                 .unwrap_or_default();
             Ok(format!(
-                "{port} 포트에서 모델 서빙을 시작했습니다(PID {pid}){adapter_note}."
+                "Started model serving on port {port} (PID {pid}){adapter_note}."
             ))
         }
         Err(e) => {
@@ -838,7 +838,7 @@ fn find_available_port(range: std::ops::RangeInclusive<u16>) -> Result<u16, Stri
             return Ok(port);
         }
     }
-    Err("사용 가능한 포트를 찾지 못했습니다.".into())
+    Err("Could not find an available port.".into())
 }
 
 #[tauri::command]
@@ -852,13 +852,13 @@ pub async fn stop_model_serving(state: State<'_, MlxState>) -> Result<String, St
         let guard = state.serving.lock().map_err(|e| e.to_string())?;
         match guard.as_ref() {
             Some(s) => s.pid,
-            None => return Err("진행 중인 모델 서빙이 없습니다.".into()),
+            None => return Err("No model serving in progress.".into()),
         }
     };
 
     tokio::task::spawn_blocking(move || terminate_pid(pid, false))
         .await
-        .map_err(|e| format!("프로세스 종료 대기 실패: {e}"))?;
+        .map_err(|e| format!("Failed to wait for process termination: {e}"))?;
 
     // Child 소유권은 run_serving_reader가 갖고 있으므로 여기서는 상태만 비운다.
     // reaper가 실제 종료를 감지하고 last_serving_error를 남기지 않는다(사용자 의도 종료).
@@ -869,7 +869,7 @@ pub async fn stop_model_serving(state: State<'_, MlxState>) -> Result<String, St
         }
     }
 
-    Ok("모델 서빙을 정지했습니다.".into())
+    Ok("Stopped model serving.".into())
 }
 
 #[cfg(test)]
@@ -877,7 +877,7 @@ mod tests {
     #[test]
     fn validate_home_subpath_expands_tilde() {
         // "~"와 "~/..."가 HOME 기준으로 확장되어 검증을 통과해야 한다.
-        let home = super::validate_home_subpath("~").expect("~ 확장 실패");
+        let home = super::validate_home_subpath("~").expect("~ expansion failed");
         assert!(home.ends_with(std::env::var("HOME").unwrap().trim_start_matches('/')));
         // 존재가 보장되는 홈 하위 경로로 확장 검증 (~/. == 홈 자신)
         assert!(super::validate_home_subpath("~/.").is_ok());
@@ -913,11 +913,11 @@ mod tests {
     fn find_available_port_skips_occupied_port() {
         // 포트 0으로 바인드하면 OS가 빈 포트를 배정한다 — 실제 개발 환경에서 점유 중인
         // 8080/8081과 충돌하지 않으면서도 "점유된 포트를 건너뛰는지"를 검증할 수 있다.
-        let occupied = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("포트 점유 실패");
-        let occupied_port = occupied.local_addr().expect("주소 조회 실패").port();
+        let occupied = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("failed to occupy port");
+        let occupied_port = occupied.local_addr().expect("failed to get address").port();
 
         let result = find_available_port(occupied_port..=occupied_port.saturating_add(5))
-            .expect("가용 포트를 찾지 못함");
+            .expect("failed to find available port");
 
         assert_ne!(result, occupied_port);
         drop(occupied);
@@ -932,10 +932,10 @@ mod tests {
         let out = std::process::Command::new("python3")
             .args(["-c", ENV_PROBE_SNIPPET])
             .output()
-            .expect("python3 실행");
+            .expect("failed to run python3");
         assert!(
             out.status.success(),
-            "프로브 스니펫이 파이썬 구문 오류로 죽었다: {}",
+            "probe snippet died with a python syntax error: {}",
             String::from_utf8_lossy(&out.stderr)
         );
     }

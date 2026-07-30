@@ -19,7 +19,7 @@ const PROBE_IMAGE: &str = "docker.io/curlimages/curl:8.21.0";
 
 fn target_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("설정 디렉터리 생성 실패: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("failed to create config directory: {e}"))?;
     Ok(dir.join(TARGET_FILE))
 }
 
@@ -27,8 +27,9 @@ fn target_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
 pub async fn get_deploy_target(app: tauri::AppHandle) -> Result<DeployTarget, String> {
     let path = target_path(&app)?;
     let target: DeployTarget = match std::fs::read_to_string(&path) {
-        Ok(text) => serde_json::from_str(&text)
-            .map_err(|e| format!("{TARGET_FILE} 파싱 실패: {e}. 대상을 다시 선택하세요."))?,
+        Ok(text) => serde_json::from_str(&text).map_err(|e| {
+            format!("failed to parse {TARGET_FILE}: {e}. Please re-select the deploy target.")
+        })?,
         // 저장된 선택이 없으면 colima가 기본값 — 기존 사용자의 동작이 바뀌지 않는다.
         Err(_) => DeployTarget::for_context(COLIMA_CONTEXT),
     };
@@ -43,7 +44,7 @@ pub async fn save_deploy_target(
 ) -> Result<DeployTarget, String> {
     let path = target_path(&app)?;
     let text = serde_json::to_string_pretty(&target).map_err(|e| e.to_string())?;
-    std::fs::write(&path, text).map_err(|e| format!("{TARGET_FILE} 저장 실패: {e}"))?;
+    std::fs::write(&path, text).map_err(|e| format!("failed to save {TARGET_FILE}: {e}"))?;
     set_active(&target);
     Ok(target)
 }
@@ -54,16 +55,27 @@ async fn kubectl_json(context: &str, args: &[&str]) -> Result<serde_json::Value,
         .args(args)
         .output()
         .await
-        .map_err(|e| format!("kubectl 실행 실패: {e}"))?;
+        .map_err(|e| format!("failed to run kubectl: {e}"))?;
 
     if !output.status.success() {
         return Err(format!(
-            "kubectl {} 실패: {}",
+            "kubectl {} failed: {}",
             args.join(" "),
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    serde_json::from_slice(&output.stdout).map_err(|e| format!("kubectl 출력 파싱 실패: {e}"))
+    serde_json::from_slice(&output.stdout).map_err(|e| format!("failed to parse kubectl output: {e}"))
+}
+
+/// 배포 차단 사유를 안정 코드로 나른다(D31). `detail`은 IP·개수 같은 언어중립 가변값만
+/// 담는다 — 프런트는 `code`를 i18n 테이블 키로 쓴다.
+///
+/// 알려진 코드: `no_default_storage_class`, `namespace_owned_by_argocd`(소유 앱 목록은
+/// `argocd_owners` 필드에 이미 있어 detail 없음), `no_bridge_candidates`.
+#[derive(serde::Serialize)]
+pub struct Blocker {
+    pub code: String,
+    pub detail: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -80,8 +92,8 @@ pub struct PreflightReport {
     pub argocd_owners: Vec<String>,
     pub enforcing_policies: Vec<String>,
     pub bridge_candidates: Vec<String>,
-    /// 사람이 읽을 차단 사유. 비어 있으면 배포 가능.
-    pub blockers: Vec<String>,
+    /// 배포 차단 사유. 비어 있으면 배포 가능.
+    pub blockers: Vec<Blocker>,
 }
 
 #[tauri::command]
@@ -128,11 +140,10 @@ pub async fn preflight_deploy_target(
         }
     }
     if default_storage_class.is_none() {
-        blockers.push(
-            "대상 클러스터에 기본 StorageClass가 없습니다. StorageClass를 명시하지 않으면 \
-             Prefect PVC가 Pending에서 멈춥니다."
-                .into(),
-        );
+        blockers.push(Blocker {
+            code: "no_default_storage_class".into(),
+            detail: None,
+        });
     }
 
     // ArgoCD — CRD 유무와, 대상 네임스페이스를 소유한 Application 목록.
@@ -160,11 +171,11 @@ pub async fn preflight_deploy_target(
         }
     }
     if !argocd_owners.is_empty() {
-        blockers.push(format!(
-            "네임스페이스 '{namespace}'는 ArgoCD Application({})이 소유합니다. \
-             직접 apply는 selfHeal이 되돌리므로 GitOps export 경로를 쓰세요.",
-            argocd_owners.join(", ")
-        ));
+        // 소유 앱 이름 목록은 argocd_owners 필드에 이미 있다 — detail에 중복하지 않는다.
+        blockers.push(Blocker {
+            code: "namespace_owned_by_argocd".into(),
+            detail: None,
+        });
     }
 
     // Kyverno Enforce 정책 — 위반하면 admission에서 막힌다. 목록만 보여주고 판단은 사람이.
@@ -183,11 +194,10 @@ pub async fn preflight_deploy_target(
 
     let candidates = detect_bridge_candidates(&node_ips).await?;
     if candidates.is_empty() && context != COLIMA_CONTEXT {
-        blockers.push(
-            "노드 서브넷과 연결된 호스트 인터페이스가 없어 브리지 후보를 찾지 못했습니다. \
-             MLX 호스트 연동이 필요하면 VM 네트워크를 확인하세요."
-                .into(),
-        );
+        blockers.push(Blocker {
+            code: "no_bridge_candidates".into(),
+            detail: None,
+        });
     }
 
     Ok(PreflightReport {
@@ -211,7 +221,7 @@ async fn detect_bridge_candidates(node_ips: &[String]) -> Result<Vec<String>, St
         .arg("-a")
         .output()
         .await
-        .map_err(|e| format!("ifconfig 실행 실패: {e}"))?;
+        .map_err(|e| format!("failed to run ifconfig: {e}"))?;
     let text = String::from_utf8_lossy(&output.stdout);
 
     let parsed: Vec<Ipv4Addr> = node_ips.iter().filter_map(|ip| ip.parse().ok()).collect();
@@ -245,7 +255,8 @@ pub async fn detect_host_bridge(context: String, namespace: String) -> Result<Br
     if candidates.is_empty() {
         return Ok(BridgeState::Unverified {
             candidates,
-            reason: "노드 서브넷과 같은 대역의 호스트 인터페이스를 찾지 못했습니다.".into(),
+            reason_code: "no_interface_candidates".into(),
+            detail: None,
         });
     }
 
@@ -257,18 +268,17 @@ pub async fn detect_host_bridge(context: String, namespace: String) -> Result<Br
                     host: candidate.clone(),
                 })
             }
-            Ok(false) => failures.push(format!("{candidate}: 클러스터에서 도달 실패")),
+            Ok(false) => failures.push(format!("{candidate}: unreachable from cluster")),
             Err(e) => failures.push(format!("{candidate}: {e}")),
         }
     }
 
     Ok(BridgeState::Unverified {
         candidates,
-        reason: format!(
-            "후보를 찾았지만 클러스터 내부에서 도달을 확인하지 못했습니다 ({}). \
-             macOS 방화벽이 수신을 차단했을 수 있습니다.",
-            failures.join(" / ")
-        ),
+        reason_code: "unreachable_from_cluster".into(),
+        // macOS 방화벽이 수신을 차단했을 가능성이 detail의 흔한 원인이다 — 사람이 읽는
+        // 문장이 아니라 후보별 실패 사유를 " / "로 이어붙인 진단 텍스트다.
+        detail: Some(failures.join(" / ")),
     })
 }
 
@@ -278,7 +288,7 @@ async fn probe_candidate(context: &str, namespace: &str, candidate: &str) -> Res
     // 0.0.0.0이 아니라 후보 주소에만 바인드한다 — 노출 범위를 그 인터페이스로 제한.
     let listener = tokio::net::TcpListener::bind(format!("{candidate}:0"))
         .await
-        .map_err(|e| format!("리스너 바인드 실패: {e}"))?;
+        .map_err(|e| format!("failed to bind listener: {e}"))?;
     let port = listener
         .local_addr()
         .map_err(|e| e.to_string())?
@@ -334,7 +344,7 @@ async fn probe_candidate(context: &str, namespace: &str, candidate: &str) -> Res
         .output()
         .await;
 
-    let output = result.map_err(|e| format!("프로브 파드 실행 실패: {e}"))?;
+    let output = result.map_err(|e| format!("failed to run probe pod: {e}"))?;
     if output.status.success() {
         return Ok(true);
     }
@@ -342,7 +352,7 @@ async fn probe_candidate(context: &str, namespace: &str, candidate: &str) -> Res
     // 이미지를 못 받은 것과 네트워크가 안 통한 것은 원인이 다르다 — 구분해서 올린다.
     if stderr.contains("ImagePull") || stderr.contains("ErrImagePull") {
         return Err(format!(
-            "프로브 이미지({PROBE_IMAGE})를 받지 못해 검증할 수 없습니다: {}",
+            "could not verify: failed to pull probe image ({PROBE_IMAGE}): {}",
             stderr.trim()
         ));
     }

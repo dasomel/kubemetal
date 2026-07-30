@@ -210,7 +210,7 @@ pub async fn get_prefect_status(state: State<'_, PrefectState>) -> Result<Prefec
 async fn run_prefect_env_setup_inner() -> Result<(), String> {
     let venv_py = venv_python()?;
     if !venv_py.is_file() {
-        return Err("MLX venv가 없습니다. MLX 스튜디오에서 setup_mlx_env를 먼저 실행하세요.".into());
+        return Err("MLX venv not found. Run setup_mlx_env in MLX Studio first.".into());
     }
 
     let pip = venv_pip()?;
@@ -219,10 +219,10 @@ async fn run_prefect_env_setup_inner() -> Result<(), String> {
         .env("PATH", augmented_path())
         .output()
         .await
-        .map_err(|e| format!("pip install 실행 실패: {e}"))?;
+        .map_err(|e| format!("Failed to run pip install: {e}"))?;
     if !out.status.success() {
         return Err(format!(
-            "prefect 설치 실패: {}",
+            "prefect installation failed: {}",
             String::from_utf8_lossy(&out.stderr)
         ));
     }
@@ -256,14 +256,14 @@ pub async fn setup_prefect_env(
     {
         let mut guard = state.env_setup.lock().map_err(|e| e.to_string())?;
         if guard.state == "installing" {
-            return Err("Prefect 설치가 이미 진행 중입니다.".into());
+            return Err("Prefect installation is already in progress.".into());
         }
         guard.state = "installing".into();
         guard.error = None;
     }
 
     tokio::spawn(run_prefect_env_setup(app));
-    Ok("Prefect 설치를 시작했습니다.".into())
+    Ok("Started Prefect installation.".into())
 }
 
 /// `lm-eval[api]`를 설치한다(`api` extra는 `local-completions` 모델 타입에 필요한
@@ -273,7 +273,7 @@ pub async fn setup_prefect_env(
 async fn run_eval_env_setup_inner() -> Result<(), String> {
     let venv_py = venv_python()?;
     if !venv_py.is_file() {
-        return Err("MLX venv가 없습니다. MLX 스튜디오에서 setup_mlx_env를 먼저 실행하세요.".into());
+        return Err("MLX venv not found. Run setup_mlx_env in MLX Studio first.".into());
     }
 
     let pip = venv_pip()?;
@@ -282,10 +282,10 @@ async fn run_eval_env_setup_inner() -> Result<(), String> {
         .env("PATH", augmented_path())
         .output()
         .await
-        .map_err(|e| format!("pip install 실행 실패: {e}"))?;
+        .map_err(|e| format!("Failed to run pip install: {e}"))?;
     if !out.status.success() {
         return Err(format!(
-            "lm-eval 설치 실패: {}",
+            "lm-eval installation failed: {}",
             String::from_utf8_lossy(&out.stderr)
         ));
     }
@@ -319,14 +319,14 @@ pub async fn setup_eval_env(
     {
         let mut guard = state.eval_env_setup.lock().map_err(|e| e.to_string())?;
         if guard.state == "installing" {
-            return Err("평가 환경 설치가 이미 진행 중입니다.".into());
+            return Err("Eval environment installation is already in progress.".into());
         }
         guard.state = "installing".into();
         guard.error = None;
     }
 
     tokio::spawn(run_eval_env_setup(app));
-    Ok("평가 환경(lm-eval) 설치를 시작했습니다.".into())
+    Ok("Started eval environment (lm-eval) installation.".into())
 }
 
 async fn collect_stderr(stderr: tokio::process::ChildStderr) -> String {
@@ -387,16 +387,16 @@ async fn run_runner_reader(app: tauri::AppHandle, mut child: tokio::process::Chi
         }
         Ok(status) => {
             *err_guard = Some(if stderr_text.trim().is_empty() {
-                format!("Prefect 러너가 예기치 않게 종료되었습니다({status})")
+                format!("Prefect runner exited unexpectedly ({status})")
             } else {
                 format!(
-                    "Prefect 러너가 예기치 않게 종료되었습니다({status}): {}",
+                    "Prefect runner exited unexpectedly ({status}): {}",
                     stderr_text.trim()
                 )
             });
         }
         Err(e) => {
-            *err_guard = Some(format!("러너 프로세스 대기 실패: {e}"));
+            *err_guard = Some(format!("Failed to wait for runner process: {e}"));
         }
     }
 }
@@ -414,7 +414,7 @@ pub async fn start_prefect_runner(
     let prev_runner_pid = {
         let mut guard = state.runner_pid.lock().map_err(|e| e.to_string())?;
         if guard.is_some() {
-            return Err("Prefect 러너가 이미 실행 중입니다.".into());
+            return Err("Prefect runner is already running.".into());
         }
         let prev = *guard;
         *guard = Some(0);
@@ -424,7 +424,7 @@ pub async fn start_prefect_runner(
     let spawn_result = (|| -> Result<(u32, tokio::process::Child), String> {
         let venv_py = venv_python()?;
         if !venv_py.is_file() {
-            return Err("MLX venv가 없습니다. setup_mlx_env를 먼저 실행하세요.".into());
+            return Err("MLX venv not found. Run setup_mlx_env first.".into());
         }
 
         let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
@@ -432,7 +432,7 @@ pub async fn start_prefect_runner(
             resolve_bundled_resource(&resource_dir, "scripts/prefect/host_runner.py");
         if !runner_script.is_file() {
             return Err(format!(
-                "Prefect 러너 스크립트를 찾을 수 없습니다: {}",
+                "Prefect runner script not found: {}",
                 runner_script.display()
             ));
         }
@@ -448,11 +448,11 @@ pub async fn start_prefect_runner(
             .env("PREFECT_API_URL", PREFECT_API_URL)
             .process_group(0)
             .spawn()
-            .map_err(|e| format!("Prefect 러너 실행 실패: {e}"))?;
+            .map_err(|e| format!("Failed to start Prefect runner: {e}"))?;
 
         let pid = child
             .id()
-            .ok_or_else(|| "PID를 가져올 수 없습니다.".to_string())?;
+            .ok_or_else(|| "Failed to get PID.".to_string())?;
 
         Ok((pid, child))
     })();
@@ -470,7 +470,7 @@ pub async fn start_prefect_runner(
 
             tokio::spawn(run_runner_reader(app, child, pid));
 
-            Ok(format!("Prefect 러너를 시작했습니다(PID {pid})."))
+            Ok(format!("Started Prefect runner (PID {pid})."))
         }
         Err(e) => {
             if let Ok(mut guard) = state.runner_pid.lock() {
@@ -501,13 +501,13 @@ pub async fn stop_prefect_runner(state: State<'_, PrefectState>) -> Result<Strin
         let guard = state.runner_pid.lock().map_err(|e| e.to_string())?;
         match *guard {
             Some(p) => p,
-            None => return Err("실행 중인 Prefect 러너가 없습니다.".into()),
+            None => return Err("No Prefect runner is running.".into()),
         }
     };
 
     tokio::task::spawn_blocking(move || terminate_process_group(pid))
         .await
-        .map_err(|e| format!("프로세스 종료 대기 실패: {e}"))?;
+        .map_err(|e| format!("Failed to wait for process termination: {e}"))?;
 
     {
         let mut guard = state.runner_pid.lock().map_err(|e| e.to_string())?;
@@ -516,7 +516,7 @@ pub async fn stop_prefect_runner(state: State<'_, PrefectState>) -> Result<Strin
         }
     }
 
-    Ok("Prefect 러너를 정지했습니다.".into())
+    Ok("Stopped Prefect runner.".into())
 }
 
 /// `GET /deployments/name/{flow_name}/{deployment_name}`(실기기 실측, 2026-07-23)로
@@ -526,13 +526,13 @@ pub async fn stop_prefect_runner(state: State<'_, PrefectState>) -> Result<Strin
 #[tauri::command]
 pub async fn trigger_finetune_flow(config: FineTuneConfig) -> Result<String, String> {
     if config.iters == 0 {
-        return Err("iters는 1 이상이어야 합니다.".into());
+        return Err("iters must be at least 1.".into());
     }
     if config.batch_size == 0 {
-        return Err("batch_size는 1 이상이어야 합니다.".into());
+        return Err("batch_size must be at least 1.".into());
     }
     if !(config.learning_rate.is_finite() && config.learning_rate > 0.0) {
-        return Err("learning_rate는 0보다 큰 유한한 값이어야 합니다.".into());
+        return Err("learning_rate must be a finite value greater than 0.".into());
     }
     validate_adapter_name(&config.adapter_name)?;
     let model_path = validate_home_subpath(&config.model_path)?;
@@ -541,13 +541,14 @@ pub async fn trigger_finetune_flow(config: FineTuneConfig) -> Result<String, Str
     let deployment = curl_get_json(&format!("{PREFECT_API_BASE}/deployments/name/finetune/finetune"))
         .await
         .ok_or_else(|| {
-            "Prefect 서버에 연결할 수 없습니다 — 포트포워딩(4200)이 활성인지 확인하세요.".to_string()
+            "Cannot connect to Prefect server — check that port-forwarding (4200) is active."
+                .to_string()
         })?;
     let deployment_id = deployment
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            "finetune deployment를 찾을 수 없습니다 — Prefect 러너가 실행 중인지 확인하세요."
+            "finetune deployment not found — check that the Prefect runner is running."
                 .to_string()
         })?;
 
@@ -567,12 +568,12 @@ pub async fn trigger_finetune_flow(config: FineTuneConfig) -> Result<String, Str
         &body,
     )
     .await
-    .ok_or_else(|| "flow run 생성 요청이 실패했습니다.".to_string())?;
+    .ok_or_else(|| "flow run creation request failed.".to_string())?;
 
     run.get("id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
-        .ok_or_else(|| "flow run 응답에서 id를 읽지 못했습니다.".to_string())
+        .ok_or_else(|| "Failed to read id from flow run response.".to_string())
 }
 
 /// MLflow REST 호출 베이스 — `modelhub.rs`의 기존 MLflow REST 호출과 동일 호스트 표기
@@ -590,10 +591,10 @@ pub async fn trigger_evaluate_flow(
     serving_port: u16,
 ) -> Result<String, String> {
     if tasks.trim().is_empty() {
-        return Err("tasks는 비어있을 수 없습니다.".into());
+        return Err("tasks must not be empty.".into());
     }
     if limit == 0 {
-        return Err("limit은 1 이상이어야 합니다.".into());
+        return Err("limit must be at least 1.".into());
     }
 
     let serving_url = format!("http://127.0.0.1:{serving_port}/v1");
@@ -601,13 +602,14 @@ pub async fn trigger_evaluate_flow(
     let deployment = curl_get_json(&format!("{PREFECT_API_BASE}/deployments/name/evaluate/evaluate"))
         .await
         .ok_or_else(|| {
-            "Prefect 서버에 연결할 수 없습니다 — 포트포워딩(4200)이 활성인지 확인하세요.".to_string()
+            "Cannot connect to Prefect server — check that port-forwarding (4200) is active."
+                .to_string()
         })?;
     let deployment_id = deployment
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            "evaluate deployment를 찾을 수 없습니다 — Prefect 러너가 실행 중인지 확인하세요."
+            "evaluate deployment not found — check that the Prefect runner is running."
                 .to_string()
         })?;
 
@@ -624,12 +626,12 @@ pub async fn trigger_evaluate_flow(
         &body,
     )
     .await
-    .ok_or_else(|| "flow run 생성 요청이 실패했습니다.".to_string())?;
+    .ok_or_else(|| "flow run creation request failed.".to_string())?;
 
     run.get("id")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
-        .ok_or_else(|| "flow run 응답에서 id를 읽지 못했습니다.".to_string())
+        .ok_or_else(|| "Failed to read id from flow run response.".to_string())
 }
 
 /// MLflow experiment "kubemetal-eval"의 최근 run들을 조회해 평탄화한다

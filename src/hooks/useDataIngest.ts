@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useTranslation } from '../i18n/i18nContext';
 import type {
   DataIngestConfig,
   DataIngestPipelineRun,
@@ -43,7 +44,7 @@ function toBackendSourceType(sourceType: DataIngestSourceType): string {
 
 const ts = () => new Date().toLocaleTimeString();
 
-function createInitialNodes(): Record<DagNodeId, DagNodeMetric> {
+function createInitialNodes(t: (key: string, params?: Record<string, string | number>) => string): Record<DagNodeId, DagNodeMetric> {
   return {
     ingest: {
       id: 'ingest',
@@ -51,7 +52,7 @@ function createInitialNodes(): Record<DagNodeId, DagNodeMetric> {
       status: 'idle',
       items_processed: 0,
       duration_ms: 0,
-      logs: ['대기 중... 파이프라인을 실행하면 데이터 수집이 시작됩니다.'],
+      logs: [t('dataIngest.log.ingestIdle')],
     },
     clean_chunk: {
       id: 'clean_chunk',
@@ -59,7 +60,7 @@ function createInitialNodes(): Record<DagNodeId, DagNodeMetric> {
       status: 'idle',
       items_processed: 0,
       duration_ms: 0,
-      logs: ['대기 중... 데이터 수집 후 정제 및 청킹 작업이 진행됩니다.'],
+      logs: [t('dataIngest.log.cleanChunkIdle')],
     },
     lancedb_store: {
       id: 'lancedb_store',
@@ -67,7 +68,7 @@ function createInitialNodes(): Record<DagNodeId, DagNodeMetric> {
       status: 'idle',
       items_processed: 0,
       duration_ms: 0,
-      logs: ['대기 중... 청크 데이터 임베딩 생성 및 LanceDB 인덱싱이 실행됩니다.'],
+      logs: [t('dataIngest.log.lancedbIdle')],
     },
     dvc_backup: {
       id: 'dvc_backup',
@@ -75,7 +76,7 @@ function createInitialNodes(): Record<DagNodeId, DagNodeMetric> {
       status: 'idle',
       items_processed: 0,
       duration_ms: 0,
-      logs: ['대기 중... 벡터 DB 스냅샷을 SeaweedFS S3 버킷에 DVC 버저닝 백업합니다.'],
+      logs: [t('dataIngest.log.dvcBackupIdle')],
     },
   };
 }
@@ -105,6 +106,7 @@ function applyBackendNodes(
 }
 
 export function useDataIngest() {
+  const { t } = useTranslation();
   const [config, setConfig] = useState<DataIngestConfig>(defaultConfig);
   const [activeNodeId, setActiveNodeId] = useState<DagNodeId | null>('ingest');
   const [pipelineRun, setPipelineRun] = useState<DataIngestPipelineRun | null>(null);
@@ -123,11 +125,11 @@ export function useDataIngest() {
       const list = await invoke<IngestedDatasetInfo[]>('list_ingested_datasets');
       setDatasets(list);
     } catch (err) {
-      console.error('수집 이력 목록 로드 오류:', err);
+      console.error(t('dataIngest.err.historyLoad'), err);
     } finally {
       setLoadingDatasets(false);
     }
-  }, []);
+  }, [t]);
 
   // 탭 진입 시 최소 1회 수집 이력을 조회한다.
   useEffect(() => {
@@ -146,13 +148,13 @@ export function useDataIngest() {
         ? 'HuggingFace Dataset'
         : 'Local File/Directory';
 
-    let currentNodes = createInitialNodes();
+    let currentNodes = createInitialNodes(t);
     currentNodes.ingest = {
       ...currentNodes.ingest,
       status: 'running',
       logs: [
-        `[${ts()}] 수집 대상: [${sourceLabel}] ${runConfig.source_target}`,
-        `[${ts()}] run_data_ingest 파이프라인 프로세스를 시작합니다...`,
+        t('dataIngest.log.startTarget', { time: ts(), sourceLabel, target: runConfig.source_target }),
+        t('dataIngest.log.startProcess', { time: ts() }),
       ],
     };
 
@@ -220,7 +222,7 @@ export function useDataIngest() {
           ...currentNodes[failedNodeId],
           status: 'error',
           error_message: errMessage,
-          logs: [...currentNodes[failedNodeId].logs, `[오류] ${errMessage}`],
+          logs: [...currentNodes[failedNodeId].logs, t('dataIngest.log.errorPrefix', { error: errMessage })],
         },
       };
       updateRun('error', failedNodeId, currentNodes, new Date().toISOString());
@@ -228,7 +230,7 @@ export function useDataIngest() {
       window.clearInterval(pollId);
       setIsPipelineRunning(false);
     }
-  }, [config, refreshDatasets]);
+  }, [config, refreshDatasets, t]);
 
   return {
     config,

@@ -35,9 +35,9 @@ pub struct IngestConfig {
 fn validate_ingest_url(url: &str) -> Result<String, String> {
     let (scheme, rest) = url
         .split_once("://")
-        .ok_or_else(|| format!("허용되지 않은 URL 형식입니다: {url}"))?;
+        .ok_or_else(|| format!("Invalid URL format: {url}"))?;
     if scheme != "http" && scheme != "https" {
-        return Err(format!("허용되지 않은 URL 스킴입니다: {scheme}"));
+        return Err(format!("Disallowed URL scheme: {scheme}"));
     }
 
     let host_port_path = rest.split(['/', '?', '#']).next().unwrap_or("");
@@ -54,13 +54,13 @@ fn validate_ingest_url(url: &str) -> Result<String, String> {
         || host_lower.ends_with(".internal")
         || host_lower.ends_with(".local")
     {
-        return Err(format!("사설/루프백 네트워크 대상은 허용되지 않습니다: {host}"));
+        return Err(format!("Private/loopback network targets are not allowed: {host}"));
     }
 
     if let Ok(ip) = host_lower.parse::<IpAddr>() {
         let blocked = ip_blocked(ip);
         if blocked {
-            return Err(format!("사설/루프백 네트워크 대상은 허용되지 않습니다: {host}"));
+            return Err(format!("Private/loopback network targets are not allowed: {host}"));
         }
     }
 
@@ -88,10 +88,10 @@ async fn ensure_public_resolution(host: &str) -> Result<(), String> {
     }
     let addrs = tokio::net::lookup_host((host, 443u16))
         .await
-        .map_err(|e| format!("호스트 해석 실패(차단): {host} ({e})"))?;
+        .map_err(|e| format!("Host resolution failed (blocked): {host} ({e})"))?;
     for sa in addrs {
         if ip_blocked(sa.ip()) {
-            return Err(format!("차단된 IP로 해석되는 호스트입니다: {host} -> {}", sa.ip()));
+            return Err(format!("Host resolves to a blocked IP: {host} -> {}", sa.ip()));
         }
     }
     Ok(())
@@ -213,7 +213,7 @@ pub async fn run_data_ingest(
     } = config;
 
     if source_path.trim().is_empty() {
-        return Err("소스 경로는 비어 있을 수 없습니다.".into());
+        return Err("Source path must not be empty.".into());
     }
 
     let stype_lower = source_type.to_lowercase();
@@ -240,7 +240,7 @@ pub async fn run_data_ingest(
     let ingest_script = resolve_bundled_resource(&resource_dir, "scripts/data/ingest_host.py");
     if !ingest_script.is_file() {
         return Err(format!(
-            "수집 스크립트를 찾을 수 없습니다: {}",
+            "Ingest script not found: {}",
             ingest_script.display()
         ));
     }
@@ -286,23 +286,23 @@ pub async fn run_data_ingest(
     let output = cmd
         .output()
         .await
-        .map_err(|e| format!("데이터 수집 파이프라인 프로세스 실행 실패: {e}"))?;
+        .map_err(|e| format!("Failed to execute data ingest pipeline process: {e}"))?;
 
     let stdout_str = String::from_utf8_lossy(&output.stdout);
     if stdout_str.trim().is_empty() && !output.status.success() {
         let stderr_str = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("수집 파이프라인 오류: {stderr_str}"));
+        return Err(format!("Ingest pipeline error: {stderr_str}"));
     }
 
     let result: IngestFlowResult = serde_json::from_str(&stdout_str)
-        .map_err(|e| format!("JSON 파싱 실패 ({e}): {stdout_str}"))?;
+        .map_err(|e| format!("JSON parsing failed ({e}): {stdout_str}"))?;
 
     if let Ok(mut guard) = state.last_result.lock() {
         *guard = Some(result.clone());
     }
 
     if result.status != "ok" {
-        let err_msg = result.error.as_deref().unwrap_or("데이터 수집 중 오류가 발생했습니다.");
+        let err_msg = result.error.as_deref().unwrap_or("An error occurred during data ingest.");
         return Err(err_msg.to_string());
     }
 

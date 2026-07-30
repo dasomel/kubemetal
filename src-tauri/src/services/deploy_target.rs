@@ -27,9 +27,16 @@ pub enum BridgeState {
     Verified { host: String },
     /// 후보는 뽑았지만 검증에 실패했거나 아직 검증하지 않았다. 이 상태로는 배포하지 않는다 —
     /// 추측 주소를 실으면 파드가 조용히 죽는다(D22–D25).
+    ///
+    /// `reason_code`는 프런트가 i18n 테이블로 매핑하는 안정 코드다(D31) — 언어별 문장은
+    /// 여기서 만들지 않는다. IP·개수 등 가변 값은 `detail`에 언어중립으로 담는다.
+    /// 알려진 코드: `not_probed`(아직 탐지 전), `no_interface_candidates`(노드 서브넷과
+    /// 겹치는 호스트 인터페이스 없음), `unreachable_from_cluster`(후보는 있으나 클러스터
+    /// 내부에서 도달 실패 — detail에 후보별 실패 사유).
     Unverified {
         candidates: Vec<String>,
-        reason: String,
+        reason_code: String,
+        detail: Option<String>,
     },
 }
 
@@ -74,7 +81,8 @@ impl DeployTarget {
                 image_registry: None,
                 bridge: BridgeState::Unverified {
                     candidates: Vec::new(),
-                    reason: "브리지 주소를 아직 탐지·검증하지 않았습니다.".into(),
+                    reason_code: "not_probed".into(),
+                    detail: None,
                 },
                 integration_level: None,
             }
@@ -101,7 +109,9 @@ impl DeployTarget {
 
     pub fn full_stack_gate(&self) -> Result<(), String> {
         if !self.is_colima() && self.effective_integration_level() == IntegrationLevel::AgentOnly {
-            Err("외부 클러스터의 기본 통합은 에이전트 온리입니다(D30) — 풀스택 배포는 배포 대상 카드에서 L2 풀스택을 명시적으로 선택한 뒤 저장하세요".into())
+            Err("External clusters default to agent-only integration (D30) — select L2 full-stack \
+                 explicitly on the deploy target card and save before provisioning the full stack"
+                .into())
         } else {
             Ok(())
         }
@@ -118,12 +128,20 @@ impl DeployTarget {
                 args.push("--bridge-host".into());
                 args.push(host.clone());
             }
-            BridgeState::Unverified { candidates, reason } => {
+            BridgeState::Unverified {
+                candidates,
+                reason_code,
+                detail,
+            } => {
                 return Err(format!(
-                    "호스트 브리지 주소가 검증되지 않아 배포를 중단합니다. 사유: {reason} \
-                     (후보: {}). `호스트 브리지 탐지`를 먼저 실행하세요.",
+                    "Deploy refused: host bridge address is not verified (reason: {reason_code}\
+                     {}, candidates: {}). Run host bridge detection first.",
+                    detail
+                        .as_deref()
+                        .map(|d| format!(" — {d}"))
+                        .unwrap_or_default(),
                     if candidates.is_empty() {
-                        "없음".to_string()
+                        "none".to_string()
                     } else {
                         candidates.join(", ")
                     }
@@ -292,7 +310,7 @@ en0: flags=8863<UP,BROADCAST>
         assert_eq!(
             bridge_candidates(&ifaces, &narwhal_nodes()),
             vec!["192.168.56.1".to_string()],
-            "노드와 같은 서브넷에 있는 호스트 인터페이스 주소를 골라야 한다"
+            "must pick the host interface address on the same subnet as the node"
         );
     }
 
@@ -304,7 +322,7 @@ en0: flags=8863<UP,BROADCAST>
         let ifaces = parse_ifconfig(IFCONFIG_CLUSTER_DOWN);
         assert!(
             bridge_candidates(&ifaces, &narwhal_nodes()).is_empty(),
-            "연결 인터페이스가 없으면 후보를 만들어내면 안 된다"
+            "must not invent a candidate when there is no connecting interface"
         );
     }
 
@@ -330,8 +348,13 @@ en0: flags=8863<UP,BROADCAST>
     fn external_target_defaults_to_own_namespace_and_refuses_render() {
         let t = DeployTarget::for_context("narwhal");
         assert_eq!(t.namespace, DEFAULT_EXTERNAL_NAMESPACE);
-        let err = t.render_args().expect_err("미검증 브리지는 렌더를 거부해야 한다");
-        assert!(err.contains("검증되지 않아"), "사유가 드러나야 한다: {err}");
+        let err = t
+            .render_args()
+            .expect_err("an unverified bridge must refuse render");
+        assert!(
+            err.contains("not verified") && err.contains("not_probed"),
+            "reason code must surface: {err}"
+        );
     }
 
     #[test]
@@ -366,8 +389,8 @@ en0: flags=8863<UP,BROADCAST>
     fn full_stack_gate_rejects_external_none() {
         let t = DeployTarget::for_context("narwhal");
         assert_eq!(t.effective_integration_level(), IntegrationLevel::AgentOnly);
-        let err = t.full_stack_gate().expect_err("외부+None은 차단되어야 한다");
-        assert!(err.contains("D30"), "D30 메시지가 포함되어야 한다: {err}");
+        let err = t.full_stack_gate().expect_err("external + None must be blocked");
+        assert!(err.contains("D30"), "D30 message must be included: {err}");
     }
 
     #[test]
@@ -388,10 +411,11 @@ en0: flags=8863<UP,BROADCAST>
             "bridge": {
                 "kind": "unverified",
                 "candidates": [],
-                "reason": "test"
+                "reason_code": "not_probed",
+                "detail": null
             }
         }"#;
-        let t: DeployTarget = serde_json::from_str(json).expect("역직렬화 성공해야 함");
+        let t: DeployTarget = serde_json::from_str(json).expect("deserialization should succeed");
         assert_eq!(t.integration_level, None);
         assert_eq!(t.effective_integration_level(), IntegrationLevel::AgentOnly);
     }

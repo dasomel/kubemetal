@@ -99,7 +99,7 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
             let child = external_command("kubectl")?
                 .args(["--context", &context, "port-forward", "-n", &namespace, svc, ports])
                 .spawn()
-                .map_err(|e| format!("port-forward({key}) 실행 실패: {e}"))?;
+                .map_err(|e| format!("port-forward({key}) failed to start: {e}"))?;
             guard.insert(key, child);
         }
     }
@@ -130,17 +130,17 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
         }
         let detail = failed
             .iter()
-            .map(|(key, port)| format!("{key}(:{port}) 응답 없음"))
+            .map(|(key, port)| format!("{key}(:{port}) not responding"))
             .collect::<Vec<_>>()
             .join(", ");
         return Err(format!(
-            "포트포워딩 일부 실패: {detail} (나머지 포트는 정상 기동됨)"
+            "Port forwarding partially failed: {detail} (remaining ports started normally)"
         ));
     }
 
-    let mut msg = "포트포워딩이 시작되었습니다.".to_string();
+    let mut msg = "Port forwarding started.".to_string();
     if reaped_external > 0 {
-        msg.push_str(&format!(" (외부 잔여 포워드 {reaped_external}개 인수)"));
+        msg.push_str(&format!(" (took over {reaped_external} leftover external forward(s))"));
     }
     Ok(msg)
 }
@@ -160,5 +160,5 @@ pub async fn stop_port_forward(state: State<'_, PortForwardState>) -> Result<Str
     let reaped_external = reap_external_port_forwards().await;
 
     let total = tracked_count + reaped_external;
-    Ok(format!("포트포워딩이 정지되었습니다. (정리된 프로세스 {total}개)"))
+    Ok(format!("Port forwarding stopped. ({total} process(es) cleaned up)"))
 }

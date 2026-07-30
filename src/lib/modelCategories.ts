@@ -1,9 +1,11 @@
 export interface ModelCategory {
   id: string;
-  label: string;
+  /** translations.ts 키 — 표시 텍스트는 t()로 조회한다 */
+  labelKey: string;
   query: string;
   author?: string;
-  description: string;
+  /** translations.ts 키 — 표시 텍스트는 t()로 조회한다 */
+  descKey: string;
 }
 
 /**
@@ -13,45 +15,45 @@ export interface ModelCategory {
 export const MODEL_CATEGORIES: ModelCategory[] = [
   {
     id: 'popular',
-    label: '인기 (MLX)',
+    labelKey: 'modelhub.cat.popular.label',
     query: '',
     author: 'mlx-community',
-    description: 'mlx-community가 배포한 다운로드 상위 MLX 변환 모델입니다.',
+    descKey: 'modelhub.cat.popular.desc',
   },
   {
     id: 'korean',
-    label: '한국어',
+    labelKey: 'modelhub.cat.korean.label',
     query: 'EXAONE',
-    description: 'LG AI연구원 EXAONE 계열 등 한국어 특화 모델입니다.',
+    descKey: 'modelhub.cat.korean.desc',
   },
   {
     id: 'coding',
-    label: '코딩',
+    labelKey: 'modelhub.cat.coding.label',
     query: 'coder mlx',
-    description: '코드 생성·보완에 특화된 MLX 변환 모델입니다.',
+    descKey: 'modelhub.cat.coding.desc',
   },
   {
     id: 'lightweight',
-    label: '경량 (~3B)',
+    labelKey: 'modelhub.cat.lightweight.label',
     query: '3B instruct 4bit',
     author: 'mlx-community',
-    description: '3B급 이하 4bit 양자화 모델로 메모리 부담이 적습니다.',
+    descKey: 'modelhub.cat.lightweight.desc',
   },
   {
     id: 'general',
-    label: '범용 챗',
+    labelKey: 'modelhub.cat.general.label',
     query: 'instruct 4bit',
     author: 'mlx-community',
-    description: '일반 대화·지시 수행용 4bit 양자화 인스트럭트 모델입니다.',
+    descKey: 'modelhub.cat.general.desc',
   },
 ];
 
 export interface RamSizeProfile {
   id: string;
-  /** 가이드 표에 보이는 메모리 구간 표시 문구 */
+  /** 가이드 표에 보이는 메모리 구간 표시 문구 (숫자·기호뿐이라 로케일 중립 — 그대로 표시) */
   range: string;
-  /** 가이드 표에 보이는 권장 모델 규모 표시 문구 */
-  sizeLabel: string;
+  /** 가이드 표에 보이는 권장 모델 규모 표시 문구 — translations.ts 키 */
+  sizeLabelKey: string;
   query: string;
   author?: string;
   /** 이 프로필이 적용되는 총 메모리(GB) 하한 — matchRamProfile에서 현재 Mac과 매칭할 때 쓴다. */
@@ -67,7 +69,7 @@ export const RAM_SIZE_PROFILES: RamSizeProfile[] = [
   {
     id: 'ram-16',
     range: '16GB',
-    sizeLabel: '1~4B급',
+    sizeLabelKey: 'modelhub.ram.16.sizeLabel',
     query: '3B instruct 4bit',
     author: 'mlx-community',
     minGb: 0,
@@ -75,7 +77,7 @@ export const RAM_SIZE_PROFILES: RamSizeProfile[] = [
   {
     id: 'ram-32',
     range: '32~48GB',
-    sizeLabel: '7~14B급',
+    sizeLabelKey: 'modelhub.ram.32.sizeLabel',
     query: '7B instruct 4bit',
     author: 'mlx-community',
     minGb: 32,
@@ -83,7 +85,7 @@ export const RAM_SIZE_PROFILES: RamSizeProfile[] = [
   {
     id: 'ram-64',
     range: '64GB+',
-    sizeLabel: '32B급 이상',
+    sizeLabelKey: 'modelhub.ram.64.sizeLabel',
     query: '32B instruct 4bit',
     author: 'mlx-community',
     minGb: 64,

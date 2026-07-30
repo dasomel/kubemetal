@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
 import type { BridgeState, DeployTarget, PreflightReport } from '../types/ipc';
+import { useTranslation } from '../i18n/i18nContext';
 
 export const COLIMA_CONTEXT = 'colima';
 
@@ -19,6 +20,7 @@ const notifyTargetSaved = () => saveListeners.forEach((fn) => fn());
  * 사전점검 결과나 브리지 상태를 낙관적 기본값으로 채우지 않는다(D22–D25).
  */
 export function useDeployTarget() {
+  const { t } = useTranslation();
   const [target, setTarget] = useState<DeployTarget | null>(null);
   const [contexts, setContexts] = useState<string[]>([]);
   const [contextsError, setContextsError] = useState<string | null>(null);
@@ -30,9 +32,9 @@ export function useDeployTarget() {
     try {
       setTarget(await invoke<DeployTarget>('get_deploy_target'));
     } catch (err) {
-      console.error('배포 대상 로드 오류:', err);
+      console.error(t('deployTarget.err.load'), err);
     }
-  }, []);
+  }, [t]);
 
   const loadContexts = useCallback(async () => {
     try {
@@ -70,7 +72,7 @@ export function useDeployTarget() {
       bridge:
         context === COLIMA_CONTEXT
           ? { kind: 'keep_base' }
-          : { kind: 'unverified', candidates: [], reason: '아직 탐지·검증하지 않았습니다.' },
+          : { kind: 'unverified', candidates: [], reason_code: 'not_probed', detail: null },
       integration_level: null,
     });
   }, []);
@@ -109,7 +111,8 @@ export function useDeployTarget() {
       patchTarget({ bridge });
     } catch (err) {
       // 탐지 자체가 실패한 경우도 미검증으로 남긴다 — 임의 주소를 채우지 않는다.
-      patchTarget({ bridge: { kind: 'unverified', candidates: [], reason: String(err) } });
+      // 실패 상세는 언어중립 detail로 전달한다(D31) — IPC 오류 문자열은 영문 기술 상세다.
+      patchTarget({ bridge: { kind: 'unverified', candidates: [], reason_code: 'not_probed', detail: String(err) } });
     } finally {
       setBusy(null);
     }
@@ -121,23 +124,33 @@ export function useDeployTarget() {
     try {
       setTarget(await invoke<DeployTarget>('save_deploy_target', { target }));
       notifyTargetSaved();
-      await message(`배포 대상을 [${target.context}] / ${target.namespace} 로 저장했습니다.`, {
+      await message(t('deployTarget.toast.saved', { context: target.context, namespace: target.namespace }), {
         title: 'KubeMetal',
         kind: 'info',
       });
     } catch (err) {
-      await message(`배포 대상 저장 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('deployTarget.toast.saveFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setBusy(null);
     }
-  }, [target]);
+  }, [target, t]);
 
   /** 배포 가능 여부와 그 사유. 버튼 비활성화와 안내 문구가 같은 판단을 쓰도록 한곳에서 계산한다. */
   const blockers: string[] = [];
   if (target?.bridge.kind === 'unverified') {
-    blockers.push(`호스트 브리지가 검증되지 않았습니다 — ${target.bridge.reason}`);
+    blockers.push(
+      t('deployTarget.blockerBridgeUnverified', {
+        reason: t(`deployTarget.bridgeReason.${target.bridge.reason_code}`),
+      }),
+    );
   }
-  if (preflight) blockers.push(...preflight.blockers);
+  if (preflight) {
+    blockers.push(
+      ...preflight.blockers.map((b) =>
+        b.detail ? `${t(`deployTarget.blockerCode.${b.code}`)} — ${b.detail}` : t(`deployTarget.blockerCode.${b.code}`),
+      ),
+    );
+  }
 
   return {
     target,

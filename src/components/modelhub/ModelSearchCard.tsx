@@ -42,7 +42,7 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
   onSelectCategory,
   onDownload,
 }) => {
-  const { t, language } = useTranslation();
+  const { t } = useTranslation();
   const activeCategory = MODEL_CATEGORIES.find((c) => c.id === activeSelectionId) ?? null;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -53,9 +53,7 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
   const trimmedQuery = query.trim();
   const displayResults = trimmedQuery ? results : popularModels;
   const isLoadingDisplay = trimmedQuery ? searching : loadingPopular;
-  const sectionLabel = trimmedQuery
-    ? (language === 'en' ? 'Search Results' : '검색 결과')
-    : t('modelhub.popularModelsTitle');
+  const sectionLabel = trimmedQuery ? t('modelhub.searchResultsTitle') : t('modelhub.popularModelsTitle');
 
   return (
     <div className="rounded-xl bg-surface p-4 shadow-panel">
@@ -99,13 +97,13 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
                   : 'bg-surface text-inkMuted border-hairline/8 hover:brightness-95'
               }`}
             >
-              {category.label}
+              {t(category.labelKey)}
             </button>
           );
         })}
       </div>
       <p className="text-caption text-inkFaint mb-4 min-h-[1em]">
-        {activeCategory?.description ?? ''}
+        {activeCategory ? t(activeCategory.descKey) : ''}
       </p>
 
       <div className="text-label uppercase text-inkFaint mb-2">{sectionLabel}</div>
@@ -113,10 +111,10 @@ export const ModelSearchCard: React.FC<ModelSearchCardProps> = ({
       {displayResults.length === 0 ? (
         <div className="py-8 text-center text-inkMuted text-body">
           {isLoadingDisplay
-            ? (language === 'en' ? 'Loading models...' : '모델을 불러오는 중...')
+            ? t('modelhub.loadingModels')
             : trimmedQuery
-              ? (language === 'en' ? 'No search results found.' : '검색 결과가 없습니다.')
-              : (language === 'en' ? 'Unable to load popular models.' : '인기 모델을 불러올 수 없습니다.')}
+              ? t('modelhub.noSearchResults')
+              : t('modelhub.noPopularModels')}
         </div>
       ) : (
         <div className="space-y-2">

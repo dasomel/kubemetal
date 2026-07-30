@@ -8,7 +8,7 @@ interface DownloadStatusCardProps {
 }
 
 export const DownloadStatusCard: React.FC<DownloadStatusCardProps> = ({ downloads }) => {
-  const { t, language } = useTranslation();
+  const { t } = useTranslation();
   if (downloads.length === 0) return null;
 
   return (
@@ -29,7 +29,7 @@ export const DownloadStatusCard: React.FC<DownloadStatusCardProps> = ({ download
               <div className="flex items-center justify-between mb-2">
                 <span className="text-bodyStrong text-ink truncate">{d.repo_id}</span>
                 <span className="text-caption text-inkFaint tabular-nums">
-                  {d.done_files} / {d.total_files} {language === 'en' ? 'files' : '파일'}
+                  {d.done_files} / {d.total_files} {t('modelhub.dl.filesUnit')}
                 </span>
               </div>
               <div
@@ -47,19 +47,19 @@ export const DownloadStatusCard: React.FC<DownloadStatusCardProps> = ({ download
               {d.state === 'downloading' && (
                 <div className="flex items-center gap-1.5 text-caption text-inkMuted">
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
-                  <span>{language === 'en' ? 'Downloading...' : '다운로드 중'}</span>
+                  <span>{t('modelhub.dl.downloading')}</span>
                 </div>
               )}
               {d.state === 'done' && (
                 <div className="flex items-center gap-1.5 text-caption text-inkMuted">
                   <span className="w-2 h-2 rounded-full bg-success" />
-                  <span>{language === 'en' ? 'Completed' : '완료'}</span>
+                  <span>{t('modelhub.dl.completed')}</span>
                 </div>
               )}
               {d.state === 'error' && (
                 <div className="flex items-center gap-1.5 text-caption text-danger">
                   <span className="w-2 h-2 rounded-full bg-danger" />
-                  <span>{language === 'en' ? 'Error' : '오류'}: {d.error ?? (language === 'en' ? 'Unknown error' : '알 수 없는 오류')}</span>
+                  <span>{t('modelhub.dl.error')}: {d.error ?? t('modelhub.dl.unknownError')}</span>
                 </div>
               )}
             </div>

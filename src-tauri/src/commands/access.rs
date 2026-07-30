@@ -69,7 +69,7 @@ async fn check_serving_health(base_url: &str) -> String {
 pub(crate) async fn fetch_seaweedfs_credentials() -> (Vec<CredentialItem>, Option<String>) {
     let mut cmd = match external_command("kubectl") {
         Ok(c) => c,
-        Err(e) => return (Vec::new(), Some(format!("kubectl 실행 파일을 찾을 수 없습니다: {e}"))),
+        Err(e) => return (Vec::new(), Some(format!("kubectl executable not found: {e}"))),
     };
     let (context, namespace) = crate::services::deploy_target::active_context();
     let output = match cmd
@@ -88,13 +88,13 @@ pub(crate) async fn fetch_seaweedfs_credentials() -> (Vec<CredentialItem>, Optio
         .await
     {
         Ok(o) => o,
-        Err(e) => return (Vec::new(), Some(format!("kubectl 실행 실패: {e}"))),
+        Err(e) => return (Vec::new(), Some(format!("kubectl execution failed: {e}"))),
     };
     if !output.status.success() {
         return (
             Vec::new(),
             Some(format!(
-                "SeaweedFS 크리덴셜 시크릿 조회 실패 — 대시보드에서 MLOps 스택 프로비저닝이 완료되었는지 확인하세요: {}",
+                "Failed to fetch SeaweedFS credential secret — verify MLOps stack provisioning completed in the dashboard: {}",
                 String::from_utf8_lossy(&output.stderr).trim()
             )),
         );
@@ -102,11 +102,11 @@ pub(crate) async fn fetch_seaweedfs_credentials() -> (Vec<CredentialItem>, Optio
 
     let json: serde_json::Value = match serde_json::from_slice(&output.stdout) {
         Ok(v) => v,
-        Err(e) => return (Vec::new(), Some(format!("시크릿 응답 파싱 실패: {e}"))),
+        Err(e) => return (Vec::new(), Some(format!("Failed to parse secret response: {e}"))),
     };
     let data = match json.get("data").and_then(|d| d.as_object()) {
         Some(d) => d,
-        None => return (Vec::new(), Some("시크릿에 data 필드가 없습니다.".into())),
+        None => return (Vec::new(), Some("Secret has no data field.".into())),
     };
 
     let mut creds = Vec::new();
@@ -121,7 +121,7 @@ pub(crate) async fn fetch_seaweedfs_credentials() -> (Vec<CredentialItem>, Optio
     }
 
     if creds.is_empty() {
-        (Vec::new(), Some("시크릿에서 크리덴셜 값을 읽지 못했습니다.".into()))
+        (Vec::new(), Some("Failed to read credential values from secret.".into()))
     } else {
         (creds, None)
     }
@@ -174,13 +174,13 @@ pub async fn get_service_access(state: State<'_, MlxState>) -> Result<Vec<Servic
             (
                 base_url,
                 health,
-                Some("OpenAI 호환 API — API 키가 필요하지 않습니다.".to_string()),
+                Some("OpenAI-compatible API — no API key required.".to_string()),
             )
         }
         None => (
             String::new(),
             "unreachable".to_string(),
-            Some("서빙이 실행 중이 아닙니다 — MLX 스튜디오 탭에서 서빙을 시작하세요.".to_string()),
+            Some("Serving is not running — start serving from the MLX Studio tab.".to_string()),
         ),
     };
 
@@ -189,7 +189,7 @@ pub async fn get_service_access(state: State<'_, MlxState>) -> Result<Vec<Servic
             service: "MLflow".into(),
             url: MLFLOW_URL.into(),
             health: mlflow_health,
-            credential_hint: Some("인증이 필요하지 않습니다.".into()),
+            credential_hint: Some("No authentication required.".into()),
             credentials: Vec::new(),
         },
         ServiceAccess {
@@ -203,7 +203,7 @@ pub async fn get_service_access(state: State<'_, MlxState>) -> Result<Vec<Servic
             service: "SeaweedFS Filer UI".into(),
             url: FILER_URL.into(),
             health: filer_health,
-            credential_hint: Some("인증이 필요하지 않습니다.".into()),
+            credential_hint: Some("No authentication required.".into()),
             credentials: Vec::new(),
         },
         ServiceAccess {

@@ -19,6 +19,7 @@ import {
   ImagePlus,
 } from 'lucide-react';
 import type { RagSearchResult, MlxRuntime } from '../../types/ipc';
+import { useTranslation } from '../../i18n/i18nContext';
 
 /**
  * 서빙 품질 계측. 스트리밍 응답에서만 채워진다.
@@ -75,26 +76,20 @@ const DEFAULT_SYSTEM_PROMPT =
 const MAX_HISTORY_MESSAGES = 8;
 const RAG_MAX_CHUNKS = 3;
 const RAG_MAX_CHARS = 2000;
-const RAG_TRUNCATION_MARK = '… [문자 수 상한으로 절단됨]';
+// NOTE(i18n): PRESET_PROMPTS와 RAG_TRUNCATION_MARK는 t()가 있는 컴포넌트 스코프 밖의 모듈
+// 상수라 함수로 바꿔 t를 주입받는다.
+function getRagTruncationMark(t: (key: string) => string): string {
+  return t('chat.rag.truncationMark');
+}
 
-const PRESET_PROMPTS = [
-  {
-    title: 'KubeMetal 요약',
-    prompt: 'KubeMetal의 macOS Host MLX와 Colima K3s 하이브리드 MLOps 아키텍처에 대해 핵심을 요약해줘.',
-  },
-  {
-    title: 'MLX LoRA 예시',
-    prompt: 'MLX Python API를 사용하여 로컬 파인튜닝 어댑터를 로드하고 추론하는 예시 코드를 보여줘.',
-  },
-  {
-    title: 'RAG 지식 검색',
-    prompt: 'LanceDB 임베디드 벡터 DB와 KubeMetal 호스트의 RAG 연동 구조를 설명해줘.',
-  },
-  {
-    title: 'JSON 응답 테스트',
-    prompt: 'KubeMetal의 주요 모듈 3개를 JSON 배열 [ { "name": "...", "description": "..." } ] 포맷으로 출력해줘.',
-  },
-];
+function getPresetPrompts(t: (key: string) => string) {
+  return [
+    { title: t('chat.preset.summary.title'), prompt: t('chat.preset.summary.prompt') },
+    { title: t('chat.preset.lora.title'), prompt: t('chat.preset.lora.prompt') },
+    { title: t('chat.preset.rag.title'), prompt: t('chat.preset.rag.prompt') },
+    { title: t('chat.preset.json.title'), prompt: t('chat.preset.json.prompt') },
+  ];
+}
 
 export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
   port,
@@ -102,6 +97,9 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
   adapterPath,
   runtime,
 }) => {
+  const { t } = useTranslation();
+  const RAG_TRUNCATION_MARK = getRagTruncationMark(t);
+  const PRESET_PROMPTS = getPresetPrompts(t);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(true);
@@ -237,7 +235,11 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
           let remainingChars = RAG_MAX_CHARS;
           const contextBlocks = limitedResults
             .map((r, idx) => {
-              const header = `[문맥 ${idx + 1} (출처: ${r.filename || r.source || '문서'}, 유사도 거리: ${r.score.toFixed(3)})]\n`;
+              const header = `${t('chat.rag.contextHeader', {
+                idx: idx + 1,
+                source: r.filename || r.source || t('chat.rag.sourceFallback'),
+                score: r.score.toFixed(3),
+              })}\n`;
               const budget = remainingChars - header.length;
               if (budget <= 0) return null;
               const text =
@@ -250,11 +252,11 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
           retrievedSources = limitedResults.slice(0, contextBlocks.length);
 
           if (contextBlocks.length > 0) {
-            augmentedPrompt = `[LanceDB RAG 참조 문맥]:\n${contextBlocks.join('\n\n')}\n\n[사용자 질의]:\n${textToSend.trim()}`;
+            augmentedPrompt = `${t('chat.rag.contextLabel')}:\n${contextBlocks.join('\n\n')}\n\n${t('chat.rag.queryLabel')}:\n${textToSend.trim()}`;
           }
         }
       } catch (err) {
-        console.warn('RAG Context Injection 건너뜀 (질의 실패 또는 미설치):', err);
+        console.warn(t('chat.err.ragSkipped'), err);
       } finally {
         setRagSearching(false);
       }
@@ -328,11 +330,11 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
 
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(`서버 응답 오류 (${response.status}): ${errText}`);
+          throw new Error(t('chat.err.serverResponse', { status: response.status, error: errText }));
         }
 
         if (!response.body) {
-          throw new Error('응답 스트림을 생성할 수 없습니다.');
+          throw new Error(t('chat.err.streamUnavailable'));
         }
 
         const reader = response.body.getReader();
@@ -447,11 +449,11 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
 
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(`서버 응답 오류 (${response.status}): ${errText}`);
+          throw new Error(t('chat.err.serverResponse', { status: response.status, error: errText }));
         }
 
         const data = await response.json();
-        const content = data.choices?.[0]?.message?.content || '(빈 응답)';
+        const content = data.choices?.[0]?.message?.content || t('chat.emptyResponse');
 
         setMessages((prev) =>
           prev.map((msg) => (msg.id === assistantMsgId ? { ...msg, content } : msg)),
@@ -462,7 +464,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantMsgId
-              ? { ...msg, content: msg.content + ' [사용자에 의해 중단됨]' }
+              ? { ...msg, content: msg.content + t('chat.abortedSuffix') }
               : msg,
           ),
         );
@@ -473,7 +475,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
             msg.id === assistantMsgId
               ? {
                   ...msg,
-                  content: `⚠️ 오류 발생: ${err.message || 'mlx_lm.server 호출 중 예기치 않은 오류가 발생했습니다.'}`,
+                  content: t('chat.err.unexpected', { message: err.message || t('chat.err.unexpectedFallback') }),
                 }
               : msg,
           ),
@@ -519,7 +521,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
               </span>
             </div>
             <p className="text-caption text-inkMuted text-[11px] truncate max-w-[28rem]">
-              OpenAI 호환 API · {modelPath || 'MLX Model'}
+              {t('chat.compatApiPrefix')} {modelPath || 'MLX Model'}
               {adapterPath ? ` (${adapterPath.split('/').pop()})` : ''}
             </p>
           </div>
@@ -534,10 +536,10 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                 ? 'bg-primary/10 text-primary border-primary/30'
                 : 'bg-surface hover:brightness-95 text-inkMuted border-hairline/8'
             }`}
-            title="파라미터 및 RAG 설정"
+            title={t('chat.settingsTooltip')}
           >
             <Sliders className="w-4 h-4" />
-            <span className="hidden sm:inline">설정</span>
+            <span className="hidden sm:inline">{t('chat.settingsLabel')}</span>
             {showSettings ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
           </button>
 
@@ -546,7 +548,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
               type="button"
               onClick={handleClearHistory}
               className="p-2 rounded-lg bg-surface hover:bg-danger/10 text-inkMuted hover:text-danger border border-hairline/8 transition-all"
-              title="대화 내역 초기화"
+              title={t('chat.clearHistoryTooltip')}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -573,7 +575,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
             <div>
               <div className="flex justify-between mb-1">
                 <span className="text-inkFaint">Temperature: {temperature}</span>
-                <span className="text-inkFaint text-[10px]">창의성/다양성</span>
+                <span className="text-inkFaint text-[10px]">{t('chat.temperatureHint')}</span>
               </div>
               <input
                 type="range"
@@ -589,7 +591,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
             <div>
               <div className="flex justify-between mb-1">
                 <span className="text-inkFaint">Max Tokens: {maxTokens}</span>
-                <span className="text-inkFaint text-[10px]">최대 생성 길이</span>
+                <span className="text-inkFaint text-[10px]">{t('chat.maxTokensHint')}</span>
               </div>
               <input
                 type="range"
@@ -607,7 +609,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
             <div className="flex items-center justify-between bg-surface p-2 rounded-md border border-hairline/8">
               <span className="flex items-center gap-1.5 text-ink">
                 <Zap className="w-3.5 h-3.5 text-warning" />
-                <span>스트리밍 실시간 응답 (SSE)</span>
+                <span>{t('chat.streamingToggleLabel')}</span>
               </span>
               <input
                 type="checkbox"
@@ -620,7 +622,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
             <div className="flex items-center justify-between bg-surface p-2 rounded-md border border-hairline/8">
               <div className="flex items-center gap-1.5 text-ink">
                 <Database className="w-3.5 h-3.5 text-primary" />
-                <span>LanceDB RAG 문맥 자동 주입</span>
+                <span>{t('chat.ragToggleLabel')}</span>
               </div>
               <div className="flex items-center gap-2">
                 {ragEnabled && (
@@ -628,7 +630,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                     value={ragTopK}
                     onChange={(e) => setRagTopK(Number(e.target.value))}
                     className="px-1.5 py-0.5 bg-surfaceRaised text-ink text-[11px] rounded border border-hairline/8"
-                    title="검색 문서 개수 (Top-K)"
+                    title={t('chat.topKTooltip')}
                   >
                     <option value={2}>Top 2</option>
                     <option value={3}>Top 3</option>
@@ -656,10 +658,10 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
             </div>
             <div>
               <h4 className="text-bodyStrong text-ink font-semibold mb-1">
-                로컬 MLX 챗 플레이그라운드가 준비되었습니다
+                {t('chat.emptyTitle')}
               </h4>
               <p className="text-caption text-inkMuted max-w-[24rem]">
-                질문을 입력하거나 아래 프롬프트 프리셋을 클릭하여 MLX 서빙 모델과의 대화를 시작하세요.
+                {t('chat.emptyDesc')}
               </p>
             </div>
 
@@ -710,7 +712,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                     {isAssistant && !msg.content && loading ? (
                       <div className="flex items-center gap-2 text-inkMuted py-0.5">
                         <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                        <span className="text-caption">응답 생성 중...</span>
+                        <span className="text-caption">{t('chat.generatingLabel')}</span>
                       </div>
                     ) : (
                       <div className="whitespace-pre-wrap break-words">{msg.content}</div>
@@ -724,7 +726,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                         <img
                           key={i}
                           src={url}
-                          alt={`전송 이미지 ${i + 1}`}
+                          alt={t('chat.sentImageAlt', { index: i + 1 })}
                           className="w-16 h-16 rounded-md object-cover border border-hairline/12"
                         />
                       ))}
@@ -739,7 +741,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                         className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[11px] font-medium flex items-center gap-1 hover:bg-primary/20 transition-all border border-primary/20"
                       >
                         <Database className="w-3 h-3" />
-                        <span>RAG 문맥 주입됨 ({msg.ragSources.length}건)</span>
+                        <span>{t('chat.ragInjectedBadge', { count: msg.ragSources.length })}</span>
                         {expandedSources[msg.id] ? (
                           <ChevronUp className="w-3 h-3" />
                         ) : (
@@ -751,15 +753,15 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                         <div className="mt-1.5 p-2.5 rounded-lg bg-surfaceRaised border border-hairline/8 text-caption text-ink space-y-2 text-left max-w-[32rem] w-full animate-in fade-in duration-150">
                           <div className="text-[11px] font-semibold text-inkFaint uppercase flex items-center gap-1">
                             <FileText className="w-3 h-3 text-primary" />
-                            LanceDB RAG 주입 검색 결과
+                            {t('chat.ragResultsHeader')}
                           </div>
                           {msg.ragSources.map((src, sIdx) => (
                             <div key={sIdx} className="p-2 rounded bg-surface border border-hairline/8 space-y-1 text-xs">
                               <div className="flex items-center justify-between text-inkMuted text-[11px]">
                                 <span className="font-medium text-primary truncate max-w-[200px]">
-                                  {src.filename || src.source || '문서'}
+                                  {src.filename || src.source || t('chat.rag.sourceFallback')}
                                 </span>
-                                <span>거리 score: {src.score.toFixed(3)}</span>
+                                <span>{t('chat.distanceScoreLabel', { score: src.score.toFixed(3) })}</span>
                               </div>
                               <p className="text-ink text-caption leading-normal line-clamp-3">{src.text}</p>
                             </div>
@@ -780,12 +782,12 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                         {copiedId === msg.id ? (
                           <>
                             <Check className="w-3 h-3 text-success" />
-                            <span className="text-success">복사됨</span>
+                            <span className="text-success">{t('chat.copiedLabel')}</span>
                           </>
                         ) : (
                           <>
                             <Copy className="w-3 h-3" />
-                            <span>복사</span>
+                            <span>{t('chat.copyLabel')}</span>
                           </>
                         )}
                       </button>
@@ -795,17 +797,17 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                       {msg.perf && (
                         <span className="flex items-center gap-2 text-inkFaint">
                           <span className="w-px h-3 bg-hairline/20" />
-                          <span title="첫 토큰까지 걸린 시간 — 체감 반응성">
+                          <span title={t('chat.ttftTooltip')}>
                             TTFT {msg.perf.ttftMs}ms
                           </span>
                           {msg.perf.tokensPerSec > 0 && (
                             <span
                               title={
                                 msg.perf.serverTps
-                                  ? '서버가 매 청크 보고한 timings.predicted_per_second 기준'
+                                  ? t('chat.tpsTooltip.server')
                                   : msg.perf.exactTokens
-                                    ? '서버가 보고한 completion_tokens 기준'
-                                    : '서버가 usage를 보내지 않아 스트림 청크 수로 근사한 값'
+                                    ? t('chat.tpsTooltip.exact')
+                                    : t('chat.tpsTooltip.approx')
                               }
                             >
                               {msg.perf.tokensPerSec}{' '}
@@ -814,7 +816,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                           )}
                           <span>
                             {msg.perf.tokens}
-                            {msg.perf.exactTokens ? ' 토큰' : ' 청크'}
+                            {msg.perf.exactTokens ? t('chat.tokensUnit') : t('chat.chunksUnit')}
                           </span>
                         </span>
                       )}
@@ -838,7 +840,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
       {ragSearching && (
         <div className="px-4 py-1.5 bg-primary/5 border-t border-hairline/8 flex items-center justify-center gap-2 text-caption text-primary shrink-0">
           <Database className="w-3.5 h-3.5 animate-bounce" />
-          <span>LanceDB RAG에서 지식 베이스 검색 중...</span>
+          <span>{t('chat.ragSearchingBanner')}</span>
         </div>
       )}
 
@@ -850,13 +852,13 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
               <div key={i} className="relative">
                 <img
                   src={url}
-                  alt={`첨부 이미지 ${i + 1}`}
+                  alt={t('chat.attachedImageAlt', { index: i + 1 })}
                   className="w-12 h-12 rounded-md object-cover border border-hairline/12"
                 />
                 <button
                   type="button"
                   onClick={() => setPendingImages((prev) => prev.filter((_, j) => j !== i))}
-                  aria-label="첨부 제거"
+                  aria-label={t('chat.removeAttachmentLabel')}
                   className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-surface text-inkMuted hover:text-danger flex items-center justify-center text-[10px] shadow-panel"
                 >
                   ✕
@@ -880,7 +882,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={loading || pendingImages.length >= MAX_ATTACHED_IMAGES}
-                title={`이미지 첨부 (최대 ${MAX_ATTACHED_IMAGES}장)`}
+                title={t('chat.attachImageTooltip', { max: MAX_ATTACHED_IMAGES })}
                 className="py-2.5 px-3 bg-surface hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed text-inkMuted hover:text-ink rounded-lg border border-hairline/8 transition-all shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               >
                 <ImagePlus className="w-4 h-4" />
@@ -896,8 +898,8 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
             onPaste={handlePaste}
             placeholder={
               loading
-                ? '모델이 응답을 생성하는 중입니다...'
-                : '메시지를 입력하세요 (Enter: 전송, Shift+Enter: 줄바꿈)'
+                ? t('chat.placeholderGenerating')
+                : t('chat.placeholderDefault')
             }
             disabled={loading}
             className="flex-1 px-3.5 py-2 rounded-lg bg-surface text-ink text-body placeholder:text-inkFaint border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary resize-none disabled:opacity-60"
@@ -908,10 +910,10 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
               type="button"
               onClick={handleStop}
               className="py-2.5 px-4 bg-dangerStrong hover:brightness-110 text-inverse font-medium rounded-lg transition-all flex items-center gap-1.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              title="생성 중단"
+              title={t('chat.stopTooltip')}
             >
               <Square className="w-4 h-4 fill-current" />
-              <span className="hidden sm:inline">중단</span>
+              <span className="hidden sm:inline">{t('chat.stopLabel')}</span>
             </button>
           ) : (
             <button
@@ -921,7 +923,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
               className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed text-inverse font-medium rounded-lg transition-all flex items-center gap-1.5 shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
               <Send className="w-4 h-4" />
-              <span className="hidden sm:inline">전송</span>
+              <span className="hidden sm:inline">{t('chat.sendLabel')}</span>
             </button>
           )}
         </div>

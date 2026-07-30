@@ -7,7 +7,9 @@ interface I18nContextType {
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
-const I18nContext = createContext<I18nContextType | undefined>(undefined);
+// export: ErrorBoundary는 클래스 컴포넌트라 useTranslation 훅을 쓸 수 없어
+// static contextType으로 이 컨텍스트를 직접 구독한다.
+export const I18nContext = createContext<I18nContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'kubemetal_lang';
 

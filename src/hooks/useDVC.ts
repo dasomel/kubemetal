@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
 import type { DvcStatus } from '../types/ipc';
+import { useTranslation } from '../i18n/i18nContext';
 
 export function useDVC(active: boolean = false) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<DvcStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(false);
@@ -14,9 +16,9 @@ export function useDVC(active: boolean = false) {
       const res = await invoke<DvcStatus>('get_dvc_status');
       setStatus(res);
     } catch (err) {
-      console.error('DVC 상태 로드 오류:', err);
+      console.error(t('dvc.err.statusLoad'), err);
     }
-  }, []);
+  }, [t]);
 
   const initDvc = useCallback(
     async (_remoteUrl?: string) => {
@@ -27,15 +29,15 @@ export function useDVC(active: boolean = false) {
           bucketName: 'dvc-repo',
           commitMessage: 'Initialize DVC dataset repository',
         });
-        await message(res || 'DVC 저장소가 초기화되었습니다.', { title: 'KubeMetal', kind: 'info' });
+        await message(res || t('dvc.toast.initDone'), { title: 'KubeMetal', kind: 'info' });
         await fetchStatus();
       } catch (err) {
-        await message(`DVC 초기화 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+        await message(t('dvc.toast.initFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
       } finally {
         setInitializing(false);
       }
     },
-    [fetchStatus],
+    [fetchStatus, t],
   );
 
   const createTag = useCallback(
@@ -48,15 +50,15 @@ export function useDVC(active: boolean = false) {
           bucketName: 'dvc-repo',
           commitMessage: `[${tag}] ${messageStr}`,
         });
-        await message(res || `DVC 데이터셋 버전 '${tag}' 커밋 완료`, { title: 'KubeMetal', kind: 'info' });
+        await message(res || t('dvc.toast.tagDone', { tag }), { title: 'KubeMetal', kind: 'info' });
         await fetchStatus();
       } catch (err) {
-        await message(`DVC 버전 생성 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+        await message(t('dvc.toast.tagFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
       } finally {
         setCreatingTag(false);
       }
     },
-    [fetchStatus],
+    [fetchStatus, t],
   );
 
   useEffect(() => {

@@ -28,10 +28,10 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ compact = false }) =
     critical: 'text-danger',
   };
   const thermalText: Record<string, string> = {
-    nominal: '정상',
-    fair: '보통',
-    serious: '높음',
-    critical: '위험',
+    nominal: t('mlx.guardrail.thermal.nominal'),
+    fair: t('mlx.guardrail.thermal.fair'),
+    serious: t('mlx.guardrail.thermal.serious'),
+    critical: t('mlx.guardrail.thermal.critical'),
   };
   const gpuMemGb = metrics?.gpu_memory_used_gb ?? 0;
 
@@ -149,7 +149,7 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ compact = false }) =
             </div>
             <div className="flex items-baseline gap-1.5 mb-2">
               <span className="text-metric tabular-nums text-ink font-mono">{gpuPercent}</span>
-              <span className="text-caption text-inkFaint">% 사용 · {gpuMemGb} GB</span>
+              <span className="text-caption text-inkFaint">{t('metrics.gpuUsageLabel', { memGb: gpuMemGb })}</span>
             </div>
             {/* ProgressBar */}
             <div className="w-full h-1.5 bg-base rounded-full overflow-hidden mb-3" role="progressbar" aria-valuenow={gpuPercent} aria-valuemin={0} aria-valuemax={100}>
@@ -160,14 +160,14 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ compact = false }) =
             </div>
             <p className="text-caption text-inkFaint flex items-center gap-1">
               <Info className="w-3.5 h-3.5 shrink-0" />
-              ioreg Metal 가속 모니터링
+              {t('metrics.gpuMonitoringNote')}
             </p>
             {/* 발열 — 장시간 학습에서 처리량을 떨어뜨리는 신호. NSProcessInfo 기반(D2 개정). */}
             <p className="text-caption text-inkFaint flex items-center gap-1 mt-1">
               <Thermometer className="w-3.5 h-3.5 shrink-0" />
-              발열{' '}
+              {t('metrics.thermalLabel')}{' '}
               <span className={thermal ? thermalTone[thermal] : 'text-inkFaint'}>
-                {thermal ? thermalText[thermal] : '조회 불가'}
+                {thermal ? thermalText[thermal] : t('mlx.guardrail.thermalUnavailable')}
               </span>
             </p>
           </div>

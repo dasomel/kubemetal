@@ -200,7 +200,10 @@ export const DeployTargetCard: React.FC = () => {
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <div>
                   <div>{t('deployTarget.bridgeUnverified')}</div>
-                  <div className="text-inkMuted mt-0.5">{bridge.reason}</div>
+                  <div className="text-inkMuted mt-0.5">
+                    {t(`deployTarget.bridgeReason.${bridge.reason_code}`)}
+                    {bridge.detail ? ` — ${bridge.detail}` : ''}
+                  </div>
                   {bridge.candidates.length > 0 && (
                     <div className="text-inkFaint mt-0.5">
                       {t('deployTarget.bridgeCandidates', { list: bridge.candidates.join(', ') })}

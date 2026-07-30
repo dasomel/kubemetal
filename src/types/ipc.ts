@@ -322,12 +322,14 @@ export interface IngestStatusResponse {
  * 배포 대상(D26). `kind`로 구분되는 브리지 상태는 Rust의 tagged enum과 1:1 대응한다.
  * - keep_base: colima 전용. base 매니페스트의 host.lima.internal을 그대로 쓴다(D10 실측값).
  * - verified: 클러스터 **내부에서** 도달을 확인한 주소. 이 상태여야만 배포할 수 있다.
- * - unverified: 후보는 있으나 검증 실패/미실행. 배포가 거부되는 상태다.
+ * - unverified: 후보는 있으나 검증 실패/미실행. 배포가 거부되는 상태다. `reason_code`는
+ *   프런트 i18n 테이블(deployTarget.bridgeReason.*)로 매핑하는 안정 코드(D31)이고,
+ *   `detail`은 언어중립 진단 값이다.
  */
 export type BridgeState =
   | { kind: 'keep_base' }
   | { kind: 'verified'; host: string }
-  | { kind: 'unverified'; candidates: string[]; reason: string };
+  | { kind: 'unverified'; candidates: string[]; reason_code: string; detail: string | null };
 
 export interface DeployTarget {
   context: string;
@@ -353,6 +355,6 @@ export interface PreflightReport {
   argocd_owners: string[];
   enforcing_policies: string[];
   bridge_candidates: string[];
-  /** 사람이 읽을 차단 사유. 비어 있으면 배포 가능. */
-  blockers: string[];
+  /** 차단 사유. 비어 있으면 배포 가능. code는 i18n 테이블(deployTarget.blockerCode.*)로 매핑(D31). */
+  blockers: { code: string; detail: string | null }[];
 }

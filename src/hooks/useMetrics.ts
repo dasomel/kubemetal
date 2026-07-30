@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { SystemMetrics } from '../types/ipc';
+import { useTranslation } from '../i18n/i18nContext';
 
 export function useMetrics(intervalMs = 1000) {
+  const { t } = useTranslation();
   const [metrics, setMetrics] = useState<SystemMetrics | null>(null);
 
   useEffect(() => {
@@ -14,7 +16,7 @@ export function useMetrics(intervalMs = 1000) {
           setMetrics(res);
         }
       } catch (err) {
-        console.error('시스템 메트릭 로드 오류:', err);
+        console.error(t('metrics.err.load'), err);
       }
     };
 
@@ -24,7 +26,7 @@ export function useMetrics(intervalMs = 1000) {
       alive = false;
       clearInterval(id);
     };
-  }, [intervalMs]);
+  }, [intervalMs, t]);
 
   return metrics;
 }

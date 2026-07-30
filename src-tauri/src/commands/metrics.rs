@@ -25,11 +25,11 @@ async fn sysctl_value(key: &str) -> Result<String, String> {
         .args(["-n", key])
         .output()
         .await
-        .map_err(|e| format!("sysctl {key} 실행 실패: {e}"))?;
+        .map_err(|e| format!("Failed to run sysctl {key}: {e}"))?;
 
     if !out.status.success() {
         return Err(format!(
-            "sysctl {key} 실패: {}",
+            "sysctl {key} failed: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
@@ -52,11 +52,11 @@ pub async fn get_hardware_spec() -> Result<HardwareSpec, String> {
     let cpu_cores = sysctl_value("hw.ncpu")
         .await?
         .parse::<u32>()
-        .map_err(|e| format!("hw.ncpu 파싱 실패: {e}"))?;
+        .map_err(|e| format!("Failed to parse hw.ncpu: {e}"))?;
     let total_memory_gb = (sysctl_value("hw.memsize")
         .await?
         .parse::<u64>()
-        .map_err(|e| format!("hw.memsize 파싱 실패: {e}"))?
+        .map_err(|e| format!("Failed to parse hw.memsize: {e}"))?
         / 1024
         / 1024
         / 1024) as u32;
@@ -142,7 +142,7 @@ async fn get_metal_gpu_metrics() -> (f32, f64) {
     let cmd = external_command("ioreg");
     let Ok(mut cmd) = cmd else {
         GPU_METRICS_WARNED.call_once(|| {
-            eprintln!("[metrics] ioreg 실행 파일을 찾을 수 없어 GPU 메트릭을 건너뜁니다.");
+            eprintln!("[metrics] ioreg executable not found, skipping GPU metrics.");
         });
         return (0.0, 0.0);
     };
@@ -154,14 +154,14 @@ async fn get_metal_gpu_metrics() -> (f32, f64) {
 
     let Ok(out) = output else {
         GPU_METRICS_WARNED.call_once(|| {
-            eprintln!("[metrics] ioreg 실행 실패로 GPU 메트릭을 건너뜁니다.");
+            eprintln!("[metrics] ioreg execution failed, skipping GPU metrics.");
         });
         return (0.0, 0.0);
     };
     if !out.status.success() {
         GPU_METRICS_WARNED.call_once(|| {
             eprintln!(
-                "[metrics] ioreg가 비정상 종료({})되어 GPU 메트릭을 건너뜁니다.",
+                "[metrics] ioreg exited abnormally ({}), skipping GPU metrics.",
                 out.status
             );
         });
@@ -199,8 +199,8 @@ async fn get_metal_gpu_metrics() -> (f32, f64) {
     if !matched_any {
         GPU_METRICS_WARNED.call_once(|| {
             eprintln!(
-                "[metrics] ioreg 출력에서 IOAccelerator 사용률/메모리 필드를 찾지 못했습니다 \
-                 (포맷 변경 또는 비지원 하드웨어 가능성) — GPU 메트릭은 0으로 유지됩니다."
+                "[metrics] Could not find IOAccelerator utilization/memory fields in ioreg \
+                 output (possible format change or unsupported hardware) — GPU metrics remain 0."
             );
         });
     }
@@ -246,12 +246,12 @@ mod tests {
         let state = read_thermal_state();
         assert!(
             state.is_some(),
-            "NSProcessInfo.thermalState를 읽지 못했다 — CLI 대체 경로가 없으므로 \
-             발열 표시가 통째로 죽는다"
+            "Failed to read NSProcessInfo.thermalState — there is no CLI fallback, so \
+             thermal display breaks entirely"
         );
         assert!(
             ["nominal", "fair", "serious", "critical"].contains(&state.as_deref().unwrap()),
-            "예상 밖의 발열 단계: {state:?}"
+            "Unexpected thermal state: {state:?}"
         );
     }
 }

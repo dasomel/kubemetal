@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
 import type { PrefectStatus, FineTuneConfig, EvalMetric } from '../types/ipc';
+import { useTranslation } from '../i18n/i18nContext';
 
 /**
  * Prefect 오케스트레이션 상태 훅.
@@ -9,6 +10,7 @@ import type { PrefectStatus, FineTuneConfig, EvalMetric } from '../types/ipc';
  * 5초 간격 폴링, 그 외에는 마운트(탭 진입) 시 1회만 조회한다.
  */
 export function usePrefect(active: boolean = false) {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<PrefectStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [settingUpEnv, setSettingUpEnv] = useState(false);
@@ -28,65 +30,65 @@ export function usePrefect(active: boolean = false) {
       const res = await invoke<PrefectStatus>('get_prefect_status');
       setStatus(res);
     } catch (err) {
-      console.error('Prefect 상태 로드 오류:', err);
+      console.error(t('orch.err.statusLoad'), err);
     }
-  }, []);
+  }, [t]);
 
   const setupEnv = useCallback(async () => {
     setSettingUpEnv(true);
     setInstallingLocal(true);
     try {
       const res = await invoke<string>('setup_prefect_env');
-      await message(res || 'Prefect 환경 설치를 시작했습니다.', { title: 'KubeMetal', kind: 'info' });
+      await message(res || t('orch.toast.envSetupStarted'), { title: 'KubeMetal', kind: 'info' });
       await fetchStatus();
     } catch (err) {
       setInstallingLocal(false);
-      await message(`Prefect 환경 설치 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('orch.toast.envSetupFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setSettingUpEnv(false);
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, t]);
 
   const startRunner = useCallback(async () => {
     setStartingRunner(true);
     try {
       const res = await invoke<string>('start_prefect_runner');
-      await message(res || 'Prefect 러너를 시작했습니다.', { title: 'KubeMetal', kind: 'info' });
+      await message(res || t('orch.toast.runnerStarted'), { title: 'KubeMetal', kind: 'info' });
       await fetchStatus();
     } catch (err) {
-      await message(`Prefect 러너 시작 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('orch.toast.runnerStartFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setStartingRunner(false);
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, t]);
 
   const stopRunner = useCallback(async () => {
     setStoppingRunner(true);
     try {
       const res = await invoke<string>('stop_prefect_runner');
-      await message(res || 'Prefect 러너를 정지했습니다.', { title: 'KubeMetal', kind: 'info' });
+      await message(res || t('orch.toast.runnerStopped'), { title: 'KubeMetal', kind: 'info' });
       await fetchStatus();
     } catch (err) {
-      await message(`Prefect 러너 정지 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('orch.toast.runnerStopFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setStoppingRunner(false);
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, t]);
 
   const triggerFinetuneFlow = useCallback(
     async (config: FineTuneConfig) => {
       setTriggeringFlow(true);
       try {
         const runId = await invoke<string>('trigger_finetune_flow', { config });
-        await message(`파인튜닝 플로우를 실행했습니다 (Run ID ${runId}).`, { title: 'KubeMetal', kind: 'info' });
+        await message(t('orch.toast.finetuneFlowStarted', { runId }), { title: 'KubeMetal', kind: 'info' });
         await fetchStatus();
       } catch (err) {
-        await message(`플로우 실행 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+        await message(t('orch.toast.flowRunFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
       } finally {
         setTriggeringFlow(false);
       }
     },
-    [fetchStatus],
+    [fetchStatus, t],
   );
 
   const setupEvalEnv = useCallback(async () => {
@@ -94,15 +96,15 @@ export function usePrefect(active: boolean = false) {
     setEvalInstallingLocal(true);
     try {
       const res = await invoke<string>('setup_eval_env');
-      await message(res || '평가 환경 설치를 시작했습니다.', { title: 'KubeMetal', kind: 'info' });
+      await message(res || t('orch.toast.evalEnvSetupStarted'), { title: 'KubeMetal', kind: 'info' });
       await fetchStatus();
     } catch (err) {
       setEvalInstallingLocal(false);
-      await message(`평가 환경 설치 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('orch.toast.evalEnvSetupFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setSettingUpEvalEnv(false);
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, t]);
 
   const loadEvalResults = useCallback(async () => {
     setLoadingEvalResults(true);
@@ -110,11 +112,11 @@ export function usePrefect(active: boolean = false) {
       const res = await invoke<EvalMetric[]>('get_eval_results');
       setEvalResults(res);
     } catch (err) {
-      console.error('평가 결과 로드 오류:', err);
+      console.error(t('orch.err.evalResultsLoad'), err);
     } finally {
       setLoadingEvalResults(false);
     }
-  }, []);
+  }, [t]);
 
   const triggerEvaluateFlow = useCallback(
     async (tasks: string, limit: number, servingPort: number) => {
@@ -122,16 +124,16 @@ export function usePrefect(active: boolean = false) {
       try {
         const runId = await invoke<string>('trigger_evaluate_flow', { tasks, limit, servingPort });
         setLastEvalRunId(runId);
-        await message(`평가 플로우를 실행했습니다 (Run ID ${runId}).`, { title: 'KubeMetal', kind: 'info' });
+        await message(t('orch.toast.evalFlowStarted', { runId }), { title: 'KubeMetal', kind: 'info' });
         await fetchStatus();
         await loadEvalResults();
       } catch (err) {
-        await message(`평가 실행 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+        await message(t('orch.toast.evalRunFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
       } finally {
         setTriggeringEvaluate(false);
       }
     },
-    [fetchStatus, loadEvalResults],
+    [fetchStatus, loadEvalResults, t],
   );
 
   // 탭 진입(마운트) 시 최소 1회 상태 및 평가 결과 조회

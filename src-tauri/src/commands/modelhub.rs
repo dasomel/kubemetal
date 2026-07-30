@@ -175,7 +175,7 @@ fn validate_repo_id(repo_id: &str) -> Result<(), String> {
     if parts.len() == 2 && is_valid_segment(parts[0]) && is_valid_segment(parts[1]) {
         Ok(())
     } else {
-        Err(format!("잘못된 repo_id 형식입니다: {repo_id}"))
+        Err(format!("Invalid repo_id format: {repo_id}"))
     }
 }
 
@@ -187,17 +187,17 @@ fn validate_repo_id(repo_id: &str) -> Result<(), String> {
 fn safe_rel(p: &str) -> Result<PathBuf, String> {
     let candidate = Path::new(p);
     if candidate.is_absolute() {
-        return Err(format!("절대경로는 허용되지 않습니다: {p}"));
+        return Err(format!("Absolute paths are not allowed: {p}"));
     }
     let mut rel = PathBuf::new();
     for component in candidate.components() {
         match component {
             Component::Normal(part) => rel.push(part),
-            _ => return Err(format!("허용되지 않은 경로 성분입니다: {p}")),
+            _ => return Err(format!("Disallowed path component: {p}")),
         }
     }
     if rel.as_os_str().is_empty() {
-        return Err(format!("빈 경로는 허용되지 않습니다: {p}"));
+        return Err(format!("Empty path is not allowed: {p}"));
     }
     Ok(rel)
 }
@@ -211,7 +211,7 @@ fn rel_to_url_path(rel: &Path) -> String {
 }
 
 fn models_root() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "HOME 환경변수를 찾을 수 없습니다.".to_string())?;
+    let home = std::env::var("HOME").map_err(|_| "Could not find HOME environment variable.".to_string())?;
     Ok(PathBuf::from(home).join(".kubemetal").join("models"))
 }
 
@@ -268,17 +268,17 @@ pub async fn search_hf_models(
         .args(["-sL", &url])
         .output()
         .await
-        .map_err(|e| format!("curl 실행 실패: {e}"))?;
+        .map_err(|e| format!("curl execution failed: {e}"))?;
 
     if !output.status.success() {
         return Err(format!(
-            "Hugging Face 검색 실패: {}",
+            "Hugging Face search failed: {}",
             String::from_utf8_lossy(&output.stderr)
         ));
     }
 
     let raw: Vec<HfModelRaw> = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("Hugging Face 응답 파싱 실패: {e}"))?;
+        .map_err(|e| format!("Failed to parse Hugging Face response: {e}"))?;
     Ok(raw.into_iter().map(HfModel::from).collect())
 }
 
@@ -301,15 +301,15 @@ async fn run_download_inner(app: &tauri::AppHandle, repo_id: &str) -> Result<(),
         .args(["-sL", &tree_url])
         .output()
         .await
-        .map_err(|e| format!("curl 실행 실패: {e}"))?;
+        .map_err(|e| format!("curl execution failed: {e}"))?;
     if !output.status.success() {
         return Err(format!(
-            "파일 목록 조회 실패: {}",
+            "Failed to fetch file list: {}",
             String::from_utf8_lossy(&output.stderr)
         ));
     }
     let entries: Vec<HfTreeEntry> = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("파일 목록 파싱 실패: {e}"))?;
+        .map_err(|e| format!("Failed to parse file list: {e}"))?;
     let files: Vec<HfTreeEntry> = entries
         .into_iter()
         .filter(|e| e.entry_type == "file")
@@ -325,7 +325,7 @@ async fn run_download_inner(app: &tauri::AppHandle, repo_id: &str) -> Result<(),
         let rel = safe_rel(&file.path)?;
         let dest = dir.join(&rel);
         if !dest.starts_with(&dir) {
-            return Err(format!("경로 탈출이 감지되었습니다: {}", file.path));
+            return Err(format!("Path traversal detected: {}", file.path));
         }
         let file_url = format!(
             "https://huggingface.co/{repo_id}/resolve/main/{}",
@@ -334,7 +334,7 @@ async fn run_download_inner(app: &tauri::AppHandle, repo_id: &str) -> Result<(),
         if let Some(parent) = dest.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
-                .map_err(|e| format!("디렉터리 생성 실패: {e}"))?;
+                .map_err(|e| format!("Failed to create directory: {e}"))?;
         }
         let out = external_command("curl")?
             .arg("-sfL")
@@ -343,10 +343,10 @@ async fn run_download_inner(app: &tauri::AppHandle, repo_id: &str) -> Result<(),
             .arg(&file_url)
             .output()
             .await
-            .map_err(|e| format!("curl 실행 실패: {e}"))?;
+            .map_err(|e| format!("curl execution failed: {e}"))?;
         if !out.status.success() {
             return Err(format!(
-                "{} 다운로드 실패: {}",
+                "{} download failed: {}",
                 file.path,
                 String::from_utf8_lossy(&out.stderr)
             ));
@@ -382,7 +382,7 @@ pub async fn download_hf_model(
         let mut guard = state.0.lock().map_err(|e| e.to_string())?;
         if let Some(existing) = guard.get(&repo_id) {
             if existing.state == "downloading" {
-                return Err(format!("{repo_id} 다운로드가 이미 진행 중입니다."));
+                return Err(format!("{repo_id} download is already in progress."));
             }
         }
         guard.insert(
@@ -399,7 +399,7 @@ pub async fn download_hf_model(
 
     tokio::spawn(run_download(app, repo_id.clone()));
 
-    Ok(format!("{repo_id} 다운로드를 시작했습니다."))
+    Ok(format!("Started download for {repo_id}."))
 }
 
 #[tauri::command]
@@ -417,7 +417,7 @@ pub fn list_local_models() -> Result<Vec<LocalModel>, String> {
         return Ok(Vec::new());
     }
     let mut result = Vec::new();
-    let entries = std::fs::read_dir(&root).map_err(|e| format!("모델 디렉터리 조회 실패: {e}"))?;
+    let entries = std::fs::read_dir(&root).map_err(|e| format!("Failed to read model directory: {e}"))?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
         // `entry.file_type()`은 심볼릭 링크를 따라가지 않는다 — HF 캐시의 모델을 수 GB
@@ -443,7 +443,7 @@ pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> 
     let dir = models_root()?.join(&repo_slug);
     if !dir.is_dir() {
         return Err(format!(
-            "{repo_id} 로컬 모델 디렉터리를 찾을 수 없습니다: {}",
+            "Local model directory not found for {repo_id}: {}",
             dir.display()
         ));
     }
@@ -461,17 +461,17 @@ pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> 
         ])
         .output()
         .await
-        .map_err(|e| format!("SeaweedFS(8333) 연결 실패 — 포트포워딩이 활성화되어 있는지 확인하세요: {e}"))?;
+        .map_err(|e| format!("Failed to connect to SeaweedFS (8333) — check that port forwarding is active: {e}"))?;
     let bucket_code = String::from_utf8_lossy(&create_bucket.stdout).to_string();
     if !(bucket_code.starts_with('2') || bucket_code == "409") {
         return Err(format!(
-            "SeaweedFS 버킷 생성 실패(HTTP {bucket_code}) — 포트포워딩(8333)이 활성화되어 있는지 확인하세요."
+            "Failed to create SeaweedFS bucket (HTTP {bucket_code}) — check that port forwarding (8333) is active."
         ));
     }
 
-    let files = list_repo_files(&dir).map_err(|e| format!("로컬 파일 목록 조회 실패: {e}"))?;
+    let files = list_repo_files(&dir).map_err(|e| format!("Failed to list local files: {e}"))?;
     if files.is_empty() {
-        return Err(format!("{repo_id}: 업로드할 로컬 파일이 없습니다."));
+        return Err(format!("{repo_id}: no local files to upload."));
     }
 
     for rel in &files {
@@ -481,7 +481,7 @@ pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> 
         let safe_rel_path = safe_rel(&rel_str)?;
         let abs = dir.join(&safe_rel_path);
         if !abs.starts_with(&dir) {
-            return Err(format!("경로 탈출이 감지되었습니다: {rel_str}"));
+            return Err(format!("Path traversal detected: {rel_str}"));
         }
         let url = format!(
             "http://localhost:8333/models/{repo_slug}/{}",
@@ -493,15 +493,15 @@ pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> 
             .arg(&url)
             .output()
             .await
-            .map_err(|e| format!("curl 실행 실패({rel_str}): {e}"))?;
+            .map_err(|e| format!("curl execution failed ({rel_str}): {e}"))?;
         let code = String::from_utf8_lossy(&out.stdout).to_string();
         if !code.starts_with('2') {
-            return Err(format!("{rel_str} 업로드 실패(HTTP {code})"));
+            return Err(format!("{rel_str} upload failed (HTTP {code})"));
         }
     }
 
     Ok(format!(
-        "{repo_id} ({} 파일)가 SeaweedFS models 버킷에 업로드되었습니다.",
+        "{repo_id} ({} files) uploaded to SeaweedFS models bucket.",
         files.len()
     ))
 }
@@ -531,14 +531,14 @@ pub async fn register_model_mlflow(repo_id: String) -> Result<String, String> {
         ])
         .output()
         .await
-        .map_err(|e| format!("MLflow(5001) 연결 실패 — 포트포워딩이 활성화되어 있는지 확인하세요: {e}"))?;
+        .map_err(|e| format!("Failed to connect to MLflow (5001) — check that port forwarding is active: {e}"))?;
 
     let create_json: serde_json::Value =
         serde_json::from_slice(&create_out.stdout).unwrap_or(serde_json::json!({}));
     if let Some(code) = create_json.get("error_code").and_then(|v| v.as_str()) {
         if code != "RESOURCE_ALREADY_EXISTS" {
             return Err(format!(
-                "MLflow 모델 등록 실패: {}",
+                "Failed to register MLflow model: {}",
                 create_json
                     .get("message")
                     .and_then(|v| v.as_str())
@@ -562,14 +562,14 @@ pub async fn register_model_mlflow(repo_id: String) -> Result<String, String> {
         ])
         .output()
         .await
-        .map_err(|e| format!("MLflow(5001) 연결 실패: {e}"))?;
+        .map_err(|e| format!("Failed to connect to MLflow (5001): {e}"))?;
 
     let version_json: serde_json::Value = serde_json::from_slice(&version_out.stdout)
-        .map_err(|e| format!("MLflow 응답 파싱 실패: {e}"))?;
+        .map_err(|e| format!("Failed to parse MLflow response: {e}"))?;
 
     if let Some(code) = version_json.get("error_code").and_then(|v| v.as_str()) {
         return Err(format!(
-            "MLflow 모델 버전 등록 실패: {}",
+            "Failed to register MLflow model version: {}",
             version_json
                 .get("message")
                 .and_then(|v| v.as_str())
@@ -579,10 +579,10 @@ pub async fn register_model_mlflow(repo_id: String) -> Result<String, String> {
 
     let version = version_json["model_version"]["version"]
         .as_str()
-        .ok_or_else(|| "MLflow 응답에 version 필드가 없습니다.".to_string())?;
+        .ok_or_else(|| "MLflow response is missing the version field.".to_string())?;
 
     Ok(format!(
-        "{repo_id} → MLflow Model Registry에 {repo_slug} v{version}으로 등록되었습니다."
+        "{repo_id} registered in MLflow Model Registry as {repo_slug} v{version}."
     ))
 }
 
@@ -595,17 +595,17 @@ pub async fn list_registered_models() -> Result<Vec<RegisteredModel>, String> {
         ])
         .output()
         .await
-        .map_err(|e| format!("MLflow(5001) 연결 실패 — 포트포워딩이 활성화되어 있는지 확인하세요: {e}"))?;
+        .map_err(|e| format!("Failed to connect to MLflow (5001) — check that port forwarding is active: {e}"))?;
 
     if !output.status.success() {
         return Err(format!(
-            "MLflow 등록 모델 조회 실패: {}",
+            "Failed to fetch MLflow registered models: {}",
             String::from_utf8_lossy(&output.stderr)
         ));
     }
 
     let parsed: MlflowSearchResponse = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("MLflow 응답 파싱 실패: {e}"))?;
+        .map_err(|e| format!("Failed to parse MLflow response: {e}"))?;
 
     Ok(parsed
         .registered_models
@@ -642,14 +642,14 @@ mod tests {
         parameters.insert("U32".to_string(), 951_910_400u64);
         let info = HfSafetensorsInfo { parameters };
 
-        let estimated = estimate_size_bytes(&info).expect("safetensors 정보가 있으므로 Some이어야 함");
+        let estimated = estimate_size_bytes(&info).expect("should be Some because safetensors info is present");
         let actual_file_size = 4_284_346_255u64;
         let diff = actual_file_size.abs_diff(estimated);
         // 0.1% 이내 오차만 허용 — 텐서 원소 수 x dtype 바이트폭 가중합이 실제 파일 크기의
         // 근사치임을 보장한다.
         assert!(
             diff * 1000 < actual_file_size,
-            "추정치 {estimated}가 실제 크기 {actual_file_size}와 너무 차이남(diff={diff})"
+            "estimate {estimated} differs too much from actual size {actual_file_size} (diff={diff})"
         );
     }
 

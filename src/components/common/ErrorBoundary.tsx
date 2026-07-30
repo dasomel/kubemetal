@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { I18nContext } from '../../i18n/i18nContext';
 
 interface ErrorBoundaryState {
   error: Error | null;
@@ -15,6 +16,10 @@ export class ErrorBoundary extends React.Component<
   React.PropsWithChildren<{ resetKey?: unknown }>,
   ErrorBoundaryState
 > {
+  // 클래스 컴포넌트는 useTranslation 훅을 쓸 수 없어 contextType으로 직접 구독한다.
+  static contextType = I18nContext;
+  declare context: React.ContextType<typeof I18nContext>;
+
   state: ErrorBoundaryState = { error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -22,7 +27,7 @@ export class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error('렌더링 오류:', error, info.componentStack);
+    console.error(this.context?.t('errorBoundary.renderErrorLog') ?? 'Render error:', error, info.componentStack);
   }
 
   componentDidUpdate(prevProps: React.PropsWithChildren<{ resetKey?: unknown }>) {
@@ -37,22 +42,23 @@ export class ErrorBoundary extends React.Component<
 
   render() {
     const { error } = this.state;
+    const t = this.context?.t;
     if (error) {
       return (
         <div className="rounded-xl bg-surface p-4 shadow-panel">
           <div className="flex items-center gap-2 mb-2 text-danger">
             <AlertTriangle className="w-4 h-4 shrink-0" />
-            <h2 className="text-heading">화면을 표시하는 중 오류가 발생했습니다</h2>
+            <h2 className="text-heading">{t ? t('errorBoundary.title') : 'An error occurred while rendering this screen'}</h2>
           </div>
           <p className="text-body text-inkMuted mb-4 break-words">
-            {error.message || '알 수 없는 오류'}
+            {error.message || (t ? t('modelhub.dl.unknownError') : 'Unknown error')}
           </p>
           <button
             type="button"
             onClick={this.handleReset}
             className="py-2 px-3.5 bg-primaryStrong hover:brightness-110 text-inverse text-bodyStrong rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
           >
-            다시 시도
+            {t ? t('errorBoundary.retryBtn') : 'Retry'}
           </button>
         </div>
       );

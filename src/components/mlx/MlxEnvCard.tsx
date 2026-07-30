@@ -19,12 +19,12 @@ const StatusRow: React.FC<{ checking: boolean; ok?: boolean; readyLabel: string;
   readyLabel,
   notReadyLabel,
 }) => {
-  const { language } = useTranslation();
+  const { t } = useTranslation();
   if (checking) {
     return (
       <div className="flex items-center gap-1.5 text-caption text-inkFaint">
         <Loader2 className="w-3 h-3 animate-spin" />
-        <span>{language === 'en' ? 'Checking…' : '확인 중…'}</span>
+        <span>{t('mlx.env.checking')}</span>
       </div>
     );
   }
@@ -44,7 +44,7 @@ export const MlxEnvCard: React.FC<MlxEnvCardProps> = ({
   onSetup,
   compact = false,
 }) => {
-  const { t, language } = useTranslation();
+  const { t } = useTranslation();
   const installing = settingUp || envSetup?.state === 'installing';
   const ready = envStatus?.venv_exists && envStatus?.mlx_lm_installed;
   // 최초 확인 전/중에는 envStatus가 아직 없거나 checkingEnv가 true다 — 이때는 "확인 필요"
@@ -82,8 +82,8 @@ export const MlxEnvCard: React.FC<MlxEnvCardProps> = ({
           <StatusRow
             checking={checking}
             ok={envStatus?.python_ok}
-            readyLabel={language === 'en' ? 'Available' : '사용 가능'}
-            notReadyLabel={language === 'en' ? 'Needs Check' : '확인 필요'}
+            readyLabel={t('mlx.env.pythonAvailable')}
+            notReadyLabel={t('mlx.env.pythonNeedsCheck')}
           />
         </div>
 
@@ -92,8 +92,8 @@ export const MlxEnvCard: React.FC<MlxEnvCardProps> = ({
           <StatusRow
             checking={checking}
             ok={envStatus?.venv_exists}
-            readyLabel={language === 'en' ? 'Created' : '생성됨'}
-            notReadyLabel={language === 'en' ? 'Not Created' : '미생성'}
+            readyLabel={t('mlx.env.venvCreated')}
+            notReadyLabel={t('mlx.env.venvNotCreated')}
           />
         </div>
 
@@ -111,7 +111,7 @@ export const MlxEnvCard: React.FC<MlxEnvCardProps> = ({
       {envSetup?.state === 'error' && envSetup.error && (
         <div className="mb-4 flex items-center gap-1.5 text-caption text-danger">
           <span className="w-2 h-2 rounded-full bg-danger" />
-          <span>{language === 'en' ? 'Env installation error: ' : '환경 설치 오류: '}{envSetup.error}</span>
+          <span>{t('mlx.env.installError')}{envSetup.error}</span>
         </div>
       )}
 

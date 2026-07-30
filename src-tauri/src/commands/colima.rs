@@ -27,7 +27,7 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
         .args(["status", "--json"])
         .output()
         .await
-        .map_err(|e| format!("colima 실행 실패: {e}"))?;
+        .map_err(|e| format!("colima execution failed: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let raw: Option<ColimaStatusRaw> = if output.status.success() {
@@ -58,7 +58,7 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
             .args(["--context", "colima", "get", "deploy", "-n", &namespace, "-o", "json"])
             .output()
             .await
-            .map_err(|e| format!("kubectl get deploy 실패: {e}"))?;
+            .map_err(|e| format!("kubectl get deploy failed: {e}"))?;
         let json: serde_json::Value =
             serde_json::from_slice(&deploy_out.stdout).unwrap_or(serde_json::json!({"items": []}));
         let items = json["items"].as_array().cloned().unwrap_or_default();
@@ -129,10 +129,10 @@ pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
         ])
         .output()
         .await
-        .map_err(|e| format!("colima start 실행 실패: {e}"))?;
+        .map_err(|e| format!("colima start execution failed: {e}"))?;
 
     if output.status.success() {
-        Ok("Colima K8s 클러스터가 시작되었습니다.".into())
+        Ok("Colima K8s cluster started.".into())
     } else {
         Err(String::from_utf8_lossy(&output.stderr).to_string())
     }
@@ -144,10 +144,10 @@ pub async fn stop_cluster() -> Result<String, String> {
         .arg("stop")
         .output()
         .await
-        .map_err(|e| format!("colima stop 실행 실패: {e}"))?;
+        .map_err(|e| format!("colima stop execution failed: {e}"))?;
 
     if output.status.success() {
-        Ok("Colima 클러스터가 정지되었습니다.".into())
+        Ok("Colima cluster stopped.".into())
     } else {
         Err(String::from_utf8_lossy(&output.stderr).to_string())
     }
@@ -172,11 +172,11 @@ pub async fn list_kubeconfig_contexts() -> Result<Vec<String>, String> {
         .args(["config", "get-contexts", "-o", "name"])
         .output()
         .await
-        .map_err(|e| format!("kubectl config get-contexts 실패: {e}"))?;
+        .map_err(|e| format!("kubectl config get-contexts failed: {e}"))?;
 
     if !output.status.success() {
         return Err(format!(
-            "kubectl config get-contexts 실패: {}",
+            "kubectl config get-contexts failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
@@ -209,17 +209,17 @@ async fn get_pods_json(context: &str, namespace: &str) -> Result<serde_json::Val
         .args(["--context", context, "get", "pods", "-n", namespace, "-o", "json"])
         .output()
         .await
-        .map_err(|e| format!("kubectl get pods -n {namespace} 실행 실패: {e}"))?;
+        .map_err(|e| format!("kubectl get pods -n {namespace} execution failed: {e}"))?;
 
     if !out.status.success() {
         return Err(format!(
-            "kubectl get pods -n {namespace} 실패: {}",
+            "kubectl get pods -n {namespace} failed: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
 
     serde_json::from_slice(&out.stdout)
-        .map_err(|e| format!("kubectl get pods -n {namespace} 응답 파싱 실패: {e}"))
+        .map_err(|e| format!("kubectl get pods -n {namespace} response parse failed: {e}"))
 }
 
 /// 진단 결과는 전부 kubectl 실측에서만 파생한다. 조회에 실패하면 에러로 올린다 —
@@ -276,8 +276,8 @@ pub async fn get_kagent_diagnostics(
                     let message = waiting
                         .get("message")
                         .and_then(|m| m.as_str())
-                        .unwrap_or("(메시지 없음)");
-                    issue_details.push(format!("파드 [{pod_name}] {reason}: {message}"));
+                        .unwrap_or("(no message)");
+                    issue_details.push(format!("Pod [{pod_name}] {reason}: {message}"));
                 }
             }
         }
@@ -285,16 +285,16 @@ pub async fn get_kagent_diagnostics(
         if has_issue {
             pod_issues_count += 1;
             if issue_details.is_empty() || !issue_details.iter().any(|d| d.contains(pod_name)) {
-                issue_details.push(format!("파드 [{pod_name}] phase={phase}"));
+                issue_details.push(format!("Pod [{pod_name}] phase={phase}"));
             }
         }
     }
 
     let recent_diagnosis = if pod_issues_count == 0 {
-        format!("kubectl 실측: 컨텍스트 [{target_ctx}] default 네임스페이스 파드 {}개 중 이상 없음.", default_items.len())
+        format!("kubectl measured: context [{target_ctx}] default namespace — no issues among {} pod(s).", default_items.len())
     } else {
         format!(
-            "kubectl 실측: {pod_issues_count}개 파드 이상 — {}",
+            "kubectl measured: {pod_issues_count} pod(s) with issues — {}",
             issue_details.join(" / ")
         )
     };
@@ -302,11 +302,11 @@ pub async fn get_kagent_diagnostics(
     // 권고는 "다음에 무엇을 실행하면 원인을 볼 수 있는가"까지만 제시한다.
     // 실제 복구안 생성은 kagent 에이전트의 몫이며, 여기서 결론을 지어내지 않는다.
     let recommended_action = if !kagent_ready {
-        format!("kagent 네임스페이스가 Ready 상태가 아닙니다({}개 파드). `make kagent-up` 후 `kubectl --context {target_ctx} get pods -n kagent`로 확인하세요.", kagent_items.len())
+        format!("kagent namespace is not Ready ({} pod(s)). Run `make kagent-up`, then check with `kubectl --context {target_ctx} get pods -n kagent`.", kagent_items.len())
     } else if pod_issues_count > 0 {
-        format!("kagent UI 또는 `kubectl --context {target_ctx} describe pod <이름>`으로 이벤트를 확인하고, k8s-agent에 진단을 요청하세요.")
+        format!("Check events via kagent UI or `kubectl --context {target_ctx} describe pod <name>`, and request a diagnosis from k8s-agent.")
     } else {
-        format!("추가 조치 불필요. 활성 에이전트 {}개 Ready.", active_agents.len())
+        format!("No further action needed. {} active agent(s) Ready.", active_agents.len())
     };
 
     Ok(KagentDiagnosticReport {
@@ -402,7 +402,7 @@ spec:
 "#,
             other => {
                 return Err(format!(
-                    "에이전트 [{other}]는 이 앱에서 설치할 수 없습니다. 설치 가능: {}",
+                    "Agent [{other}] cannot be installed by this app. Installable: {}",
                     TOGGLEABLE_AGENTS.join(", ")
                 ));
             }
@@ -410,20 +410,20 @@ spec:
 
         let file_path = std::env::temp_dir().join(format!("kubemetal-{agent_name}.yaml"));
         std::fs::write(&file_path, manifest)
-            .map_err(|e| format!("매니페스트 임시 파일 생성 실패: {e}"))?;
+            .map_err(|e| format!("Failed to create manifest temp file: {e}"))?;
 
         let output = external_command("kubectl")?
             .args(["--context", &target_ctx, "apply", "-f"])
             .arg(&file_path)
             .output()
             .await
-            .map_err(|e| format!("kubectl apply 실행 실패: {e}"))?;
+            .map_err(|e| format!("kubectl apply execution failed: {e}"))?;
 
         let _ = std::fs::remove_file(&file_path);
 
         if !output.status.success() {
             return Err(format!(
-                "Agent CRD [{agent_name}] 적용 실패: {}",
+                "Agent CRD [{agent_name}] apply failed: {}",
                 String::from_utf8_lossy(&output.stderr).trim()
             ));
         }
@@ -431,7 +431,7 @@ spec:
         // kubectl이 돌려준 문장만 전달한다. 파드 기동 여부는 여기서 알 수 없으므로
         // "1/1 Running" 같은 상태를 주장하지 않는다 — 진단 재조회가 실제 상태를 채운다.
         Ok(format!(
-            "Agent CRD [{agent_name}] 적용됨: {}. 파드 기동 상태는 진단 재조회로 확인하세요.",
+            "Agent CRD [{agent_name}] applied: {}. Check pod startup status via diagnostics re-query.",
             String::from_utf8_lossy(&output.stdout).trim()
         ))
     } else {
@@ -441,17 +441,17 @@ spec:
             ])
             .output()
             .await
-            .map_err(|e| format!("kubectl delete 실행 실패: {e}"))?;
+            .map_err(|e| format!("kubectl delete execution failed: {e}"))?;
 
         if !output.status.success() {
             return Err(format!(
-                "Agent CRD [{agent_name}] 삭제 실패: {}",
+                "Agent CRD [{agent_name}] delete failed: {}",
                 String::from_utf8_lossy(&output.stderr).trim()
             ));
         }
 
         Ok(format!(
-            "Agent CRD [{agent_name}] 삭제됨: {}",
+            "Agent CRD [{agent_name}] deleted: {}",
             String::from_utf8_lossy(&output.stdout).trim()
         ))
     }
@@ -550,7 +550,7 @@ fn images_from_manifests(manifest_dir: &std::path::Path) -> Vec<String> {
 
 #[tauri::command]
 pub async fn get_airgap_status(app: tauri::AppHandle) -> Result<AirgapStatusReport, String> {
-    let home_str = std::env::var("HOME").map_err(|_| "HOME 환경변수를 찾을 수 없습니다.".to_string())?;
+    let home_str = std::env::var("HOME").map_err(|_| "HOME environment variable not found.".to_string())?;
     let airgap_dir = std::path::PathBuf::from(home_str).join(".kubemetal").join("airgap");
 
     let mut targets: Vec<(String, String, String, String)> = STATIC_AIRGAP_TARGETS
@@ -648,7 +648,7 @@ async fn run_airgap_script(
     let script_path = resolve_bundled_resource(&resource_dir, relative);
     if !script_path.is_file() {
         return Err(format!(
-            "{label} 스크립트를 찾을 수 없습니다: {}",
+            "{label} script not found: {}",
             script_path.display()
         ));
     }
@@ -657,11 +657,11 @@ async fn run_airgap_script(
         .arg(&script_path)
         .output()
         .await
-        .map_err(|e| format!("{label} 스크립트 실행 실패: {e}"))?;
+        .map_err(|e| format!("{label} script execution failed: {e}"))?;
 
     if !output.status.success() {
         return Err(format!(
-            "{label} 실패: {}",
+            "{label} failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
@@ -672,7 +672,7 @@ async fn run_airgap_script(
         .lines()
         .rev()
         .find(|l| !l.trim().is_empty())
-        .unwrap_or("(출력 없음)")
+        .unwrap_or("(no output)")
         .trim()
         .to_string())
 }
@@ -682,7 +682,7 @@ pub async fn trigger_airgap_download(app: tauri::AppHandle) -> Result<String, St
     run_airgap_script(
         &app,
         "scripts/airgap/download_airgap_bundle.sh",
-        "Air-Gap 번들 다운로드",
+        "Air-Gap bundle download",
     )
     .await
 }
@@ -692,7 +692,7 @@ pub async fn trigger_airgap_install(app: tauri::AppHandle) -> Result<String, Str
     run_airgap_script(
         &app,
         "scripts/airgap/install_from_airgap.sh",
-        "Air-Gap 오프라인 설치",
+        "Air-Gap offline install",
     )
     .await
 }
@@ -719,7 +719,7 @@ pub async fn check_latest_airgap_versions() -> Result<Vec<AirgapLatestVersionRep
     }
 
     // 조회에 실패하면 "최신"이라고 단정하지 않고 실패 사실을 그대로 표시한다.
-    const UNKNOWN: &str = "조회 실패";
+    const UNKNOWN: &str = "lookup failed";
 
     let check_repo = |owner: &'static str, repo: &'static str, cur_ver: &'static str| async move {
         let url = format!("https://api.github.com/repos/{owner}/{repo}/releases/latest");
@@ -782,7 +782,7 @@ mod tests {
         // 테스트 cwd는 src-tauri/ — 매니페스트는 리포 루트 아래에 있다.
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
-            .expect("리포 루트")
+            .expect("repo root")
             .join("scripts/k8s")
     }
 
@@ -801,13 +801,13 @@ mod tests {
         let images = images_from_manifests(&repo_k8s_dir());
         assert!(
             !images.is_empty(),
-            "scripts/k8s에서 이미지를 하나도 못 읽었다 — 파싱이 깨졌다"
+            "read zero images from scripts/k8s — parsing is broken"
         );
         // 태그 없는 항목은 폐쇄망에서 latest를 끌어오므로 있으면 안 된다.
         for image in &images {
             assert!(
                 image.contains(':'),
-                "{image}: 태그가 없다 — 폐쇄망에서 재현 불가"
+                "{image}: no tag — cannot reproduce in an air-gapped environment"
             );
         }
     }
@@ -815,14 +815,14 @@ mod tests {
     fn repo_images_helm_txt() -> std::path::PathBuf {
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
-            .expect("리포 루트")
+            .expect("repo root")
             .join("scripts/airgap/images-helm.txt")
     }
 
     /// `scripts/airgap/images-helm.txt`의 파싱 규칙(줄 끝 `#` 주석 제거 + 모든 공백 제거)은
     /// `scripts/airgap/lib.sh`의 `read_image_list`와 같아야 한다.
     fn images_helm_txt_entries() -> Vec<String> {
-        let text = std::fs::read_to_string(repo_images_helm_txt()).expect("images-helm.txt 읽기");
+        let text = std::fs::read_to_string(repo_images_helm_txt()).expect("read images-helm.txt");
         text.lines()
             .map(|line| {
                 let mut s = line.split('#').next().unwrap_or("").to_string();
@@ -855,8 +855,9 @@ mod tests {
 
         assert_eq!(
             expected, actual,
-            "images-helm.txt와 STATIC_AIRGAP_TARGETS가 어긋났다 — 한쪽만 갱신되면 \
-             번들은 새 버전을 받고 Air-Gap 상태 화면은 옛 버전을 찾는다"
+            "images-helm.txt and STATIC_AIRGAP_TARGETS diverged — if only one side is \
+             updated, the bundle gets the new version while the Air-Gap status screen \
+             looks for the old one"
         );
     }
 
@@ -867,7 +868,7 @@ mod tests {
         for image in &images {
             assert!(
                 !image.contains("Always") && !image.contains("IfNotPresent"),
-                "{image}: imagePullPolicy 값을 이미지로 읽었다"
+                "{image}: read an imagePullPolicy value as an image"
             );
         }
     }

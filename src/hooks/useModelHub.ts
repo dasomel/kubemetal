@@ -2,8 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
 import type { HfModel, DownloadStatus, LocalModel } from '../types/ipc';
+import { useTranslation } from '../i18n/i18nContext';
 
 export function useModelHub() {
+  const { t } = useTranslation();
   const [searchResults, setSearchResults] = useState<HfModel[]>([]);
   const [searching, setSearching] = useState(false);
   const [popularModels, setPopularModels] = useState<HfModel[]>([]);
@@ -23,18 +25,18 @@ export function useModelHub() {
       const res = await invoke<LocalModel[]>('list_local_models');
       setLocalModels(res);
     } catch (err) {
-      console.error('로컬 모델 목록 로드 오류:', err);
+      console.error(t('modelhub.err.localModelsLoad'), err);
     }
-  }, []);
+  }, [t]);
 
   const fetchDownloads = useCallback(async () => {
     try {
       const res = await invoke<DownloadStatus[]>('get_model_downloads');
       setDownloads(res);
     } catch (err) {
-      console.error('다운로드 상태 로드 오류:', err);
+      console.error(t('modelhub.err.downloadsLoad'), err);
     }
-  }, []);
+  }, [t]);
 
   const search = useCallback(async (query: string, limit = 20, author?: string) => {
     if (!query.trim()) return;
@@ -43,11 +45,11 @@ export function useModelHub() {
       const res = await invoke<HfModel[]>('search_hf_models', { query, limit, author });
       setSearchResults(res);
     } catch (err) {
-      await message(`모델 검색 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('modelhub.toast.searchFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setSearching(false);
     }
-  }, []);
+  }, [t]);
 
   // 모델 허브 탭 진입 시 검색 없이도 mlx-community의 인기 모델을 보여준다.
   const loadPopularModels = useCallback(async () => {
@@ -60,20 +62,20 @@ export function useModelHub() {
       });
       setPopularModels(res);
     } catch (err) {
-      console.error('인기 모델 로드 오류:', err);
+      console.error(t('modelhub.err.popularLoad'), err);
     } finally {
       setLoadingPopular(false);
     }
-  }, []);
+  }, [t]);
 
   const startDownload = useCallback(async (repoId: string) => {
     setDownloadingIds((prev) => new Set(prev).add(repoId));
     try {
       const res = await invoke<string>('download_hf_model', { repoId });
-      await message(res || `${repoId} 다운로드를 시작했습니다.`, { title: 'KubeMetal', kind: 'info' });
+      await message(res || t('modelhub.toast.downloadStarted', { repoId }), { title: 'KubeMetal', kind: 'info' });
       await fetchDownloads();
     } catch (err) {
-      await message(`다운로드 시작 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('modelhub.toast.downloadStartFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setDownloadingIds((prev) => {
         const next = new Set(prev);
@@ -81,16 +83,16 @@ export function useModelHub() {
         return next;
       });
     }
-  }, [fetchDownloads]);
+  }, [fetchDownloads, t]);
 
   const uploadToStorage = useCallback(async (repoId: string) => {
     setUploadingIds((prev) => new Set(prev).add(repoId));
     try {
       const res = await invoke<string>('upload_model_to_storage', { repoId });
-      await message(res || `${repoId} 업로드가 완료되었습니다.`, { title: 'KubeMetal', kind: 'info' });
+      await message(res || t('modelhub.toast.uploadDone', { repoId }), { title: 'KubeMetal', kind: 'info' });
       setUploadedIds((prev) => new Set(prev).add(repoId));
     } catch (err) {
-      await message(`SeaweedFS 업로드 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('modelhub.toast.uploadFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setUploadingIds((prev) => {
         const next = new Set(prev);
@@ -98,16 +100,16 @@ export function useModelHub() {
         return next;
       });
     }
-  }, []);
+  }, [t]);
 
   const registerModel = useCallback(async (repoId: string) => {
     setRegisteringIds((prev) => new Set(prev).add(repoId));
     try {
       const res = await invoke<string>('register_model_mlflow', { repoId });
-      await message(res || `${repoId} MLflow 등록이 완료되었습니다.`, { title: 'KubeMetal', kind: 'info' });
+      await message(res || t('modelhub.toast.registerDone', { repoId }), { title: 'KubeMetal', kind: 'info' });
       setRegisteredIds((prev) => new Set(prev).add(repoId));
     } catch (err) {
-      await message(`MLflow 등록 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('modelhub.toast.registerFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setRegisteringIds((prev) => {
         const next = new Set(prev);
@@ -115,7 +117,7 @@ export function useModelHub() {
         return next;
       });
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     fetchLocalModels();

@@ -208,7 +208,7 @@ async fn signal_pid(pid: u32, sig: i32) -> Result<(), String> {
         libc::kill(-(pid as i32), sig);
     })
     .await
-    .map_err(|e| format!("시그널 전송 실패: {e}"))
+    .map_err(|e| format!("failed to send signal: {e}"))
 }
 
 async fn pause_pid(app: &tauri::AppHandle, pid: u32, status: &str) -> Result<(), String> {
@@ -242,7 +242,7 @@ pub async fn pause_mlx_training(app: tauri::AppHandle) -> Result<bool, String> {
         let guard = mlx_state.training.lock().map_err(|e| e.to_string())?;
         match guard.as_ref() {
             Some(t) if t.status == "running" => t.pid,
-            _ => return Err("일시정지할 수 있는 진행 중인 학습이 없습니다.".into()),
+            _ => return Err("no running training to pause".into()),
         }
     };
     pause_pid(&app, pid, "paused").await?;
@@ -256,7 +256,7 @@ pub async fn resume_mlx_training(app: tauri::AppHandle) -> Result<bool, String> 
         let guard = mlx_state.training.lock().map_err(|e| e.to_string())?;
         match guard.as_ref() {
             Some(t) if t.status.starts_with("paused") => (t.pid, t.status.clone()),
-            _ => return Err("재개할 수 있는 일시정지된 학습이 없습니다.".into()),
+            _ => return Err("no paused training to resume".into()),
         }
     };
 

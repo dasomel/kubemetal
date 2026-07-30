@@ -9,6 +9,7 @@ import type {
   GuardrailStatus,
   MlxRuntime,
 } from '../types/ipc';
+import { useTranslation } from '../i18n/i18nContext';
 
 // 모듈 레벨 캐시 — 탭을 벗어났다 재진입해도 이미 확인된 MLX 환경 상태를 재사용해
 // 불필요한 재확인 호출을 피한다. 환경 설치가 완료됐을 때만(useMlx 내부에서) 갱신한다.
@@ -16,6 +17,7 @@ let cachedEnvStatus: MlxEnvStatus | null = null;
 let hasCachedEnvStatus = false;
 
 export function useMlx() {
+  const { t } = useTranslation();
   const [envStatus, setEnvStatus] = useState<MlxEnvStatus | null>(cachedEnvStatus);
   const [checkingEnv, setCheckingEnv] = useState(!hasCachedEnvStatus);
   const [settingUpEnv, setSettingUpEnv] = useState(false);
@@ -40,68 +42,68 @@ export function useMlx() {
       hasCachedEnvStatus = true;
       setEnvStatus(res);
     } catch (err) {
-      console.error('MLX 환경 확인 오류:', err);
+      console.error(t('mlx.err.envCheck'), err);
     } finally {
       setCheckingEnv(false);
     }
-  }, []);
+  }, [t]);
 
   const fetchStatus = useCallback(async () => {
     try {
       const res = await invoke<MlxStatus>('get_mlx_status');
       setMlxStatus(res);
     } catch (err) {
-      console.error('MLX 상태 로드 오류:', err);
+      console.error(t('mlx.err.statusLoad'), err);
     }
-  }, []);
+  }, [t]);
 
   const fetchLocalModels = useCallback(async () => {
     try {
       const res = await invoke<LocalModel[]>('list_local_models');
       setLocalModels(res);
     } catch (err) {
-      console.error('로컬 모델 목록 로드 오류:', err);
+      console.error(t('mlx.err.localModelsLoad'), err);
     }
-  }, []);
+  }, [t]);
 
   const setupEnv = useCallback(async () => {
     setSettingUpEnv(true);
     try {
       const res = await invoke<string>('setup_mlx_env');
-      await message(res || 'MLX 환경 설치를 시작했습니다.', { title: 'KubeMetal', kind: 'info' });
+      await message(res || t('mlx.toast.envSetupStarted'), { title: 'KubeMetal', kind: 'info' });
       await fetchStatus();
     } catch (err) {
-      await message(`MLX 환경 설치 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('mlx.toast.envSetupFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setSettingUpEnv(false);
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, t]);
 
   const runFinetune = useCallback(async (config: FineTuneConfig) => {
     setStartingTraining(true);
     try {
       const pid = await invoke<number>('run_mlx_finetune', { config });
-      await message(`파인튜닝을 시작했습니다 (PID ${pid}).`, { title: 'KubeMetal', kind: 'info' });
+      await message(t('mlx.toast.finetuneStarted', { pid }), { title: 'KubeMetal', kind: 'info' });
       await fetchStatus();
     } catch (err) {
-      await message(`파인튜닝 시작 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('mlx.toast.finetuneStartFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setStartingTraining(false);
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, t]);
 
   const killProcess = useCallback(async (pid: number) => {
     setKillingPid(pid);
     try {
       const res = await invoke<string>('kill_mlx_process', { pid });
-      await message(res || '프로세스를 종료했습니다.', { title: 'KubeMetal', kind: 'info' });
+      await message(res || t('mlx.toast.processKilled'), { title: 'KubeMetal', kind: 'info' });
       await fetchStatus();
     } catch (err) {
-      await message(`프로세스 종료 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('mlx.toast.processKillFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setKillingPid(null);
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, t]);
 
   const startServing = useCallback(
     async (
@@ -119,38 +121,38 @@ export function useMlx() {
           // 생략하면 백엔드 기본(mlx-lm) — 기존 호출부의 동작이 바뀌지 않는다(D29).
           runtime: runtime ?? null,
         });
-        await message(res || '모델 서빙을 시작했습니다.', { title: 'KubeMetal', kind: 'info' });
+        await message(res || t('mlx.toast.servingStarted'), { title: 'KubeMetal', kind: 'info' });
         await fetchStatus();
       } catch (err) {
-        await message(`모델 서빙 시작 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+        await message(t('mlx.toast.servingStartFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
       } finally {
         setStartingServing(false);
       }
     },
-    [fetchStatus],
+    [fetchStatus, t],
   );
 
   const stopServing = useCallback(async () => {
     setStoppingServing(true);
     try {
       const res = await invoke<string>('stop_model_serving');
-      await message(res || '모델 서빙을 정지했습니다.', { title: 'KubeMetal', kind: 'info' });
+      await message(res || t('mlx.toast.servingStopped'), { title: 'KubeMetal', kind: 'info' });
       await fetchStatus();
     } catch (err) {
-      await message(`모델 서빙 정지 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('mlx.toast.servingStopFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setStoppingServing(false);
     }
-  }, [fetchStatus]);
+  }, [fetchStatus, t]);
 
   const fetchGuardrailStatus = useCallback(async () => {
     try {
       const res = await invoke<GuardrailStatus>('get_guardrail_status');
       setGuardrailStatus(res);
     } catch (err) {
-      console.error('가드레일 상태 로드 오류:', err);
+      console.error(t('mlx.err.guardrailLoad'), err);
     }
-  }, []);
+  }, [t]);
 
   // 백엔드는 thermalPause를 Option으로 받는다 — 여기서 함께 보내지 않으면 발열 설정이
   // 그대로 유지되고, 두 토글이 서로의 값을 덮어쓰지 않는다.
@@ -163,10 +165,10 @@ export function useMlx() {
         });
         await fetchGuardrailStatus();
       } catch (err) {
-        await message(`발열 일시정지 설정 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+        await message(t('mlx.toast.thermalPauseSetFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
       }
     },
-    [fetchGuardrailStatus, guardrailStatus],
+    [fetchGuardrailStatus, guardrailStatus, t],
   );
 
   const setBatteryPause = useCallback(
@@ -176,12 +178,12 @@ export function useMlx() {
         await invoke('set_guardrail_config', { batteryPause: enabled });
         await fetchGuardrailStatus();
       } catch (err) {
-        await message(`배터리 일시정지 설정 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+        await message(t('mlx.toast.batteryPauseSetFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
       } finally {
         setSettingBatteryPause(false);
       }
     },
-    [fetchGuardrailStatus],
+    [fetchGuardrailStatus, t],
   );
 
   const resumeTraining = useCallback(async () => {
@@ -191,11 +193,11 @@ export function useMlx() {
       await fetchStatus();
       await fetchGuardrailStatus();
     } catch (err) {
-      await message(`학습 재개 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('mlx.toast.resumeTrainingFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setResumingTraining(false);
     }
-  }, [fetchStatus, fetchGuardrailStatus]);
+  }, [fetchStatus, fetchGuardrailStatus, t]);
 
   const pauseTraining = useCallback(async () => {
     setPausingTraining(true);
@@ -204,11 +206,11 @@ export function useMlx() {
       await fetchStatus();
       await fetchGuardrailStatus();
     } catch (err) {
-      await message(`학습 일시정지 실패: ${err}`, { title: 'KubeMetal', kind: 'error' });
+      await message(t('mlx.toast.pauseTrainingFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setPausingTraining(false);
     }
-  }, [fetchStatus, fetchGuardrailStatus]);
+  }, [fetchStatus, fetchGuardrailStatus, t]);
 
   useEffect(() => {
     checkEnv();

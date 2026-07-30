@@ -43,7 +43,7 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
   onStop,
   vlmAvailable,
 }) => {
-  const { t, language } = useTranslation();
+  const { t } = useTranslation();
   const [modelPath, setModelPath] = useState('');
   const [adapterPath, setAdapterPath] = useState('');
   const [port, setPort] = useState(8080);
@@ -126,7 +126,7 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
             value={adapterPath}
             onChange={(e) => setAdapterPath(e.target.value)}
             disabled={!!serving}
-            placeholder={language === 'en' ? 'e.g. ~/.kubemetal/adapters/my-adapter' : '예: ~/.kubemetal/adapters/my-adapter'}
+            placeholder={t('mlx.serving.adapterPlaceholder')}
             className={inputClass}
           />
         </div>
@@ -202,9 +202,9 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
             <div className="flex items-center gap-1.5 text-caption text-inkMuted">
               <span className="w-2 h-2 rounded-full bg-success" />
               <span>
-                {language === 'en' ? `Serving active (PID ${serving.pid}) · ` : `서빙 중 (PID ${serving.pid}) · `}
+                {t('mlx.serving.activeLabel', { pid: serving.pid })}
                 {serving.model_path}
-                {serving.adapter_path ? (language === 'en' ? ` · adapter ${serving.adapter_path}` : ` · 어댑터 ${serving.adapter_path}`) : ''}
+                {serving.adapter_path ? t('mlx.serving.adapterSuffix', { adapter: serving.adapter_path }) : ''}
               </span>
             </div>
             <button
