@@ -1,0 +1,27 @@
+# make verify(테스트 + clippy + tsc + 디자인 린트 + 웹 빌드)를 그대로 실행한다 —
+# 게이트 정의는 Makefile이 정본이고, CI가 따로 명령을 들고 있으면 둘이 어긋난다.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    # Apple Silicon 전용 앱 — arm64 macOS 러너에서만 의미 있는 검증이다.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+      - run: make verify
