@@ -33,6 +33,8 @@ export interface ClusterStatus {
 export interface KagentDiagnosticReport {
   target_context: string;
   kagent_ready: boolean;
+  /** kagent ns에 파드 존재 여부(D33 plan). false면 설치 전 — 진단/에이전트 기능 전제가 없다. */
+  kagent_installed: boolean;
   pod_issues_count: number;
   recent_diagnosis: string;
   recommended_action: string;

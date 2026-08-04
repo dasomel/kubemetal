@@ -18,6 +18,7 @@ import { AirgapManagerView } from './components/airgap/AirgapManagerView';
 import { useColima } from './hooks/useColima';
 import { useMlx } from './hooks/useMlx';
 import { useServiceAccess } from './hooks/useServiceAccess';
+import { useKagentDiagnosticsSnapshot } from './state/kagentDiagnosticsStore';
 import { useTranslation } from './i18n/i18nContext';
 import { Shield, Sparkles, Terminal } from 'lucide-react';
 
@@ -36,6 +37,7 @@ export const App: React.FC = () => {
   const { status } = useColima();
   const { mlxStatus } = useMlx();
   const access = useServiceAccess();
+  const kagentSnapshot = useKagentDiagnosticsSnapshot();
 
   const clusterRunning = status?.is_running ?? false;
   const k8sActive = status?.kubernetes_active ?? false;
@@ -90,6 +92,23 @@ export const App: React.FC = () => {
       title: t('tabs.unreachableCount', { count: unreachableCount }),
       value: unreachableCount,
     };
+  }
+  // kagent 탭을 한 번도 방문하지 않았으면 스냅샷이 없다 — 실측 전 배지를 지어내지 않는다(D22).
+  if (kagentSnapshot) {
+    const fetchedTime = new Date(kagentSnapshot.fetchedAtIso).toLocaleTimeString();
+    const { pod_issues_count, kagent_ready } = kagentSnapshot.report;
+    if (pod_issues_count > 0) {
+      tabBadges.kagent = {
+        kind: 'dot',
+        tone: 'warning',
+        pulse: true,
+        title: t('kagent.badge.issuesTitle', { time: fetchedTime }),
+      };
+    } else if (!kagent_ready) {
+      tabBadges.kagent = { kind: 'dot', tone: 'warning', title: t('kagent.badge.notReadyTitle', { time: fetchedTime }) };
+    } else {
+      tabBadges.kagent = { kind: 'dot', tone: 'success', title: t('kagent.badge.healthyTitle', { time: fetchedTime }) };
+    }
   }
 
   // Bottom Dock 로그 — 이미 구독 중인 실제 상태에서만 파생한다(가짜 로그 문자열 금지).

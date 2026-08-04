@@ -466,6 +466,21 @@ export const translations: Record<Language, Record<string, string>> = {
     'kagent.e2e.patch.title': '교정 & 검증',
     'kagent.e2e.patch.desc': '교정 매니페스트 dry-run(client/server) 후 적용 · Ready 확인',
 
+    // kagent 설치 (Feature B)
+    'kagent.install.notInstalledTitle': 'kagent가 아직 설치되지 않았습니다',
+    'kagent.install.notInstalledDesc':
+      'kagent 네임스페이스에서 파드를 찾지 못했습니다. 진단/에이전트 기능을 쓰려면 먼저 설치가 필요합니다.',
+    'kagent.install.button': 'kagent 설치',
+    'kagent.install.installing': '설치 요청 중…',
+    'kagent.install.fallbackAck': '설치 요청을 전송했습니다 — 진단을 다시 조회해 확인하세요.',
+    'kagent.install.failed': 'kagent 설치 실패: {error}',
+    'kagent.install.truncated': '(전체 출력 생략 — 상태는 아래 진단으로 확인)',
+
+    // kagent 사이드바 배지 (Feature C)
+    'kagent.badge.issuesTitle': 'kagent 이상 파드 감지 (조회 {time})',
+    'kagent.badge.notReadyTitle': 'kagent 미준비 (조회 {time})',
+    'kagent.badge.healthyTitle': 'kagent 정상 (조회 {time})',
+
     // Air-Gap Manager
     'airgap.title': 'Air-Gap 오프라인 번들 관리',
     'airgap.subtitle':
@@ -1208,6 +1223,21 @@ export const translations: Record<Language, Record<string, string>> = {
     'kagent.e2e.diagnose.desc': 'Injects a broken pod and collects the reason/message kubectl actually reports',
     'kagent.e2e.patch.title': 'Remediation & verification',
     'kagent.e2e.patch.desc': 'Dry-runs (client/server) the fixed manifest, applies it and confirms Ready',
+
+    // kagent install (Feature B)
+    'kagent.install.notInstalledTitle': 'kagent is not installed yet',
+    'kagent.install.notInstalledDesc':
+      'No pods were found in the kagent namespace. Install it first to use diagnostics and agent management.',
+    'kagent.install.button': 'Install kagent',
+    'kagent.install.installing': 'Requesting install…',
+    'kagent.install.fallbackAck': 'Install request sent — re-run diagnostics to confirm.',
+    'kagent.install.failed': 'kagent install failed: {error}',
+    'kagent.install.truncated': '(Full output omitted — check status via diagnostics below)',
+
+    // kagent sidebar badge (Feature C)
+    'kagent.badge.issuesTitle': 'kagent has pod issues (checked {time})',
+    'kagent.badge.notReadyTitle': 'kagent not ready (checked {time})',
+    'kagent.badge.healthyTitle': 'kagent healthy (checked {time})',
 
     // Air-Gap Manager
     'airgap.title': 'Air-gap offline bundle manager',

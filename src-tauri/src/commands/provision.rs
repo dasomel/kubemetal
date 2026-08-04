@@ -49,7 +49,10 @@ pub async fn provision_mlops_stack(app: tauri::AppHandle) -> Result<String, Stri
     ))
 }
 
-async fn ensure_namespace(context: &str, namespace: &str) -> Result<(), String> {
+/// `kagent.rs::install_kagent`도 같은 ns-생성 규약(Makefile `kagent-up`과 동일하게
+/// `--dry-run=client -o yaml` 렌더 후 apply)을 쓰므로 `pub(crate)`로 공유한다 — 네임스페이스
+/// 생성 로직을 두 곳에 따로 두지 않는다.
+pub(crate) async fn ensure_namespace(context: &str, namespace: &str) -> Result<(), String> {
     let manifest = external_command("kubectl")?
         .args([
             "--context", context, "create", "namespace", namespace,

@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { invoke } from '@tauri-apps/api/core';
+import { message } from '@tauri-apps/plugin-dialog';
 import {
   AlertTriangle,
   ArrowUpRight,
   Bot,
   CheckCircle2,
+  DownloadCloud,
   Layers,
   RefreshCw,
   Sliders,
@@ -14,6 +16,7 @@ import {
 import { useColima } from '../../hooks/useColima';
 import { useTranslation } from '../../i18n/i18nContext';
 import type { KagentDiagnosticReport } from '../../types/ipc';
+import { publishKagentDiagnostics } from '../../state/kagentDiagnosticsStore';
 import { KagentAgentToggleList } from './KagentAgentToggleList';
 import { KagentE2ELoopCard } from './KagentE2ELoopCard';
 import { KagentModelArchitectureCards } from './KagentModelArchitectureCards';
@@ -41,6 +44,7 @@ export const KagentOpsView: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [installBusy, setInstallBusy] = useState<boolean>(false);
 
   const activeAgents = new Set(report?.active_agents ?? []);
   const toggleableAgents = report?.available_agents ?? [];
@@ -61,11 +65,36 @@ export const KagentOpsView: React.FC = () => {
       setReport(res);
       setFetchedAt(new Date().toLocaleTimeString());
       setError(null);
+      // 탭을 열지 않아도 사이드바 배지가 최신 상태를 알 수 있도록 브로드캐스트한다(Feature C).
+      publishKagentDiagnostics(res, new Date().toISOString());
     } catch (e) {
       setReport(null);
       setError(String(e));
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 설치 결과는 백엔드가 반환한 helm 출력을 인용한다 — "설치 완료"를 단정하지 않는다(D22).
+  // 다이얼로그는 NOTES: 이전(STATUS/REVISION/NAMESPACE 포함) 요약까지만 보여준다 — 백엔드
+  // 반환 문자열 자체는 자르지 않고, 잘랐을 때만 안내 문구를 덧붙인다(인용 원칙은 유지).
+  const summarizeInstallOutput = (raw: string): string => {
+    const notesIdx = raw.indexOf('NOTES:');
+    if (notesIdx === -1) return raw;
+    return `${raw.slice(0, notesIdx).trimEnd()}\n\n${t('kagent.install.truncated')}`;
+  };
+
+  const handleInstallKagent = async () => {
+    setInstallBusy(true);
+    try {
+      const res = await invoke<string>('install_kagent');
+      const shown = res ? summarizeInstallOutput(res) : t('kagent.install.fallbackAck');
+      await message(shown, { title: 'KubeMetal', kind: 'info' });
+    } catch (e) {
+      await message(t('kagent.install.failed', { error: String(e) }), { title: 'KubeMetal', kind: 'error' });
+    } finally {
+      setInstallBusy(false);
+      fetchDiagnostics(selectedContext);
     }
   };
 
@@ -216,6 +245,27 @@ export const KagentOpsView: React.FC = () => {
 
           {!error && !report && !loading && (
             <p className="text-caption text-inkFaint">{t('kagent.noReport')}</p>
+          )}
+
+          {report && !report.kagent_installed && (
+            <div className="p-4 rounded-xl bg-warning/10 border border-warning/20 space-y-3">
+              <div className="flex items-start gap-2">
+                <DownloadCloud className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+                <div className="min-w-0 space-y-1">
+                  <p className="text-caption font-bold text-ink">{t('kagent.install.notInstalledTitle')}</p>
+                  <p className="text-caption text-inkMuted">{t('kagent.install.notInstalledDesc')}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleInstallKagent}
+                disabled={installBusy}
+                className="px-3 py-1.5 rounded-lg bg-primaryStrong hover:brightness-110 text-inverse text-caption font-bold flex items-center gap-1.5 transition-all shadow-xs disabled:opacity-60"
+              >
+                <DownloadCloud className={`w-3.5 h-3.5 ${installBusy ? 'animate-pulse' : ''}`} />
+                <span>{installBusy ? t('kagent.install.installing') : t('kagent.install.button')}</span>
+              </button>
+            </div>
           )}
 
           {report && (

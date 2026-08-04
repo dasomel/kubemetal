@@ -145,10 +145,10 @@ provision: ## MLOps 스택 적용 (mlflow/seaweedfs/bridge/prefect/secret)
 	@$(KUBECTL_CTX) create namespace $(NAMESPACE) --dry-run=client -o yaml | $(KUBECTL_CTX) apply -f -
 	@./scripts/k8s/render.sh $(RENDER_FLAGS) | $(KUBECTL_CTX) apply -f -
 
-kagent-up: ## kagent 0.9.12 경량화 설치 (kagent-values.yaml 적용)
+kagent-up: ## kagent 경량화 설치 (버전 단일 출처 scripts/helm/kagent-version.txt, D33)
 	$(KUBECTL_CTX) create namespace kagent --dry-run=client -o yaml | $(KUBECTL_CTX) apply -f -
 	helm upgrade --install kagent oci://ghcr.io/kagent-dev/kagent/helm/kagent \
-	  --version 0.9.12 -n kagent -f scripts/helm/kagent-values.yaml --kube-context $(CONTEXT) --reuse-values
+	  --version $(shell cat scripts/helm/kagent-version.txt) -n kagent -f scripts/helm/kagent-values.yaml --kube-context $(CONTEXT) --reuse-values
 
 provision-all: provision kagent-up ## MLOps 스택 + kagent 종합 환경 한 번에 프로비저닝
 

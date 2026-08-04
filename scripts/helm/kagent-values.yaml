@@ -3,7 +3,8 @@
 # 비활성화한다(istio/cilium/argo/promql/observability/kgateway/grafana 부재).
 # 유지: k8s-agent(핵심), helm-agent(유용), 코어(controller/ui/tools/kmcp/postgres).
 # 적용: helm upgrade kagent oci://ghcr.io/kagent-dev/kagent/helm/kagent \
-#        --version 0.9.12 -n kagent -f scripts/k8s/kagent-values.yaml --reuse-values
+#        --version $(cat scripts/helm/kagent-version.txt) -n kagent -f scripts/helm/kagent-values.yaml --reuse-values
+# 버전 단일 출처는 scripts/helm/kagent-version.txt다(D33) — 여기 리터럴을 박지 않는다.
 
 kgateway-agent:
   enabled: false

@@ -4,7 +4,9 @@ import { message } from '@tauri-apps/plugin-dialog';
 import type { ClusterStatus } from '../types/ipc';
 import { useTranslation } from '../i18n/i18nContext';
 
-const PORT_FORWARD_TOTAL = 3;
+// src-tauri/src/commands/port_forward.rs 의 JOBS 배열 길이와 일치해야 한다 —
+// 어긋나면 부분 실패 카운트(active/total)가 실제 포워드 수와 다르게 보인다.
+const PORT_FORWARD_TOTAL = 5;
 
 export interface PortForwardStatus {
   active: number;
