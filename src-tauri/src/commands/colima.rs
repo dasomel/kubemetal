@@ -208,9 +208,12 @@ pub struct AirgapStatusReport {
 
 /// 매니페스트에 선언되지 않는 자산 — Helm 차트가 배포하는 이미지, 바이너리, 차트 자체.
 /// 형식: (category, 표시 이름, 버전, 번들 내 상대경로)
-const STATIC_AIRGAP_TARGETS: [(&str, &str, &str, &str); 10] = [
+const STATIC_AIRGAP_TARGETS: [(&str, &str, &str, &str); 11] = [
     ("Binary", "K3s Kubernetes Engine", "v1.28.2 (arm64)", "binaries/k3s"),
     ("Binary", "Kubescape Security CLI", "v3.0.0", "binaries/kubescape"),
+    // CRD 차트는 본 차트의 선행 조건이다(D33 개정 2) — 이것 없이는 폐쇄망 최초 설치가
+    // helm 렌더 단계에서 죽는다. 번들에 빠져 있으면 상태 화면이 "완비"라고 말하게 된다.
+    ("Helm Chart", "kagent CRD Helm Chart", "0.9.12", "charts/kagent-crds-0.9.12.tgz"),
     ("Helm Chart", "kagent Helm Chart", "0.9.12", "charts/kagent-0.9.12.tgz"),
     ("Container Image", "kagent Controller Image", "0.9.12", "images/cr.kagent.dev_kagent-dev_kagent_controller_0.9.12.tar.gz"),
     ("Container Image", "kagent Declarative App Image", "0.9.12", "images/cr.kagent.dev_kagent-dev_kagent_app_0.9.12.tar.gz"),
@@ -219,7 +222,7 @@ const STATIC_AIRGAP_TARGETS: [(&str, &str, &str, &str); 10] = [
     ("Container Image", "kmcp Controller Image", "0.3.0", "images/ghcr.io_kagent-dev_kmcp_controller_0.3.0.tar.gz"),
     // kagent이 요구하는 Postgres. 다운로더는 받아왔지만 이 목록에 없어 상태 화면이 존재를
     // 검사하지 않던 자산이다 — static_airgap_targets_match_images_helm_txt가 잡아냈다.
-    ("Container Image", "kagent Postgres Database", "16-alpine", "images/postgres_16-alpine.tar.gz"),
+    ("Container Image", "kagent Postgres Database", "18.3-alpine", "images/postgres_18.3-alpine.tar.gz"),
     ("Container Image", "Trivy Vulnerability Scanner", "latest", "images/aquasec_trivy_latest.tar.gz"),
 ];
 

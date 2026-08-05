@@ -11,7 +11,10 @@ cr.kagent.dev/kagent-dev/kagent/app:0.9.12
 cr.kagent.dev/kagent-dev/kagent/ui:0.9.12
 ghcr.io/kagent-dev/kagent/tools:0.2.1
 ghcr.io/kagent-dev/kmcp/controller:0.3.0
-postgres:16-alpine
+# 태그는 차트가 정한다 — 0.9.12의 values `database.postgres.bundled.image.tag`가 18.3-alpine이다
+# (2026-08-05 실측: 번들 차트 values + colima/narwhal 러닝 파드 모두 docker.io/library/postgres:18.3-alpine).
+# 예전 16-alpine은 어느 클러스터도 쓰지 않는 이미지를 받아오고 있었다.
+postgres:18.3-alpine
 
 # 보안 스캐닝 도구(docs/11) — 매니페스트 배포는 아니지만 폐쇄망에서 필요하다
 aquasec/trivy:latest

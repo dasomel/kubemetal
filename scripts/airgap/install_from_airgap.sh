@@ -70,8 +70,18 @@ else
 fi
 
 echo "[2/3] 오프라인 kagent Helm 차트 프로비저닝..."
+# CRD 차트가 먼저다(D33 개정 2) — 본 차트 템플릿의 Agent/ModelConfig/RemoteMCPServer는
+# CRD 없이 렌더되지 않는다. 순서를 바꾸면 최초 설치만 실패하고 재설치는 성공해 원인이 숨는다.
+CRD_CHART="${AIRGAP_DIR}/charts/kagent-crds-0.9.12.tgz"
 CHART="${AIRGAP_DIR}/charts/kagent-0.9.12.tgz"
-if [ ! -s "$CHART" ]; then
+if [ ! -s "$CRD_CHART" ]; then
+  echo "  !! CRD 차트 없음: ${CRD_CHART}" >&2
+  FAILED+=("crd-chart-missing")
+elif ! helm upgrade --install kagent-crds "$CRD_CHART" \
+       --namespace kagent --create-namespace \
+       --kube-context "$KUBE_CONTEXT" --reuse-values; then
+  FAILED+=("helm-install-crds")
+elif [ ! -s "$CHART" ]; then
   echo "  !! 차트 없음: ${CHART}" >&2
   FAILED+=("chart-missing")
 elif ! helm upgrade --install kagent "$CHART" \

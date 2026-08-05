@@ -108,6 +108,15 @@ fetch_binary "kubescape" "${KS_BASE}/kubescape-arm64-macos-latest" \
   bare "${KS_BASE}/kubescape-arm64-macos-latest.sha256"
 
 echo "[2/4] Helm 차트 오프라인 번들링..."
+# CRD 차트가 본 차트의 선행 조건이다(D33 개정 2) — 이것 없이 본 차트만 받아두면 폐쇄망
+# 최초 설치가 `no matches for kind "Agent"`로 죽는다. colima는 수동 설치분 CRD가 남아
+# 있어 이 누락이 드러나지 않았다(narwhal 실측 2026-08-05).
+if is_valid "${AIRGAP_DIR}/charts/kagent-crds-0.9.12.tgz"; then
+  echo "  -> 이미 보유: kagent-crds-0.9.12.tgz"
+elif ! helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds \
+       --version 0.9.12 --destination "${AIRGAP_DIR}/charts"; then
+  FAILED+=("chart:kagent-crds-0.9.12")
+fi
 if is_valid "${AIRGAP_DIR}/charts/kagent-0.9.12.tgz"; then
   echo "  -> 이미 보유: kagent-0.9.12.tgz"
 elif ! helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent \
