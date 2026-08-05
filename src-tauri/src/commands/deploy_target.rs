@@ -49,7 +49,7 @@ pub async fn save_deploy_target(
     Ok(target)
 }
 
-async fn kubectl_json(context: &str, args: &[&str]) -> Result<serde_json::Value, String> {
+pub(crate) async fn kubectl_json(context: &str, args: &[&str]) -> Result<serde_json::Value, String> {
     let output = external_command("kubectl")?
         .args(["--context", context, "--request-timeout=30s"])
         .args(args)

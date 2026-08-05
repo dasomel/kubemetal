@@ -145,10 +145,15 @@ provision: ## MLOps 스택 적용 (mlflow/seaweedfs/bridge/prefect/secret)
 	@$(KUBECTL_CTX) create namespace $(NAMESPACE) --dry-run=client -o yaml | $(KUBECTL_CTX) apply -f -
 	@./scripts/k8s/render.sh $(RENDER_FLAGS) | $(KUBECTL_CTX) apply -f -
 
-kagent-up: ## kagent 경량화 설치 (버전 단일 출처 scripts/helm/kagent-version.txt, D33)
+KAGENT_VERSION := $(shell cat scripts/helm/kagent-version.txt)
+
+kagent-up: ## kagent 경량화 설치 (CRD 차트 선행, 버전 단일 출처 scripts/helm/kagent-version.txt, D33)
 	$(KUBECTL_CTX) create namespace kagent --dry-run=client -o yaml | $(KUBECTL_CTX) apply -f -
+	# CRD가 먼저다 — 본 차트 템플릿의 Agent/ModelConfig/RemoteMCPServer는 CRD 없이 렌더되지 않는다.
+	helm upgrade --install kagent-crds oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds \
+	  --version $(KAGENT_VERSION) -n kagent --kube-context $(CONTEXT) --reuse-values
 	helm upgrade --install kagent oci://ghcr.io/kagent-dev/kagent/helm/kagent \
-	  --version $(shell cat scripts/helm/kagent-version.txt) -n kagent -f scripts/helm/kagent-values.yaml --kube-context $(CONTEXT) --reuse-values
+	  --version $(KAGENT_VERSION) -n kagent -f scripts/helm/kagent-values.yaml --kube-context $(CONTEXT) --reuse-values
 
 provision-all: provision kagent-up ## MLOps 스택 + kagent 종합 환경 한 번에 프로비저닝
 

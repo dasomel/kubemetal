@@ -4,7 +4,7 @@
 use serde::Serialize;
 use tauri::{Manager, State};
 
-use crate::commands::deploy_target::get_deploy_target;
+use crate::commands::deploy_target::{get_deploy_target, kubectl_json};
 use crate::commands::mlx::MlxState;
 use crate::commands::provision::ensure_namespace;
 use crate::services::process::{external_command, resolve_bundled_resource};
@@ -49,21 +49,7 @@ fn pod_is_ready(pod: &serde_json::Value) -> bool {
 }
 
 async fn get_pods_json(context: &str, namespace: &str) -> Result<serde_json::Value, String> {
-    let out = external_command("kubectl")?
-        .args(["--context", context, "get", "pods", "-n", namespace, "-o", "json"])
-        .output()
-        .await
-        .map_err(|e| format!("kubectl get pods -n {namespace} execution failed: {e}"))?;
-
-    if !out.status.success() {
-        return Err(format!(
-            "kubectl get pods -n {namespace} failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
-    }
-
-    serde_json::from_slice(&out.stdout)
-        .map_err(|e| format!("kubectl get pods -n {namespace} response parse failed: {e}"))
+    kubectl_json(context, &["get", "pods", "-n", namespace, "-o", "json"]).await
 }
 
 /// 진단 결과는 전부 kubectl 실측에서만 파생한다. 조회에 실패하면 에러로 올린다 —
@@ -74,8 +60,14 @@ pub async fn get_kagent_diagnostics(
 ) -> Result<KagentDiagnosticReport, String> {
     let target_ctx = context.unwrap_or_else(|| "colima".into());
 
+    // 두 네임스페이스 조회는 서로 무관하므로 동시에 실행한다.
+    let (kagent_pods, default_pods) = tokio::join!(
+        get_pods_json(&target_ctx, "kagent"),
+        get_pods_json(&target_ctx, "default"),
+    );
+
     // kagent 네임스페이스 — 파드가 하나도 없으면 미설치, 있으면 전부 Ready일 때만 ready.
-    let kagent_pods = get_pods_json(&target_ctx, "kagent").await?;
+    let kagent_pods = kagent_pods?;
     let kagent_items = kagent_pods["items"].as_array().cloned().unwrap_or_default();
 
     let mut active_agents: Vec<String> = Vec::new();
@@ -99,7 +91,7 @@ pub async fn get_kagent_diagnostics(
     let kagent_ready = kagent_installed && kagent_items.iter().all(pod_is_ready);
 
     // default 네임스페이스 파드 장애 탐지 — 원인 문자열은 클러스터가 준 reason/message만 쓴다.
-    let default_pods = get_pods_json(&target_ctx, "default").await?;
+    let default_pods = default_pods?;
     let default_items = default_pods["items"].as_array().cloned().unwrap_or_default();
 
     let mut pod_issues_count = 0usize;
@@ -258,14 +250,15 @@ spec:
         std::fs::write(&file_path, manifest)
             .map_err(|e| format!("Failed to create manifest temp file: {e}"))?;
 
-        let output = external_command("kubectl")?
+        let result = external_command("kubectl")?
             .args(["--context", &target_ctx, "apply", "-f"])
             .arg(&file_path)
             .output()
             .await
-            .map_err(|e| format!("kubectl apply execution failed: {e}"))?;
+            .map_err(|e| format!("kubectl apply execution failed: {e}"));
 
         let _ = std::fs::remove_file(&file_path);
+        let output = result?;
 
         if !output.status.success() {
             return Err(format!(
@@ -303,18 +296,70 @@ spec:
     }
 }
 
-/// 저장된 배포 대상(D26)의 컨텍스트로 kagent를 Helm 설치한다. Agent CRD와 달리 클러스터
-/// 쪽에 Mac 의존을 만들지 않으므로(에이전트 정의만 생김, 모델 연계는 별도 IPC — D32) L1/L2
-/// 게이트를 걸지 않는다(D30 호환).
+/// kagent OCI 차트 저장소. 릴리스명과 차트명이 같아(`kagent`, `kagent-crds`) 인자 하나로 쓴다.
+const KAGENT_CHART_BASE: &str = "oci://ghcr.io/kagent-dev/kagent/helm";
+
+/// kagent 차트(`kagent-crds`/`kagent`) helm upgrade 공통 경로 — 버전·네임스페이스·컨텍스트
+/// 조립이 같으므로 한 곳에서만 만든다. `install`은 신규 설치(`--install`)와 기존 릴리스
+/// 갱신(모델 연계)을 가른다.
+async fn helm_upgrade_kagent(
+    context: &str,
+    chart: &str,
+    values_path: Option<&std::path::Path>,
+    install: bool,
+) -> Result<String, String> {
+    let chart_ref = format!("{KAGENT_CHART_BASE}/{chart}");
+
+    let mut cmd = external_command("helm")?;
+    cmd.arg("upgrade");
+    if install {
+        cmd.arg("--install");
+    }
+    cmd.args([chart, &chart_ref])
+        .args(["--version", kagent_version(), "-n", "kagent"]);
+    if let Some(path) = values_path {
+        cmd.arg("-f").arg(path);
+    }
+    cmd.args(["--kube-context", context, "--reuse-values"]);
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("helm upgrade {chart} execution failed: {e}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "helm upgrade {chart} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// 지정한 컨텍스트에 kagent를 Helm 설치한다. Agent CRD와 달리 클러스터 쪽에 Mac 의존을
+/// 만들지 않으므로(에이전트 정의만 생김, 모델 연계는 별도 IPC — D32) L1/L2 게이트를 걸지
+/// 않는다(D30 호환).
+///
+/// `context`는 `get_kagent_diagnostics`/`toggle_kagent_agent`와 같은 축 — KagentOpsView의
+/// kubeconfig 선택기 값이다(D33 개정). 같은 패널의 진단은 드롭다운을, 설치만 저장된
+/// DeployTarget을 보던 탓에 "narwhal을 보며 설치했는데 colima에 설치되는" 불일치가 있었다.
+/// 인자가 없으면 저장된 배포 대상(D26)으로 폴백해 기존 호출자 동작을 유지한다.
 ///
 /// 네임스페이스는 `helm --create-namespace`가 아니라 `kubectl create ns --dry-run=client
 /// -o yaml | apply`로 먼저 만든다 — 리포의 `Makefile kagent-up`이 실제로 쓰는 방식이 이것이고,
 /// `--create-namespace` 플래그의 동작을 실기기로 확인한 근거가 없어 그 위에 새로 얹지 않는다.
 #[tauri::command]
-pub async fn install_kagent(app: tauri::AppHandle) -> Result<String, String> {
-    let target = get_deploy_target(app.clone()).await?;
+pub async fn install_kagent(
+    app: tauri::AppHandle,
+    context: Option<String>,
+) -> Result<String, String> {
+    let target_ctx = match context {
+        Some(ctx) => ctx,
+        None => get_deploy_target(app.clone()).await?.context,
+    };
 
-    ensure_namespace(&target.context, "kagent").await?;
+    ensure_namespace(&target_ctx, "kagent").await?;
 
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
     let values_path = resolve_bundled_resource(&resource_dir, "scripts/helm/kagent-values.yaml");
@@ -325,37 +370,18 @@ pub async fn install_kagent(app: tauri::AppHandle) -> Result<String, String> {
         ));
     }
 
-    let output = external_command("helm")?
-        .args([
-            "upgrade",
-            "--install",
-            "kagent",
-            "oci://ghcr.io/kagent-dev/kagent/helm/kagent",
-            "--version",
-            kagent_version(),
-            "-n",
-            "kagent",
-            "-f",
-        ])
-        .arg(&values_path)
-        .args(["--kube-context", &target.context, "--reuse-values"])
-        .output()
-        .await
-        .map_err(|e| format!("helm upgrade --install kagent execution failed: {e}"))?;
+    // CRD 차트가 먼저다(D33 개정 2). 본 차트의 템플릿에는 Agent/ModelConfig/RemoteMCPServer
+    // 같은 kagent.dev 리소스가 들어 있어, CRD가 없는 클러스터에서는 helm이 "no matches for
+    // kind ... ensure CRDs are installed first"로 렌더 단계에서 실패한다. colima는 2026-07-23
+    // 수동 설치분 CRD가 남아 있어 이 누락이 가려져 있었다(narwhal 실측으로 드러남).
+    helm_upgrade_kagent(&target_ctx, "kagent-crds", None, true).await?;
 
-    if !output.status.success() {
-        return Err(format!(
-            "helm upgrade --install kagent failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
+    let stdout = helm_upgrade_kagent(&target_ctx, "kagent", Some(&values_path), true).await?;
 
     // helm이 실제로 출력한 내용만 인용한다 — 파드가 떴는지는 여기서 알 수 없으므로
     // "설치 완료"를 단정하지 않는다(D22). 실제 상태는 get_kagent_diagnostics 재조회로 확인.
     Ok(format!(
-        "helm upgrade --install kagent [{}] returned: {}",
-        target.context,
-        String::from_utf8_lossy(&output.stdout).trim()
+        "helm upgrade --install kagent [{target_ctx}] returned: {stdout}"
     ))
 }
 
@@ -431,29 +457,16 @@ async fn get_model_config_json(
     context: &str,
     namespace: &str,
 ) -> Result<Option<serde_json::Value>, String> {
-    let out = external_command("kubectl")?
-        .args([
-            "--context", context, "-n", namespace, "get", "modelconfig", MODEL_CONFIG_NAME,
-            "-o", "json",
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("kubectl get modelconfig execution failed: {e}"))?;
-
-    if out.status.success() {
-        return serde_json::from_slice(&out.stdout)
-            .map(Some)
-            .map_err(|e| format!("kubectl get modelconfig response parse failed: {e}"));
+    match kubectl_json(
+        context,
+        &["-n", namespace, "get", "modelconfig", MODEL_CONFIG_NAME, "-o", "json"],
+    )
+    .await
+    {
+        Ok(v) => Ok(Some(v)),
+        Err(e) if e.contains("NotFound") => Ok(None),
+        Err(e) => Err(e),
     }
-
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    if stderr.contains("NotFound") {
-        return Ok(None);
-    }
-    Err(format!(
-        "kubectl get modelconfig -n {namespace} failed: {}",
-        stderr.trim()
-    ))
 }
 
 /// `mac-gpu-service`의 실제 배포 형태를 읽어 서빙 포트가 프록시되는지 확인한 결과.
@@ -470,20 +483,8 @@ enum BridgePortCheck {
 /// best-effort 조회 — kubectl 실패/파싱 실패는 `Unknown`으로 흡수해 전체 상태 조회
 /// 자체는 막지 않지만, 그 실패를 `stale_code=None`(정상)으로 위장하지도 않는다.
 async fn check_bridge_port(context: &str, namespace: &str, serving_port: u16) -> BridgePortCheck {
-    let Ok(mut cmd) = external_command("kubectl") else {
-        return BridgePortCheck::Unknown;
-    };
-    let Ok(out) = cmd
-        .args(["--context", context, "-n", namespace, "get", "svc", "mac-gpu-service", "-o", "json"])
-        .output()
-        .await
+    let Ok(svc) = kubectl_json(context, &["-n", namespace, "get", "svc", "mac-gpu-service", "-o", "json"]).await
     else {
-        return BridgePortCheck::Unknown;
-    };
-    if !out.status.success() {
-        return BridgePortCheck::Unknown;
-    }
-    let Ok(svc) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {
         return BridgePortCheck::Unknown;
     };
     if svc["spec"]["type"].as_str() == Some("ExternalName") {
@@ -596,41 +597,15 @@ pub async fn configure_kagent_model(
     std::fs::write(&values_path, &values)
         .map_err(|e| format!("Failed to write kagent model values temp file: {e}"))?;
 
-    let result = external_command("helm")?
-        .args([
-            "upgrade",
-            "kagent",
-            "oci://ghcr.io/kagent-dev/kagent/helm/kagent",
-            "--version",
-            kagent_version(),
-            "-n",
-            "kagent",
-            "--kube-context",
-            &target.context,
-            "--reuse-values",
-            "-f",
-        ])
-        .arg(&values_path)
-        .output()
-        .await
-        .map_err(|e| format!("helm upgrade kagent (model config) execution failed: {e}"));
-
+    let result = helm_upgrade_kagent(&target.context, "kagent", Some(&values_path), false).await;
     let _ = std::fs::remove_file(&values_path);
-    let output = result?;
-
-    if !output.status.success() {
-        return Err(format!(
-            "helm upgrade kagent (model config) failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
+    let stdout = result?;
 
     // helm이 출력한 내용만 인용한다 — 도달성은 여기서 검증되지 않는다(D22). "연결됨"을
     // 단정하지 않고, 실제 반영 여부는 get_kagent_model_status 재조회로 확인한다.
     Ok(format!(
         "helm upgrade kagent (model config) [{}] returned: {}. Reachability not verified — re-check status.",
-        target.context,
-        String::from_utf8_lossy(&output.stdout).trim()
+        target.context, stdout
     ))
 }
 
