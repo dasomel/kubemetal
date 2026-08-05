@@ -476,6 +476,29 @@ export const translations: Record<Language, Record<string, string>> = {
     'kagent.install.failed': 'kagent 설치 실패: {error}',
     'kagent.install.truncated': '(전체 출력 생략 — 상태는 아래 진단으로 확인)',
 
+    // kagent 모델 연계 (Feature A, D32)
+    'kagent.modelStatus.title': 'kagent 모델 연계',
+    'kagent.modelStatus.errorTitle': '연계 상태 조회 실패 — 아래 원인을 해결한 뒤 다시 실행하세요',
+    'kagent.modelStatus.targetLabel': '대상: {context} (ns: {namespace})',
+    'kagent.modelStatus.gateBlockedTitle': '연계 불가 — 외부 클러스터는 기본 에이전트 온리(L1)입니다',
+    'kagent.modelStatus.noServing': 'MLX 서빙이 실행 중이 아닙니다 — MLX Studio에서 먼저 서빙을 시작하세요.',
+    'kagent.modelStatus.matched': '현재 서빙 중인 모델과 일치합니다.',
+    'kagent.modelStatus.baseUrlLabel': 'Base URL:',
+    'kagent.modelStatus.modelLabel': 'Model:',
+    'kagent.modelStatus.connectButton': '현재 서빙 모델로 연결',
+    'kagent.modelStatus.connecting': '연결 요청 중…',
+    'kagent.modelStatus.connectFailed': '연결 실패: {error}',
+    'kagent.modelStatus.stale.not_configured':
+      'kagent 모델이 아직 로컬 서빙에 연결되지 않았습니다(또는 차트 기본값입니다).',
+    'kagent.modelStatus.stale.port_mismatch':
+      '등록된 포트가 현재 서빙 포트와 다릅니다 — 다시 연결하세요.',
+    'kagent.modelStatus.stale.model_mismatch':
+      '등록된 모델 id가 현재 서빙 모델과 다릅니다 — 다시 연결하세요.',
+    'kagent.modelStatus.stale.bridge_port_not_proxied':
+      '외부 클러스터 IP 브리지가 이 서빙 포트를 프록시하지 않습니다 — 재연결로 해결되지 않습니다. 배포 대상 카드에서 브리지 포트 설정을 확인하세요.',
+    'kagent.modelStatus.stale.bridge_state_unknown':
+      '브리지 포워드 상태를 확인하지 못했습니다 — 연결이 유효하지 않을 수 있습니다.',
+
     // kagent 사이드바 배지 (Feature C)
     'kagent.badge.issuesTitle': 'kagent 이상 파드 감지 (조회 {time})',
     'kagent.badge.notReadyTitle': 'kagent 미준비 (조회 {time})',
@@ -1233,6 +1256,29 @@ export const translations: Record<Language, Record<string, string>> = {
     'kagent.install.fallbackAck': 'Install request sent — re-run diagnostics to confirm.',
     'kagent.install.failed': 'kagent install failed: {error}',
     'kagent.install.truncated': '(Full output omitted — check status via diagnostics below)',
+
+    // kagent model linkage (Feature A, D32)
+    'kagent.modelStatus.title': 'kagent model linkage',
+    'kagent.modelStatus.errorTitle': 'Failed to fetch linkage status — resolve the cause below and retry',
+    'kagent.modelStatus.targetLabel': 'Target: {context} (ns: {namespace})',
+    'kagent.modelStatus.gateBlockedTitle': 'Linkage unavailable — external clusters default to agent-only (L1)',
+    'kagent.modelStatus.noServing': 'MLX serving is not running — start serving in MLX Studio first.',
+    'kagent.modelStatus.matched': 'Matches the currently served model.',
+    'kagent.modelStatus.baseUrlLabel': 'Base URL:',
+    'kagent.modelStatus.modelLabel': 'Model:',
+    'kagent.modelStatus.connectButton': 'Connect to current serving model',
+    'kagent.modelStatus.connecting': 'Requesting connection…',
+    'kagent.modelStatus.connectFailed': 'Connection failed: {error}',
+    'kagent.modelStatus.stale.not_configured':
+      'kagent model is not yet linked to local serving (or is still the chart default).',
+    'kagent.modelStatus.stale.port_mismatch':
+      'The registered port differs from the current serving port — reconnect.',
+    'kagent.modelStatus.stale.model_mismatch':
+      'The registered model id differs from the current serving model — reconnect.',
+    'kagent.modelStatus.stale.bridge_port_not_proxied':
+      "The external cluster's IP bridge does not proxy this serving port — reconnecting will not fix this. Check the bridge port setting on the deploy target card.",
+    'kagent.modelStatus.stale.bridge_state_unknown':
+      'Could not confirm the bridge forward state — the connection may not actually be valid.',
 
     // kagent sidebar badge (Feature C)
     'kagent.badge.issuesTitle': 'kagent has pod issues (checked {time})',

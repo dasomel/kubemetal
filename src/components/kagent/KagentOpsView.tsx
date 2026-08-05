@@ -20,6 +20,7 @@ import { publishKagentDiagnostics } from '../../state/kagentDiagnosticsStore';
 import { KagentAgentToggleList } from './KagentAgentToggleList';
 import { KagentE2ELoopCard } from './KagentE2ELoopCard';
 import { KagentModelArchitectureCards } from './KagentModelArchitectureCards';
+import { KagentModelStatusCard } from './KagentModelStatusCard';
 
 type SubTab = 'diagnostics' | 'models' | 'agents' | 'e2e';
 
@@ -290,7 +291,12 @@ export const KagentOpsView: React.FC = () => {
         </div>
       )}
 
-      {subTab === 'models' && <KagentModelArchitectureCards />}
+      {subTab === 'models' && (
+        <div className="space-y-4">
+          <KagentModelStatusCard />
+          <KagentModelArchitectureCards />
+        </div>
+      )}
 
       {subTab === 'agents' && (
         <KagentAgentToggleList

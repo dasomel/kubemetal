@@ -19,7 +19,10 @@ use commands::guardrails::{
     get_guardrail_status, pause_mlx_training, resume_mlx_training, set_guardrail_config,
     GuardrailState,
 };
-use commands::kagent::{get_kagent_diagnostics, install_kagent, toggle_kagent_agent};
+use commands::kagent::{
+    configure_kagent_model, get_kagent_diagnostics, get_kagent_model_status, install_kagent,
+    toggle_kagent_agent,
+};
 use commands::metrics::{get_hardware_spec, get_system_metrics};
 use commands::mlx::{
     check_mlx_env, get_mlx_status, kill_mlx_process, run_mlx_finetune, setup_mlx_env,
@@ -68,6 +71,8 @@ pub fn run() {
             get_kagent_diagnostics,
             toggle_kagent_agent,
             install_kagent,
+            get_kagent_model_status,
+            configure_kagent_model,
             get_airgap_status,
             trigger_airgap_download,
             trigger_airgap_install,

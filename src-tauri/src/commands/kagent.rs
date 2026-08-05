@@ -2,9 +2,10 @@
 //! 수명주기(start/stop/status)와는 무관하고, kagent 배포 대상은 활성 `DeployTarget`(D26)이다.
 
 use serde::Serialize;
-use tauri::Manager;
+use tauri::{Manager, State};
 
 use crate::commands::deploy_target::get_deploy_target;
+use crate::commands::mlx::MlxState;
 use crate::commands::provision::ensure_namespace;
 use crate::services::process::{external_command, resolve_bundled_resource};
 
@@ -358,6 +359,281 @@ pub async fn install_kagent(app: tauri::AppHandle) -> Result<String, String> {
     ))
 }
 
+/// D32(c): Secret/ModelConfig 둘 다 chart가 helm values의 `providers.openAI`에서 만들어낸다
+/// (Secret 이름 `kagent-openai`는 우리가 짓지 않는다) — 여기서는 그 결과를 읽기만 한다.
+const MODEL_CONFIG_NAME: &str = "default-model-config";
+
+#[derive(Debug, Serialize)]
+pub struct KagentServingSummary {
+    pub port: u16,
+    /// serving.model_path 전체 경로 — basename이 아니다. 서버가 `/v1/models`에 보고하는
+    /// 정확한 id와 맞춰야 한다(mistakes-log 2026-07-24: `model: 'mlx'`로 HF repo id로
+    /// 오인돼 phone-home한 사고).
+    pub model_id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct KagentModelConfigSummary {
+    pub base_url: Option<String>,
+    pub model: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct KagentModelStatus {
+    pub target_context: String,
+    pub target_namespace: String,
+    pub gate_ok: bool,
+    /// 영문 기술 사유(D31 계약의 우발적 오류 상세 계열) — `full_stack_gate()`가 이미 영문.
+    pub gate_reason: Option<String>,
+    pub serving: Option<KagentServingSummary>,
+    pub model_config: Option<KagentModelConfigSummary>,
+    /// 프런트가 `kagent.modelStatus.stale.${code}`로 매핑하는 안정 코드(D31). 모두 일치하면
+    /// None. 알려진 코드: `not_configured`/`port_mismatch`/`model_mismatch`/
+    /// `bridge_port_not_proxied`/`bridge_state_unknown`(브리지 조회 자체가 실패 — 필드는
+    /// 일치하지만 실제 유효성은 확인 못함. `not_proxied`와 달리 중립 톤으로 안내).
+    pub stale_code: Option<String>,
+}
+
+fn expected_base_url(namespace: &str, port: u16) -> String {
+    format!("http://mac-gpu-service.{namespace}.svc.cluster.local:{port}/v1")
+}
+
+/// ModelConfig의 baseUrl/model이 현재 서빙과 어긋난 지점을 구분한다 — 셋 다 안내 문구가
+/// 다르므로(D32 e) 한 뭉치의 "안 맞음"으로 뭉개지 않는다.
+fn classify_model_stale(
+    base_url: &str,
+    model: &str,
+    namespace: &str,
+    serving_port: u16,
+    serving_model: &str,
+) -> Option<&'static str> {
+    let prefix = format!("http://mac-gpu-service.{namespace}.svc.cluster.local:");
+    let Some(after_prefix) = base_url.strip_prefix(&prefix) else {
+        // chart 기본값(gpt-* 등 우리 브리지가 아닌 baseUrl)도 여기로 떨어진다.
+        return Some("not_configured");
+    };
+    let observed_port = after_prefix
+        .split('/')
+        .next()
+        .and_then(|p| p.parse::<u16>().ok());
+    if observed_port != Some(serving_port) {
+        return Some("port_mismatch");
+    }
+    if model != serving_model {
+        return Some("model_mismatch");
+    }
+    None
+}
+
+/// `kubectl get modelconfig` — NotFound는 "미구성" 정보이지 오류가 아니므로 None으로
+/// 흡수한다. 그 외 실패(권한/네트워크 등)는 그대로 올린다(D22).
+async fn get_model_config_json(
+    context: &str,
+    namespace: &str,
+) -> Result<Option<serde_json::Value>, String> {
+    let out = external_command("kubectl")?
+        .args([
+            "--context", context, "-n", namespace, "get", "modelconfig", MODEL_CONFIG_NAME,
+            "-o", "json",
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("kubectl get modelconfig execution failed: {e}"))?;
+
+    if out.status.success() {
+        return serde_json::from_slice(&out.stdout)
+            .map(Some)
+            .map_err(|e| format!("kubectl get modelconfig response parse failed: {e}"));
+    }
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if stderr.contains("NotFound") {
+        return Ok(None);
+    }
+    Err(format!(
+        "kubectl get modelconfig -n {namespace} failed: {}",
+        stderr.trim()
+    ))
+}
+
+/// `mac-gpu-service`의 실제 배포 형태를 읽어 서빙 포트가 프록시되는지 확인한 결과.
+/// `NotApplicable`(ExternalName — 포트 미선언이 설계상 정상)과 `Unknown`(조회 자체가
+/// 실패해 판정할 수 없음)을 구분한다 — 둘 다 "문제 없음"으로 뭉개면 조회 실패가
+/// "정상"으로 위장된다(D22, 검수 반영).
+enum BridgePortCheck {
+    NotApplicable,
+    Proxied,
+    NotProxied,
+    Unknown,
+}
+
+/// best-effort 조회 — kubectl 실패/파싱 실패는 `Unknown`으로 흡수해 전체 상태 조회
+/// 자체는 막지 않지만, 그 실패를 `stale_code=None`(정상)으로 위장하지도 않는다.
+async fn check_bridge_port(context: &str, namespace: &str, serving_port: u16) -> BridgePortCheck {
+    let Ok(mut cmd) = external_command("kubectl") else {
+        return BridgePortCheck::Unknown;
+    };
+    let Ok(out) = cmd
+        .args(["--context", context, "-n", namespace, "get", "svc", "mac-gpu-service", "-o", "json"])
+        .output()
+        .await
+    else {
+        return BridgePortCheck::Unknown;
+    };
+    if !out.status.success() {
+        return BridgePortCheck::Unknown;
+    }
+    let Ok(svc) = serde_json::from_slice::<serde_json::Value>(&out.stdout) else {
+        return BridgePortCheck::Unknown;
+    };
+    if svc["spec"]["type"].as_str() == Some("ExternalName") {
+        return BridgePortCheck::NotApplicable;
+    }
+    let Some(ports) = svc["spec"]["ports"].as_array() else {
+        return BridgePortCheck::Unknown;
+    };
+    if ports.iter().any(|p| p["port"].as_u64() == Some(serving_port as u64)) {
+        BridgePortCheck::Proxied
+    } else {
+        BridgePortCheck::NotProxied
+    }
+}
+
+/// 저장된 배포 대상(D26)의 kagent 모델 연계 상태를 실측한다. KagentOpsView의 로컬
+/// kubeconfig 선택기와는 무관하다(D32 a) — 대상은 항상 저장된 DeployTarget.
+#[tauri::command]
+pub async fn get_kagent_model_status(
+    app: tauri::AppHandle,
+    mlx_state: State<'_, MlxState>,
+) -> Result<KagentModelStatus, String> {
+    let target = get_deploy_target(app).await?;
+
+    let gate_result = target.full_stack_gate();
+    let gate_ok = gate_result.is_ok();
+    let gate_reason = gate_result.err();
+
+    let serving = mlx_state
+        .serving
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .map(|s| KagentServingSummary {
+            port: s.port,
+            model_id: s.model_path,
+        });
+
+    let model_config_json = get_model_config_json(&target.context, "kagent").await?;
+    let model_config = model_config_json.as_ref().map(|v| KagentModelConfigSummary {
+        base_url: v["spec"]["openAI"]["baseUrl"].as_str().map(str::to_string),
+        model: v["spec"]["model"].as_str().map(str::to_string),
+    });
+
+    let stale_code = match (&serving, &model_config) {
+        (Some(srv), Some(mc)) => {
+            let base_url = mc.base_url.clone().unwrap_or_default();
+            let model = mc.model.clone().unwrap_or_default();
+            match classify_model_stale(&base_url, &model, &target.namespace, srv.port, &srv.model_id) {
+                Some(code) => Some(code.to_string()),
+                None => match check_bridge_port(&target.context, &target.namespace, srv.port).await {
+                    BridgePortCheck::NotProxied => Some("bridge_port_not_proxied".to_string()),
+                    BridgePortCheck::Unknown => Some("bridge_state_unknown".to_string()),
+                    BridgePortCheck::Proxied | BridgePortCheck::NotApplicable => None,
+                },
+            }
+        }
+        // 서빙이 없으면 비교 기준이 없다 — 프런트는 serving=None을 별도 안내로 다룬다.
+        (None, _) => None,
+        (Some(_), None) => Some("not_configured".to_string()),
+    };
+
+    Ok(KagentModelStatus {
+        target_context: target.context,
+        target_namespace: target.namespace,
+        gate_ok,
+        gate_reason,
+        serving,
+        model_config,
+        stale_code,
+    })
+}
+
+/// YAML 이중따옴표 문자열 안에 안전하게 넣기 위한 최소 이스케이프. `model_id`는
+/// 로컬 파일시스템 절대경로라 특수문자가 드물지만, 값을 그대로 리터럴에 꽂지 않는다.
+fn yaml_dquote(raw: &str) -> String {
+    format!("\"{}\"", raw.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+/// 현재 서빙 중인 모델로 kagent LLM 백엔드를 연결한다. ModelConfig는 helm 소유이므로
+/// (D32 보정 1) `kubectl apply`가 아니라 `install_kagent`와 같은 helm upgrade 경로를 쓴다.
+/// `--set`으로 baseUrl/model을 넘기면 이스케이프 지뢰가 있어(URL의 `:`, 경로의 `/`) 임시
+/// values 파일(-f)로 넘긴다.
+#[tauri::command]
+pub async fn configure_kagent_model(
+    app: tauri::AppHandle,
+    mlx_state: State<'_, MlxState>,
+) -> Result<String, String> {
+    let target = get_deploy_target(app).await?;
+    target.full_stack_gate()?;
+
+    let serving = mlx_state
+        .serving
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or("MLX serving is not running — start serving first")?;
+
+    // D32(c): 모델 id는 serving.model_path 전체 경로 그대로 — basename 금지.
+    let model_id = serving.model_path;
+    let base_url = expected_base_url(&target.namespace, serving.port);
+
+    let values = format!(
+        "providers:\n  default: openAI\n  openAI:\n    apiKey: dummy-local-key-not-used\n    apiKeySecretKey: OPENAI_API_KEY\n    apiKeySecretRef: kagent-openai\n    config:\n      baseUrl: {}\n    model: {}\n    provider: OpenAI\n",
+        yaml_dquote(&base_url),
+        yaml_dquote(&model_id),
+    );
+
+    let values_path = std::env::temp_dir().join("kubemetal-kagent-model-values.yaml");
+    std::fs::write(&values_path, &values)
+        .map_err(|e| format!("Failed to write kagent model values temp file: {e}"))?;
+
+    let result = external_command("helm")?
+        .args([
+            "upgrade",
+            "kagent",
+            "oci://ghcr.io/kagent-dev/kagent/helm/kagent",
+            "--version",
+            kagent_version(),
+            "-n",
+            "kagent",
+            "--kube-context",
+            &target.context,
+            "--reuse-values",
+            "-f",
+        ])
+        .arg(&values_path)
+        .output()
+        .await
+        .map_err(|e| format!("helm upgrade kagent (model config) execution failed: {e}"));
+
+    let _ = std::fs::remove_file(&values_path);
+    let output = result?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "helm upgrade kagent (model config) failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    // helm이 출력한 내용만 인용한다 — 도달성은 여기서 검증되지 않는다(D22). "연결됨"을
+    // 단정하지 않고, 실제 반영 여부는 get_kagent_model_status 재조회로 확인한다.
+    Ok(format!(
+        "helm upgrade kagent (model config) [{}] returned: {}. Reachability not verified — re-check status.",
+        target.context,
+        String::from_utf8_lossy(&output.stdout).trim()
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -371,5 +647,61 @@ mod tests {
             version.trim(),
             "kagent_version() must strip surrounding whitespace/newline"
         );
+    }
+
+    #[test]
+    fn expected_base_url_matches_d10_bridge_pattern() {
+        assert_eq!(
+            expected_base_url("kagent", 8081),
+            "http://mac-gpu-service.kagent.svc.cluster.local:8081/v1"
+        );
+    }
+
+    #[test]
+    fn classify_model_stale_flags_non_bridge_baseurl_as_not_configured() {
+        // 차트 기본값(gpt-4 등) — 우리 브리지 패턴이 아니다.
+        let code = classify_model_stale("https://api.openai.com/v1", "gpt-4", "default", 8081, "/models/foo");
+        assert_eq!(code, Some("not_configured"));
+    }
+
+    #[test]
+    fn classify_model_stale_flags_port_mismatch() {
+        let code = classify_model_stale(
+            "http://mac-gpu-service.default.svc.cluster.local:8080/v1",
+            "/models/foo",
+            "default",
+            8081,
+            "/models/foo",
+        );
+        assert_eq!(code, Some("port_mismatch"));
+    }
+
+    #[test]
+    fn classify_model_stale_flags_model_mismatch() {
+        let code = classify_model_stale(
+            "http://mac-gpu-service.default.svc.cluster.local:8081/v1",
+            "/models/old",
+            "default",
+            8081,
+            "/models/new",
+        );
+        assert_eq!(code, Some("model_mismatch"));
+    }
+
+    #[test]
+    fn classify_model_stale_none_when_fully_matched() {
+        let code = classify_model_stale(
+            "http://mac-gpu-service.default.svc.cluster.local:8081/v1",
+            "/models/foo",
+            "default",
+            8081,
+            "/models/foo",
+        );
+        assert_eq!(code, None);
+    }
+
+    #[test]
+    fn yaml_dquote_escapes_backslash_and_quote() {
+        assert_eq!(yaml_dquote(r#"C:\path\"weird""#), r#""C:\\path\\\"weird\"""#);
     }
 }

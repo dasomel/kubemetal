@@ -42,6 +42,30 @@ export interface KagentDiagnosticReport {
   available_agents: string[];
 }
 
+export interface KagentServingSummary {
+  port: number;
+  /** serving.model_path 전체 경로 — basename이 아니다(D32 c). */
+  model_id: string;
+}
+
+export interface KagentModelConfigSummary {
+  base_url: string | null;
+  model: string | null;
+}
+
+/** 저장된 DeployTarget(D26) 기준 kagent 모델 연계 상태(D32). KagentOpsView의 로컬
+ * kubeconfig 선택기와는 무관한 별도 대상이다. */
+export interface KagentModelStatus {
+  target_context: string;
+  target_namespace: string;
+  gate_ok: boolean;
+  gate_reason: string | null;
+  serving: KagentServingSummary | null;
+  model_config: KagentModelConfigSummary | null;
+  /** `kagent.modelStatus.stale.${code}`로 매핑되는 안정 코드(D31). 완전 일치 시 null. */
+  stale_code: string | null;
+}
+
 export interface AirgapAssetItem {
   category: string;
   name: string;
