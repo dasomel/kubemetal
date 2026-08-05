@@ -1,0 +1,67 @@
+# kagent 쪽 등록 — 로컬(colima) 클러스터의 `kagent` 네임스페이스에 CR 2개만 넣는다.
+# 워크로드는 여기 만들지 않는다(helm 소유권 충돌 회피, remote-reader-tools.yaml 주석 참조).
+# 두 이름 모두 차트가 만들지 않는 이름이라 소유권이 겹치지 않으며, 기존 `toggle_kagent_agent`가
+# Agent CR을 kubectl apply하는 것과 같은 방식이다.
+---
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: remote-reader-tool-server
+  namespace: kagent
+  labels:
+    app.kubernetes.io/name: remote-reader-tool-server
+    app.kubernetes.io/part-of: kubemetal-remote-reader
+spec:
+  description: kagent tool server bound to an external cluster via a read-only kubeconfig.
+  # 차트의 `kagent-tool-server`와 같은 규약(실측: url/protocol/timeout, 도구는 status에 자동 discovery).
+  protocol: STREAMABLE_HTTP
+  url: http://remote-reader-tools.default.svc.cluster.local:8084/mcp
+  sseReadTimeout: 5m0s
+  terminateOnClose: true
+  timeout: 30s
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: remote-cluster-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/name: remote-cluster-agent
+    app.kubernetes.io/part-of: kubemetal-remote-reader
+spec:
+  type: Declarative
+  description: Diagnoses an external Kubernetes cluster through a read-only remote tool server.
+  declarative:
+    runtime: python
+    modelConfig: default-model-config
+    systemMessage: |
+      You are RemoteClusterAssist. Every Kubernetes tool you call is bound to an EXTERNAL
+      cluster, not the cluster you are running in — never assume the two are the same.
+      Your credentials are read-only: reads succeed, writes are rejected by the API server.
+      When a write is requested, explain that and stop instead of retrying.
+      Report only what the tools actually returned; never fill in plausible cluster state.
+    deployment:
+      resources:
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 50m
+          memory: 128Mi
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: remote-reader-tool-server
+          # 읽기 전용 도구만 노출한다. 원격 SA에도 쓰기 권한이 없으므로 이건 2차 방어선이고,
+          # 실제 가드레일은 remote-reader-rbac.yaml의 RBAC다(도구 서버 자체는 쓰기 도구도 제공한다).
+          toolNames:
+            - k8s_get_resources
+            - k8s_describe_resource
+            - k8s_get_events
+            - k8s_get_pod_logs
+            - k8s_get_resource_yaml
+            - k8s_get_available_api_resources
+            - k8s_get_cluster_configuration

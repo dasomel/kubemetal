@@ -1,0 +1,90 @@
+# 원격 클러스터를 읽는 kagent 도구 서버 — **로컬(colima) 클러스터**에 뜬다.
+# kagent 차트가 배포하는 `kagent-tools`와 같은 이미지·같은 바이너리지만, in-cluster 자격증명
+# 대신 `KUBECONFIG`로 원격 클러스터 자격증명을 본다. 실측 확인(2026-08-06): 이 구성의 파드에서
+# `k8s_get_resources(nodes)`를 호출하면 로컬 노드가 아니라 원격 클러스터의 노드가 반환된다.
+#
+# 네임스페이스가 `kagent`가 아니라 `default`인 이유(중요): `kagent` 네임스페이스는 helm 소유다.
+# 그곳에 kubectl로 워크로드를 만들면 릴리스 소유권 메타데이터와 충돌한다 —
+# mistakes-log 2026-08-05에 `kagent-openai` Secret이 정확히 그 방식으로 `helm upgrade`를
+# 깨뜨린 기록이 있다. 여기 두는 것은 차트가 만들지 않는 이름뿐이고, `RemoteMCPServer`는
+# 네임스페이스를 건너뛰는 평범한 DNS URL로 이 Service를 가리킨다.
+# `default`는 colima의 D26 네임스페이스다.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: remote-reader-tools
+  namespace: default
+  labels:
+    app.kubernetes.io/name: remote-reader-tools
+    app.kubernetes.io/part-of: kubemetal-remote-reader
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: remote-reader-tools
+  template:
+    metadata:
+      labels:
+        app: remote-reader-tools
+        # Kyverno require-labels 대비(D26 실측) — selector가 아닌 파드 템플릿 라벨에만 넣는다.
+        app.kubernetes.io/name: remote-reader-tools
+        app.kubernetes.io/part-of: kubemetal-remote-reader
+    spec:
+      containers:
+        - name: tools
+          # 차트가 돌리는 `kagent-tools`와 같은 태그여야 한다. setup-remote-reader.sh가
+          # 실행 중인 차트 이미지와 대조해 어긋나면 실패한다(같은 사실 두 곳 방지).
+          image: ghcr.io/kagent-dev/kagent/tools:0.2.1
+          args: ["--port", "8084", "--metrics-port", "8085"]
+          env:
+            # 이 한 줄이 이 배포의 전부다 — 나머지는 차트의 kagent-tools와 동일하다.
+            - name: KUBECONFIG
+              value: /etc/remote-kubeconfig/config
+          ports:
+            - name: mcp
+              containerPort: 8084
+            - name: metrics
+              containerPort: 8085
+          volumeMounts:
+            - name: remote-kubeconfig
+              mountPath: /etc/remote-kubeconfig
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: remote-kubeconfig
+          secret:
+            # setup-remote-reader.sh가 원격 클러스터의 읽기 전용 SA 토큰으로 만든다.
+            # 이 리포에 커밋되는 자격증명은 없다.
+            secretName: remote-reader-kubeconfig
+            defaultMode: 0400
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: remote-reader-tools
+  namespace: default
+  labels:
+    app.kubernetes.io/name: remote-reader-tools
+    app.kubernetes.io/part-of: kubemetal-remote-reader
+spec:
+  selector:
+    app: remote-reader-tools
+  ports:
+    - name: mcp
+      port: 8084
+      targetPort: mcp

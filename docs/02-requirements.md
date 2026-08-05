@@ -84,6 +84,11 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 ### FR-02: MLOps 인프라 서비스 자동 프로비저닝
 
 * **FR-02.1**: K8s 클러스터 정상 구동 시, Helm/Kubectl을 통해 **MLflow Tracking Server**와 **SeaweedFS Object Storage**를 파드로 자동 배포해야 한다. 스택의 정식 배포 대상은 자체 k3s(colima)다 — 외부 클러스터의 기본 통합 수준은 에이전트 온리이며, 풀스택 외부 배포는 전제조건을 갖춘 옵트인 경로다(D26/D30).
+* **FR-02.3** (D34, L0 원격 읽기): 외부 클러스터에 kagent을 설치할 수 없거나 설치하고 싶지 않을 때, **그 클러스터에는 읽기 전용 ServiceAccount만 두고 로컬 kagent으로 진단**할 수 있어야 한다. 워크로드는 외부에 하나도 두지 않는다.
+  * 연결: `make remote-reader-up REMOTE_CONTEXT=<ctx>` — 원격에 SA/롤/토큰을 적용하고 권한 상한(읽기 허용·secrets/쓰기/삭제 거부)을 실측한 뒤, 로컬 `default` ns에 그 kubeconfig를 마운트한 도구 서버를, `kagent` ns에 `RemoteMCPServer`+`Agent` CR을 적용한다. 도구 서버 이미지가 로컬 차트의 `kagent-tools`와 다르면 시작 전에 실패한다.
+  * 해제: `make remote-reader-down REMOTE_CONTEXT=<ctx>` — 양쪽에서 제거한다. 원격 네임스페이스는 지우지 않는다(그 클러스터에 kagent이 따로 있을 수 있다).
+  * 확인: `kubectl --context <local> get remotemcpserver remote-reader-tool-server -n kagent -o jsonpath='{.status.discoveredTools[*].name}'`가 비어 있으면 도구 서버에 닿지 못한 것이다. 적용 성공은 연결 성공이 아니다(D22).
+  * 전제: 로컬 클러스터 파드에서 원격 API 서버로 TCP 도달이 가능해야 한다. 그리고 에이전트의 답변에는 D32 모델 백엔드(MLX 서빙)가 살아 있어야 한다 — 도구 경로와 LLM 경로는 별개로 실패한다.
 * **FR-02.2**: K8s 내 배포된 MLflow UI 및 SeaweedFS Filer UI/S3 API로 아래 포트를 호스트에 자동 포트포워딩 구성하고, 프론트엔드 Webview로 내장/웹 브라우저 오픈 기능을 제공해야 한다. 포트포워딩은 앱이 관리하는 `kubectl port-forward` 자식 프로세스로 구현하며(`start_port_forward`/`stop_port_forward`), 클러스터 중지 또는 앱 종료 시 해당 프로세스를 정리해야 한다.
   * MLflow UI: 호스트 **5001번 포트** (macOS AirPlay Receiver가 기본 5000번 포트를 점유하므로 5000 사용 금지)
   * SeaweedFS Filer UI: 호스트 **8888번 포트**

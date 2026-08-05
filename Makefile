@@ -157,6 +157,15 @@ kagent-up: ## kagent 경량화 설치 (CRD 차트 선행, 버전 단일 출처 s
 
 provision-all: provision kagent-up ## MLOps 스택 + kagent 종합 환경 한 번에 프로비저닝
 
+# 외부 클러스터를 로컬 kagent로 진단한다(D34). 외부 클러스터에는 읽기 전용 SA 하나만 남고
+# 워크로드는 전부 로컬에 있다 — 외부 노드가 kagent 이미지를 못 당기거나 여유 CPU가 없어도
+# 성립하는 경로다. REMOTE_CONTEXT는 필수(대상은 설정이지 상수가 아니다, D26).
+remote-reader-up: ## 외부 클러스터 진단 연결 (사용: make remote-reader-up REMOTE_CONTEXT=narwhal)
+	@./scripts/k8s/remote-reader/setup-remote-reader.sh "$(REMOTE_CONTEXT)" "$(CONTEXT)"
+
+remote-reader-down: ## 외부 클러스터 진단 연결 해제 (양쪽 클러스터에서 제거)
+	@./scripts/k8s/remote-reader/teardown-remote-reader.sh "$(REMOTE_CONTEXT)" "$(CONTEXT)"
+
 # GitOps 편입(D27). kubemetal은 Gitea에 **쓰지 않는다** — 파일만 narwhal 레포에 내려놓고,
 # 실제 반영은 사용자가 narwhal의 scripts/gitops/push-to-gitea.sh로 수행한다. 그 경계 덕분에
 # kubemetal이 Gitea 자격증명·포트포워딩·narwhal 레포 구조에 의존하지 않는다.

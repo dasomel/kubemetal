@@ -1,0 +1,96 @@
+# 원격(외부) 클러스터에 두는 **유일한** 리소스 — 읽기 전용 ServiceAccount와 그 권한이다.
+# 워크로드는 하나도 두지 않는다: kagent 본체와 도구 서버는 전부 로컬 colima에서 돌고,
+# 이 자격증명으로 원격 클러스터를 읽기만 한다(D30 개정 계층).
+#
+# 적용 대상은 원격 클러스터다 — `setup-remote-reader.sh`가 `--context ${REMOTE_CONTEXT}`로 건다.
+# 이 디렉터리는 `render.sh`의 `${SCRIPT_DIR}/*.yaml` 글롭에 걸리지 않으므로(하위 디렉터리)
+# MLOps 스택 렌더와 무관하다. `kustomization.yaml`에도 넣지 않는다.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kagent
+  labels:
+    app.kubernetes.io/name: kagent
+    app.kubernetes.io/part-of: kubemetal-remote-reader
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kagent-remote-reader
+  namespace: kagent
+  labels:
+    app.kubernetes.io/name: kagent-remote-reader
+    app.kubernetes.io/part-of: kubemetal-remote-reader
+---
+# 클러스터 범위 읽기. 내장 `view`는 **네임스페이스 리소스만** 덮고 nodes 같은 클러스터 범위
+# 리소스는 빠진다 — 진단 에이전트에게 그건 핵심 정보라 별도 ClusterRole로 보충한다.
+# 쓰기 동사(create/update/patch/delete)는 어디에도 주지 않는다.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kagent-remote-cluster-reader
+  labels:
+    app.kubernetes.io/part-of: kubemetal-remote-reader
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "namespaces", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "csidrivers", "csinodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingressclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["nodes", "pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kagent-remote-cluster-reader
+  labels:
+    app.kubernetes.io/part-of: kubemetal-remote-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kagent-remote-cluster-reader
+subjects:
+  - kind: ServiceAccount
+    name: kagent-remote-reader
+    namespace: kagent
+---
+# 네임스페이스 리소스 읽기는 내장 `view`를 그대로 쓴다. `view`는 **secrets를 포함하지 않는다**
+# — 그래서 직접 만든 와일드카드 읽기 롤 대신 이걸 쓴다(와일드카드는 secrets까지 딸려온다).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kagent-remote-reader-view
+  labels:
+    app.kubernetes.io/part-of: kubemetal-remote-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: kagent-remote-reader
+    namespace: kagent
+---
+# k8s 1.24+는 SA 생성 시 토큰 Secret을 자동 발급하지 않고, `kubectl create token`은 기본
+# 1시간 만료다. 장기 실행 파드가 쓸 토큰이므로 만료 없는 레거시 타입 Secret으로 발급한다
+# (1.24+에서도 명시 생성은 지원된다 — 컨트롤러가 annotation을 보고 토큰을 채운다).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kagent-remote-reader-token
+  namespace: kagent
+  annotations:
+    kubernetes.io/service-account.name: kagent-remote-reader
+  labels:
+    app.kubernetes.io/part-of: kubemetal-remote-reader
+type: kubernetes.io/service-account-token
