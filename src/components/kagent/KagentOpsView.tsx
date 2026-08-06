@@ -304,6 +304,8 @@ export const KagentOpsView: React.FC = () => {
         <KagentAgentToggleList
           toggleable={toggleableAgents}
           active={activeAgents}
+          // 진단 결과가 없으면 설치 여부를 모른다 — 모르는 것을 아는 척하지 않는다(D22).
+          installed={report ? report.kagent_installed : null}
           targetContext={selectedContext}
           onToggle={handleToggleAgent}
         />

@@ -447,6 +447,8 @@ export const translations: Record<Language, Record<string, string>> = {
       'k8s-agent·helm-agent는 Helm 차트가 관리하므로 이 목록에 없습니다 — `make kagent-up`으로 조정하세요.',
     'kagent.agentsTarget': '타깃: {context}',
     'kagent.agentsEmpty': '진단 결과를 먼저 조회해야 설치 가능한 에이전트를 표시할 수 있습니다.',
+    'kagent.agentsNotInstalled':
+      '이 컨텍스트에는 kagent가 설치되어 있지 않아 에이전트를 적용할 수 없습니다. 진단 탭에서 먼저 설치하세요.',
     'kagent.agentReady': '파드 Ready',
     'kagent.agentNotReady': 'Ready인 파드 없음',
     'kagent.agentInstall': '설치',
@@ -1228,6 +1230,8 @@ export const translations: Record<Language, Record<string, string>> = {
       'k8s-agent and helm-agent are managed by the Helm chart and are not listed here — adjust them via `make kagent-up`.',
     'kagent.agentsTarget': 'Target: {context}',
     'kagent.agentsEmpty': 'Run diagnostics first to list installable agents.',
+    'kagent.agentsNotInstalled':
+      'kagent is not installed on this context, so agents cannot be applied. Install it from the diagnostics tab first.',
     'kagent.agentReady': 'Pod ready',
     'kagent.agentNotReady': 'No ready pod',
     'kagent.agentInstall': 'Install',

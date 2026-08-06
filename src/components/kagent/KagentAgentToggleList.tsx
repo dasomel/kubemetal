@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sliders } from 'lucide-react';
+import { AlertTriangle, Sliders } from 'lucide-react';
 import { useTranslation } from '../../i18n/i18nContext';
 
 interface Props {
@@ -7,6 +7,13 @@ interface Props {
   toggleable: string[];
   /** kubectl 실측으로 Ready인 에이전트 이름 집합(`active_agents`). */
   active: Set<string>;
+  /**
+   * 선택한 컨텍스트에 kagent이 설치돼 있는지. `null`이면 아직 진단 결과가 없어 알 수 없다.
+   * `available_agents`는 설치 여부와 무관하게 항상 채워지므로, 이 값을 따로 받지 않으면
+   * kagent이 없는 클러스터에서도 버튼이 멀쩡히 활성으로 보인다 — Agent CRD가 없어
+   * apply가 반드시 실패하는데도.
+   */
+  installed: boolean | null;
   targetContext: string;
   onToggle: (agentName: string) => void;
 }
@@ -14,6 +21,7 @@ interface Props {
 export const KagentAgentToggleList: React.FC<Props> = ({
   toggleable,
   active,
+  installed,
   targetContext,
   onToggle,
 }) => {
@@ -34,7 +42,14 @@ export const KagentAgentToggleList: React.FC<Props> = ({
       <p className="text-caption text-inkMuted">{t('kagent.agentsDesc')}</p>
       <p className="text-caption text-inkFaint">{t('kagent.agentsHelmNote')}</p>
 
-      {toggleable.length === 0 ? (
+      {/* 미설치 판정이 먼저다 — 이 경우에도 toggleable은 3종이 채워져 오므로
+          순서를 바꾸면 실패가 확정된 버튼을 그대로 보여주게 된다. */}
+      {installed === false ? (
+        <div className="p-4 rounded-xl bg-warning/10 border border-warning/20 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+          <p className="text-caption text-inkMuted">{t('kagent.agentsNotInstalled')}</p>
+        </div>
+      ) : toggleable.length === 0 ? (
         <p className="text-caption text-inkFaint">{t('kagent.agentsEmpty')}</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
