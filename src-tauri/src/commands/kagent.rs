@@ -49,7 +49,25 @@ fn pod_is_ready(pod: &serde_json::Value) -> bool {
 }
 
 async fn get_pods_json(context: &str, namespace: &str) -> Result<serde_json::Value, String> {
-    kubectl_json(context, &["get", "pods", "-n", namespace, "-o", "json"]).await
+    match kubectl_json(context, &["get", "pods", "-n", namespace, "-o", "json"]).await {
+        Ok(json) => Ok(json),
+        Err(err) => {
+            if err.contains("must be logged in")
+                || err.contains("credentials")
+                || err.contains("Unauthorized")
+                || err.contains("401")
+            {
+                Err(format!(
+                    "🔒 선택된 Kubeconfig 컨텍스트 [{context}]의 클러스터 인증 토큰이 만료되었거나 로그인 자격 증명이 유효하지 않습니다.\n\n\
+                    [해결 방법]\n\
+                    1. 로컬 K3s 환경을 사용하시려면 상단 Kubeconfig 셀렉터에서 'colima' 컨텍스트를 선택해 주세요.\n\
+                    2. 원격/외부 클러스터인 경우 클라우드 CLI(gcloud / aws / kubectl login 등)로 재인증을 수행한 뒤 '진단 다시 실행'을 눌러주세요."
+                ))
+            } else {
+                Err(err)
+            }
+        }
+    }
 }
 
 /// 진단 결과는 전부 kubectl 실측에서만 파생한다. 조회에 실패하면 에러로 올린다 —
@@ -612,6 +630,26 @@ pub async fn configure_kagent_model(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 차트의 `modelconfig-secret.yaml`은 `if and $model.apiKeySecretRef $model.apiKey`로
+    /// 가드돼 있고 차트 기본 values는 `apiKey`를 주지 않는다. 그래서 우리 values가 이 값을
+    /// 넣지 않으면 `kagent-openai` 시크릿이 아예 만들어지지 않고, 에이전트 파드가
+    /// `secret "kagent-openai" not found`로 죽는다 — 설치는 "성공"으로 보이는데 에이전트만
+    /// 못 뜨는 형태라 원인을 찾기 어렵다(실측 2026-08-06 narwhal, 2026-08-07 카카오 클라우드).
+    #[test]
+    fn kagent_values_set_provider_api_key_so_the_secret_is_created() {
+        const VALUES: &str = include_str!("../../../scripts/helm/kagent-values.yaml");
+        let uncommented: String = VALUES
+            .lines()
+            .filter(|l| !l.trim_start().starts_with('#'))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            uncommented.contains("providers:") && uncommented.contains("apiKey:"),
+            "kagent-values.yaml must set providers.openAI.apiKey — without it the chart skips \
+             the kagent-openai Secret and every agent pod fails to start"
+        );
+    }
 
     #[test]
     fn kagent_version_is_trimmed_and_non_empty() {

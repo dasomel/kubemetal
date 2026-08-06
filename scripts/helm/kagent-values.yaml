@@ -6,6 +6,20 @@
 #        --version $(cat scripts/helm/kagent-version.txt) -n kagent -f scripts/helm/kagent-values.yaml --reuse-values
 # 버전 단일 출처는 scripts/helm/kagent-version.txt다(D33) — 여기 리터럴을 박지 않는다.
 
+# 에이전트가 뜨려면 `kagent-openai` 시크릿이 있어야 한다. 차트의 modelconfig-secret.yaml은
+# `{{- if and $model.apiKeySecretRef $model.apiKey }}`로 가드돼 있는데 기본 values는
+# apiKeySecretRef만 주고 apiKey는 주석 처리한다 — 그래서 ModelConfig는 시크릿을 참조하지만
+# 시크릿은 만들어지지 않고, 에이전트 파드가 `secret "kagent-openai" not found`로 죽는다
+# (실측 2026-08-07 카카오 클라우드, 2026-08-06 narwhal). 즉 이 한 줄이 없으면 설치 자체가
+# 구조적으로 미완성이다.
+#
+# 값이 더미인 이유: 우리 기본 백엔드는 로컬 MLX(OpenAI 호환)이고 키를 검증하지 않는다(D32).
+# 실제 baseUrl/model 연결은 `configure_kagent_model`이 같은 helm 경로로 덮어쓴다 —
+# 여기서는 "시크릿이 존재하게 만드는 것"만 책임진다.
+providers:
+  openAI:
+    apiKey: dummy-local-key-not-used
+
 kgateway-agent:
   enabled: false
 istio-agent:

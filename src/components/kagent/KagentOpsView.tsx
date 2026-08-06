@@ -241,9 +241,21 @@ export const KagentOpsView: React.FC = () => {
           </div>
 
           {error && (
-            <div className="p-4 rounded-xl bg-danger/10 border border-danger/20 text-danger text-caption space-y-1">
+            <div className="p-4 rounded-xl bg-danger/10 border border-danger/20 text-danger text-caption space-y-3">
               <div className="font-bold">{t('kagent.errorTitle')}</div>
-              <div className="font-mono break-words">{error}</div>
+              <div className="font-sans whitespace-pre-line leading-relaxed text-ink font-medium bg-surface/60 p-3 rounded-lg border border-hairline/10">{error}</div>
+              {selectedContext !== 'colima' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedContext('colima');
+                    fetchDiagnostics('colima');
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-primaryStrong hover:brightness-110 text-inverse text-caption font-bold flex items-center gap-1.5 transition-all shadow-xs"
+                >
+                  <span>로컬 colima 컨텍스트로 전환하여 진단</span>
+                </button>
+              )}
             </div>
           )}
 
