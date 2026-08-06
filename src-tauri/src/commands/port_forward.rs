@@ -8,16 +8,23 @@ use crate::services::process::external_command;
 #[derive(Default)]
 pub struct PortForwardState(pub Mutex<HashMap<&'static str, Child>>);
 
-/// (레지스트리 키, k8s 대상, 클러스터 쪽 포트). **호스트 포트는 여기 없다** — 그건 기동
-/// 시점에 `services::ports`가 비어 있는 것을 골라 배정한다(D1 개정: 표의 숫자는 우선
-/// 시도값이지 보장이 아니다). 키는 `ports::SPECS`에 있어야 하며 `jobs_keys_are_registered`
-/// 테스트가 그 일치를 고정한다.
-const JOBS: [(&str, &str, u16); 5] = [
-    ("mlflow", "svc/mlflow", 5000),
-    ("seaweedfs-s3", "svc/seaweedfs", 8333),
-    ("seaweedfs-filer", "svc/seaweedfs", 8888),
-    ("prefect", "svc/prefect", 4200),
-    ("kagent-ui", "svc/kagent-ui", 8080),
+/// (레지스트리 키, k8s 대상, 네임스페이스, 클러스터 쪽 포트).
+///
+/// **호스트 포트는 여기 없다** — 기동 시점에 `services::ports`가 비어 있는 것을 골라
+/// 배정한다(D1 개정: 표의 숫자는 우선 시도값이지 보장이 아니다). 키는 `ports::SPECS`에
+/// 있어야 하며 `jobs_keys_are_registered` 테스트가 그 일치를 고정한다.
+///
+/// 네임스페이스가 `None`이면 배포 대상의 네임스페이스(D26: colima=`default`,
+/// 외부=`kubemetal`)를 쓰고, `Some`이면 그 값을 쓴다. kagent은 대상과 무관하게 자기
+/// 네임스페이스에 설치되므로 고정이다 — 예전에는 모든 잡에 대상 네임스페이스를 넘겨
+/// `-n default svc/kagent-ui`가 되었고, 그 서비스는 거기 없어서 이 잡은 **항상 실패했다**
+/// (실측 2026-08-06: `kagent-ui(:8090) not responding`). Makefile은 처음부터 `-n kagent`였다.
+const JOBS: [(&str, &str, Option<&str>, u16); 5] = [
+    ("mlflow", "svc/mlflow", None, 5000),
+    ("seaweedfs-s3", "svc/seaweedfs", None, 8333),
+    ("seaweedfs-filer", "svc/seaweedfs", None, 8888),
+    ("prefect", "svc/prefect", None, 4200),
+    ("kagent-ui", "svc/kagent-ui", Some("kagent"), 8080),
 ];
 
 /// 우리 앱이 관리하는 서비스만 대상으로 하는 pgrep 패턴. 무관한 kubectl 포워드는
@@ -105,7 +112,7 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
     for _ in 0..10 {
         if JOBS
             .iter()
-            .all(|(key, _, _)| ports::is_port_free(ports::preferred_for(key)))
+            .all(|(key, _, _, _)| ports::is_port_free(ports::preferred_for(key)))
         {
             break;
         }
@@ -119,11 +126,12 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
     {
         let mut guard = state.0.lock().map_err(|e| e.to_string())?;
         let (context, namespace) = crate::services::deploy_target::active_context();
-        for (key, svc, target_port) in JOBS {
+        for (key, svc, job_ns, target_port) in JOBS {
             let host_port = ports::assign(key)?;
             chosen.push((key, host_port));
+            let ns = job_ns.unwrap_or(namespace.as_str());
             let child = external_command("kubectl")?
-                .args(["--context", &context, "port-forward", "-n", &namespace, svc])
+                .args(["--context", &context, "port-forward", "-n", ns, svc])
                 .arg(format!("{host_port}:{target_port}"))
                 // 바인드 실패 사유를 잡아둔다 — 예전에는 상속돼 사라졌고 화면에는
                 // "not responding"만 남아 원인을 알 수 없었다(D22).
@@ -214,7 +222,7 @@ mod tests {
     /// `assign`이 런타임에 실패하므로, 컴파일 타임 대신 여기서 잡는다.
     #[test]
     fn jobs_keys_are_registered() {
-        for (key, _svc, _target) in JOBS {
+        for (key, _svc, _ns, _target) in JOBS {
             assert!(
                 ports::SPECS.iter().any(|s| s.key == key),
                 "JOBS key [{key}] is missing from services::ports::SPECS"
