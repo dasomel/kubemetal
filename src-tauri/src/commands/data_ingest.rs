@@ -10,6 +10,7 @@ use crate::commands::mlx::{
     validate_home_subpath, venv_python,
 };
 use crate::commands::rag::default_lancedb_dir;
+use crate::services::ports;
 use crate::services::process::{augmented_path, resolve_bundled_resource};
 
 /// `run_data_ingest`의 IPC 계약(프론트 레인과 합의): 커맨드 인자는 단일 `config` 객체이며,
@@ -271,8 +272,15 @@ pub async fn run_data_ingest(
 
     if enable_dvc_backup.unwrap_or(false) {
         cmd.arg("--dvc-backup");
-        if let Some(ref r_url) = dvc_remote_url {
-            cmd.arg("--remote-url").arg(r_url);
+        // 호출자가 지정하지 않으면 포워딩이 실제로 잡은 S3 포트를 명시로 넘긴다.
+        // 파이썬 쪽 기본값(8333 고정)에 맡기면 대체 포트로 밀렸을 때 조용히 어긋난다.
+        match dvc_remote_url {
+            Some(ref r_url) => {
+                cmd.arg("--remote-url").arg(r_url);
+            }
+            None => {
+                cmd.arg("--remote-url").arg(ports::local_url("seaweedfs-s3"));
+            }
         }
         if let Some(ref bucket) = dvc_bucket {
             cmd.arg("--bucket").arg(bucket);

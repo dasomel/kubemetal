@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
+use crate::services::ports;
 use crate::services::process::external_command;
 
 /// Hugging Face `/api/models?search=...` 실측 스키마(2026-07-21, `Qwen/Qwen3-*` 대상 확인)
@@ -457,7 +458,7 @@ pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> 
             "%{http_code}",
             "-X",
             "PUT",
-            "http://127.0.0.1:8333/models",
+            &format!("{}/models", ports::local_url("seaweedfs-s3")),
         ])
         .output()
         .await
@@ -484,7 +485,8 @@ pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> 
             return Err(format!("Path traversal detected: {rel_str}"));
         }
         let url = format!(
-            "http://127.0.0.1:8333/models/{repo_slug}/{}",
+            "{}/models/{repo_slug}/{}",
+            ports::local_url("seaweedfs-s3"),
             rel_to_url_path(&safe_rel_path)
         );
         let out = external_command("curl")?
@@ -527,7 +529,7 @@ pub async fn register_model_mlflow(repo_id: String) -> Result<String, String> {
             "Content-Type: application/json",
             "-d",
             &create_body,
-            "http://127.0.0.1:5001/api/2.0/mlflow/registered-models/create",
+            &format!("{}/api/2.0/mlflow/registered-models/create", ports::local_url("mlflow")),
         ])
         .output()
         .await
@@ -558,7 +560,7 @@ pub async fn register_model_mlflow(repo_id: String) -> Result<String, String> {
             "Content-Type: application/json",
             "-d",
             &version_body,
-            "http://127.0.0.1:5001/api/2.0/mlflow/model-versions/create",
+            &format!("{}/api/2.0/mlflow/model-versions/create", ports::local_url("mlflow")),
         ])
         .output()
         .await
@@ -591,7 +593,7 @@ pub async fn list_registered_models() -> Result<Vec<RegisteredModel>, String> {
     let output = external_command("curl")?
         .args([
             "-s",
-            "http://127.0.0.1:5001/api/2.0/mlflow/registered-models/search",
+            &format!("{}/api/2.0/mlflow/registered-models/search", ports::local_url("mlflow")),
         ])
         .output()
         .await

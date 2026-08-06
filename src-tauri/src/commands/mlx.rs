@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+use crate::services::ports;
 use crate::services::process::{
     augmented_path, external_command, resolve_bundled_resource, resolve_cli_path,
 };
@@ -734,13 +735,13 @@ pub async fn start_model_serving(
         });
     }
 
-    let res = (|| -> Result<(u32, tokio::process::Child, String, Option<String>), String> {
-        // 8080은 개발 환경에서 다른 서비스(예: Tomcat)가 선점하고 있는 경우가 흔하다.
-        // bind 성공 시 리스너를 즉시 drop해 포트를 반납하고 그 사이에 실제 서빙 프로세스를 스폰한다.
-        let listener = std::net::TcpListener::bind(("127.0.0.1", port)).map_err(|_| {
-            format!("Port {port} is in use by another process. Specify a different port (e.g. 8081) in the serving card.")
-        })?;
-        drop(listener);
+    let res = (|| -> Result<(u32, tokio::process::Child, String, Option<String>, u16), String> {
+        // 요청한 포트가 막혀 있으면 실패시키지 않고 비어 있는 포트로 비켜간다.
+        // 8080은 개발 환경에서 다른 서비스(Docker 컨테이너·Tomcat 등)가 선점하는 일이 흔하고,
+        // 그 프로세스가 와일드카드로 바인딩하면 우리 서버가 뜨기 전 창에서 남의 응답이
+        // 돌아온다(실측 2026-08-06: `404 page not found`). 바뀐 포트는 반환값에 명시한다.
+        let (_, range_end) = serving_port_spec();
+        let port = ports::find_free_port(port, range_end.max(port))?;
 
         let validated_model_dir = validate_home_subpath(&model_path)?;
         let is_adapter_dir = validated_model_dir.join("adapter_config.json").is_file();
@@ -789,21 +790,24 @@ pub async fn start_model_serving(
             child,
             base_model.to_string_lossy().to_string(),
             effective_adapter.map(|p| p.to_string_lossy().to_string()),
+            port,
         ))
     })();
 
     match res {
-        Ok((pid, child, base_model_str, effective_adapter_str)) => {
+        Ok((pid, child, base_model_str, effective_adapter_str, actual_port)) => {
             {
                 let mut serving_guard = state.serving.lock().map_err(|e| e.to_string())?;
                 *serving_guard = Some(ServingStatus {
                     pid,
-                    port,
+                    port: actual_port,
                     model_path: base_model_str,
                     adapter_path: effective_adapter_str.clone(),
                     runtime,
                 });
             }
+            // 서빙 포트도 레지스트리에 기록해 다른 소비자가 같은 값을 본다.
+            ports::set_assigned("serving", actual_port);
             {
                 let mut err_guard = state.last_serving_error.lock().map_err(|e| e.to_string())?;
                 *err_guard = None;
@@ -814,8 +818,14 @@ pub async fn start_model_serving(
             let adapter_note = effective_adapter_str
                 .map(|p| format!(" · adapter {p}"))
                 .unwrap_or_default();
+            // 포트가 바뀌었으면 조용히 넘어가지 않는다 — 사용자가 지정한 값과 다르다.
+            let moved_note = if actual_port != port {
+                format!(" (requested port {port} was in use)")
+            } else {
+                String::new()
+            };
             Ok(format!(
-                "Started model serving on port {port} (PID {pid}){adapter_note}."
+                "Started model serving on port {actual_port} (PID {pid}){adapter_note}.{moved_note}"
             ))
         }
         Err(e) => {
@@ -827,23 +837,21 @@ pub async fn start_model_serving(
     }
 }
 
-/// `range` 내에서 로컬 바인드가 성공하는 첫 포트를 찾는다. bind 성공 시 리스너를 즉시
-/// drop해 포트를 반납한다 — 실제 서빙 프로세스가 그 포트를 다시 bind할 때까지 사용 여부만
-/// 확인하는 용도이므로 TOCTOU 경합 가능성은 있으나(D: 다른 프로세스가 그 사이 선점),
-/// start_model_serving이 실제 spawn 직전에 다시 bind를 확인하므로 여기서는 "제안값"으로만 쓰인다.
-fn find_available_port(range: std::ops::RangeInclusive<u16>) -> Result<u16, String> {
-    for port in range {
-        if let Ok(listener) = std::net::TcpListener::bind(("127.0.0.1", port)) {
-            drop(listener);
-            return Ok(port);
-        }
-    }
-    Err("Could not find an available port.".into())
+/// 서빙 포트 규격(우선 8080, 범위 상한 8099)의 단일 출처는 `services::ports::SPECS`다.
+/// 예전에는 이 파일이 `127.0.0.1`만 바인딩해 보는 자체 탐지기를 갖고 있었는데, 그 방식은
+/// 와일드카드(`*:8080`)로 잡힌 포트를 "비어 있음"으로 오판한다(실측 2026-08-06).
+fn serving_port_spec() -> (u16, u16) {
+    let spec = ports::SPECS
+        .iter()
+        .find(|s| s.key == "serving")
+        .expect("serving spec must exist in ports::SPECS");
+    (spec.preferred, spec.range_end)
 }
 
 #[tauri::command]
 pub async fn suggest_serving_port() -> Result<u16, String> {
-    find_available_port(8080..=8099)
+    let (preferred, range_end) = serving_port_spec();
+    ports::find_free_port(preferred, range_end)
 }
 
 #[tauri::command]
@@ -909,18 +917,14 @@ mod tests {
         assert!(validate_home_subpath("/definitely/not/here/xyz").is_err());
     }
 
+    /// 포트 탐지 자체의 검증은 `services::ports`가 소유한다(와일드카드 점유까지 본다).
+    /// 여기서는 서빙 규격이 그 레지스트리에 실제로 존재하는지만 고정한다 — 없으면
+    /// `serving_port_spec()`이 패닉하므로 기동 경로가 통째로 죽는다.
     #[test]
-    fn find_available_port_skips_occupied_port() {
-        // 포트 0으로 바인드하면 OS가 빈 포트를 배정한다 — 실제 개발 환경에서 점유 중인
-        // 8080/8081과 충돌하지 않으면서도 "점유된 포트를 건너뛰는지"를 검증할 수 있다.
-        let occupied = std::net::TcpListener::bind(("127.0.0.1", 0)).expect("failed to occupy port");
-        let occupied_port = occupied.local_addr().expect("failed to get address").port();
-
-        let result = find_available_port(occupied_port..=occupied_port.saturating_add(5))
-            .expect("failed to find available port");
-
-        assert_ne!(result, occupied_port);
-        drop(occupied);
+    fn serving_port_spec_is_registered() {
+        let (preferred, range_end) = serving_port_spec();
+        assert_eq!(preferred, 8080, "D1 assigns 8080 as the preferred serving port");
+        assert!(range_end >= preferred);
     }
 
     /// ENV_PROBE_SNIPPET이 유효한 파이썬인지 고정한다. 이 스니펫이 깨지는 실패 모드는

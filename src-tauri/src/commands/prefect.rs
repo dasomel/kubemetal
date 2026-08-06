@@ -9,13 +9,15 @@ use crate::commands::mlx::{
     validate_adapter_name, validate_home_subpath, venv_pip, venv_python, EnvSetupStatus,
     FineTuneConfig,
 };
+use crate::services::ports;
 use crate::services::process::{augmented_path, external_command, resolve_bundled_resource};
 
-/// 포트포워딩(`port_forward.rs`의 `("prefect","svc/prefect","4200:4200")`)이 살아있다는
-/// 전제 하에 호스트에서 접근하는 Prefect REST 베이스 URL. `host_runner.py`도 동일 URL을
-/// `PREFECT_API_URL` 환경변수로 주입받는다.
-const PREFECT_API_BASE: &str = "http://127.0.0.1:4200/api";
-const PREFECT_API_URL: &str = "http://127.0.0.1:4200/api";
+/// 포트포워딩이 실제로 잡은 호스트 포트 기준의 Prefect REST 베이스 URL. 상수가 아니라
+/// 함수인 이유는 D1 포트(4200)가 점유돼 대체 포트로 밀렸을 수 있기 때문이다(D1 개정).
+/// `host_runner.py`도 이 값을 `PREFECT_API_URL` 환경변수로 그대로 주입받는다.
+fn prefect_api_base() -> String {
+    format!("{}/api", ports::local_url("prefect"))
+}
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct FlowRunInfo {
@@ -155,7 +157,7 @@ async fn check_eval_env_installed() -> bool {
 /// 최신순으로 조회한다. 포워딩 미활성 등 어떤 이유로든 실패하면 빈 배열을 반환한다.
 async fn fetch_recent_flow_runs() -> Vec<FlowRunInfo> {
     let body = serde_json::json!({ "limit": 5, "sort": "START_TIME_DESC" });
-    let Some(value) = curl_post_json(&format!("{PREFECT_API_BASE}/flow_runs/filter"), &body).await
+    let Some(value) = curl_post_json(&format!("{}/flow_runs/filter", prefect_api_base()), &body).await
     else {
         return Vec::new();
     };
@@ -445,7 +447,7 @@ pub async fn start_prefect_runner(
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .env("PATH", augmented_path())
-            .env("PREFECT_API_URL", PREFECT_API_URL)
+            .env("PREFECT_API_URL", prefect_api_base())
             .process_group(0)
             .spawn()
             .map_err(|e| format!("Failed to start Prefect runner: {e}"))?;
@@ -538,7 +540,7 @@ pub async fn trigger_finetune_flow(config: FineTuneConfig) -> Result<String, Str
     let model_path = validate_home_subpath(&config.model_path)?;
     let data_path = validate_home_subpath(&config.data_path)?;
 
-    let deployment = curl_get_json(&format!("{PREFECT_API_BASE}/deployments/name/finetune/finetune"))
+    let deployment = curl_get_json(&format!("{}/deployments/name/finetune/finetune", prefect_api_base()))
         .await
         .ok_or_else(|| {
             "Cannot connect to Prefect server — check that port-forwarding (4200) is active."
@@ -564,7 +566,7 @@ pub async fn trigger_finetune_flow(config: FineTuneConfig) -> Result<String, Str
     });
 
     let run = curl_post_json(
-        &format!("{PREFECT_API_BASE}/deployments/{deployment_id}/create_flow_run"),
+        &format!("{}/deployments/{deployment_id}/create_flow_run", prefect_api_base()),
         &body,
     )
     .await
@@ -576,9 +578,11 @@ pub async fn trigger_finetune_flow(config: FineTuneConfig) -> Result<String, Str
         .ok_or_else(|| "Failed to read id from flow run response.".to_string())
 }
 
-/// MLflow REST 호출 베이스 — `modelhub.rs`의 기존 MLflow REST 호출과 동일 호스트 표기
-/// (`localhost:5001`, 포트포워딩 `svc/mlflow 5001:5000` 전제).
-const MLFLOW_BASE: &str = "http://127.0.0.1:5001";
+/// MLflow REST 호출 베이스 — 포워딩이 실제로 잡은 호스트 포트를 따른다
+/// (`modelhub.rs`·`access.rs`와 같은 출처인 `services::ports`).
+fn mlflow_base() -> String {
+    ports::local_url("mlflow")
+}
 
 /// `trigger_finetune_flow`와 동일 패턴으로 evaluate deployment id를 조회해 flow run을
 /// 생성한다. `serving_port`로 `host_runner.py::evaluate_flow`의 `serving_url` 파라미터
@@ -599,7 +603,7 @@ pub async fn trigger_evaluate_flow(
 
     let serving_url = format!("http://127.0.0.1:{serving_port}/v1");
 
-    let deployment = curl_get_json(&format!("{PREFECT_API_BASE}/deployments/name/evaluate/evaluate"))
+    let deployment = curl_get_json(&format!("{}/deployments/name/evaluate/evaluate", prefect_api_base()))
         .await
         .ok_or_else(|| {
             "Cannot connect to Prefect server — check that port-forwarding (4200) is active."
@@ -622,7 +626,7 @@ pub async fn trigger_evaluate_flow(
     });
 
     let run = curl_post_json(
-        &format!("{PREFECT_API_BASE}/deployments/{deployment_id}/create_flow_run"),
+        &format!("{}/deployments/{deployment_id}/create_flow_run", prefect_api_base()),
         &body,
     )
     .await
@@ -642,7 +646,8 @@ pub async fn trigger_evaluate_flow(
 #[tauri::command]
 pub async fn get_eval_results() -> Result<Vec<EvalMetric>, String> {
     let Some(exp) = curl_get_json(&format!(
-        "{MLFLOW_BASE}/api/2.0/mlflow/experiments/get-by-name?experiment_name=kubemetal-eval"
+        "{}/api/2.0/mlflow/experiments/get-by-name?experiment_name=kubemetal-eval",
+        mlflow_base()
     ))
     .await
     else {
@@ -662,7 +667,7 @@ pub async fn get_eval_results() -> Result<Vec<EvalMetric>, String> {
         "order_by": ["attribute.start_time DESC"],
     });
     let Some(search) =
-        curl_post_json(&format!("{MLFLOW_BASE}/api/2.0/mlflow/runs/search"), &body).await
+        curl_post_json(&format!("{}/api/2.0/mlflow/runs/search", mlflow_base()), &body).await
     else {
         return Ok(Vec::new());
     };

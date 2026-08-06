@@ -142,6 +142,8 @@ export const translations: Record<Language, Record<string, string>> = {
     'provision.startForwardingBtn': '포트포워딩 시작 (5001, 8333/8888)',
     'provision.stopForwardingBtn': '포트포워딩 정지',
     'provision.hostEndpoints': '호스트 엔드포인트 바로가기',
+    'provision.endpointsUnknown': '엔드포인트를 아직 조회하지 못했습니다.',
+    'provision.endpointInactive': '실행 중이 아님',
 
     // Pipeline View Stages
     'pipeline.title': '파이프라인 가시화',
@@ -924,6 +926,8 @@ export const translations: Record<Language, Record<string, string>> = {
     'provision.startForwardingBtn': 'Start Port Forwarding (5001, 8333/8888)',
     'provision.stopForwardingBtn': 'Stop Port Forwarding',
     'provision.hostEndpoints': 'Host Endpoint Shortcuts',
+    'provision.endpointsUnknown': 'Endpoints have not been queried yet.',
+    'provision.endpointInactive': 'not running',
 
     // Pipeline View Stages
     'pipeline.title': 'Pipeline Visualization',

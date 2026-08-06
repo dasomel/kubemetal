@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Workflow, Loader2, Play, Square, Cpu, ArrowUpRight, Rocket, FlaskConical } from 'lucide-react';
 import { usePrefect } from '../../hooks/usePrefect';
+import { useHostPorts } from '../../hooks/useHostPorts';
 import { useMlx } from '../../hooks/useMlx';
 import { useTranslation } from '../../i18n/i18nContext';
 import type { FlowRunInfo, FineTuneConfig } from '../../types/ipc';
@@ -52,6 +53,9 @@ const labelClass = 'text-label uppercase text-inkFaint mb-1.5 block';
 
 /** 파이프라인 탭 활성 중에만 마운트되므로 usePrefect(true)로 5초 폴링을 활성화한다. */
 export const OrchestrationCard: React.FC = () => {
+  // Prefect UI 포트는 백엔드 배정을 따른다(D1 기본 4200, 점유 시 대체 포트).
+  const { urlFor } = useHostPorts();
+  const prefectUrl = urlFor('prefect');
   const {
     status,
     installing,
@@ -120,7 +124,7 @@ export const OrchestrationCard: React.FC = () => {
         {serverReady && (
           <button
             type="button"
-            onClick={() => openEndpoint('http://127.0.0.1:4200')}
+            onClick={() => prefectUrl && openEndpoint(prefectUrl)}
             className="px-2.5 py-1 rounded-md bg-surfaceRaised hover:brightness-95 text-primary text-caption flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             Prefect UI

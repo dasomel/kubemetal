@@ -4,6 +4,7 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::commands::mlx::MlxState;
+use crate::services::ports;
 use crate::services::process::external_command;
 
 #[derive(Debug, Clone, Serialize)]
@@ -155,9 +156,12 @@ pub(crate) async fn resolve_s3_credentials() -> (String, String) {
 
 #[tauri::command]
 pub async fn get_service_access(state: State<'_, MlxState>) -> Result<Vec<ServiceAccess>, String> {
-    const MLFLOW_URL: &str = "http://127.0.0.1:5001";
-    const S3_URL: &str = "http://127.0.0.1:8333";
-    const FILER_URL: &str = "http://127.0.0.1:8888";
+    // 포워딩이 실제로 잡은 호스트 포트를 따른다 — D1 포트가 점유돼 대체 포트로 밀렸을 수
+    // 있고, 그때 여기가 옛 숫자를 보면 화면의 링크와 헬스가 통째로 엉뚱한 곳을 가리킨다.
+    // 포워딩 전이면 D1 우선값이 나오므로 기존 동작은 그대로다.
+    let mlflow_url = ports::local_url("mlflow");
+    let s3_url = ports::local_url("seaweedfs-s3");
+    let filer_url = ports::local_url("seaweedfs-filer");
 
     // Model Serving 포트는 고정값이 아니라 실제 기동된 서빙 프로세스의 포트를 따른다
     // (사용자가 서빙 시작 시 임의의 빈 포트를 지정할 수 있으므로).
@@ -167,9 +171,9 @@ pub async fn get_service_access(state: State<'_, MlxState>) -> Result<Vec<Servic
     };
 
     let (mlflow_health, s3_health, filer_health, (s3_credentials, s3_hint)) = tokio::join!(
-        check_health(MLFLOW_URL),
-        check_health(S3_URL),
-        check_health(FILER_URL),
+        check_health(&mlflow_url),
+        check_health(&s3_url),
+        check_health(&filer_url),
         fetch_seaweedfs_credentials(),
     );
 
@@ -193,21 +197,21 @@ pub async fn get_service_access(state: State<'_, MlxState>) -> Result<Vec<Servic
     Ok(vec![
         ServiceAccess {
             service: "MLflow".into(),
-            url: MLFLOW_URL.into(),
+            url: mlflow_url,
             health: mlflow_health,
             credential_hint: Some("No authentication required.".into()),
             credentials: Vec::new(),
         },
         ServiceAccess {
             service: "SeaweedFS S3 API".into(),
-            url: S3_URL.into(),
+            url: s3_url,
             health: s3_health,
             credential_hint: s3_hint,
             credentials: s3_credentials,
         },
         ServiceAccess {
             service: "SeaweedFS Filer UI".into(),
-            url: FILER_URL.into(),
+            url: filer_url,
             health: filer_health,
             credential_hint: Some("No authentication required.".into()),
             credentials: Vec::new(),

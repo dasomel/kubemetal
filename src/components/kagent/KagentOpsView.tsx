@@ -14,6 +14,7 @@ import {
   Terminal,
 } from 'lucide-react';
 import { useColima } from '../../hooks/useColima';
+import { useHostPorts } from '../../hooks/useHostPorts';
 import { useTranslation } from '../../i18n/i18nContext';
 import type { KagentDiagnosticReport } from '../../types/ipc';
 import { publishKagentDiagnostics } from '../../state/kagentDiagnosticsStore';
@@ -24,9 +25,6 @@ import { KagentModelStatusCard } from './KagentModelStatusCard';
 
 type SubTab = 'diagnostics' | 'models' | 'agents' | 'e2e';
 
-/** D1: 8080은 모델 서빙이 선점하므로 kagent UI 포워딩은 8090을 쓴다(`make forward`와 일치). */
-const KAGENT_UI_URL = 'http://127.0.0.1:8090';
-
 const SUB_TABS: { id: SubTab; labelKey: string; icon: React.ElementType }[] = [
   { id: 'diagnostics', labelKey: 'kagent.subtabDiagnostics', icon: Terminal },
   { id: 'models', labelKey: 'kagent.subtabModels', icon: Bot },
@@ -36,6 +34,9 @@ const SUB_TABS: { id: SubTab; labelKey: string; icon: React.ElementType }[] = [
 
 export const KagentOpsView: React.FC = () => {
   const { status: cluster } = useColima();
+  // kagent UI 포워딩 포트는 백엔드 배정을 따른다(D1 기본 8090, 점유 시 대체 포트).
+  const { urlFor } = useHostPorts();
+  const kagentUiUrl = urlFor('kagent-ui');
   const { t } = useTranslation();
   const [subTab, setSubTab] = useState<SubTab>('diagnostics');
   const [contexts, setContexts] = useState<string[]>([]);
@@ -168,10 +169,10 @@ export const KagentOpsView: React.FC = () => {
             </select>
           </div>
 
-          {cluster?.is_running && (
+          {cluster?.is_running && kagentUiUrl && (
             <button
               type="button"
-              onClick={() => openUrl(KAGENT_UI_URL).catch((e) => setActionMsg(String(e)))}
+              onClick={() => openUrl(kagentUiUrl).catch((e) => setActionMsg(String(e)))}
               className="px-3 py-1.5 rounded-lg bg-primaryStrong hover:brightness-110 text-inverse text-caption font-bold flex items-center gap-1.5 transition-all shadow-xs"
             >
               {t('kagent.openUI')}

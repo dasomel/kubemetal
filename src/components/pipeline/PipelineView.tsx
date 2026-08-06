@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { ChevronDown, ChevronRight, Server, Database, Cpu, Archive, Rocket, FlaskConical, ArrowUpRight, Bot } from 'lucide-react';
 import { useColima } from '../../hooks/useColima';
+import { useHostPorts } from '../../hooks/useHostPorts';
 import { useModelHub } from '../../hooks/useModelHub';
 import { useMlx } from '../../hooks/useMlx';
 import { useRegisteredModels } from '../../hooks/useRegisteredModels';
@@ -79,6 +80,8 @@ const bytesToHuman = (bytes: number): string => {
 
 export const PipelineView: React.FC = () => {
   const { status: cluster } = useColima();
+  // 링크 URL은 백엔드가 배정한 실제 호스트 포트에서 온다(D1 개정).
+  const { urlFor } = useHostPorts();
   const { localModels, downloads } = useModelHub();
   const { mlxStatus } = useMlx();
   const registered = useRegisteredModels();
@@ -272,7 +275,7 @@ export const PipelineView: React.FC = () => {
             .slice(0, 3)
             .map((m) => `${m.task} · ${m.metric} ${m.value.toFixed(3)}`)
             .join(' / '),
-          link: { label: 'MLflow UI', url: 'http://127.0.0.1:5001' },
+          link: { label: 'MLflow UI', url: urlFor('mlflow') },
         }
       : {
           key: 'eval',
@@ -293,7 +296,7 @@ export const PipelineView: React.FC = () => {
         dot: 'inkFaint',
         statusText: t('pipeline.kagentCheckTab'),
         hint: t('pipeline.kagentHint'),
-        link: { label: 'kagent UI', url: 'http://127.0.0.1:8090' },
+        link: { label: 'kagent UI', url: urlFor('kagent-ui') },
       }
     : {
         key: 'kagent',

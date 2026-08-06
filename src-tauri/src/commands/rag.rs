@@ -8,6 +8,7 @@ use crate::commands::access::resolve_s3_credentials;
 use crate::commands::mlx::{
     home_dir, validate_home_subpath, venv_pip, venv_python, EnvSetupStatus,
 };
+use crate::services::ports;
 use crate::services::process::{augmented_path, external_command, resolve_bundled_resource};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -478,7 +479,7 @@ pub async fn dvc_commit_dataset(
         .arg("--data-dir")
         .arg(&target_dir)
         .arg("--remote-url")
-        .arg("http://127.0.0.1:8333")
+        .arg(ports::local_url("seaweedfs-s3"))
         .arg("--bucket")
         .arg(&bucket)
         .arg("--message")

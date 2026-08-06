@@ -2,17 +2,22 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use tokio::process::Child;
 use tauri::State;
+use crate::services::ports;
 use crate::services::process::external_command;
 
 #[derive(Default)]
 pub struct PortForwardState(pub Mutex<HashMap<&'static str, Child>>);
 
-const JOBS: [(&str, &str, &str); 5] = [
-    ("mlflow", "svc/mlflow", "5001:5000"),
-    ("seaweedfs-s3", "svc/seaweedfs", "8333:8333"),
-    ("seaweedfs-filer", "svc/seaweedfs", "8888:8888"),
-    ("prefect", "svc/prefect", "4200:4200"),
-    ("kagent-ui", "svc/kagent-ui", "8090:8080"),
+/// (레지스트리 키, k8s 대상, 클러스터 쪽 포트). **호스트 포트는 여기 없다** — 그건 기동
+/// 시점에 `services::ports`가 비어 있는 것을 골라 배정한다(D1 개정: 표의 숫자는 우선
+/// 시도값이지 보장이 아니다). 키는 `ports::SPECS`에 있어야 하며 `jobs_keys_are_registered`
+/// 테스트가 그 일치를 고정한다.
+const JOBS: [(&str, &str, u16); 5] = [
+    ("mlflow", "svc/mlflow", 5000),
+    ("seaweedfs-s3", "svc/seaweedfs", 8333),
+    ("seaweedfs-filer", "svc/seaweedfs", 8888),
+    ("prefect", "svc/prefect", 4200),
+    ("kagent-ui", "svc/kagent-ui", 8080),
 ];
 
 /// 우리 앱이 관리하는 서비스만 대상으로 하는 pgrep 패턴. 무관한 kubectl 포워드는
@@ -93,13 +98,36 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
         tokio::time::sleep(std::time::Duration::from_millis(800)).await;
     }
 
-    // 3. 신규 spawn.
+    // 2-a. 방금 정리한 포워드가 D1 포트를 아직 놓지 않았을 수 있다. 그 상태로 배정하면
+    //      "우리가 쓰던 포트"를 남의 것으로 오인해 재시작마다 포트가 한 칸씩 밀린다
+    //      (포트 크리프). 우선 포트가 전부 풀릴 때까지 짧게 기다린 뒤 배정한다 —
+    //      진짜로 남이 점유한 경우에는 이 대기가 끝나고 그대로 대체 포트로 간다.
+    for _ in 0..10 {
+        if JOBS
+            .iter()
+            .all(|(key, _, _)| ports::is_port_free(ports::preferred_for(key)))
+        {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+
+    // 3. 호스트 포트 배정 후 신규 spawn.
+    //    배정은 반드시 위의 reap 이후다 — 우리 자신의 잔여 포워드를 정리하기 전에 검사하면
+    //    스스로를 충돌로 오인해 매번 대체 포트로 밀려난다.
+    let mut chosen: Vec<(&'static str, u16)> = Vec::new();
     {
         let mut guard = state.0.lock().map_err(|e| e.to_string())?;
         let (context, namespace) = crate::services::deploy_target::active_context();
-        for (key, svc, ports) in JOBS {
+        for (key, svc, target_port) in JOBS {
+            let host_port = ports::assign(key)?;
+            chosen.push((key, host_port));
             let child = external_command("kubectl")?
-                .args(["--context", &context, "port-forward", "-n", &namespace, svc, ports])
+                .args(["--context", &context, "port-forward", "-n", &namespace, svc])
+                .arg(format!("{host_port}:{target_port}"))
+                // 바인드 실패 사유를 잡아둔다 — 예전에는 상속돼 사라졌고 화면에는
+                // "not responding"만 남아 원인을 알 수 없었다(D22).
+                .stderr(std::process::Stdio::piped())
                 .spawn()
                 .map_err(|e| format!("port-forward({key}) failed to start: {e}"))?;
             guard.insert(key, child);
@@ -109,11 +137,10 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
     // 4. 성공 검증: 2초 대기 후 포트별 curl 확인. 실패한 포트의 자식은 정리하고
     //    부분 실패 사유를 포트별로 명시한다.
     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    let mut failed: Vec<(&str, &str)> = Vec::new();
-    for (key, _svc, ports) in JOBS {
-        let host_port = ports.split(':').next().unwrap_or("");
-        if !check_port_alive(host_port).await {
-            failed.push((key, host_port));
+    let mut failed: Vec<(&str, u16)> = Vec::new();
+    for (key, host_port) in &chosen {
+        if !check_port_alive(&host_port.to_string()).await {
+            failed.push((key, *host_port));
         }
     }
 
@@ -140,7 +167,21 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
         ));
     }
 
+    // 대체 포트가 선택됐으면 조용히 넘어가지 않는다 — 사용자의 북마크나 레포에 박힌
+    // `.dvc/config`는 D1 포트를 가정하고 있을 수 있다.
+    let moved: Vec<String> = chosen
+        .iter()
+        .filter(|(key, port)| *port != ports::preferred_for(key))
+        .map(|(key, port)| format!("{key}: {} → {port}", ports::preferred_for(key)))
+        .collect();
+
     let mut msg = "Port forwarding started.".to_string();
+    if !moved.is_empty() {
+        msg.push_str(&format!(
+            " Host port(s) in use, moved: {}.",
+            moved.join(", ")
+        ));
+    }
     if reaped_external > 0 {
         msg.push_str(&format!(" (took over {reaped_external} leftover external forward(s))"));
     }
@@ -163,4 +204,39 @@ pub async fn stop_port_forward(state: State<'_, PortForwardState>) -> Result<Str
 
     let total = tracked_count + reaped_external;
     Ok(format!("Port forwarding stopped. ({total} process(es) cleaned up)"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 호스트 포트의 단일 출처는 `services::ports`다. JOBS에 레지스트리에 없는 키가 생기면
+    /// `assign`이 런타임에 실패하므로, 컴파일 타임 대신 여기서 잡는다.
+    #[test]
+    fn jobs_keys_are_registered() {
+        for (key, _svc, _target) in JOBS {
+            assert!(
+                ports::SPECS.iter().any(|s| s.key == key),
+                "JOBS key [{key}] is missing from services::ports::SPECS"
+            );
+        }
+    }
+
+    /// 프런트의 `PORT_FORWARD_TOTAL`(useColima.ts)이 이 배열 길이와 어긋나면 진행률이
+    /// 거짓말을 한다 — 예전에 실제로 어긋났다.
+    #[test]
+    fn jobs_count_matches_frontend_total() {
+        let ts = include_str!("../../../src/hooks/useColima.ts");
+        let declared = ts
+            .lines()
+            .find_map(|l| l.split("PORT_FORWARD_TOTAL = ").nth(1))
+            .and_then(|rest| {
+                rest.trim_start()
+                    .split(|c: char| !c.is_ascii_digit())
+                    .find(|s| !s.is_empty())
+                    .and_then(|n| n.parse::<usize>().ok())
+            })
+            .expect("PORT_FORWARD_TOTAL not found in useColima.ts");
+        assert_eq!(declared, JOBS.len(), "PORT_FORWARD_TOTAL must match JOBS length");
+    }
 }

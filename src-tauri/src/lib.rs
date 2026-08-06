@@ -95,6 +95,7 @@ pub fn run() {
             start_model_serving,
             stop_model_serving,
             suggest_serving_port,
+            crate::services::ports::get_host_ports,
             get_service_access,
             get_guardrail_status,
             set_guardrail_config,

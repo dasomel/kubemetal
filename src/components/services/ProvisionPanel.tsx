@@ -3,6 +3,7 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { useColima } from '../../hooks/useColima';
 import { useDeployTarget } from '../../hooks/useDeployTarget';
 import { usePrefect } from '../../hooks/usePrefect';
+import { useServiceAccess } from '../../hooks/useServiceAccess';
 import { useTranslation } from '../../i18n/i18nContext';
 import { Boxes, ExternalLink, RefreshCw, Zap, ArrowUpRight, Radio } from 'lucide-react';
 
@@ -21,6 +22,14 @@ export const ProvisionPanel: React.FC = () => {
     refresh,
   } = useColima();
   const { t } = useTranslation();
+
+  // 엔드포인트 목록의 URL 출처. 포워딩을 켜거나 끌 때마다 실제 포트가 바뀔 수 있으므로
+  // 그 시점에 다시 읽는다(아래 start/stop 핸들러).
+  const { services, refresh: refreshServices } = useServiceAccess();
+
+  React.useEffect(() => {
+    void refreshServices();
+  }, [refreshServices]);
 
   const { target, isColima } = useDeployTarget();
 
@@ -138,7 +147,7 @@ export const ProvisionPanel: React.FC = () => {
         </button>
 
         <button
-          onClick={() => startPortForward()}
+          onClick={() => void startPortForward().then(refreshServices)}
           disabled={loading || !clusterUsable}
           className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed text-ink text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
@@ -159,7 +168,7 @@ export const ProvisionPanel: React.FC = () => {
         </button>
 
         <button
-          onClick={() => stopPortForward()}
+          onClick={() => void stopPortForward().then(refreshServices)}
           disabled={loading || !clusterUsable}
           className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed text-inkMuted text-bodyStrong rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
@@ -178,29 +187,35 @@ export const ProvisionPanel: React.FC = () => {
         <h3 className="text-label uppercase text-inkFaint mb-2 flex items-center gap-1.5">
           <ExternalLink className="w-3.5 h-3.5" /> {t('provision.hostEndpoints')}
         </h3>
+        {/* URL은 백엔드가 실제로 잡은 호스트 포트에서 온다(`get_service_access`). D1 포트가
+            점유돼 대체 포트로 밀렸을 때 여기에 옛 숫자를 박아두면 링크가 엉뚱한 곳으로 간다. */}
         <div className="flex flex-wrap gap-2 text-caption">
-          <button
-            type="button"
-            onClick={() => openEndpoint('http://127.0.0.1:5001')}
-            className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-primary flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            MLflow UI (http://127.0.0.1:5001)
-            <ArrowUpRight className="w-3 h-3" />
-          </button>
-          <button
-            type="button"
-            onClick={() => openEndpoint('http://127.0.0.1:8888')}
-            className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-primary flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            SeaweedFS Filer UI (http://127.0.0.1:8888)
-            <ArrowUpRight className="w-3 h-3" />
-          </button>
-          <span className="px-3 py-1.5 rounded-md bg-surfaceRaised text-inkMuted">
-            SeaweedFS S3 API (http://127.0.0.1:8333)
-          </span>
-          <span className="px-3 py-1.5 rounded-md bg-surfaceRaised text-inkMuted">
-            Model Serving (http://127.0.0.1:8080/v1/models)
-          </span>
+          {services.length === 0 ? (
+            <span className="px-3 py-1.5 rounded-md bg-surfaceRaised text-inkFaint">
+              {t('provision.endpointsUnknown')}
+            </span>
+          ) : (
+            services.map((svc) =>
+              svc.url ? (
+                <button
+                  key={svc.service}
+                  type="button"
+                  onClick={() => openEndpoint(svc.url)}
+                  className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-primary flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                >
+                  {svc.service} ({svc.url})
+                  <ArrowUpRight className="w-3 h-3" />
+                </button>
+              ) : (
+                <span
+                  key={svc.service}
+                  className="px-3 py-1.5 rounded-md bg-surfaceRaised text-inkFaint"
+                >
+                  {svc.service} — {t('provision.endpointInactive')}
+                </span>
+              ),
+            )
+          )}
         </div>
       </div>
     </div>
