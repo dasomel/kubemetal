@@ -32,7 +32,9 @@ use commands::modelhub::{
     download_hf_model, get_model_downloads, list_local_models, list_registered_models,
     register_model_mlflow, search_hf_models, upload_model_to_storage, ModelHubState,
 };
-use commands::port_forward::{start_port_forward, stop_port_forward, PortForwardState};
+use commands::port_forward::{
+    open_kagent_ui, start_port_forward, stop_port_forward, PortForwardState,
+};
 use commands::prefect::{
     get_eval_results, get_prefect_status, setup_eval_env, setup_prefect_env,
     start_prefect_runner, stop_prefect_runner, trigger_evaluate_flow, trigger_finetune_flow,
@@ -80,6 +82,7 @@ pub fn run() {
             provision_mlops_stack,
             start_port_forward,
             stop_port_forward,
+            open_kagent_ui,
             search_hf_models,
             download_hf_model,
             get_model_downloads,

@@ -14,7 +14,6 @@ import {
   Terminal,
 } from 'lucide-react';
 import { useColima } from '../../hooks/useColima';
-import { useHostPorts } from '../../hooks/useHostPorts';
 import { useTranslation } from '../../i18n/i18nContext';
 import type { KagentDiagnosticReport } from '../../types/ipc';
 import { publishKagentDiagnostics } from '../../state/kagentDiagnosticsStore';
@@ -34,9 +33,6 @@ const SUB_TABS: { id: SubTab; labelKey: string; icon: React.ElementType }[] = [
 
 export const KagentOpsView: React.FC = () => {
   const { status: cluster } = useColima();
-  // kagent UI 포워딩 포트는 백엔드 배정을 따른다(D1 기본 8090, 점유 시 대체 포트).
-  const { urlFor } = useHostPorts();
-  const kagentUiUrl = urlFor('kagent-ui');
   const { t } = useTranslation();
   const [subTab, setSubTab] = useState<SubTab>('diagnostics');
   const [contexts, setContexts] = useState<string[]>([]);
@@ -47,6 +43,7 @@ export const KagentOpsView: React.FC = () => {
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [installBusy, setInstallBusy] = useState<boolean>(false);
+  const [uiBusy, setUiBusy] = useState<boolean>(false);
 
   const activeAgents = new Set(report?.active_agents ?? []);
   const toggleableAgents = report?.available_agents ?? [];
@@ -107,6 +104,20 @@ export const KagentOpsView: React.FC = () => {
     fetchDiagnostics(selectedContext);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedContext]);
+
+  // UI 열기는 이 패널의 kubeconfig 선택기를 따른다(D33 원칙) — 저장된 배포 대상이 아니라.
+  // 백엔드가 그 컨텍스트로 포워딩을 띄우고 실제 URL을 돌려준다.
+  const handleOpenKagentUi = async () => {
+    setUiBusy(true);
+    try {
+      const url = await invoke<string>('open_kagent_ui', { context: selectedContext });
+      await openUrl(url);
+    } catch (e) {
+      setActionMsg(String(e));
+    } finally {
+      setUiBusy(false);
+    }
+  };
 
   const handleToggleAgent = async (agentName: string) => {
     const enable = !activeAgents.has(agentName);
@@ -169,13 +180,14 @@ export const KagentOpsView: React.FC = () => {
             </select>
           </div>
 
-          {cluster?.is_running && kagentUiUrl && (
+          {cluster?.is_running && (
             <button
               type="button"
-              onClick={() => openUrl(kagentUiUrl).catch((e) => setActionMsg(String(e)))}
+              disabled={uiBusy}
+              onClick={handleOpenKagentUi}
               className="px-3 py-1.5 rounded-lg bg-primaryStrong hover:brightness-110 text-inverse text-caption font-bold flex items-center gap-1.5 transition-all shadow-xs"
             >
-              {t('kagent.openUI')}
+              {uiBusy ? t('kagent.openingUI') : t('kagent.openUI')}
               <ArrowUpRight className="w-3.5 h-3.5" />
             </button>
           )}

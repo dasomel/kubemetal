@@ -6,7 +6,17 @@ use crate::services::ports;
 use crate::services::process::external_command;
 
 #[derive(Default)]
-pub struct PortForwardState(pub Mutex<HashMap<&'static str, Child>>);
+pub struct PortForwardState {
+    /// 대시보드가 켜고 끄는 스택 포워드. 대상은 저장된 배포 대상(D26) 하나다.
+    pub jobs: Mutex<HashMap<&'static str, Child>>,
+    /// kagent 패널이 보고 있는 컨텍스트별 kagent UI 포워드(컨텍스트 → (호스트 포트, 자식)).
+    ///
+    /// 대시보드 수명주기와 분리한 이유: kagent 패널은 클러스터를 옮겨 다니며 보는 화면이라
+    /// "지금 보고 있는 클러스터의 UI"가 필요한데, 대시보드의 시작/정지 버튼이 다른 탭의
+    /// 일시적 선택값에 의존하면 보이지 않는 결합이 생긴다. 배포 대상과 같은 컨텍스트면
+    /// 여기에 새로 만들지 않고 `jobs`의 포워드를 재사용한다.
+    pub kagent_ui: Mutex<HashMap<String, (u16, Child)>>,
+}
 
 /// (레지스트리 키, k8s 대상, 네임스페이스, 클러스터 쪽 포트).
 ///
@@ -27,14 +37,21 @@ const JOBS: [(&str, &str, Option<&str>, u16); 5] = [
     ("kagent-ui", "svc/kagent-ui", Some("kagent"), 8080),
 ];
 
-/// 우리 앱이 관리하는 서비스만 대상으로 하는 pgrep 패턴. 무관한 kubectl 포워드는
-/// 매칭되지 않도록 서비스명을 포함시킨다(불가침 경계).
-const SERVICE_PATTERNS: [&str; 4] = [
-    "port-forward.*svc/mlflow",
-    "port-forward.*svc/seaweedfs",
-    "port-forward.*svc/prefect",
-    "port-forward.*svc/kagent-ui",
-];
+/// 우리 앱이 관리하는 서비스만 대상으로 하는 pgrep 패턴의 서비스 부분. 무관한 kubectl
+/// 포워드는 매칭되지 않도록 서비스명을 포함시킨다(불가침 경계).
+const SERVICE_NAMES: [&str; 4] = ["svc/mlflow", "svc/seaweedfs", "svc/prefect", "svc/kagent-ui"];
+
+/// 특정 컨텍스트를 대상으로 하는 우리 포워드만 매칭하는 pgrep 패턴.
+///
+/// 컨텍스트를 넣지 않으면 **다른 클러스터로 건 포워드까지 죽인다** — kagent 패널이
+/// 카카오/narwhal의 UI를 보고 있는데 대시보드에서 포워딩을 켜면 그게 끊긴다.
+/// 남의 클러스터를 건드리지 않는다는 경계는 여기에도 적용된다.
+fn service_patterns_for(context: &str) -> Vec<String> {
+    SERVICE_NAMES
+        .iter()
+        .map(|svc| format!("--context {context} port-forward.*{svc}"))
+        .collect()
+}
 
 /// `pgrep -f <pattern>`으로 매칭되는 pid 목록을 반환. 실패 시 빈 벡터(포워드 없음으로 취급).
 async fn find_pids_by_pattern(pattern: &str) -> Vec<i32> {
@@ -54,10 +71,10 @@ async fn find_pids_by_pattern(pattern: &str) -> Vec<i32> {
 /// 앱 자식이든 상관없이 SIGTERM으로 인수/정리한다. `mlx.rs::terminate_pid`와 동일한
 /// `libc::kill` 패턴 — 여기서는 자식 프로세스가 아니라 pgrep으로 찾은 외부 pid라 SIGKILL
 /// 승급 없이 SIGTERM만 보낸다(kubectl은 SIGTERM에 즉시 종료).
-async fn reap_external_port_forwards() -> usize {
+async fn reap_external_port_forwards(context: &str) -> usize {
     let mut count = 0usize;
-    for pattern in SERVICE_PATTERNS {
-        for pid in find_pids_by_pattern(pattern).await {
+    for pattern in service_patterns_for(context) {
+        for pid in find_pids_by_pattern(&pattern).await {
             unsafe {
                 libc::kill(pid, libc::SIGTERM);
             }
@@ -92,15 +109,17 @@ async fn check_port_alive(host_port: &str) -> bool {
 pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<String, String> {
     // 1. 이전 세션에서 남은 우리 자식이 있으면 먼저 정리(재시작 케이스).
     let stale: Vec<Child> = {
-        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        let mut guard = state.jobs.lock().map_err(|e| e.to_string())?;
         guard.drain().map(|(_, c)| c).collect()
     };
     for mut child in stale {
         let _ = child.kill().await;
     }
 
-    // 2. 외부(쉘 nohup 등)에서 떠 있는 잔여 포워드를 인수 — 우리 서비스 대상만.
-    let reaped_external = reap_external_port_forwards().await;
+    // 2. 외부(쉘 nohup 등)에서 떠 있는 잔여 포워드를 인수 — 우리 서비스이면서
+    //    **이 배포 대상 컨텍스트**인 것만. 다른 클러스터로 건 포워드는 건드리지 않는다.
+    let (target_context, target_namespace) = crate::services::deploy_target::active_context();
+    let reaped_external = reap_external_port_forwards(&target_context).await;
     if reaped_external > 0 {
         tokio::time::sleep(std::time::Duration::from_millis(800)).await;
     }
@@ -124,14 +143,14 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
     //    스스로를 충돌로 오인해 매번 대체 포트로 밀려난다.
     let mut chosen: Vec<(&'static str, u16)> = Vec::new();
     {
-        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
-        let (context, namespace) = crate::services::deploy_target::active_context();
+        let mut guard = state.jobs.lock().map_err(|e| e.to_string())?;
+        let (context, namespace) = (&target_context, &target_namespace);
         for (key, svc, job_ns, target_port) in JOBS {
             let host_port = ports::assign(key)?;
             chosen.push((key, host_port));
             let ns = job_ns.unwrap_or(namespace.as_str());
             let child = external_command("kubectl")?
-                .args(["--context", &context, "port-forward", "-n", ns, svc])
+                .args(["--context", context, "port-forward", "-n", ns, svc])
                 .arg(format!("{host_port}:{target_port}"))
                 // 바인드 실패 사유를 잡아둔다 — 예전에는 상속돼 사라졌고 화면에는
                 // "not responding"만 남아 원인을 알 수 없었다(D22).
@@ -155,7 +174,7 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
     if !failed.is_empty() {
         let mut to_kill: Vec<Child> = Vec::new();
         {
-            let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+            let mut guard = state.jobs.lock().map_err(|e| e.to_string())?;
             for (key, _) in &failed {
                 if let Some(child) = guard.remove(key) {
                     to_kill.push(child);
@@ -196,19 +215,123 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
     Ok(msg)
 }
 
+/// kagent 패널이 보고 있는 컨텍스트의 kagent UI로 포워딩하고 그 URL을 돌려준다.
+///
+/// 이 커맨드가 따로 있는 이유는 D33과 같은 결함을 막기 위해서다 — 패널의 kubeconfig
+/// 선택기가 진단·에이전트 토글·설치에는 반영되는데 "UI 열기"만 저장된 배포 대상을 보면,
+/// 한 화면에 "어느 클러스터인가"가 두 개 생긴다(실측 2026-08-07: 카카오를 보면서 열었는데
+/// colima UI가 떴다). 대시보드의 포워딩 수명주기는 배포 대상 기준으로 그대로 두고,
+/// 여기서만 컨텍스트별 임시 포워드를 관리한다.
+#[tauri::command]
+pub async fn open_kagent_ui(
+    state: State<'_, PortForwardState>,
+    context: String,
+) -> Result<String, String> {
+    let url_of = |port: u16| format!("http://127.0.0.1:{port}");
+
+    // 1. 배포 대상과 같은 컨텍스트고 대시보드 포워드가 살아 있으면 그것을 재사용한다.
+    //    같은 클러스터에 포워드를 두 개 띄울 이유가 없다.
+    let (target_context, _) = crate::services::deploy_target::active_context();
+    if context == target_context {
+        let has_job = state
+            .jobs
+            .lock()
+            .map_err(|e| e.to_string())?
+            .contains_key("kagent-ui");
+        if has_job {
+            return Ok(url_of(ports::port_for("kagent-ui")));
+        }
+    }
+
+    // 2. 이 컨텍스트로 이미 띄워둔 임시 포워드가 살아 있으면 재사용, 죽었으면 버린다.
+    //    (std Mutex 가드는 await를 넘길 수 없으므로 블록 안에서 끝낸다)
+    let existing: Option<u16> = {
+        let mut guard = state.kagent_ui.lock().map_err(|e| e.to_string())?;
+        match guard.get_mut(&context) {
+            Some((port, child)) => match child.try_wait() {
+                Ok(None) => Some(*port), // 아직 살아 있음
+                _ => {
+                    guard.remove(&context);
+                    None
+                }
+            },
+            None => None,
+        }
+    };
+    if let Some(port) = existing {
+        if check_port_alive(&port.to_string()).await {
+            return Ok(url_of(port));
+        }
+        // 프로세스는 살아 있는데 응답이 없으면 신뢰하지 않고 새로 띄운다.
+        if let Ok(mut guard) = state.kagent_ui.lock() {
+            guard.remove(&context);
+        }
+    }
+
+    // 3. 새 포워드. 대시보드 포워드가 쓰는 포트는 `find_free_port`가 자연히 건너뛴다.
+    let (preferred, range_end) = {
+        let spec = ports::SPECS
+            .iter()
+            .find(|s| s.key == "kagent-ui")
+            .ok_or("kagent-ui spec missing")?;
+        (spec.preferred, spec.range_end)
+    };
+    let port = ports::find_free_port(preferred, range_end)?;
+
+    let child = external_command("kubectl")?
+        .args(["--context", &context, "port-forward", "-n", "kagent", "svc/kagent-ui"])
+        .arg(format!("{port}:8080"))
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("kagent UI port-forward({context}) failed to start: {e}"))?;
+
+    {
+        let mut guard = state.kagent_ui.lock().map_err(|e| e.to_string())?;
+        guard.insert(context.clone(), (port, child));
+    }
+
+    // 기동 확인 — 응답하지 않으면 자식을 정리하고 실패를 그대로 올린다(D22).
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    if !check_port_alive(&port.to_string()).await {
+        let dead = state
+            .kagent_ui
+            .lock()
+            .map_err(|e| e.to_string())?
+            .remove(&context);
+        if let Some((_, mut child)) = dead {
+            let _ = child.kill().await;
+        }
+        return Err(format!(
+            "kagent UI on context [{context}] is not responding at :{port}. \
+             Verify kagent is installed there (kubectl --context {context} get svc kagent-ui -n kagent)."
+        ));
+    }
+
+    Ok(url_of(port))
+}
+
 #[tauri::command]
 pub async fn stop_port_forward(state: State<'_, PortForwardState>) -> Result<String, String> {
     let children: Vec<_> = {
-        let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+        let mut guard = state.jobs.lock().map_err(|e| e.to_string())?;
         guard.drain().map(|(_, child)| child).collect()
     };
-    let tracked_count = children.len();
-    for mut child in children {
+    // kagent 패널이 다른 컨텍스트로 띄운 임시 포워드도 함께 정리한다 — 수명주기는 분리돼
+    // 있어도 "정지"는 앱이 띄운 것을 남기지 않는다는 뜻이어야 한다. 남겨두면 세션 사이로
+    // 새어 나가고, 그건 원격 클러스터로 향한 프로세스라 더 나쁘다.
+    let ad_hoc: Vec<Child> = {
+        let mut guard = state.kagent_ui.lock().map_err(|e| e.to_string())?;
+        guard.drain().map(|(_, (_, child))| child).collect()
+    };
+    let tracked_count = children.len() + ad_hoc.len();
+    for mut child in children.into_iter().chain(ad_hoc) {
         let _ = child.kill().await;
     }
 
-    // "정지는 항상 통한다" — 우리가 추적하지 못한 외부 매칭 포워드도 함께 정리.
-    let reaped_external = reap_external_port_forwards().await;
+    // "정지는 항상 통한다" — 우리가 추적하지 못한 외부 매칭 포워드도 함께 정리하되,
+    // 배포 대상 컨텍스트로 한정한다(kagent 패널이 다른 클러스터로 띄운 UI 포워드는 별도 관리).
+    let (target_context, _) = crate::services::deploy_target::active_context();
+    let reaped_external = reap_external_port_forwards(&target_context).await;
 
     let total = tracked_count + reaped_external;
     Ok(format!("Port forwarding stopped. ({total} process(es) cleaned up)"))
