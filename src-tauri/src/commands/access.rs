@@ -21,9 +21,10 @@ pub struct ServiceAccess {
     pub credentials: Vec<CredentialItem>,
 }
 
-/// `curl -w %{http_code}`로 헬스를 판정한다. 연결 자체가 실패하면 curl은 "000"을 쓴다
-/// (FR-09 범위에서는 TCP 응답이 오면 상태 코드와 무관하게 "ok"로 취급 — 서비스가 살아있다는
-/// 신호로 충분하며, 라우트별 200 여부까지 검증하지는 않는다).
+/// `curl -w %{http_code}`로 헬스를 판정한다 — **HTTP 200일 때만** ok다.
+/// 예전에는 "연결만 되면 ok"였는데, 그러면 포워드가 죽은 뒤 그 포트를 선점한 무관한
+/// 프로세스의 404가 정상으로 보고된다. `check_serving_health`가 같은 이유로 이미 200을
+/// 요구하고 있었고, 그 기준을 나머지 서비스에도 맞춘다(D22).
 async fn check_health(url: &str) -> String {
     let mut cmd = match external_command("curl") {
         Ok(c) => c,
@@ -37,10 +38,15 @@ async fn check_health(url: &str) -> String {
         Ok(out) => String::from_utf8_lossy(&out.stdout).to_string(),
         Err(_) => return "unreachable".into(),
     };
-    if code == "000" || code.is_empty() {
-        "unreachable".into()
-    } else {
+    // 200만 ok로 친다. "무엇이든 HTTP로 답하면 ok"였을 때는 포워드가 죽고 그 포트를
+    // 선점한 남의 프로세스가 404를 돌려줘도 정상으로 보고했다 — 실측 2026-08-06:
+    // Docker 컨테이너 `narwhal-airgap-registry`가 5001을 잡고 있고 MLflow 경로에
+    // 404를 답한다. 포트가 아니라 서비스가 살아 있는지를 봐야 한다(D22).
+    // 정상 상태의 세 서비스는 모두 200을 반환함을 실측 확인했다.
+    if code == "200" {
         "ok".into()
+    } else {
+        "unreachable".into()
     }
 }
 
@@ -149,9 +155,9 @@ pub(crate) async fn resolve_s3_credentials() -> (String, String) {
 
 #[tauri::command]
 pub async fn get_service_access(state: State<'_, MlxState>) -> Result<Vec<ServiceAccess>, String> {
-    const MLFLOW_URL: &str = "http://localhost:5001";
-    const S3_URL: &str = "http://localhost:8333";
-    const FILER_URL: &str = "http://localhost:8888";
+    const MLFLOW_URL: &str = "http://127.0.0.1:5001";
+    const S3_URL: &str = "http://127.0.0.1:8333";
+    const FILER_URL: &str = "http://127.0.0.1:8888";
 
     // Model Serving 포트는 고정값이 아니라 실제 기동된 서빙 프로세스의 포트를 따른다
     // (사용자가 서빙 시작 시 임의의 빈 포트를 지정할 수 있으므로).

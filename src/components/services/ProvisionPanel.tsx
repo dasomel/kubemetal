@@ -181,22 +181,22 @@ export const ProvisionPanel: React.FC = () => {
         <div className="flex flex-wrap gap-2 text-caption">
           <button
             type="button"
-            onClick={() => openEndpoint('http://localhost:5001')}
+            onClick={() => openEndpoint('http://127.0.0.1:5001')}
             className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-primary flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
-            MLflow UI (http://localhost:5001)
+            MLflow UI (http://127.0.0.1:5001)
             <ArrowUpRight className="w-3 h-3" />
           </button>
           <button
             type="button"
-            onClick={() => openEndpoint('http://localhost:8888')}
+            onClick={() => openEndpoint('http://127.0.0.1:8888')}
             className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-primary flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
-            SeaweedFS Filer UI (http://localhost:8888)
+            SeaweedFS Filer UI (http://127.0.0.1:8888)
             <ArrowUpRight className="w-3 h-3" />
           </button>
           <span className="px-3 py-1.5 rounded-md bg-surfaceRaised text-inkMuted">
-            SeaweedFS S3 API (http://localhost:8333)
+            SeaweedFS S3 API (http://127.0.0.1:8333)
           </span>
           <span className="px-3 py-1.5 rounded-md bg-surfaceRaised text-inkMuted">
             Model Serving (http://127.0.0.1:8080/v1/models)

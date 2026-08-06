@@ -457,7 +457,7 @@ pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> 
             "%{http_code}",
             "-X",
             "PUT",
-            "http://localhost:8333/models",
+            "http://127.0.0.1:8333/models",
         ])
         .output()
         .await
@@ -484,7 +484,7 @@ pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> 
             return Err(format!("Path traversal detected: {rel_str}"));
         }
         let url = format!(
-            "http://localhost:8333/models/{repo_slug}/{}",
+            "http://127.0.0.1:8333/models/{repo_slug}/{}",
             rel_to_url_path(&safe_rel_path)
         );
         let out = external_command("curl")?
@@ -527,7 +527,7 @@ pub async fn register_model_mlflow(repo_id: String) -> Result<String, String> {
             "Content-Type: application/json",
             "-d",
             &create_body,
-            "http://localhost:5001/api/2.0/mlflow/registered-models/create",
+            "http://127.0.0.1:5001/api/2.0/mlflow/registered-models/create",
         ])
         .output()
         .await
@@ -558,7 +558,7 @@ pub async fn register_model_mlflow(repo_id: String) -> Result<String, String> {
             "Content-Type: application/json",
             "-d",
             &version_body,
-            "http://localhost:5001/api/2.0/mlflow/model-versions/create",
+            "http://127.0.0.1:5001/api/2.0/mlflow/model-versions/create",
         ])
         .output()
         .await
@@ -591,7 +591,7 @@ pub async fn list_registered_models() -> Result<Vec<RegisteredModel>, String> {
     let output = external_command("curl")?
         .args([
             "-s",
-            "http://localhost:5001/api/2.0/mlflow/registered-models/search",
+            "http://127.0.0.1:5001/api/2.0/mlflow/registered-models/search",
         ])
         .output()
         .await

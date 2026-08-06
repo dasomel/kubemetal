@@ -578,7 +578,7 @@ pub async fn trigger_finetune_flow(config: FineTuneConfig) -> Result<String, Str
 
 /// MLflow REST 호출 베이스 — `modelhub.rs`의 기존 MLflow REST 호출과 동일 호스트 표기
 /// (`localhost:5001`, 포트포워딩 `svc/mlflow 5001:5000` 전제).
-const MLFLOW_BASE: &str = "http://localhost:5001";
+const MLFLOW_BASE: &str = "http://127.0.0.1:5001";
 
 /// `trigger_finetune_flow`와 동일 패턴으로 evaluate deployment id를 조회해 flow run을
 /// 생성한다. `serving_port`로 `host_runner.py::evaluate_flow`의 `serving_url` 파라미터

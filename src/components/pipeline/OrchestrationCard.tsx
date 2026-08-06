@@ -120,7 +120,7 @@ export const OrchestrationCard: React.FC = () => {
         {serverReady && (
           <button
             type="button"
-            onClick={() => openEndpoint('http://localhost:4200')}
+            onClick={() => openEndpoint('http://127.0.0.1:4200')}
             className="px-2.5 py-1 rounded-md bg-surfaceRaised hover:brightness-95 text-primary text-caption flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             Prefect UI

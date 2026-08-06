@@ -272,7 +272,7 @@ export const PipelineView: React.FC = () => {
             .slice(0, 3)
             .map((m) => `${m.task} · ${m.metric} ${m.value.toFixed(3)}`)
             .join(' / '),
-          link: { label: 'MLflow UI', url: 'http://localhost:5001' },
+          link: { label: 'MLflow UI', url: 'http://127.0.0.1:5001' },
         }
       : {
           key: 'eval',
