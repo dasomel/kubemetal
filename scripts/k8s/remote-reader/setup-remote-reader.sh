@@ -78,6 +78,38 @@ if [ -z "$CA" ] || [ -z "$SERVER" ]; then
 fi
 echo "  -> 토큰·CA 확보, API 서버 $SERVER"
 
+# [3-a] API 주소가 루프백이면 파드에서 그대로 쓸 수 없다.
+#
+# 카카오 클라우드처럼 bastion/SSH 터널을 거치는 클러스터는 kubeconfig의 server가
+# `https://127.0.0.1:6443`이다. 그 주소는 **Mac 호스트에서만** 의미가 있고, 도구 서버
+# 파드 입장에서는 자기 자신의 루프백이라 연결이 실패한다(실측 2026-08-07: HTTP=000).
+#
+# 파드는 D10 브리지 경로로 Mac 호스트에 닿으므로(`host.lima.internal`, 실측: 같은 터널에
+# HTTP=200) 주소만 바꿔주면 된다. 다만 API 서버 인증서 SAN에는 그 이름이 없으므로
+# `tls-server-name`으로 검증 대상 이름을 따로 준다 — 자격증명 경로에
+# `insecure-skip-tls-verify`는 쓰지 않는다(D21).
+TLS_SERVER_NAME=""
+case "$SERVER" in
+  https://127.0.0.1:*|https://localhost:*|https://[::1]:*)
+    PORT="${SERVER##*:}"
+    # 인증서가 실제로 보증하는 이름을 고른다 — 없는 이름을 쓰면 검증이 깨진다.
+    SANS="$(echo | openssl s_client -connect "127.0.0.1:${PORT}" 2>/dev/null \
+      | openssl x509 -noout -text 2>/dev/null \
+      | awk '/Subject Alternative Name/{getline; print}')"
+    for candidate in kubernetes kubernetes.default localhost; do
+      case "$SANS" in *"DNS:${candidate},"*|*"DNS:${candidate}"*) TLS_SERVER_NAME="$candidate"; break;; esac
+    done
+    if [ -z "$TLS_SERVER_NAME" ]; then
+      echo "  !! API 서버가 루프백($SERVER)인데 인증서 SAN에서 쓸 이름을 찾지 못했다." >&2
+      echo "     SAN: ${SANS:-(조회 실패)}" >&2
+      echo "     TLS 검증을 포기하지 않으므로 여기서 멈춘다." >&2
+      exit 1
+    fi
+    SERVER="https://host.lima.internal:${PORT}"
+    echo "  -> 루프백 API 감지: 파드용 주소를 $SERVER 로, TLS 검증 이름을 [$TLS_SERVER_NAME]로 사용"
+    ;;
+esac
+
 echo "[4/5] 권한 상한 실측 (읽기는 되고 쓰기는 막혀야 한다)"
 SA="system:serviceaccount:kagent:kagent-remote-reader"
 can() { kubectl --context "$REMOTE_CONTEXT" $KUBECTL_TIMEOUT auth can-i "$1" "$2" --all-namespaces --as="$SA" 2>/dev/null | tail -1; }
@@ -101,7 +133,8 @@ clusters:
 - name: remote
   cluster:
     server: ${SERVER}
-    certificate-authority-data: ${CA}
+    certificate-authority-data: ${CA}${TLS_SERVER_NAME:+
+    tls-server-name: ${TLS_SERVER_NAME}}
 users:
 - name: remote-reader
   user:
