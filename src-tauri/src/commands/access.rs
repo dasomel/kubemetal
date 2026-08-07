@@ -225,3 +225,37 @@ pub async fn get_service_access(state: State<'_, MlxState>) -> Result<Vec<Servic
         },
     ])
 }
+
+#[cfg(test)]
+mod tests {
+    /// SeaweedFS S3 플레이스홀더 자격증명은 **네 곳**에 같은 값으로 존재한다:
+    /// 매니페스트(`seaweedfs-s3-credentials.yaml`), Rust 폴백(`resolve_s3_credentials`),
+    /// 그리고 파이썬 두 곳(`ingest_host.py`·`rag_host.py`의 env 기본값).
+    ///
+    /// 파생시킬 수가 없다 — 파이썬은 앱 없이 단독 실행될 수 있어야 하고, 매니페스트는
+    /// 클러스터가 읽는다. 그래서 CLAUDE.md 규칙대로 "어긋나면 실패하는 테스트"를 둔다.
+    /// D21(2026-07-24)이 기록한 desync가 바로 이 계열이고, `render.sh`의 출력 헤더도
+    /// 이 값들이 서로 같아야 한다고 명시한다.
+    #[test]
+    fn s3_placeholder_credentials_match_across_all_four_sources() {
+        const MANIFEST: &str = include_str!("../../../scripts/k8s/seaweedfs-s3-credentials.yaml");
+        const INGEST: &str = include_str!("../../../scripts/data/ingest_host.py");
+        const RAG: &str = include_str!("../../../scripts/rag/rag_host.py");
+
+        // Rust 폴백이 기준값이다(`resolve_s3_credentials`와 같은 리터럴).
+        let (access, secret) = ("kubemetal", "kubemetal-local");
+
+        assert!(
+            MANIFEST.contains(&format!("access-key-id: {access}"))
+                && MANIFEST.contains(&format!("secret-access-key: {secret}")),
+            "seaweedfs-s3-credentials.yaml drifted from the Rust fallback"
+        );
+        for (name, src) in [("ingest_host.py", INGEST), ("rag_host.py", RAG)] {
+            assert!(
+                src.contains(&format!("\"KUBEMETAL_S3_ACCESS_KEY\", \"{access}\""))
+                    && src.contains(&format!("\"KUBEMETAL_S3_SECRET_KEY\", \"{secret}\"")),
+                "{name} drifted from the Rust fallback"
+            );
+        }
+    }
+}
