@@ -107,4 +107,8 @@ forward — forwards die with their parent.
 ## Commits
 
 Conventional Commits, scoped per verified task. **LOCAL only** — never push unless asked.
-History lives in `git log` and `docs/mistakes-log.md`; don't maintain a changelog here.
+`CHANGELOG.md` / `CHANGELOG.ko.md` carry **user-visible** change per release (Keep a Changelog,
+updated at release time — not per commit). Everything else stays where it already lives:
+rationale in the D-registry, defects and their lessons in `docs/mistakes-log.md`, and the full
+history in `git log`. Don't restate a mistakes-log row in the changelog — one is why the code
+is the way it is, the other is what a user gets.
