@@ -208,10 +208,12 @@ model, prompt, and hardware.
 - **Phase 2 (implementation complete)**: Automatic service-integration wiring
   (MLflow↔SeaweedFS S3), Model Hub (HF search → download → upload → registration), host
   MLX LoRA fine-tuning + pipeline visualization, unified Access Console
-- **Phase 3 (in progress)**: Unified dashboard UI, `.dmg` packaging, and memory
-  pressure/battery/sleep-prevention guardrails are complete. Thermal guardrails (reducing
-  batch size under high temperature) and optional powermetrics-based Metal GPU monitoring
-  are not yet started
+- **Phase 3 (complete)**: Unified dashboard UI, `.dmg` packaging, and memory
+  pressure/battery/sleep-prevention guardrails. Thermal guardrails and Metal GPU monitoring
+  shipped by a different route than originally planned: GPU utilisation comes from a
+  sudo-free `ioreg -c IOAccelerator` parse rather than `powermetrics` (D2), and high
+  temperature **pauses training** at `NSProcessInfo.thermalState` `serious` rather than
+  shrinking the batch size (D28)
 
 See [docs/01-proposal.md §7](docs/01-proposal.md#7-단계별-개발-로드맵-roadmap) (Korean)
 for the detailed roadmap.

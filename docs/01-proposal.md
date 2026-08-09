@@ -43,8 +43,8 @@
 │ ┌──────────────────────────────┐     ┌───────────────────────────────┐ │
 │ │ K8s Controller (Colima / vz) │     │ Hardware Guardrail Monitor    │ │
 │ │ • MLflow (Experiment Track)  │     │ • RAM/CPU (sysinfo, Phase 1)  │ │
-│ │ • SeaweedFS (Artifact Store) │     │ • Metal GPU (powermetrics,    │ │
-│ │ • Prefect Server (Scheduler) │     │   Phase 3 선택 기능·root 필요)│ │
+│ │ • SeaweedFS (Artifact Store) │     │ • Metal GPU (ioreg, sudo-free)│ │
+│ │ • Prefect Server (Scheduler) │     │ • 발열 (NSProcessInfo, D28)   │ │
 │ └──────────────────────────────┘     └───────────────────────────────┘ │
 └────────────────────────────────────┬────────────────────────────────────┘
                                      │ Host Process Spawner / Internal Bridge
@@ -84,7 +84,7 @@ MLflow/SeaweedFS/Prefect Server를 K8s(Colima + K3s VM) 위에 올리는 것은 
 | 레이어 | 기술 스택 | 선정 이유 |
 | --- | --- | --- |
 | **GUI Framework** | **Tauri v2 (Rust + React)** | Electron 대비 메모리 점유율이 낮고(RAM 약 30~50MB), 빠른 반응 속도 |
-| **Control Daemon** | **Rust / Python** | macOS `Virtualization.framework` 및 CLI(`colima`, `kubectl`) 제어. `powermetrics`는 CLI 도구이며 공개 C API가 없어, 필요 시 서브프로세스 실행 + stdout 파싱 방식으로 연동 (Phase 3, root 권한 필요) |
+| **Control Daemon** | **Rust / Python** | macOS `Virtualization.framework` 및 CLI(`colima`, `kubectl`) 제어. GPU 점유율은 `powermetrics`(root 필요)를 쓰지 않고 sudo-free `ioreg -c IOAccelerator` 파싱으로 얻는다 — D2 개정 |
 | **K8s Runtime** | **Colima (`vz` + `virtiofs`) + K3s** | macOS 네이티브 가상화로 RAM 오버헤드 최소화, 동적 메모리 할당 |
 | **Compute Engine** | **Apple MLX / `llama-server`** | 유니파이드 메모리 zero-copy 지원. PyTorch MPS 대비 토큰 처리 속도는 워크로드(모델 크기, 배치, 양자화)에 따라 상이하며, 구체적 수치는 자체 벤치마크로 검증 예정 |
 | **Pipeline & MLOps** | **MLflow + Prefect** | Kubeflow 대비 가볍고(RAM 약 1~2GB), Prefect Host Worker로 호스트 MLX 제어가 매끄러움 |
@@ -97,7 +97,7 @@ MLflow/SeaweedFS/Prefect Server를 K8s(Colima + K3s VM) 위에 올리는 것은 
 1. **Cluster & Infra Health Dashboard**
    * Colima(K3s) 클러스터 원클릭 생성/정지/스펙 조절
    * macOS RAM/CPU 사용량(Phase 1, sysinfo 기반)과 K8s Pod 메모리 시각화
-   * Metal GPU 점유율은 Phase 3에서 선택적 privileged helper를 통해 표시 (root 권한 필요)
+   * Metal GPU 점유율은 sudo 없이 `ioreg -c IOAccelerator`에서 얻어 상시 표시한다(D2 개정 — privileged helper 방식은 채택하지 않았다)
 
 2. **MLX Training & Fine-Tuning Studio**
    * Hugging Face 모델 검색 및 로컬 다운로드
@@ -142,7 +142,8 @@ Mac mini, Mac Studio뿐만 아니라 **MacBook Air/Pro 라인업** 지원을 위
 
 * **전력 & 발열 가드레일 (Battery & Thermal Guard)**
   * 배터리 모드 진입 감지 시 학습 일시정지 옵션 제공 (`IOPSCopyPowerSources`)
-  * 고온 진입 시 MLX 배치 크기 자동 축소
+  * 고온 진입 시 학습 일시정지 — `NSProcessInfo.thermalState`가 `serious` 이상일 때 발동하며
+    `fair`는 부하 시 정상이라 제외한다(D28). 배치 크기 자동 축소는 채택하지 않았다
   * 학습 진행 중 슬립 모드 방지 (`caffeinate` 연동)
 
 ---
@@ -174,21 +175,29 @@ Mac mini, Mac Studio뿐만 아니라 **MacBook Air/Pro 라인업** 지원을 위
     ├── 서비스 크리덴셜 자동 프로비저닝 + 앱에서 원클릭 인증 접근(임베디드/브라우저)
     └── Keycloak급 IdP 기반 SSO는 멀티유저/원격 확장 시 별도 검토
 
-[Phase 3: GUI Optimization & Packaging] — 가드레일·패키징 완료, GPU 모니터링 미착수
+[Phase 3: GUI Optimization & Packaging] — 완료
 ├── 통합 대시보드 UI 완성 (Training Studio & Pipeline Visualizer) — 완료
 ├── macOS 애플리케이션 번들링 (.dmg) 및 리소스 자동 내장 (Zero-Config) — 완료
 │   (`pnpm tauri build`, resource_dir 번들 구조 실측 검증 — docs/03 §5 전제 #3)
+│   CI 릴리스는 `.app` zip으로 배포한다 — 헤드리스 세션에서 .dmg 단계가 Finder
+│   AppleScript 대기로 멈춘다(실측). 로컬 `make app`은 두 타깃 모두 만든다.
 ├── 하드웨어 가드레일 (메모리 압박/배터리/슬립 방지) — 완료
 │   (memory pressure warn/critical, 배터리 구동 시 일시정지, caffeinate 연동, D16/D17)
-└── (선택) 발열 가드레일(고온 시 배치 크기 자동 축소) 및 powermetrics 기반 Metal GPU
-    점유율 모니터링 — 둘 다 미착수 (후자는 privileged helper 방식, root 권한 필요)
+└── 발열 가드레일 및 Metal GPU 점유율 모니터링 — 완료 (**둘 다 계획과 다른 방식으로**)
+    ├── GPU: `powermetrics`(root 필요)를 버리고 sudo-free `ioreg -c IOAccelerator`
+    │   파싱으로 구현했다 — D2 개정. 대시보드와 헤더에 실제 렌더된다.
+    └── 발열: "배치 크기 자동 축소"가 아니라 `NSProcessInfo.thermalState`가 `serious`
+        이상일 때 **학습 일시정지**다 — D28. `fair`는 부하 시 정상이라 발동하지 않으며,
+        이 클래스 하드웨어에는 발열의 CLI 소스가 없다(`pmset`/`sysctl`/`ioreg AppleSMC`
+        모두 비어 있음, 실측).
 
-[Phase 4a: 파이프라인 오케스트레이션] — 진행 중 (docs/05-mlops-research.md Q1, D19)
+[Phase 4a: 파이프라인 오케스트레이션] — 완료 (docs/05-mlops-research.md Q1, D19)
 └── Prefect 3 서버 파드(4200, ~512Mi) + 호스트 venv Process Worker(`host_runner.py`)
     로 파인튜닝 flow를 REST로 트리거·추적. `finetune`/`evaluate` 2개 deployment 등록,
-    워크풀 미사용(연산은 항상 macOS 호스트)
+    워크풀 미사용(연산은 항상 macOS 호스트). 실기기 E2E(2026-07-23): REST로 5-iter 스모크
+    파인튜닝 트리거 → flow run COMPLETED 확인
 
-[Phase 4b: 평가 자동화] — 진행 중 (docs/05-mlops-research.md Q2, D20)
+[Phase 4b: 평가 자동화] — 완료 (docs/05-mlops-research.md Q2, D20)
 └── lm-evaluation-harness(`local-completions`, mlx_lm.server `/v1/completions` 무수정
     연결) + MLflow experiment `kubemetal-eval`로 `evaluate` flow 실구현. venv
     `setup_eval_env` → Prefect REST `trigger_evaluate_flow` → 결과 조회
