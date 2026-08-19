@@ -1,0 +1,1 @@
+KubeMetal is already Rust-based. Prioritize Rust for OS/hardware access, air-gap artifact verification, GPU telemetry parsers, sandbox/runtime orchestration, and Local LLM tool authorization. Keep UI in React/TypeScript.
