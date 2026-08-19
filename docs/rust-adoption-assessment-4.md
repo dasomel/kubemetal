@@ -1,0 +1,1 @@
+Rust deepening candidates: artifact verification, GPU telemetry parsing, sandbox/runtime orchestration, and LLM tool authorization. Avoid duplicate business logic in TS.
