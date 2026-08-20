@@ -78,10 +78,19 @@ pub async fn get_kagent_diagnostics(
 ) -> Result<KagentDiagnosticReport, String> {
     let target_ctx = context.unwrap_or_else(|| "colima".into());
 
+    // MLOps 스택 네임스페이스는 대상마다 다르다 — colima는 default, 외부 클러스터는
+    // kubemetal이다(D26). "default"로 고정돼 있을 때는 외부 클러스터를 진단해도 스택
+    // 파드를 한 건도 못 보고 "0 pod(s)"를 정상처럼 보고했다. D30 기본값인 L1(에이전트
+    // 온리)에서는 스택 자체가 없어 0이 맞지만, L2 풀스택 배포에서는 CrashLoopBackOff가
+    // 통째로 가려진다.
+    //
+    // 축은 화면 드롭다운(`context` 인자)이다 — 저장된 대상이 아니다(D33).
+    let stack_ns = crate::services::deploy_target::namespace_for_context(&target_ctx);
+
     // 두 네임스페이스 조회는 서로 무관하므로 동시에 실행한다.
     let (kagent_pods, default_pods) = tokio::join!(
         get_pods_json(&target_ctx, "kagent"),
-        get_pods_json(&target_ctx, "default"),
+        get_pods_json(&target_ctx, &stack_ns),
     );
 
     // kagent 네임스페이스 — 파드가 하나도 없으면 미설치, 있으면 전부 Ready일 때만 ready.

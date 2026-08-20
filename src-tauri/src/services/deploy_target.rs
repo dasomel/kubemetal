@@ -183,6 +183,24 @@ pub fn active_context() -> (String, String) {
         .unwrap_or_else(|| (COLIMA_CONTEXT.to_string(), "default".to_string()))
 }
 
+/// 임의 컨텍스트의 MLOps 스택 네임스페이스.
+///
+/// 화면의 kubeconfig 선택기(드롭다운)가 축인 호출부를 위한 것이다 — `active_context()`는
+/// **저장된** 대상을 돌려주므로, 사용자가 드롭다운에서 다른 클러스터를 고른 상태에서
+/// 그것을 쓰면 엉뚱한 클러스터의 네임스페이스가 섞인다(D33이 `install_kagent`에서 겪은
+/// 것과 같은 축 혼동).
+///
+/// 저장된 대상과 컨텍스트가 같으면 그쪽 네임스페이스를 쓴다 — 사용자가 커스텀
+/// 네임스페이스를 설정했을 수 있고, 그 경우 기본값으로 되돌리면 안 된다.
+pub fn namespace_for_context(context: &str) -> String {
+    let (active_ctx, active_ns) = active_context();
+    if active_ctx == context {
+        active_ns
+    } else {
+        DeployTarget::for_context(context).namespace
+    }
+}
+
 /// 호스트의 IPv4 인터페이스 하나.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HostIface {
@@ -355,6 +373,28 @@ en0: flags=8863<UP,BROADCAST>
             err.contains("not verified") && err.contains("not_probed"),
             "reason code must surface: {err}"
         );
+    }
+
+    /// 진단이 조회할 네임스페이스는 화면 드롭다운의 컨텍스트에서 나와야 한다.
+    /// "default" 고정이었을 때는 외부 클러스터의 스택 파드를 한 건도 못 보고
+    /// "0 pod(s)"를 정상처럼 보고했다(D26/D30 L2).
+    #[test]
+    fn namespace_for_context_follows_the_requested_context() {
+        // 저장된 대상과 무관한 컨텍스트는 그 컨텍스트의 기본 네임스페이스를 쓴다.
+        assert_eq!(namespace_for_context(COLIMA_CONTEXT), "default");
+        assert_eq!(namespace_for_context("some-external"), DEFAULT_EXTERNAL_NAMESPACE);
+
+        // 저장된 대상과 컨텍스트가 같으면 저장된 네임스페이스를 존중한다 —
+        // 사용자가 커스텀 네임스페이스를 골랐을 수 있다.
+        let mut custom = DeployTarget::for_context("some-external");
+        custom.namespace = "team-ml".into();
+        set_active(&custom);
+        assert_eq!(namespace_for_context("some-external"), "team-ml");
+        // 다른 컨텍스트에는 그 값이 새지 않아야 한다.
+        assert_eq!(namespace_for_context("other-cluster"), DEFAULT_EXTERNAL_NAMESPACE);
+
+        // 전역 상태를 원복해 다른 테스트에 영향을 주지 않는다.
+        set_active(&DeployTarget::for_context(COLIMA_CONTEXT));
     }
 
     #[test]
