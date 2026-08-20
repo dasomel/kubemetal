@@ -523,7 +523,12 @@ pub async fn run_mlx_finetune(
             .arg(match config.runtime.unwrap_or(MlxRuntime::MlxLm) {
                 MlxRuntime::MlxLm => "mlx-lm",
                 MlxRuntime::MlxVlm => "mlx-vlm",
-            });
+            })
+            // MLflow 주소를 명시로 넘긴다. 넘기지 않으면 래퍼가 자기 기본값(5001 고정)을
+            // 쓰는데, 포트는 런타임 값이라(D1 개정) 5001이 점유되면 학습 기록이 통째로
+            // 엉뚱한 곳으로 간다.
+            .arg("--mlflow-uri")
+            .arg(ports::local_url("mlflow"));
 
         if config.train_vision {
             cmd.arg("--train-vision");

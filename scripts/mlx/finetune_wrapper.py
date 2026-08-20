@@ -55,7 +55,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--learning-rate", type=float, required=True)
     p.add_argument("--adapter-name", required=True)
     p.add_argument("--runtime", choices=["mlx-lm", "mlx-vlm"], default="mlx-lm")
-    p.add_argument("--mlflow-uri", default="http://localhost:5001")
+    # 기본값은 앱 없이 단독 실행할 때만 쓰인다 — 앱은 실제 배정된 포트를 명시로 넘긴다.
+    # `localhost`가 아니라 `127.0.0.1`이다(D1): macOS에서 localhost는 ::1로도 풀려
+    # 와일드카드로 바인딩한 남의 프로세스와 만난다(mistakes-log 2026-07-21).
+    p.add_argument("--mlflow-uri", default="http://127.0.0.1:5001")
     p.add_argument("--train-vision", action="store_true")
     return p.parse_args()
 

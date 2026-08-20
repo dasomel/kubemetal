@@ -179,4 +179,40 @@ mod tests {
         assert_eq!(port_for("nope"), 0);
         assert!(assign("nope").is_err());
     }
+
+    /// 호스트 스크립트가 단독 실행될 때 쓰는 폴백 주소는 파생시킬 수가 없다 — 파이썬은
+    /// 앱 없이도 돌아야 하기 때문이다. 그래서 CLAUDE.md 규칙대로 "어긋나면 실패하는
+    /// 테스트"를 둔다. 잡는 것은 두 가지다:
+    ///
+    /// 1. `localhost` 표기(D1 위반). macOS에서 `::1`로도 풀려, 와일드카드로 바인딩한
+    ///    남의 프로세스와 만난다 — mistakes-log 2026-07-21에 실측 사례가 있다.
+    /// 2. D1 우선 포트와 다른 숫자. 폴백이 5001이 아니면 앱이 주소를 주입하지 못했을 때
+    ///    조용히 엉뚱한 곳을 가리킨다.
+    ///
+    /// 앱 경유 경로는 이 값을 쓰지 않는다(mlx.rs가 `--mlflow-uri`를, prefect.rs가
+    /// `MLFLOW_TRACKING_URI`를 실제 배정 포트로 넘긴다) — 여기서 고정하는 것은 폴백이다.
+    #[test]
+    fn host_script_mlflow_fallbacks_follow_d1() {
+        const WRAPPER: &str = include_str!("../../../scripts/mlx/finetune_wrapper.py");
+        const RUNNER: &str = include_str!("../../../scripts/prefect/host_runner.py");
+
+        let expected = format!("http://127.0.0.1:{}", preferred_for("mlflow"));
+        assert!(
+            WRAPPER.contains(&format!("default=\"{expected}\"")),
+            "finetune_wrapper.py의 --mlflow-uri 폴백이 D1({expected})과 어긋났다"
+        );
+        assert!(
+            RUNNER.contains(&format!("\"MLFLOW_TRACKING_URI\", \"{expected}\"")),
+            "host_runner.py의 MLFLOW_TRACKING_URI 폴백이 D1({expected})과 어긋났다"
+        );
+
+        // URL 자리의 `localhost`는 어느 쪽에도 없어야 한다. 주석/판정 로직에 등장하는
+        // 문자열까지 막지 않도록 스킴이 붙은 형태만 본다.
+        for (name, src) in [("finetune_wrapper.py", WRAPPER), ("host_runner.py", RUNNER)] {
+            assert!(
+                !src.contains("http://localhost"),
+                "{name}에 http://localhost가 남아 있다 — D1은 항상 127.0.0.1이다"
+            );
+        }
+    }
 }

@@ -448,6 +448,9 @@ pub async fn start_prefect_runner(
             .stderr(Stdio::piped())
             .env("PATH", augmented_path())
             .env("PREFECT_API_URL", prefect_api_base())
+            // 평가 결과 기록 대상도 같은 이유로 주입한다 — host_runner.py의 폴백은
+            // 5001 고정이라 대체 포트가 선택되면 기록이 사라진다(D1 개정).
+            .env("MLFLOW_TRACKING_URI", ports::local_url("mlflow"))
             .process_group(0)
             .spawn()
             .map_err(|e| format!("Failed to start Prefect runner: {e}"))?;

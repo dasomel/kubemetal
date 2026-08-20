@@ -22,6 +22,7 @@ evaluate 두 deployment를 `flow.to_deployment()` + `serve()`로 등록하고 �
 """
 import glob
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -42,9 +43,11 @@ sys.path.insert(0, str(WRAPPER_PATH.parent))
 from mlflow_reporter import MlflowReporter  # noqa: E402 - sys.path 삽입 후 임포트해야 함
 
 EVAL_EXPERIMENT_NAME = "kubemetal-eval"
-# finetune_wrapper.py의 --mlflow-uri 기본값(modelhub.rs MLflow REST 호출과 동일 호스트
-# 표기)과 맞춘다.
-DEFAULT_MLFLOW_URI = "http://localhost:5001"
+# 포트는 런타임 값이다(D1 개정) — MLflow가 5001을 못 잡으면 대체 포트로 밀린다. 그래서
+# 앱이 MLFLOW_TRACKING_URI로 실제 주소를 주입하고(PREFECT_API_URL과 같은 규약), 여기서는
+# 단독 실행용 폴백만 갖는다. 폴백도 `localhost`가 아니라 `127.0.0.1`이다(D1) — macOS에서
+# localhost는 ::1로도 풀려 와일드카드 리스너와 만난다(mistakes-log 2026-07-21).
+DEFAULT_MLFLOW_URI = os.environ.get("MLFLOW_TRACKING_URI", "http://127.0.0.1:5001")
 
 # lm-eval 0.4.12 결과 JSON 실측(2026-07-23): results[task]에 메트릭("exact_match,strict-
 # match" 형태의 "metric,filter" 키 → float)과 메타데이터(alias/name: 문자열, sample_len:
