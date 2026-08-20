@@ -1,0 +1,207 @@
+KubeMetal
+Copyright (c) 2026 dasomel
+
+Source: https://github.com/dasomel/kubemetal
+
+================================================================================
+Scope of this file
+================================================================================
+This NOTICE covers third-party software that KubeMetal **orchestrates at
+runtime** — spawned as a macOS host process, deployed as a Kubernetes
+manifest/Helm chart, or invoked as an external CLI (see `resolve_cli_path` /
+`external_command` in `src-tauri/src/services/process.rs`). None of it is
+copied into or compiled into the KubeMetal binary.
+
+Rust crates and npm packages that ARE compiled/bundled into the KubeMetal
+binary are listed separately in `THIRD-PARTY-NOTICES.md`, generated at
+release time from `Cargo.lock` / `pnpm-lock.yaml` by
+`scripts/release/gen_third_party_notices.sh` (see the release assets, or run
+the script locally). A machine-readable inventory of the same compiled
+dependency graph ships as a CycloneDX/SPDX SBOM with every release
+(`scripts/release/gen_sbom.sh`) — see the "SBOM" section below.
+
+================================================================================
+Colima
+================================================================================
+Source: https://github.com/abiosoft/colima
+License: MIT
+Role in KubeMetal: provides the `vz` + `virtiofs` Linux VM that runs the K3s
+control plane (Dashboard tab lifecycle control). Invoked as an external CLI;
+not bundled.
+
+================================================================================
+K3s
+================================================================================
+Source: https://github.com/k3s-io/k3s
+Copyright: Rancher Labs, Inc. / SUSE LLC
+License: Apache-2.0
+Role in KubeMetal: the Kubernetes distribution running inside the Colima VM
+(`colima start --kubernetes`). K8s never runs compute — see the
+Control/Compute Separation invariant in README.md.
+
+================================================================================
+Helm
+================================================================================
+Source: https://github.com/helm/helm
+Copyright: The Helm Authors
+License: Apache-2.0
+Role in KubeMetal: installs the `kagent`/`kagent-crds` OCI charts (kagent Ops
+tab). Invoked as an external CLI; not bundled.
+
+================================================================================
+kagent
+================================================================================
+Source: https://github.com/kagent-dev/kagent
+Copyright: The kagent Authors
+License: Apache-2.0
+Role in KubeMetal: cluster AIOps agent runtime installed via Helm into the
+target cluster's `kagent` namespace; the kagent UI is reached through
+KubeMetal's port-forward control.
+
+================================================================================
+MLflow
+================================================================================
+Source: https://github.com/mlflow/mlflow
+Copyright: The MLflow Authors (a Linux Foundation project)
+License: Apache-2.0
+Role in KubeMetal: experiment tracking / Model Registry, deployed as a pod
+via `scripts/k8s/mlflow.yaml`; reached at http://127.0.0.1:5001 (D1).
+
+================================================================================
+SeaweedFS
+================================================================================
+Source: https://github.com/seaweedfs/seaweedfs
+Copyright: Chris Lu and SeaweedFS contributors
+License: Apache-2.0
+Role in KubeMetal: S3-compatible object storage backing MLflow artifacts,
+the Model Hub, and DVC data versioning, deployed as a pod (D1).
+
+================================================================================
+Prefect
+================================================================================
+Source: https://github.com/PrefectHQ/prefect
+Copyright: Prefect Technologies, Inc.
+License: Apache-2.0
+Role in KubeMetal: orchestrates the Data tab's ingestion DAG (D19), deployed
+as a pod, reached at http://127.0.0.1:4200 (D1).
+
+================================================================================
+MLX / mlx-lm
+================================================================================
+Source: https://github.com/ml-explore/mlx, https://github.com/ml-explore/mlx-lm
+Copyright: Apple Inc.
+License: MIT
+Role in KubeMetal: the default MLX text runtime (D29) — installed into a
+host Python venv and run as a host process (`mlx_lm.server`) so it can use
+Metal GPU directly, which a K8s pod inside the Colima VM cannot.
+
+================================================================================
+mlx-vlm
+================================================================================
+Source: https://github.com/Blaizzy/mlx-vlm
+Copyright: Prince Canuma and mlx-vlm contributors
+License: MIT
+Role in KubeMetal: the vision MLX runtime (D29) — same host-process model as
+mlx-lm, used for VLM fine-tuning/serving (`mlx_vlm.server`,
+`mlx_vlm.lora`).
+
+================================================================================
+kubectl
+================================================================================
+Source: https://github.com/kubernetes/kubernetes
+Copyright: The Kubernetes Authors
+License: Apache-2.0
+Role in KubeMetal: invoked as an external CLI for every cluster read/write
+(manifest apply, pod/secret queries, port-forward). Not bundled.
+
+================================================================================
+Model weights and datasets — not covered by this file
+================================================================================
+KubeMetal ships no model weights and no datasets. The Model Hub downloads
+whatever Hugging Face repository the user selects, and the Data tab ingests
+whatever sources the user points it at. Those artifacts carry their own
+licenses — frequently NOT OSI-approved (e.g. the Llama Community License, the
+Qwen License, or CC-BY-NC dataset terms), and some restrict commercial use or
+redistribution regardless of KubeMetal's own Apache-2.0 grant.
+
+Checking the license of a downloaded model or dataset, and complying with it,
+is the user's responsibility. KubeMetal's Apache-2.0 license covers the
+application only.
+
+Third-party Python packages (mlx-lm, mlx-vlm, lancedb, sentence-transformers,
+dvc, prefect, lm-eval and their dependencies) are installed by the app into a
+host venv from PyPI at the user's request; they are not redistributed here.
+All of them are MIT or Apache-2.0 as of this writing.
+
+================================================================================
+Weak-copyleft components (MPL-2.0) — source availability
+================================================================================
+The KubeMetal binary links one Mozilla Public License 2.0 component:
+
+  option-ext 0.2.0 — https://github.com/soc/option-ext
+  (reached as a transitive dependency of `dirs`, used by `tauri` and `wry`)
+
+MPL-2.0 §3.2 requires that recipients of an Executable Form be told how to
+obtain the Source Code Form. KubeMetal uses this crate **unmodified**; its
+complete corresponding source is published by its author at the URL above
+and mirrored on crates.io at the exact version listed in that release's
+`THIRD-PARTY-NOTICES.md`:
+
+  https://crates.io/crates/option-ext/0.2.0
+
+Four further MPL-2.0 crates appear in `Cargo.lock` and therefore in the SBOM
+and notices — cssparser, cssparser-macros, dtoa-short, and selectors. These
+are reached **only** through `tauri-utils`' optional `dom_query` dependency
+on the `tauri-macros` proc-macro path, which is compiled for the build host
+and is not linked into the shipped binary (verified with
+`cargo tree -i <crate> --target aarch64-apple-darwin -e normal --no-dedupe`).
+Their source is nonetheless available at https://github.com/servo/rust-cssparser,
+https://github.com/servo/stylo, and https://github.com/upsuper/dtoa-short.
+
+Beyond that one crate, nothing compiled into the KubeMetal binary is under
+GPL, LGPL, AGPL, SSPL, BUSL, or any other license restricting commercial use.
+(`r-efi`, whose license expression offers LGPL-2.1-or-later as one of three
+alternatives, does not resolve into the macOS dependency graph at all; where
+it does apply, the MIT alternative is selected.)
+
+This statement is scoped to the binary. It says nothing about the container
+images the user's cluster pulls at provision time — a Linux image layer
+routinely contains GPL userland (busybox, coreutils, apk/apt), and the
+upstream projects' own Apache-2.0 license covers only their code. KubeMetal
+does not build, host, or redistribute those images: the manifests name them
+and the user's cluster pulls them from their upstream registries.
+
+One consequence worth stating plainly: the Air-Gap Management tab assembles a
+bundle of those same images on the user's own machine (`docker pull` +
+`docker save`). Carrying that bundle to one's own offline cluster is internal
+use, but handing it to a third party is redistribution of the upstream images
+and their GPL userland — with the source-offer obligations that implies. That
+is the operator's call and the operator's obligation, not KubeMetal's.
+
+================================================================================
+Trademark Notice
+================================================================================
+- Kubernetes and the Kubernetes logo are registered trademarks of The Linux
+  Foundation.
+- Apple, macOS, Metal, and Apple Silicon are trademarks of Apple Inc.
+- Docker is a trademark of Docker, Inc.
+- All other trademarks are the property of their respective owners and are
+  used here for identification purposes only. Use of these names does not
+  imply endorsement of KubeMetal by their owners.
+
+================================================================================
+SBOM
+================================================================================
+Every tagged release attaches a CycloneDX and an SPDX SBOM
+(`sbom-cyclonedx.json`, `sbom-spdx.json`), generated by
+`scripts/release/gen_sbom.sh` from the exact `Cargo.lock` / `pnpm-lock.yaml`
+of that tag via Trivy. These enumerate the compiled Rust/npm dependency
+graph — the same scope as `THIRD-PARTY-NOTICES.md` — not the runtime-
+orchestrated components listed above, which have no single lockfile to scan.
+
+================================================================================
+For More Information
+================================================================================
+For KubeMetal's own license text, see the LICENSE file.
+For the compiled Rust/npm dependency list, see the release's
+`THIRD-PARTY-NOTICES.md` and SBOM assets.

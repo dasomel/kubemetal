@@ -157,6 +157,20 @@ pnpm tauri build   # .app / .dmg 번들 생성 (서명 없음 로컬 빌드)
 > `src-tauri/target/release/bundle/dmg/bundle_dmg.sh`를 `--sandbox-safe` 옵션과 함께
 > 직접 실행하면 Finder 꾸미기 단계를 건너뛰고 동일한 `.dmg`를 생성할 수 있다.
 
+## 라이선스 및 서드파티 고지
+
+KubeMetal은 Apache-2.0 라이선스다 — [LICENSE](LICENSE) 참고. 서드파티 고지는
+세 파일로 나뉜다.
+
+| 파일 | 다루는 범위 | 생성 시점 |
+|------|--------|------|
+| [NOTICE](NOTICE) | 런타임에 오케스트레이션되는 컴포넌트(Colima, K3s, kagent, MLflow, SeaweedFS, Prefect, MLX) — 실행 시 스폰/배포되며 바이너리에 포함되지 않음 | 정적, 커밋됨 |
+| `THIRD-PARTY-NOTICES.md` | 앱에 컴파일/번들되는 Rust crate + npm 패키지 | 릴리스 시점, `Cargo.lock`/`pnpm-lock.yaml`에서 생성(`scripts/release/gen_third_party_notices.sh`) |
+| `sbom-cyclonedx.json` / `sbom-spdx.json` | 같은 번들 의존성 그래프의 기계 판독용 인벤토리 | 릴리스 시점, Trivy로 생성(`scripts/release/gen_sbom.sh`) |
+
+생성 파일들은 GitHub Release 자산으로 앱 zip과 함께 배포된다 — 커밋해두면
+lockfile과 어긋나므로 커밋하지 않는다.
+
 ## 프로젝트 구조
 
 ```text

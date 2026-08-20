@@ -31,3 +31,7 @@ __pycache__/
 
 # 릴리스 시점에 lockfile에서 생성 — scripts/release/gen_third_party_notices.sh
 THIRD-PARTY-NOTICES.md
+
+# 릴리스 시점에 lockfile에서 생성 — scripts/release/gen_sbom.sh
+sbom-cyclonedx.json
+sbom-spdx.json

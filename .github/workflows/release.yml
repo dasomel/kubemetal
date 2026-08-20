@@ -25,6 +25,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      - uses: aquasecurity/setup-trivy@v0.3.1
+        with:
+          version: v0.69.3
       - run: pnpm install --frozen-lockfile
       # .dmg 번들 단계는 헤드리스 세션에서 Finder AppleScript 대기로 멈춘다(README
       # "빌드 / 패키징" 절 실측) — 릴리스 산출물은 .app을 zip으로 배포한다.
@@ -32,11 +35,15 @@ jobs:
       # 서드파티 고지는 lockfile에서 릴리스 시점에 도출한다 — 커밋해두면 어긋난다.
       - name: Generate third-party notices
         run: ./scripts/release/gen_third_party_notices.sh
+      # SBOM도 같은 이유로 커밋하지 않는다 — 이 태그의 Cargo.lock/pnpm-lock.yaml에서
+      # 매 릴리스 직접 도출한다(NOTICE 파일 "SBOM" 절 참고).
+      - name: Generate SBOM
+        run: ./scripts/release/gen_sbom.sh
       - name: Zip app bundle with notices
         run: |
           mkdir -p stage
           cp -R src-tauri/target/release/bundle/macos/KubeMetal.app stage/
-          cp LICENSE THIRD-PARTY-NOTICES.md stage/
+          cp LICENSE NOTICE THIRD-PARTY-NOTICES.md sbom-cyclonedx.json sbom-spdx.json stage/
           ditto -c -k stage "KubeMetal-${TAG}-aarch64.zip"
       - name: Create GitHub release
         env:

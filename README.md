@@ -169,6 +169,20 @@ Output: `src-tauri/target/release/bundle/macos/KubeMetal.app`,
 > `src-tauri/target/release/bundle/dmg/bundle_dmg.sh` directly with the `--sandbox-safe`
 > option skips the Finder decoration step and produces the same `.dmg`.
 
+## License & Third-Party Notices
+
+KubeMetal is Apache-2.0 licensed — see [LICENSE](LICENSE). Third-party
+attribution splits across three files:
+
+| File | Covers | When generated |
+|------|--------|------|
+| [NOTICE](NOTICE) | Orchestrated components (Colima, K3s, kagent, MLflow, SeaweedFS, Prefect, MLX) — spawned or deployed at runtime, never bundled | Static, committed |
+| `THIRD-PARTY-NOTICES.md` | Rust crates + npm packages compiled/bundled into the app | Release time, from `Cargo.lock`/`pnpm-lock.yaml` (`scripts/release/gen_third_party_notices.sh`) |
+| `sbom-cyclonedx.json` / `sbom-spdx.json` | Machine-readable inventory of the same bundled dependency graph | Release time, via Trivy (`scripts/release/gen_sbom.sh`) |
+
+The generated files ship as GitHub Release assets alongside the app zip —
+they are not committed, since a committed copy drifts from the lockfile.
+
 ## Project Structure
 
 ```text
