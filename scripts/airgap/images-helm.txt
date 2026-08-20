@@ -17,4 +17,4 @@ ghcr.io/kagent-dev/kmcp/controller:0.3.0
 postgres:18.3-alpine
 
 # 보안 스캐닝 도구(docs/11) — 매니페스트 배포는 아니지만 폐쇄망에서 필요하다
-aquasec/trivy:latest
+aquasec/trivy:0.69.3

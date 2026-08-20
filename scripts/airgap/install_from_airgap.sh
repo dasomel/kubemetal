@@ -10,7 +10,10 @@
 
 set -uo pipefail
 
-AIRGAP_DIR="${HOME}/.kubemetal/airgap"
+# AIRGAP_DIR은 덮어쓸 수 있어야 한다 — 하드코딩돼 있을 때는 이 스크립트의 게이트를
+# 실제 번들을 건드리지 않고 확인할 방법이 없었다(그래서 검증하려던 시도가 진짜 번들을
+# 로드하기 시작했다). KUBE_CONTEXT가 이미 같은 규약이다.
+AIRGAP_DIR="${AIRGAP_DIR:-${HOME}/.kubemetal/airgap}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-colima}"
 
 if [ ! -d "${AIRGAP_DIR}" ]; then
@@ -21,13 +24,29 @@ fi
 FAILED=()
 
 # 폐쇄망 설치는 되돌리기 어렵다 — 로드를 시작하기 전에 번들이 수집 당시와 같은지 먼저 본다.
-# manifest는 download_airgap_bundle.sh가 생성한다. 없으면 검증을 조용히 건너뛰지 않고
-# 사실을 알린다(구버전 번들일 수 있으므로 중단까지는 하지 않는다).
+# manifest는 download_airgap_bundle.sh가 생성한다.
+#
+# manifest가 없으면 **중단한다**(이슈 #8). 예전에는 "구버전 번들일 수 있으므로" 경고만
+# 하고 진행했는데, 검증할 수단이 없는 번들에서 "구버전"과 "변조됨"은 구분되지 않는다 —
+# 그 둘을 구분하지 못하는 채로 진행하는 것이 정확히 공급망 검증이 막아야 할 상황이다.
+# D23이 "불일치 시 아무것도 로드하지 않고 중단"을 정한 것과 같은 이유이고, 검증 자체가
+# 없는 경우만 그 규약을 빠져나가고 있었다. 확인되지 않은 값으로는 렌더를 거부하는
+# render.sh(D26)와 같은 태도다.
+#
+# 구버전 번들을 알면서 쓰려면 의도를 명시해야 한다 — 기본값이 아니라 옵트아웃이다.
 MANIFEST="${AIRGAP_DIR}/manifest.sha256"
 echo "[0/3] 번들 무결성 검증..."
 if [ ! -f "$MANIFEST" ]; then
-  echo "  !! manifest.sha256이 없습니다 — 무결성 검증 없이 진행합니다." >&2
-  echo "     (인터넷 연결 환경에서 패키지 다운로드를 다시 실행하면 생성됩니다.)" >&2
+  if [ "${AIRGAP_ALLOW_UNVERIFIED:-0}" = "1" ]; then
+    echo "  !! manifest.sha256이 없는데 AIRGAP_ALLOW_UNVERIFIED=1로 검증을 건너뜁니다." >&2
+    echo "     이 번들의 무결성은 확인되지 않았습니다 — 손상·변조를 탐지할 수 없습니다." >&2
+  else
+    echo "  !! manifest.sha256이 없어 번들 무결성을 검증할 수 없습니다." >&2
+    echo "     설치를 중단합니다 — 검증되지 않은 번들은 설치하지 않습니다." >&2
+    echo "     인터넷 연결 환경에서 번들 다운로드를 다시 실행하면 생성됩니다." >&2
+    echo "     구버전 번들인 것이 확실하다면 AIRGAP_ALLOW_UNVERIFIED=1로 재실행하세요." >&2
+    exit 1
+  fi
 else
   if ( cd "$AIRGAP_DIR" && shasum -a 256 -c "$(basename "$MANIFEST")" --status ); then
     echo "  -> $(wc -l < "$MANIFEST" | tr -d ' ')개 파일 해시 일치"

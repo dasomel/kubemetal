@@ -223,7 +223,9 @@ const STATIC_AIRGAP_TARGETS: [(&str, &str, &str, &str); 11] = [
     // kagent이 요구하는 Postgres. 다운로더는 받아왔지만 이 목록에 없어 상태 화면이 존재를
     // 검사하지 않던 자산이다 — static_airgap_targets_match_images_helm_txt가 잡아냈다.
     ("Container Image", "kagent Postgres Database", "18.3-alpine", "images/postgres_18.3-alpine.tar.gz"),
-    ("Container Image", "Trivy Vulnerability Scanner", "latest", "images/aquasec_trivy_latest.tar.gz"),
+    // 태그를 고정한다(이슈 #5) — `latest`는 수집 시점마다 다른 내용을 받아오므로
+    // "번들은 불변"이라는 전제가 성립하지 않는다. 저장소 전체에서 유일한 `latest`였다.
+    ("Container Image", "Trivy Vulnerability Scanner", "0.69.3", "images/aquasec_trivy_0.69.3.tar.gz"),
 ];
 
 /// `docker save`가 만든 파일명 규칙 — 다운로더의 `tr '/:' '_'`와 동일해야 한다.
