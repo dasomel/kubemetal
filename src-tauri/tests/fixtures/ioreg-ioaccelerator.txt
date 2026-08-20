@@ -1,0 +1,9 @@
+# ioreg -l -d 1 -r -c IOAccelerator 실측 발췌 (M4 Pro / macOS 26, 2026-08-20).
+# 파서가 실제로 마주하는 형태를 고정한다.
+#  - PerformanceStatistics는 키가 줄마다 나뉘지 않고 한 줄에 딕셔너리로 들어온다.
+#    그 줄에 "In use system memory (driver)"와 "In use system memory"가 함께 있어서,
+#    줄 단위로 'driver'를 배제하던 가드가 메모리 파싱을 통째로 막고 있었다(이슈 #7).
+#  - IOReportLegend 줄에도 "In use system memory"가 값 없이 등장한다 — 파서가
+#    키 이름만 보고 낚이면 안 된다는 미끼다.
+      "PerformanceStatistics" = {"In use system memory (driver)"=0,"Alloc system memory"=3760259072,"Tiler Utilization %"=16,"recoveryCount"=0,"lastRecoveryTime"=0,"Renderer Utilization %"=24,"TiledSceneBytes"=720896,"Device Utilization %"=30,"SplitSceneCount"=0,"Allocated PB Size"=110100480,"In use system memory"=939048960}
+      "IOReportLegend" = ({"IOReportChannels"=((1,6442450945,"Alloc system memory"),(2,6442450945,"In use system memory"),(3,6442450945,"GPU Restart Count"),(4,6442450945,"In use system memory (driver)"),(5,6442450945,"Last GPU Restart")),"IOReportGroupName"="Internal Statistics"}) # ← 이하 생략(원본 45KB, 같은 형태 반복)

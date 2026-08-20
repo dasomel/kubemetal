@@ -169,44 +169,49 @@ async fn get_metal_gpu_metrics() -> (f32, f64) {
     }
 
     let text = String::from_utf8_lossy(&out.stdout);
-    let mut gpu_pct: f32 = 0.0;
-    let mut gpu_mem_bytes: f64 = 0.0;
-    let mut matched_any = false;
+    let (pct, mem_bytes) = parse_ioreg_accelerator(&text);
 
-    for line in text.lines() {
-        if line.contains("Device Utilization %") {
-            if let Some(val_str) = line.split("Device Utilization %\"=").nth(1) {
-                if let Some(num_str) = val_str.split(|c: char| !c.is_numeric()).next() {
-                    if let Ok(val) = num_str.parse::<f32>() {
-                        gpu_pct = val;
-                        matched_any = true;
-                    }
-                }
-            }
-        }
-        if line.contains("In use system memory") && !line.contains("driver") {
-            if let Some(val_str) = line.split("In use system memory\"=").nth(1) {
-                if let Some(num_str) = val_str.split(|c: char| !c.is_numeric()).next() {
-                    if let Ok(val) = num_str.parse::<f64>() {
-                        gpu_mem_bytes = val;
-                        matched_any = true;
-                    }
-                }
-            }
-        }
-    }
-
-    if !matched_any {
+    // 필드별로 판정한다. 예전에는 "둘 중 하나라도 잡히면 성공"이라 사용률만 읽히고 메모리가
+    // 통째로 실패해도 경고가 뜨지 않았다 — 실제로 그 상태였고, 화면은 0 GB를 조용히 띄웠다.
+    if pct.is_none() || mem_bytes.is_none() {
         GPU_METRICS_WARNED.call_once(|| {
             eprintln!(
-                "[metrics] Could not find IOAccelerator utilization/memory fields in ioreg \
-                 output (possible format change or unsupported hardware) — GPU metrics remain 0."
+                "[metrics] ioreg IOAccelerator parse incomplete (utilization: {}, memory: {}) \
+                 — possible format change or unsupported hardware; missing values report 0.",
+                if pct.is_some() { "ok" } else { "MISSING" },
+                if mem_bytes.is_some() { "ok" } else { "MISSING" },
             );
         });
     }
 
-    let gpu_mem_gb = (gpu_mem_bytes / 1024.0 / 1024.0 / 1024.0 * 100.0).round() / 100.0;
-    (gpu_pct, gpu_mem_gb)
+    let gpu_mem_gb = (mem_bytes.unwrap_or(0.0) / 1024.0 / 1024.0 / 1024.0 * 100.0).round() / 100.0;
+    (pct.unwrap_or(0.0), gpu_mem_gb)
+}
+
+/// `ioreg -l -d 1 -r -c IOAccelerator` 출력에서 (사용률 %, 사용 중 시스템 메모리 바이트)를
+/// 뽑는다. 읽지 못한 값은 `None`이다 — 0.0으로 뭉개면 "GPU 유휴"와 구분되지 않는다(D22).
+///
+/// 셸 실행에서 분리한 순수 함수인 이유: 이 파서는 실측 출력 형태를 잘못 가정해 **메모리를
+/// 영원히 0으로 보고하고 있었다**. `PerformanceStatistics`는 키가 줄마다 나뉘지 않고 한 줄에
+/// 딕셔너리로 들어오며, 그 줄에는 `"In use system memory (driver)"=0`이 실제 값과 **함께**
+/// 있다. 그래서 줄 단위로 `driver`를 배제하던 가드가 메모리 분기를 통째로 막았다.
+/// 실제 구분은 검색 패턴이 이미 하고 있다 — `(driver)` 키는 `memory` 뒤에 `"=`가 오지 않아
+/// `In use system memory"=`와 매치되지 않는다.
+fn parse_ioreg_accelerator(text: &str) -> (Option<f32>, Option<f64>) {
+    /// `<키>"=<숫자>` 형태에서 첫 숫자를 읽는다. 키가 값 없이 등장하는 자리(IOReportLegend의
+    /// 채널 이름 목록)는 `"=`가 뒤따르지 않으므로 자연히 걸러진다.
+    fn field_after<'a>(text: &'a str, key: &str) -> Option<&'a str> {
+        let needle = format!("{key}\"=");
+        let rest = text.split(&needle).nth(1)?;
+        let end = rest
+            .find(|c: char| !c.is_numeric())
+            .unwrap_or(rest.len());
+        Some(&rest[..end]).filter(|s| !s.is_empty())
+    }
+
+    let pct = field_after(text, "Device Utilization %").and_then(|s| s.parse::<f32>().ok());
+    let mem = field_after(text, "In use system memory").and_then(|s| s.parse::<f64>().ok());
+    (pct, mem)
 }
 
 #[tauri::command]
@@ -253,5 +258,76 @@ mod tests {
             ["nominal", "fair", "serious", "critical"].contains(&state.as_deref().unwrap()),
             "Unexpected thermal state: {state:?}"
         );
+    }
+
+    /// 실측 출력 픽스처. 이 파서는 형태를 잘못 가정해 메모리를 영원히 0으로 보고했고,
+    /// 사용률이 정상이라 경고조차 뜨지 않았다 — 실기기에서만 드러나는 종류였다.
+    /// 픽스처는 그 형태(한 줄 딕셔너리 + 같은 줄의 `(driver)` 키)를 고정한다.
+    const FIXTURE: &str = include_str!("../../tests/fixtures/ioreg-ioaccelerator.txt");
+
+    #[test]
+    fn parses_real_ioreg_output() {
+        let (pct, mem) = parse_ioreg_accelerator(FIXTURE);
+        assert_eq!(pct, Some(30.0), "Device Utilization %를 읽지 못했다");
+        assert_eq!(mem, Some(939048960.0), "In use system memory를 읽지 못했다");
+    }
+
+    /// 회귀 방지의 핵심. `(driver)` 변종이 실제 값과 **같은 줄**에 있어도 실제 값을 읽어야
+    /// 하고, 0인 `(driver)` 값을 집어오면 안 된다.
+    #[test]
+    fn driver_variant_on_same_line_does_not_shadow_real_memory() {
+        let line = r#"  "PerformanceStatistics" = {"In use system memory (driver)"=0,"Device Utilization %"=7,"In use system memory"=1302069248}"#;
+        let (pct, mem) = parse_ioreg_accelerator(line);
+        assert_eq!(pct, Some(7.0));
+        assert_eq!(
+            mem,
+            Some(1302069248.0),
+            "`(driver)`=0을 실제 값으로 착각했거나 메모리 분기가 통째로 막혔다"
+        );
+    }
+
+    /// 키 이름이 값 없이 등장하는 자리(IOReportLegend의 채널 목록)에 낚이면 안 된다.
+    #[test]
+    fn key_without_value_is_not_matched() {
+        let legend = r#"  "IOReportLegend" = ({"IOReportChannels"=((2,6442450945,"In use system memory"))})"#;
+        assert_eq!(parse_ioreg_accelerator(legend), (None, None));
+    }
+
+    /// 픽스처는 "이 형태를 이렇게 읽는다"만 보장한다. 이 기기의 **실제** ioreg가 여전히 그
+    /// 형태인지는 별개 사실이고, 틀어지면 화면이 0을 조용히 띄운다 — 원래 버그가 그랬다.
+    /// `thermal_state_is_actually_readable`과 같은 취지로 실제 값이 읽히는지를 본다.
+    ///
+    /// 값의 크기가 아니라 **필드를 찾았는지**를 본다. 유휴 GPU에서 사용률 0은 정상이지만,
+    /// `None`은 파싱 실패이고 그것이 회귀다.
+    #[test]
+    fn live_ioreg_output_is_still_parseable() {
+        let out = std::process::Command::new("/usr/sbin/ioreg")
+            .args(["-l", "-d", "1", "-r", "-c", "IOAccelerator"])
+            .output();
+        let Ok(out) = out else {
+            return; // ioreg가 없는 환경이면 이 테스트가 말할 수 있는 것이 없다
+        };
+        let text = String::from_utf8_lossy(&out.stdout);
+        let (pct, mem) = parse_ioreg_accelerator(&text);
+        assert!(
+            pct.is_some() && mem.is_some(),
+            "실제 ioreg 출력에서 GPU 필드를 못 읽었다 (사용률: {pct:?}, 메모리: {mem:?}) — \
+             출력 형식이 바뀌었다면 픽스처와 파서를 함께 갱신해야 한다"
+        );
+    }
+
+    /// 읽지 못한 값은 0이 아니라 None이다 — 0으로 뭉개면 "GPU 유휴"와 구분되지 않는다(D22).
+    #[test]
+    fn missing_or_malformed_fields_are_none_not_zero() {
+        assert_eq!(parse_ioreg_accelerator(""), (None, None));
+        assert_eq!(parse_ioreg_accelerator("전혀 관계없는 출력"), (None, None));
+        // 값 자리가 비어 있거나 숫자가 아닌 경우
+        assert_eq!(
+            parse_ioreg_accelerator(r#""Device Utilization %"=,"In use system memory"=abc"#),
+            (None, None)
+        );
+        // 한쪽만 있는 경우 — 나머지는 None으로 남아 호출부가 경고를 낼 수 있어야 한다
+        let (pct, mem) = parse_ioreg_accelerator(r#""Device Utilization %"=42"#);
+        assert_eq!((pct, mem), (Some(42.0), None));
     }
 }
