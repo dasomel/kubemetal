@@ -29,7 +29,7 @@ VITE_PORT := 5173
 .DEFAULT_GOAL := help
 
 .PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap \
-        lint fmt verify license-check clean-light cluster-up cluster-down provision provision-all kagent-up \
+        lint fmt verify license-check vuln-check clean-light cluster-up cluster-down provision provision-all kagent-up \
         preflight render export-gitops \
         forward forward-stop status index-code analyze-code serve-codegraph clean
 
@@ -111,6 +111,11 @@ lint: ## clippy(-D warnings) + tsc + DESIGN.md 토큰 린트
 license-check: ## 번들 의존성 라이선스 정책 게이트 (self-test 포함)
 	./scripts/release/check_licenses.sh --self-test
 	./scripts/release/check_licenses.sh
+
+# verify에 넣지 않는다 — trivy 취약점 DB는 네트워크를 타고, verify는 폐쇄망에서도
+# 돌아야 한다. 릴리스 워크플로가 같은 검사를 게이트로 건다(이슈 #35).
+vuln-check: ## 번들 의존성 취약점 스캔 (HIGH/CRITICAL, 네트워크 필요)
+	trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --skip-version-check .
 
 fmt: ## rustfmt
 	cargo fmt --manifest-path $(CARGO_MANIFEST)

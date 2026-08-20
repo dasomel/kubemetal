@@ -35,6 +35,13 @@ jobs:
         run: |
           ./scripts/release/check_licenses.sh --self-test
           ./scripts/release/check_licenses.sh
+      # 취약점 게이트는 릴리스에만 둔다 — trivy 취약점 DB는 네트워크를 타므로
+      # make verify(폐쇄망에서도 돌아야 한다)에 넣으면 오프라인 개발이 깨진다.
+      # 라이선스 게이트가 lockfile만 보는 것과 다른 점이다(이슈 #35).
+      - name: Vulnerability gate (HIGH/CRITICAL)
+        run: |
+          trivy fs --scanners vuln --severity HIGH,CRITICAL \
+            --exit-code 1 --skip-version-check .
       # .dmg 번들 단계는 헤드리스 세션에서 Finder AppleScript 대기로 멈춘다(README
       # "빌드 / 패키징" 절 실측) — 릴리스 산출물은 .app을 zip으로 배포한다.
       - run: pnpm tauri build --bundles app
