@@ -29,7 +29,7 @@ VITE_PORT := 5173
 .DEFAULT_GOAL := help
 
 .PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap \
-        lint fmt verify clean-light cluster-up cluster-down provision provision-all kagent-up \
+        lint fmt verify license-check clean-light cluster-up cluster-down provision provision-all kagent-up \
         preflight render export-gitops \
         forward forward-stop status index-code analyze-code serve-codegraph clean
 
@@ -107,10 +107,15 @@ lint: ## clippy(-D warnings) + tsc + DESIGN.md 토큰 린트
 	npx tsc --noEmit
 	npx @google/design.md lint DESIGN.md
 
+# NOTICE의 "금지 라이선스 없음" 주장이 lockfile과 어긋나면 여기서 깨진다(이슈 #9).
+license-check: ## 번들 의존성 라이선스 정책 게이트 (self-test 포함)
+	./scripts/release/check_licenses.sh --self-test
+	./scripts/release/check_licenses.sh
+
 fmt: ## rustfmt
 	cargo fmt --manifest-path $(CARGO_MANIFEST)
 
-verify: test lint ## 완료 게이트 스위트 (test + lint + 웹 빌드)
+verify: test lint license-check ## 완료 게이트 스위트 (test + lint + 라이선스 정책 + 웹 빌드)
 	pnpm build
 
 cluster-up: ## Colima K3s 시작 (vz/virtiofs, 6CPU/12GB — 64GB 호스트 D4 값)

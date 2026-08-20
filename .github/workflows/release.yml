@@ -29,6 +29,12 @@ jobs:
         with:
           version: v0.69.3
       - run: pnpm install --frozen-lockfile
+      # 라이선스 정책 게이트를 빌드 앞에 둔다 — 정책 위반이면 릴리스가 나가기 전에
+      # 멈춰야 한다(이슈 #9 "incomplete SBOM/license inventory는 release FAIL").
+      - name: License policy gate
+        run: |
+          ./scripts/release/check_licenses.sh --self-test
+          ./scripts/release/check_licenses.sh
       # .dmg 번들 단계는 헤드리스 세션에서 Finder AppleScript 대기로 멈춘다(README
       # "빌드 / 패키징" 절 실측) — 릴리스 산출물은 .app을 zip으로 배포한다.
       - run: pnpm tauri build --bundles app
