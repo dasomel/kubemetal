@@ -203,12 +203,29 @@ pub async fn set_guardrail_config(
 /// 래퍼가 내부에서 띄운 `mlx_lm` 학습 자식까지 함께 멈춘다/재개된다(D17). 단일 pid로만
 /// 보내면 래퍼만 멈추고 실제 GPU 연산을 하는 자식은 학습을 계속 진행해버려 가드레일이
 /// 무력화됨을 실기기에서 확인했다(2026-07-21).
+///
+/// `libc::kill`의 반환값을 반드시 본다. 예전에는 버렸는데, 그러면 이미 죽은 pid에
+/// SIGSTOP을 보내고도 `Ok(())`가 돌아와 호출부가 상태를 `paused_*`로 바꿨다 — 존재하지
+/// 않는 프로세스를 화면이 "일시정지됨"으로 표시하는 상태 날조다(D22). `map_err`는
+/// spawn_blocking의 JoinError만 잡을 뿐 kill 실패와는 무관하다.
 async fn signal_pid(pid: u32, sig: i32) -> Result<(), String> {
-    tokio::task::spawn_blocking(move || unsafe {
-        libc::kill(-(pid as i32), sig);
+    // `kill(0, sig)`는 **호출자 자신의 프로세스 그룹**으로 간다 — pid가 0이면 앱이 스스로
+    // SIGSTOP을 맞고 얼어붙는다. 정상 경로에서 0이 올 수는 없지만, 대가가 앱 정지라
+    // 값이 싸다.
+    if pid == 0 {
+        return Err("refusing to signal pid 0 — that targets this app's own process group".into());
+    }
+    tokio::task::spawn_blocking(move || {
+        let rc = unsafe { libc::kill(-(pid as i32), sig) };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
     })
     .await
-    .map_err(|e| format!("failed to send signal: {e}"))
+    .map_err(|e| format!("failed to join signal task: {e}"))?
+    .map_err(|e| format!("failed to send signal {sig} to process group {pid}: {e}"))
 }
 
 async fn pause_pid(app: &tauri::AppHandle, pid: u32, status: &str) -> Result<(), String> {
@@ -499,6 +516,45 @@ mod tests {
         assert!(!thermal_should_auto_pause(Some("serious"), true, true));
         assert!(!thermal_should_auto_pause(Some("fair"), true, false));
         assert!(!thermal_should_auto_pause(Some("serious"), false, false));
+    }
+
+    /// pid 0은 `kill(0, sig)`가 되어 **앱 자신의 프로세스 그룹**으로 간다 — SIGSTOP이면
+    /// 앱이 스스로 얼어붙는다. 실제로 보내볼 수는 없으므로 거부되는 것만 확인한다.
+    #[tokio::test]
+    async fn signal_pid_refuses_zero() {
+        let err = signal_pid(0, libc::SIGCONT).await.unwrap_err();
+        assert!(err.contains("pid 0"), "예상과 다른 오류: {err}");
+    }
+
+    /// 죽은 프로세스에 보낸 시그널은 실패해야 한다. 예전에는 `libc::kill`의 반환값을 버려
+    /// 항상 `Ok(())`였고, 그래서 호출부가 존재하지 않는 프로세스를 "일시정지됨"으로
+    /// 표시했다(D22). 살아 있는 자식으로 성공 경로까지 같이 확인한다.
+    #[tokio::test]
+    async fn signal_pid_reports_kill_failure_for_dead_process() {
+        // 프로세스 그룹 리더로 띄운다 — signal_pid는 그룹(-pid)에 보낸다(D17).
+        let mut child = tokio::process::Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .expect("spawn sleep");
+        let pid = child.id().expect("pid");
+
+        // 살아 있는 동안은 성공한다(SIGCONT는 실행 중 프로세스에 무해하다).
+        signal_pid(pid, libc::SIGCONT)
+            .await
+            .expect("살아 있는 프로세스 그룹에는 시그널이 가야 한다");
+
+        child.kill().await.expect("kill");
+        child.wait().await.expect("reap");
+
+        // 회수까지 끝난 pid에는 실패해야 한다 — 여기서 Ok가 나오면 옛 결함이 돌아온 것이다.
+        let err = signal_pid(pid, libc::SIGCONT)
+            .await
+            .expect_err("죽은 프로세스에 보낸 시그널이 성공으로 보고됐다");
+        assert!(
+            err.contains("failed to send signal"),
+            "예상과 다른 오류: {err}"
+        );
     }
 }
 

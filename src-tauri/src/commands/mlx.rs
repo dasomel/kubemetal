@@ -56,7 +56,12 @@ pub struct FineTuneConfig {
 #[derive(Debug, Clone, Serialize)]
 pub struct TrainingStatus {
     pub pid: u32,
-    pub status: String, // "running" | "done" | "error" | "killed"
+    /// 비종료: "running" | "paused" | "paused_memory_pressure" | "paused_battery"
+    ///         | "paused_thermal"  (paused*는 guardrails.rs가 설정한다)
+    /// 종료:   "done" | "error" | "killed"
+    /// 이 목록이 `paused*`를 빠뜨리고 있던 것이 finalize_training의 종료 판정을
+    /// `status == "running"`으로 좁히게 만든 배경이다 — 목록과 판정을 함께 둔다.
+    pub status: String,
     pub current_iter: u32,
     pub total_iters: u32,
     pub last_loss: Option<f64>,
@@ -397,6 +402,20 @@ async fn collect_stderr(stderr: tokio::process::ChildStderr) -> String {
     buf
 }
 
+/// 프로세스 종료를 상태에 기록해야 하는가.
+///
+/// 기준은 "이미 종착 상태인가"다. 예전 기준은 `status == "running"`이었는데, 그러면
+/// 일시정지된 학습이 밖에서 죽었을 때(OOM killer 등) 화면이 영원히 "일시정지 중"에
+/// 머문다 — 존재하지 않는 프로세스를 멈춰 있는 것으로 표시하는 상태 날조다(D22).
+/// `paused_*`는 아직 결말이 나지 않은 상태이므로 종료를 기록해야 한다.
+///
+/// 반대로 `killed`는 보호해야 한다. `kill_mlx_process`가 시그널을 보내기 **전에**
+/// 의도를 기록하므로, 그 뒤 도착하는 비정상 종료 코드가 사용자의 의도적 중지를
+/// "오류"로 덮어쓰면 안 된다.
+fn should_record_exit(status: &str) -> bool {
+    !matches!(status, "done" | "error" | "killed")
+}
+
 fn finalize_training(
     app: &tauri::AppHandle,
     exit: std::io::Result<std::process::ExitStatus>,
@@ -411,7 +430,7 @@ fn finalize_training(
         Some(t) => t,
         None => return,
     };
-    if training.status != "running" {
+    if !should_record_exit(&training.status) {
         return;
     }
     match exit {
@@ -631,10 +650,16 @@ pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bo
         guard.as_ref().map(|t| t.pid == pid).unwrap_or(false)
     };
 
-    tokio::task::spawn_blocking(move || terminate_pid(pid, is_training))
-        .await
-        .map_err(|e| format!("Failed to wait for process termination: {e}"))?;
-
+    // **시그널을 보내기 전에** 의도를 기록한다. 이 블록이 terminate_pid 뒤에 있었을 때는
+    // 사용자가 중지를 눌러도 화면에 "Training process exited abnormally" 오류가 떴다:
+    // terminate_pid는 SIGTERM 후 1초를 자는데, 그 사이 run_training_reader가 자식의 종료를
+    // 관측해 finalize_training을 부르고, 그때 status는 아직 "running"이라 exit code
+    // 비정상을 이유로 "error"가 먼저 쓰인다. 그다음 여기 도달해도 `!= "error"` 가드에
+    // 걸려 "killed" 갱신이 통째로 스킵됐다.
+    //
+    // 순서를 뒤집으면 finalize_training의 기존 가드(`status != "running"`이면 반환)가
+    // 그대로 보호막이 된다 — 새 가드가 필요한 게 아니라 쓰는 시점이 늦었던 것이다.
+    // 의도적 중지의 종료 코드는 오류가 아니므로 기록하지 않는 것이 맞다.
     {
         let mut guard = state.training.lock().map_err(|e| e.to_string())?;
         if let Some(t) = guard.as_mut() {
@@ -645,6 +670,10 @@ pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bo
             }
         }
     }
+
+    tokio::task::spawn_blocking(move || terminate_pid(pid, is_training))
+        .await
+        .map_err(|e| format!("Failed to wait for process termination: {e}"))?;
 
     {
         // 서빙 프로세스는 spawn 직후 run_serving_reader가 Child 소유권을 가져가 wait()한다.
@@ -920,6 +949,32 @@ mod tests {
     #[test]
     fn validate_home_subpath_rejects_nonexistent() {
         assert!(validate_home_subpath("/definitely/not/here/xyz").is_err());
+    }
+
+    /// 종료 기록 여부의 두 방향을 함께 고정한다 — 한쪽만 고치면 다른 쪽이 깨지는 관계다.
+    ///
+    /// 1. `paused_*`에서 밖으로 죽은 학습은 기록돼야 한다. 예전 기준(`status == "running"`)은
+    ///    이걸 막아 화면이 영원히 "일시정지 중"에 머물렀다.
+    /// 2. `killed`는 보호돼야 한다. `kill_mlx_process`가 시그널 전에 의도를 기록하는데,
+    ///    terminate_pid가 SIGTERM 후 1초를 자는 동안 reader가 비정상 종료 코드를 관측한다 —
+    ///    그때 덮어쓰면 사용자가 누른 "중지"가 "오류"로 보고된다.
+    #[test]
+    fn should_record_exit_protects_terminal_states_but_not_paused() {
+        // 아직 결말이 나지 않은 상태 — 종료를 기록해야 한다
+        assert!(should_record_exit("running"));
+        for paused in ["paused", "paused_memory_pressure", "paused_battery", "paused_thermal"] {
+            assert!(
+                should_record_exit(paused),
+                "{paused}에서 죽은 프로세스가 기록되지 않으면 화면이 일시정지에 고립된다"
+            );
+        }
+        // 이미 결말이 난 상태 — 덮어쓰면 안 된다
+        for terminal in ["done", "error", "killed"] {
+            assert!(
+                !should_record_exit(terminal),
+                "{terminal}은 종착 상태인데 종료 기록이 덮어썼다"
+            );
+        }
     }
 
     /// 포트 탐지 자체의 검증은 `services::ports`가 소유한다(와일드카드 점유까지 본다).
