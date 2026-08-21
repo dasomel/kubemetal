@@ -95,8 +95,13 @@ export function useMlx() {
   const killProcess = useCallback(async (pid: number) => {
     setKillingPid(pid);
     try {
-      const res = await invoke<string>('kill_mlx_process', { pid });
-      await message(res || t('mlx.toast.processKilled'), { title: 'KubeMetal', kind: 'info' });
+      // 백엔드는 bool을 돌려준다. 예전에는 invoke<string>으로 선언해두고 `res || 기본문구`를
+      // 썼는데, `true`는 truthy라 기본 문구가 절대 쓰이지 않고 message(true)가 그대로
+      // 호출돼 "expected a string"으로 던졌다 — 그 예외가 catch로 떨어져 프로세스가
+      // **정상 종료됐는데도** "종료 실패"가 표시됐다(실측 2026-08-21). 타입 주석이
+      // 거짓이면 tsc는 아무것도 잡지 못한다.
+      await invoke<boolean>('kill_mlx_process', { pid });
+      await message(t('mlx.toast.processKilled'), { title: 'KubeMetal', kind: 'info' });
       await fetchStatus();
     } catch (err) {
       await message(t('mlx.toast.processKillFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });

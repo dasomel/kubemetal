@@ -102,10 +102,12 @@ test-e2e: ## 종합 E2E 자율 피드백 검증 스위트 실행 (합성데이�
 verify-airgap: ## 폐쇄망 기동 가능성 검증 (imagePullPolicy: Never 프로브)
 	./scripts/airgap/verify_offline_images.sh
 
-lint: ## clippy(-D warnings) + tsc + DESIGN.md 토큰 린트
+lint: ## clippy(-D warnings) + tsc + DESIGN.md 토큰 린트 + IPC 타입 대조
 	cargo clippy --manifest-path $(CARGO_MANIFEST) --all-targets -- -D warnings
 	npx tsc --noEmit
 	npx @google/design.md lint DESIGN.md
+	# invoke<T>의 T는 검증되지 않는 주장이라 tsc가 못 잡는다 — Rust 반환 타입과 대조한다.
+	python3 scripts/ci/check_ipc_types.py
 
 # NOTICE의 "금지 라이선스 없음" 주장이 lockfile과 어긋나면 여기서 깨진다(이슈 #9).
 license-check: ## 번들 의존성 라이선스 정책 게이트 (self-test 포함)
