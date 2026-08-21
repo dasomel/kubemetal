@@ -34,7 +34,13 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
   const [runtime, setRuntime] = useState<MlxRuntime>('mlx-lm');
   const [trainVision, setTrainVision] = useState(false);
 
-  const isTraining = !!training && training.status !== 'done' && training.status !== 'error';
+  // 종료 상태를 배제하는 방식이 아니라 **비종료 상태를 열거**한다. 예전에는
+  // `!== 'done' && !== 'error'`였는데 `killed`가 그 집합에 없어, 사용자가 중지를 누르고
+  // 프로세스가 실제로 죽은 뒤에도 스피너가 영원히 "학습 중"을 돌렸다(실측 2026-08-21).
+  // 백엔드 `should_record_exit`가 같은 이유로 같은 방향으로 고쳐졌다 — 상태 집합을
+  // 배제로 정의하면 값이 늘어날 때마다 조용히 틀린다.
+  const isTraining =
+    !!training && (training.status === 'running' || training.status.startsWith('paused'));
   const percent =
     training && training.total_iters > 0 ? Math.min((training.current_iter / training.total_iters) * 100, 100) : 0;
 
@@ -244,6 +250,12 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
               <div className="flex items-center gap-1.5 text-caption text-inkMuted">
                 <span className="w-2 h-2 rounded-full bg-success" />
                 <span>{t('pipeline.trainDone')}{training.adapter_path ? ` · ${training.adapter_path}` : ''}</span>
+              </div>
+            )}
+            {training.status === 'killed' && (
+              <div className="flex items-center gap-1.5 text-caption text-inkMuted">
+                <span className="w-2 h-2 rounded-full bg-inkFaint" />
+                <span>{t('mlx.finetune.trainingKilled')}</span>
               </div>
             )}
             {training.status === 'error' && (
