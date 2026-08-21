@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { isTrainingActive } from '../lib/trainingStatus';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
 import type {
@@ -225,8 +226,8 @@ export function useMlx() {
   }, [checkEnv, fetchStatus, fetchLocalModels, fetchGuardrailStatus]);
 
   const envInstalling = mlxStatus?.env_setup?.state === 'installing';
-  const trainingActive =
-    !!mlxStatus?.training && mlxStatus.training.status !== 'done' && mlxStatus.training.status !== 'error';
+  // 폴링 종료 조건이기도 하다 — killed가 빠져 있던 동안 중지 후에도 3초 폴링이 영원히 돌았다.
+  const trainingActive = isTrainingActive(mlxStatus?.training?.status);
   const shouldPoll = envInstalling || trainingActive;
 
   useEffect(() => {

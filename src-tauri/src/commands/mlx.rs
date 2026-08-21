@@ -951,6 +951,46 @@ mod tests {
         assert!(validate_home_subpath("/definitely/not/here/xyz").is_err());
     }
 
+    /// 학습 상태 집합은 Rust와 TS **두 언어에 각각** 적혀 있다 — 파생시킬 수가 없다.
+    /// 그래서 CLAUDE.md 규칙대로 "어긋나면 실패하는 테스트"를 둔다.
+    ///
+    /// 이 드리프트가 실제로 낸 피해: 프런트 네 곳이 비종료 판정을 `!== 'done' && !== 'error'`로
+    /// 복사해 갖고 있었고, 백엔드에 `killed`가 추가된 뒤 그 네 곳이 함께 조용히 틀렸다.
+    /// 중지한 학습이 배지·파이프라인에 계속 "진행 중"으로 남고 3초 폴링이 멈추지 않았다.
+    #[test]
+    fn training_status_sets_match_frontend() {
+        const TS: &str = include_str!("../../../src/lib/trainingStatus.ts");
+
+        // 프런트가 비종료로 아는 값 전부가 Rust에서도 비종료여야 한다.
+        for status in [
+            "running",
+            "paused",
+            "paused_memory_pressure",
+            "paused_battery",
+            "paused_thermal",
+        ] {
+            assert!(
+                TS.contains(&format!("'{status}'")),
+                "trainingStatus.ts에 비종료 상태 {status}가 없다"
+            );
+            assert!(
+                should_record_exit(status),
+                "{status}는 비종료인데 Rust가 종료로 취급한다"
+            );
+        }
+        // 종료 상태도 마찬가지다 — 한쪽만 늘어나면 여기서 깨진다.
+        for status in ["done", "error", "killed"] {
+            assert!(
+                TS.contains(&format!("'{status}'")),
+                "trainingStatus.ts에 종료 상태 {status}가 없다"
+            );
+            assert!(
+                !should_record_exit(status),
+                "{status}는 종료 상태인데 Rust가 종료 기록을 허용한다"
+            );
+        }
+    }
+
     /// 종료 기록 여부의 두 방향을 함께 고정한다 — 한쪽만 고치면 다른 쪽이 깨지는 관계다.
     ///
     /// 1. `paused_*`에서 밖으로 죽은 학습은 기록돼야 한다. 예전 기준(`status == "running"`)은

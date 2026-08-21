@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { isTrainingActive } from '../../lib/trainingStatus';
 import { Sliders, Loader2, Play, Square } from 'lucide-react';
 import type { LocalModel, MlxTrainingState, FineTuneConfig, MlxRuntime } from '../../types/ipc';
 import { useTranslation } from '../../i18n/i18nContext';
@@ -39,8 +40,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
   // 프로세스가 실제로 죽은 뒤에도 스피너가 영원히 "학습 중"을 돌렸다(실측 2026-08-21).
   // 백엔드 `should_record_exit`가 같은 이유로 같은 방향으로 고쳐졌다 — 상태 집합을
   // 배제로 정의하면 값이 늘어날 때마다 조용히 틀린다.
-  const isTraining =
-    !!training && (training.status === 'running' || training.status.startsWith('paused'));
+  const isTraining = !!training && isTrainingActive(training.status);
   const percent =
     training && training.total_iters > 0 ? Math.min((training.current_iter / training.total_iters) * 100, 100) : 0;
 

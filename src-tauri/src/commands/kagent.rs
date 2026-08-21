@@ -70,6 +70,41 @@ async fn get_pods_json(context: &str, namespace: &str) -> Result<serde_json::Val
     }
 }
 
+/// 파드 phase만으로 장애를 단정할 수 있는가.
+///
+/// 배제식(`phase != "Running" && phase != "Succeeded"`)이 아니라 열거다. 예전 배제식은
+/// **`Pending`을 즉시 장애로 셌다** — 프로비저닝 직후에는 모든 파드가 Pending이므로,
+/// 정상 기동 중인 클러스터가 "N개 파드 장애"로 보고됐다. 아래 컨테이너 루프가
+/// `ContainerCreating`/`PodInitializing`에서 `continue`하지만 그건 상세 문구를 안 붙일 뿐
+/// 이미 켜진 `has_issue`를 되돌리지 않았다.
+///
+/// K8s PodPhase는 Pending/Running/Succeeded/Failed/Unknown 다섯이다. 이 중 그 자체로
+/// 실패인 것은 Failed와 Unknown뿐이고, Pending은 `unschedulable_reason`이 따로 본다.
+fn phase_is_failing(phase: &str) -> bool {
+    matches!(phase, "Failed" | "Unknown")
+}
+
+/// 스케줄되지 못한 Pending 파드의 사유. 스케줄 실패는 컨테이너가 생기기 전이라
+/// `containerStatuses`에 흔적이 없어, 컨테이너 상태만 보면 통째로 놓친다.
+fn unschedulable_reason(pod: &serde_json::Value) -> Option<String> {
+    if pod["status"]["phase"].as_str()? != "Pending" {
+        return None;
+    }
+    let conditions = pod["status"]["conditions"].as_array()?;
+    let scheduled = conditions
+        .iter()
+        .find(|c| c["type"].as_str() == Some("PodScheduled"))?;
+    if scheduled["status"].as_str()? != "False" {
+        return None;
+    }
+    // 사유는 클러스터가 준 문자열만 쓴다 — 지어내지 않는다(D22).
+    let reason = scheduled["reason"].as_str().unwrap_or("PodScheduled=False");
+    match scheduled["message"].as_str() {
+        Some(message) if !message.is_empty() => Some(format!("{reason}: {message}")),
+        _ => Some(reason.to_string()),
+    }
+}
+
 /// 진단 결과는 전부 kubectl 실측에서만 파생한다. 조회에 실패하면 에러로 올린다 —
 /// "정상"으로 폴백하면 장애를 정상으로 위장하게 된다.
 #[tauri::command]
@@ -127,7 +162,14 @@ pub async fn get_kagent_diagnostics(
     for pod in &default_items {
         let pod_name = pod["metadata"]["name"].as_str().unwrap_or("unknown");
         let phase = pod["status"]["phase"].as_str().unwrap_or("");
-        let mut has_issue = phase != "Running" && phase != "Succeeded";
+        let mut has_issue = phase_is_failing(phase);
+        // `Pending`은 그 자체로 장애가 아니다 — 갓 생성된 파드는 전부 Pending이다. 다만
+        // 스케줄되지 못한 Pending은 진짜 장애이고 컨테이너 상태로는 드러나지 않으므로
+        // (컨테이너가 아직 없다) 조건을 따로 본다.
+        if let Some(reason) = unschedulable_reason(pod) {
+            has_issue = true;
+            issue_details.push(format!("Pod [{pod_name}] {reason}"));
+        }
 
         if let Some(cs_list) = pod["status"]["containerStatuses"].as_array() {
             for cs in cs_list {
@@ -677,6 +719,53 @@ mod tests {
             expected_base_url("kagent", 8081),
             "http://mac-gpu-service.kagent.svc.cluster.local:8081/v1"
         );
+    }
+
+    /// 갓 생성된 파드가 장애로 세어지면 안 된다. 프로비저닝 직후에는 모든 파드가
+    /// Pending/ContainerCreating이므로, 예전 배제식은 정상 기동을 "N개 파드 장애"로
+    /// 보고했다 — 거짓 경보이고, 거짓 성공의 반대편이다.
+    #[test]
+    fn pending_pod_is_not_an_issue_by_phase_alone() {
+        assert!(!phase_is_failing("Pending"), "갓 생성된 파드가 장애로 잡힌다");
+        assert!(!phase_is_failing("Running"));
+        assert!(!phase_is_failing("Succeeded"));
+        assert!(phase_is_failing("Failed"));
+        assert!(phase_is_failing("Unknown"));
+        // 모르는 값은 장애로 단정하지 않는다 — 사유를 댈 수 없으면 보고하지 않는다(D22).
+        assert!(!phase_is_failing(""));
+    }
+
+    /// 스케줄되지 못한 Pending은 진짜 장애다. 컨테이너가 생기기 전이라 containerStatuses에
+    /// 흔적이 없어, phase 검사를 느슨하게 하면 통째로 놓치는 구멍이 된다.
+    #[test]
+    fn unschedulable_pending_pod_is_reported_with_cluster_reason() {
+        let stuck = serde_json::json!({
+            "status": {
+                "phase": "Pending",
+                "conditions": [{
+                    "type": "PodScheduled",
+                    "status": "False",
+                    "reason": "Unschedulable",
+                    "message": "0/3 nodes are available: insufficient memory."
+                }]
+            }
+        });
+        let reason = unschedulable_reason(&stuck).expect("스케줄 실패를 놓쳤다");
+        assert!(reason.contains("Unschedulable"));
+        assert!(reason.contains("insufficient memory"), "클러스터 메시지가 유실됐다");
+
+        // 정상 기동 중인 Pending(스케줄은 됐고 이미지 받는 중)은 장애가 아니다.
+        let starting = serde_json::json!({
+            "status": {
+                "phase": "Pending",
+                "conditions": [{ "type": "PodScheduled", "status": "True" }]
+            }
+        });
+        assert_eq!(unschedulable_reason(&starting), None);
+
+        // Running 파드는 이 검사 대상이 아니다.
+        let running = serde_json::json!({ "status": { "phase": "Running", "conditions": [] } });
+        assert_eq!(unschedulable_reason(&running), None);
     }
 
     #[test]

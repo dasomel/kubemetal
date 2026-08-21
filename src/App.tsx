@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { isTrainingActive } from './lib/trainingStatus';
 import { Sidebar, MainTab, SidebarBadges } from './components/layout/Sidebar';
 import { Header } from './components/common/Header';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
@@ -71,8 +72,7 @@ export const App: React.FC = () => {
     access.loaded && forwardingServices.length > 0 && forwardingServices.every((s) => s.health === 'ok');
 
   // 탭 배지 — 탭을 열지 않아도 학습/서빙/도달 불가 상태가 보이도록 사이드바로 넘긴다.
-  const trainingActive =
-    !!mlxStatus?.training && mlxStatus.training.status !== 'done' && mlxStatus.training.status !== 'error';
+  const trainingActive = isTrainingActive(mlxStatus?.training?.status);
   const servingActive = !!mlxStatus?.serving;
   const unreachableCount = access.loaded ? access.services.filter((s) => s.health !== 'ok').length : 0;
 

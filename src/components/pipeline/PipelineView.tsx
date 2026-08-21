@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { isTrainingActive } from '../../lib/trainingStatus';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { ChevronDown, ChevronRight, Server, Database, Cpu, Archive, Rocket, FlaskConical, ArrowUpRight, Bot } from 'lucide-react';
 import { useColima } from '../../hooks/useColima';
@@ -195,12 +196,37 @@ export const PipelineView: React.FC = () => {
         detail: training.adapter_path ? t('pipeline.trainAdapter', { path: training.adapter_path }) : undefined,
       };
     }
+    if (training.status === 'killed') {
+      return {
+        key: 'train',
+        icon: Cpu,
+        title: t('pipeline.trainTitle'),
+        dot: 'inkFaint',
+        statusText: t('pipeline.trainKilled'),
+        detail: `iter ${training.current_iter}/${training.total_iters}`,
+      };
+    }
+    // 남은 것은 비종료 상태(running/paused*)뿐이어야 한다. 예전에는 이 자리가 fallback이라
+    // killed도, 모르는 값도 전부 "진행 중"으로 보였다 — 중지한 학습이 파이프라인에서만
+    // 계속 돌아가는 것처럼 보이던 원인이다.
+    if (!isTrainingActive(training.status)) {
+      return {
+        key: 'train',
+        icon: Cpu,
+        title: t('pipeline.trainTitle'),
+        dot: 'inkFaint',
+        statusText: t('pipeline.trainUnknown', { status: training.status }),
+      };
+    }
+    const paused = training.status.startsWith('paused');
     return {
       key: 'train',
       icon: Cpu,
       title: t('pipeline.trainTitle'),
       dot: 'warning',
-      statusText: t('pipeline.trainRunning', { pid: training.pid }),
+      statusText: paused
+        ? t('pipeline.trainPaused', { pid: training.pid })
+        : t('pipeline.trainRunning', { pid: training.pid }),
       detail: `iter ${training.current_iter}/${training.total_iters}${
         training.last_loss != null ? ` · loss ${training.last_loss.toFixed(4)}` : ''
       }`,
