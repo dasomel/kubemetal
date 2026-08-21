@@ -316,6 +316,23 @@ mod tests {
         );
     }
 
+    /// 파서가 아니라 **수집 경로 전체**를 본다 — `external_command("ioreg")` 해석,
+    /// 실행, 종료코드, 파싱까지. `live_ioreg_output_is_still_parseable`은 절대경로로
+    /// ioreg를 직접 부르므로 이 층을 건너뛴다. GUI 번들 앱이 로그인 셸 PATH를 상속하지
+    /// 않아 ioreg를 못 찾고 (0.0, 0.0)을 돌려주던 전례가 있다(D5/mistakes-log 2026-07-20).
+    ///
+    /// 메모리는 0보다 커야 한다 — WindowServer가 항상 얼마간 잡고 있어 유휴에서도 0이
+    /// 아니다(실측: 유휴 시 1.0~1.3GB). 사용률은 유휴에서 0이 정상이라 보지 않는다.
+    #[tokio::test]
+    async fn metal_gpu_metrics_read_through_external_command() {
+        let (_pct, mem_gb) = get_metal_gpu_metrics().await;
+        assert!(
+            mem_gb > 0.0,
+            "GPU 메모리가 0이다 — 파서가 아니라 수집 경로(external_command/실행)가 \
+             깨졌을 수 있다. 앱 화면이 0 GB로 보이는 것과 같은 증상이다"
+        );
+    }
+
     /// 읽지 못한 값은 0이 아니라 None이다 — 0으로 뭉개면 "GPU 유휴"와 구분되지 않는다(D22).
     #[test]
     fn missing_or_malformed_fields_are_none_not_zero() {
