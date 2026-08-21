@@ -293,12 +293,14 @@ mod tests {
         assert_eq!(parse_ioreg_accelerator(legend), (None, None));
     }
 
-    /// 픽스처는 "이 형태를 이렇게 읽는다"만 보장한다. 이 기기의 **실제** ioreg가 여전히 그
-    /// 형태인지는 별개 사실이고, 틀어지면 화면이 0을 조용히 띄운다 — 원래 버그가 그랬다.
-    /// `thermal_state_is_actually_readable`과 같은 취지로 실제 값이 읽히는지를 본다.
+    /// 실제 `ioreg`를 다시 읽는다. 픽스처는 "이 형태를 이렇게 읽는다"만 보장하고, 이 기기의
+    /// 실제 출력이 여전히 그 형태인지는 별개 사실이다 — 틀어지면 화면이 0을 조용히 띄운다.
     ///
-    /// 값의 크기가 아니라 **필드를 찾았는지**를 본다. 유휴 GPU에서 사용률 0은 정상이지만,
-    /// `None`은 파싱 실패이고 그것이 회귀다.
+    /// 단정하는 것은 **"출력에 있는 필드는 반드시 읽힌다"** 이지 "두 필드가 다 있다"가 아니다.
+    /// 후자로 적었다가 CI가 9커밋 동안 빨갛게 죽어 있었다(2026-08-20~21): GitHub macOS
+    /// 러너의 가상화 가속기는 `In use system memory`(약 47MB)는 노출하지만 `Device
+    /// Utilization %`는 내보내지 않는다. 하드웨어가 무엇을 노출하는지는 이 파서가 보장할 수
+    /// 있는 사실이 아니고, 노출된 것을 놓치지 않는 것이 보장할 수 있는 사실이다.
     #[test]
     fn live_ioreg_output_is_still_parseable() {
         let out = std::process::Command::new("/usr/sbin/ioreg")
@@ -309,10 +311,27 @@ mod tests {
         };
         let text = String::from_utf8_lossy(&out.stdout);
         let (pct, mem) = parse_ioreg_accelerator(&text);
+
+        for (key, parsed) in [
+            ("Device Utilization %", pct.is_some()),
+            ("In use system memory", mem.is_some()),
+        ] {
+            if text.contains(&format!("{key}\"=")) {
+                assert!(
+                    parsed,
+                    "ioreg 출력에 `{key}\"=`가 있는데 파서가 읽지 못했다 — 형식이 바뀌었다면 \
+                     픽스처와 파서를 함께 갱신해야 한다"
+                );
+            }
+        }
+
+        // 두 필드가 모두 없으면 IOAccelerator를 통째로 못 본 것이다 — 그건 파싱 실패와
+        // 구분되어야 하므로 여기서 잡는다(가상화 러너도 메모리 한 필드는 내보낸다).
         assert!(
-            pct.is_some() && mem.is_some(),
-            "실제 ioreg 출력에서 GPU 필드를 못 읽었다 (사용률: {pct:?}, 메모리: {mem:?}) — \
-             출력 형식이 바뀌었다면 픽스처와 파서를 함께 갱신해야 한다"
+            pct.is_some() || mem.is_some(),
+            "ioreg에서 GPU 필드를 하나도 찾지 못했다 (출력 {}바이트) — IOAccelerator 자체가 \
+             안 보이는 환경이거나 형식이 바뀌었다",
+            out.stdout.len()
         );
     }
 
@@ -321,16 +340,36 @@ mod tests {
     /// ioreg를 직접 부르므로 이 층을 건너뛴다. GUI 번들 앱이 로그인 셸 PATH를 상속하지
     /// 않아 ioreg를 못 찾고 (0.0, 0.0)을 돌려주던 전례가 있다(D5/mistakes-log 2026-07-20).
     ///
-    /// 메모리는 0보다 커야 한다 — WindowServer가 항상 얼마간 잡고 있어 유휴에서도 0이
-    /// 아니다(실측: 유휴 시 1.0~1.3GB). 사용률은 유휴에서 0이 정상이라 보지 않는다.
+    /// 단정은 **두 경로의 일치**다 — 하드웨어가 얼마를 보고하는지가 아니라. 절대값을 걸면
+    /// 기기마다 다른 값에 테스트가 매이고(러너의 가상 가속기는 약 47MB, 이 M4 Pro는 약 1GB),
+    /// 정작 검사하려는 것(경로 해석이 되는가)과 무관해진다.
     #[tokio::test]
     async fn metal_gpu_metrics_read_through_external_command() {
-        let (_pct, mem_gb) = get_metal_gpu_metrics().await;
-        assert!(
-            mem_gb > 0.0,
-            "GPU 메모리가 0이다 — 파서가 아니라 수집 경로(external_command/실행)가 \
-             깨졌을 수 있다. 앱 화면이 0 GB로 보이는 것과 같은 증상이다"
-        );
+        let (pct, mem_gb) = get_metal_gpu_metrics().await;
+
+        // 같은 순간을 두 번 읽을 수는 없으므로(사용률은 매 순간 변한다) 필드의 존재 여부만
+        // 맞춘다 — external_command 경로가 깨지면 값이 아니라 **필드가 통째로** 사라진다.
+        let direct = std::process::Command::new("/usr/sbin/ioreg")
+            .args(["-l", "-d", "1", "-r", "-c", "IOAccelerator"])
+            .output();
+        let Ok(direct) = direct else { return };
+        let text = String::from_utf8_lossy(&direct.stdout);
+        let (direct_pct, direct_mem) = parse_ioreg_accelerator(&text);
+
+        if direct_mem.is_some() {
+            assert!(
+                mem_gb > 0.0,
+                "절대경로 ioreg는 메모리를 읽는데 external_command 경로는 0을 돌려줬다 — \
+                 경로 해석이나 스폰이 깨졌다(D5/mistakes-log 2026-07-20의 증상)"
+            );
+        }
+        if direct_pct.is_none() {
+            // 이 환경은 사용률을 아예 노출하지 않는다(가상화 러너). 수집 경로도 같아야 한다.
+            assert_eq!(
+                pct, 0.0,
+                "이 환경의 ioreg는 사용률을 내보내지 않는데 수집 경로가 값을 만들어냈다"
+            );
+        }
     }
 
     /// 읽지 못한 값은 0이 아니라 None이다 — 0으로 뭉개면 "GPU 유휴"와 구분되지 않는다(D22).
