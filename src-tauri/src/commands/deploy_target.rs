@@ -49,6 +49,81 @@ pub async fn save_deploy_target(
     Ok(target)
 }
 
+/// 파괴적 액션 실행 직전 확인 다이얼로그에 쓰는 요약(#18 축소 스코프). 프런트가 이 값을
+/// 받아 "지금 어느 컨텍스트/네임스페이스에 무엇을 하려는지"를 보여준다 — 다이얼로그 자체는
+/// 이 lane의 스코프 밖이다.
+#[derive(Debug, serde::Serialize)]
+pub struct OperationSummary {
+    pub context: String,
+    pub namespace: String,
+    pub action: String,
+    pub target_description: String,
+}
+
+/// `action`별 요약을 조립하는 순수 함수 — `DeployTarget`을 이미 들고 있는 호출부(테스트 포함)가
+/// `AppHandle` 없이 바로 쓸 수 있게 분리했다. colima 수명주기 액션은 저장된 배포 대상과
+/// 무관하게 항상 colima 컨텍스트로 고정한다(D26: colima 수명주기는 이 앱이 소유하는 유일한
+/// 대상).
+///
+/// 알려지지 않은 `action`은 거부한다 — 요약을 지어내면 다이얼로그가 틀린 대상을 보여줄 수
+/// 있으므로(D22–D25), 이 커맨드가 아는 액션만 명시적으로 처리한다.
+pub fn build_operation_summary(
+    action: &str,
+    target: Option<&DeployTarget>,
+) -> Result<OperationSummary, String> {
+    match action {
+        "start_cluster" | "stop_cluster" => Ok(OperationSummary {
+            context: COLIMA_CONTEXT.to_string(),
+            namespace: "-".to_string(),
+            action: action.to_string(),
+            target_description: format!(
+                "colima Kubernetes VM을 {}합니다. colima는 재진입 불가 — 진행 중에는 \
+                 다른 수명주기 작업(start/stop)을 실행할 수 없습니다.",
+                if action == "start_cluster" { "시작" } else { "정지" }
+            ),
+        }),
+        "provision_mlops_stack" | "install_kagent" => {
+            let target = target.ok_or_else(|| {
+                format!("'{action}' requires a deploy target to build the confirmation summary")
+            })?;
+            let cluster_kind = if target.is_colima() { "로컬 colima" } else { "외부" };
+            let action_label = if action == "provision_mlops_stack" {
+                "MLOps 스택(MLflow/SeaweedFS/Prefect) 전체 배포"
+            } else {
+                "kagent 컨트롤러/도구/UI 설치"
+            };
+            Ok(OperationSummary {
+                context: target.context.clone(),
+                namespace: target.namespace.clone(),
+                action: action.to_string(),
+                target_description: format!(
+                    "{cluster_kind} 클러스터 '{}'의 네임스페이스 '{}'에 {action_label}을(를) \
+                     적용합니다.",
+                    target.context, target.namespace
+                ),
+            })
+        }
+        other => Err(format!("Unknown operation for confirmation summary: {other}")),
+    }
+}
+
+/// 프런트가 파괴적 액션(재프로비저닝, 외부 클러스터 풀스택 배포, colima 수명주기 등)
+/// 실행 직전에 호출해 확인 다이얼로그에 쓸 요약을 받는다. 백엔드는 요약만 만든다 —
+/// 다이얼로그 표시·사용자 확인은 프런트 몫이다.
+#[tauri::command]
+pub async fn describe_deploy_operation(
+    app: tauri::AppHandle,
+    action: String,
+) -> Result<OperationSummary, String> {
+    match action.as_str() {
+        "start_cluster" | "stop_cluster" => build_operation_summary(&action, None),
+        _ => {
+            let target = get_deploy_target(app).await?;
+            build_operation_summary(&action, Some(&target))
+        }
+    }
+}
+
 pub(crate) async fn kubectl_json(context: &str, args: &[&str]) -> Result<serde_json::Value, String> {
     let output = external_command("kubectl")?
         .args(["--context", context, "--request-timeout=30s"])
@@ -357,4 +432,48 @@ async fn probe_candidate(context: &str, namespace: &str, candidate: &str) -> Res
         ));
     }
     Ok(false)
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+
+    #[test]
+    fn colima_lifecycle_summary_ignores_saved_target() {
+        // 저장된 대상이 외부 클러스터여도 colima 수명주기 액션은 항상 colima를 가리켜야 한다.
+        let external = DeployTarget::for_context("narwhal");
+        let summary = build_operation_summary("stop_cluster", Some(&external)).unwrap();
+        assert_eq!(summary.context, COLIMA_CONTEXT);
+        assert_eq!(summary.action, "stop_cluster");
+        assert!(summary.target_description.contains("정지"));
+
+        let summary_none = build_operation_summary("start_cluster", None).unwrap();
+        assert_eq!(summary_none.context, COLIMA_CONTEXT);
+        assert!(summary_none.target_description.contains("시작"));
+    }
+
+    #[test]
+    fn provision_summary_reflects_saved_deploy_target() {
+        let mut target = DeployTarget::for_context("narwhal");
+        target.namespace = "team-ml".into();
+        let summary = build_operation_summary("provision_mlops_stack", Some(&target)).unwrap();
+        assert_eq!(summary.context, "narwhal");
+        assert_eq!(summary.namespace, "team-ml");
+        assert!(summary.target_description.contains("외부"));
+        assert!(summary.target_description.contains("team-ml"));
+    }
+
+    #[test]
+    fn provision_summary_requires_a_target() {
+        let err = build_operation_summary("provision_mlops_stack", None)
+            .expect_err("provisioning without a target must be rejected");
+        assert!(err.contains("provision_mlops_stack"));
+    }
+
+    #[test]
+    fn unknown_action_is_rejected_not_fabricated() {
+        let err = build_operation_summary("delete_everything", None)
+            .expect_err("unknown actions must not get a fabricated summary");
+        assert!(err.contains("delete_everything"));
+    }
 }

@@ -1,7 +1,35 @@
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
+use tauri::{Manager, State};
 
 use crate::services::process::{external_command, resolve_bundled_resource};
+
+/// colima 수명주기 재진입 가드(#18 축소 스코프). colima는 재진입 불가(CLAUDE.md "What
+/// bites here") — `start`는 VM 부팅을 거치는 장시간 커맨드라 사용자가 버튼을 두 번 누르거나
+/// 프런트가 재시도하면 겹친 `colima start` 호출이 상태를 어긋나게 할 수 있다. `MlxState`의
+/// 단일 슬롯 거부 패턴(`serving: Mutex<Option<_>>`, mlx.rs)을 그대로 따르되, 여기서는 값이
+/// 아니라 진행 여부만 필요해 `Mutex<bool>`로 둔다.
+#[derive(Default)]
+pub struct ColimaState {
+    lifecycle_in_progress: std::sync::Mutex<bool>,
+}
+
+impl ColimaState {
+    /// 진행 중이 아니면 점유하고 true, 이미 진행 중이면 점유하지 않고 false.
+    fn try_acquire(&self) -> Result<bool, String> {
+        let mut in_progress = self.lifecycle_in_progress.lock().map_err(|e| e.to_string())?;
+        if *in_progress {
+            return Ok(false);
+        }
+        *in_progress = true;
+        Ok(true)
+    }
+
+    fn release(&self) {
+        if let Ok(mut in_progress) = self.lifecycle_in_progress.lock() {
+            *in_progress = false;
+        }
+    }
+}
 
 /// colima 0.10.x `status --json` 실측 스키마: 기동 중일 때만 exit 0 + stdout에
 /// 평면 JSON({"kubernetes":true,...})을 출력하고, 미기동이면 exit 1 + stdout 없음.
@@ -104,7 +132,24 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
 }
 
 #[tauri::command]
-pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
+pub async fn start_cluster(
+    state: State<'_, ColimaState>,
+    cpu: u32,
+    memory: u32,
+) -> Result<String, String> {
+    if !state.try_acquire()? {
+        return Err(
+            "colima start is already in progress — wait for it to finish before retrying \
+             (colima is not reentrant)."
+                .into(),
+        );
+    }
+    let result = start_cluster_inner(cpu, memory).await;
+    state.release();
+    result
+}
+
+async fn start_cluster_inner(cpu: u32, memory: u32) -> Result<String, String> {
     let mut sys = sysinfo::System::new_all();
     sys.refresh_memory();
     sys.refresh_cpu_usage();
@@ -502,6 +547,21 @@ pub async fn check_latest_airgap_versions() -> Result<Vec<AirgapLatestVersionRep
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn colima_state_rejects_concurrent_lifecycle_ops() {
+        let state = ColimaState::default();
+        assert!(state.try_acquire().unwrap(), "first acquire must succeed");
+        assert!(
+            !state.try_acquire().unwrap(),
+            "a second concurrent acquire must be rejected while one is in progress"
+        );
+        state.release();
+        assert!(
+            state.try_acquire().unwrap(),
+            "after release, a new acquire must succeed again"
+        );
+    }
 
     fn repo_k8s_dir() -> std::path::PathBuf {
         // 테스트 cwd는 src-tauri/ — 매니페스트는 리포 루트 아래에 있다.
