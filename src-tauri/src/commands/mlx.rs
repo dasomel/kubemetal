@@ -114,6 +114,10 @@ pub struct MlxState {
     pub training: Mutex<Option<TrainingStatus>>,
     pub serving: Mutex<Option<ServingStatus>>,
     pub last_serving_error: Mutex<Option<String>>,
+    /// 헬스체크를 통과한 마지막 서빙 구성(이슈 #12) — `revert_to_last_serving`이 되돌릴
+    /// 대상. 스폰 성공만으로는 채우지 않는다: 모델 로드 실패로 죽는 프로세스를 "성공"으로
+    /// 남기면 되돌리기가 똑같이 죽는 구성으로 되돌아간다(D22).
+    pub last_known_good_serving: Mutex<Option<ServingStatus>>,
 }
 
 pub(crate) fn home_dir() -> Result<PathBuf, String> {
@@ -872,7 +876,7 @@ pub async fn start_model_serving(
                 *serving_guard = Some(ServingStatus {
                     pid,
                     port: actual_port,
-                    model_path: base_model_str,
+                    model_path: base_model_str.clone(),
                     adapter_path: effective_adapter_str.clone(),
                     runtime,
                 });
@@ -883,6 +887,24 @@ pub async fn start_model_serving(
                 let mut err_guard = state.last_serving_error.lock().map_err(|e| e.to_string())?;
                 *err_guard = None;
             }
+
+            // 이슈 #12: 헬스체크가 통과하는 순간의 구성을 last_known_good으로 남긴다.
+            // 스폰 성공 자체가 아니라 헬스체크 통과가 기준이다 — 모델 로드 실패로 죽는
+            // 프로세스를 "성공"으로 기록하면 되돌리기가 똑같이 죽는 구성으로 돌아간다(D22).
+            let healthcheck_config = ServingStatus {
+                pid,
+                port: actual_port,
+                model_path: base_model_str.clone(),
+                adapter_path: effective_adapter_str.clone(),
+                runtime,
+            };
+            let healthcheck_base_url = format!("http://127.0.0.1:{actual_port}/v1");
+            tokio::spawn(record_last_known_good_after_healthcheck(
+                app.clone(),
+                pid,
+                healthcheck_base_url,
+                healthcheck_config,
+            ));
 
             tokio::spawn(run_serving_reader(app, child, pid));
 
@@ -949,6 +971,125 @@ pub async fn stop_model_serving(state: State<'_, MlxState>) -> Result<String, St
     }
 
     Ok("Stopped model serving.".into())
+}
+
+/// 서빙 헬스체크. `access.rs::check_serving_health`와 판정 기준(OpenAI 호환 `/v1/models`가
+/// HTTP 200일 때만 ok — TCP 응답만으로는 무관한 프로세스의 404를 정상으로 오판한다,
+/// 실측 2026-08-06)이 같다. 이 lane은 `mlx.rs` 단일 파일로 스코프가 고정돼 있어(harness.md)
+/// access.rs를 건드리지 않고 최소 구현으로 둔다 — 기준이 바뀌면 두 곳을 함께 고쳐야 한다.
+async fn is_serving_healthy(base_url: &str) -> bool {
+    let mut cmd = match external_command("curl") {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let url = format!("{base_url}/models");
+    let output = cmd
+        .args(["-s", "-o", "/dev/null", "-m", "2", "-w", "%{http_code}", &url])
+        .output()
+        .await;
+    matches!(output, Ok(out) if String::from_utf8_lossy(&out.stdout) == "200")
+}
+
+/// pid가 여전히 현재 서빙과 일치할 때만 `config`를 last_known_good으로 기록한다. 기록
+/// 시점 사이에 프로세스가 죽거나 다른 서빙으로 교체됐으면 쓰지 않는다 — 죽은 구성을
+/// "마지막 성공"으로 남기면 되돌리기가 똑같이 죽는 구성으로 돌아간다(D22). AppHandle이
+/// 필요 없는 순수 판정이라 `MlxState`만으로 직접 테스트한다.
+fn record_serving_success(state: &MlxState, pid: u32, config: ServingStatus) -> bool {
+    let still_current = state
+        .serving
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(|s| s.pid))
+        == Some(pid);
+    if !still_current {
+        return false;
+    }
+    match state.last_known_good_serving.lock() {
+        Ok(mut guard) => {
+            *guard = Some(config);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+const SERVING_HEALTHCHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+// 모델 로딩 시간 여유 — 최대 약 60초.
+const SERVING_HEALTHCHECK_MAX_ATTEMPTS: u32 = 30;
+
+/// 스폰 직후 헬스체크를 폴링하고, 통과하는 순간의 구성을 last_known_good으로 기록한다
+/// (이슈 #12). 판정 자체는 `record_serving_success`가 담당하고 여기서는 폴링 루프만
+/// 담당한다 — AppHandle 의존 글루라 이 저장소 관례상(다른 AppHandle 기반 함수들과 동일)
+/// 실제 앱에서 라이브 검증하고 별도 유닛 테스트는 두지 않는다.
+async fn record_last_known_good_after_healthcheck(
+    app: tauri::AppHandle,
+    pid: u32,
+    base_url: String,
+    config: ServingStatus,
+) {
+    for _ in 0..SERVING_HEALTHCHECK_MAX_ATTEMPTS {
+        let state = app.state::<MlxState>();
+        let still_current = state
+            .serving
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(|s| s.pid))
+            == Some(pid);
+        if !still_current {
+            return;
+        }
+        if is_serving_healthy(&base_url).await {
+            record_serving_success(&state, pid, config);
+            return;
+        }
+        tokio::time::sleep(SERVING_HEALTHCHECK_INTERVAL).await;
+    }
+}
+
+/// state.last_known_good_serving에서 되돌릴 구성을 꺼낸다. 없으면 지어내지 않고
+/// 명확한 에러를 반환한다(D22).
+fn revert_config_or_error(state: &MlxState) -> Result<ServingStatus, String> {
+    state
+        .last_known_good_serving
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "되돌릴 이전 구성이 없습니다.".to_string())
+}
+
+/// 저장된 last_known_good 구성으로 현재 서빙을 중지 후 재시작한다(이슈 #12 축소 스코프).
+/// 프런트 소비자가 아직 없어 IPC로는 노출하지 않는다 — 필요해지면 generate_handler!에
+/// 등록하고 scripts/ci/check_ipc_types.py를 통과시킨다(harness.md 스코프 밖: 프런트 UI).
+/// `commands` 모듈이 `lib.rs`에서 `pub`이 아니라 이 함수는 어차피 크레이트 외부에
+/// 도달 불가능하다 — dead_code는 "미등록 상태에서는 호출부가 없다"는 사실 그대로이므로
+/// 지어내지 않고 `allow`로 명시한다(IPC 등록 시 이 allow를 제거한다).
+#[allow(dead_code)]
+pub(crate) async fn revert_to_last_serving(app: tauri::AppHandle) -> Result<String, String> {
+    let target = {
+        let state = app.state::<MlxState>();
+        revert_config_or_error(&state)?
+    };
+
+    let is_serving = {
+        let state = app.state::<MlxState>();
+        let guard = state.serving.lock().map_err(|e| e.to_string())?;
+        guard.is_some()
+    };
+    if is_serving {
+        let state = app.state::<MlxState>();
+        stop_model_serving(state).await?;
+    }
+
+    let state = app.state::<MlxState>();
+    start_model_serving(
+        app.clone(),
+        state,
+        target.model_path,
+        target.adapter_path,
+        target.port,
+        Some(target.runtime),
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -1190,5 +1331,65 @@ mod tests {
         }"#;
         let config_vision: FineTuneConfig = serde_json::from_str(json_with_vision).unwrap();
         assert!(config_vision.train_vision);
+    }
+
+    fn dummy_serving_status(pid: u32) -> ServingStatus {
+        ServingStatus {
+            pid,
+            port: 8080,
+            model_path: "/models/base".into(),
+            adapter_path: None,
+            runtime: MlxRuntime::MlxLm,
+        }
+    }
+
+    #[test]
+    fn record_serving_success_fills_last_known_good_when_pid_still_current() {
+        let state = MlxState::default();
+        let config = dummy_serving_status(123);
+        *state.serving.lock().unwrap() = Some(config.clone());
+
+        let wrote = record_serving_success(&state, 123, config);
+
+        assert!(wrote);
+        assert_eq!(
+            state
+                .last_known_good_serving
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|s| s.pid),
+            Some(123)
+        );
+    }
+
+    #[test]
+    fn record_serving_success_skips_when_pid_no_longer_current() {
+        // 헬스체크가 도는 사이 프로세스가 죽거나 다른 서빙으로 교체된 경우 —
+        // 죽은/교체된 구성을 "마지막 성공"으로 남기면 안 된다(D22).
+        let state = MlxState::default();
+        *state.serving.lock().unwrap() = None;
+
+        let wrote = record_serving_success(&state, 123, dummy_serving_status(123));
+
+        assert!(!wrote);
+        assert!(state.last_known_good_serving.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn revert_config_or_error_errors_when_nothing_saved() {
+        let state = MlxState::default();
+        let err = revert_config_or_error(&state).expect_err("되돌릴 이전 구성이 없습니다");
+        assert!(err.contains("되돌릴 이전 구성이 없습니다"));
+    }
+
+    #[test]
+    fn revert_config_or_error_returns_saved_config() {
+        let state = MlxState::default();
+        *state.last_known_good_serving.lock().unwrap() = Some(dummy_serving_status(42));
+
+        let got = revert_config_or_error(&state).expect("saved config should be returned");
+
+        assert_eq!(got.pid, 42);
     }
 }
