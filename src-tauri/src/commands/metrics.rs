@@ -101,6 +101,10 @@ pub struct SystemMetrics {
     /// `nominal` | `fair` | `serious` | `critical`. 값을 못 읽으면 None —
     /// "정상"으로 폴백하지 않는다(D22, 발열은 가드레일 판정에 쓰인다).
     pub thermal_state: Option<String>,
+    /// GPU 지표를 낸 백엔드. 이 저장소는 Apple Silicon 전용이므로 현재는 항상
+    /// `"apple_metal"` 고정값이다 — 원격 클러스터의 NVIDIA 텔레메트리가 붙을 때
+    /// `"nvidia"` 등 다른 값을 구분할 자리를 미리 만들어 둔 것뿐, 지금은 지어내지 않는다.
+    pub gpu_backend: String,
 }
 
 /// macOS의 발열 압력 단계.
@@ -245,6 +249,7 @@ pub async fn get_system_metrics(state: State<'_, Mutex<System>>) -> Result<Syste
         gpu_usage_percentage,
         gpu_memory_used_gb,
         thermal_state: read_thermal_state(),
+        gpu_backend: "apple_metal".to_string(),
     })
 }
 
