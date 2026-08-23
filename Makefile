@@ -90,10 +90,10 @@ install-app: app ## .app 빌드 후 /Applications에 설치(기존본 교체)
 	@echo "설치 완료: /Applications/KubeMetal.app"
 
 check: ## Rust 타입/컴파일 체크
-	cargo check --manifest-path $(CARGO_MANIFEST)
+	cargo check --manifest-path $(CARGO_MANIFEST) --locked
 
 test: ## Rust 단위 테스트 (경로 방어·가드레일 포함)
-	cargo test --manifest-path $(CARGO_MANIFEST) --lib
+	cargo test --manifest-path $(CARGO_MANIFEST) --locked --lib
 
 test-e2e: ## 종합 E2E 자율 피드백 검증 스위트 실행 (합성데이터→파인튜닝→kagent진단→코딩패치)
 	./scripts/e2e/run_full_e2e_verification.sh
@@ -103,7 +103,7 @@ verify-airgap: ## 폐쇄망 기동 가능성 검증 (imagePullPolicy: Never 프�
 	./scripts/airgap/verify_offline_images.sh
 
 lint: ## clippy(-D warnings) + tsc + DESIGN.md 토큰 린트 + IPC 타입 대조
-	cargo clippy --manifest-path $(CARGO_MANIFEST) --all-targets -- -D warnings
+	cargo clippy --manifest-path $(CARGO_MANIFEST) --locked --all-targets -- -D warnings
 	npx tsc --noEmit
 	npx @google/design.md lint DESIGN.md
 	# invoke<T>의 T는 검증되지 않는 주장이라 tsc가 못 잡는다 — Rust 반환 타입과 대조한다.

@@ -1,0 +1,5 @@
+# 이슈 #36 (Supply Chain): 로컬/CI가 서로 다른 rustc로 조용히 드리프트하는 것을 막는다.
+# 채널을 고정하고, Makefile이 쓰는 clippy/rustfmt를 함께 고정한다.
+[toolchain]
+channel = "1.97.1"
+components = ["clippy", "rustfmt"]
