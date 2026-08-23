@@ -57,6 +57,12 @@ jobs:
           mkdir -p stage
           cp -R src-tauri/target/release/bundle/macos/KubeMetal.app stage/
           cp LICENSE NOTICE THIRD-PARTY-NOTICES.md sbom-cyclonedx.json sbom-spdx.json stage/
+          # 체크섬은 zip에 들어가는 모든 파일(.app 번들 내부 바이너리 포함)을
+          # 대상으로 한다. stage 안에 바로 `> SHA256SUMS.txt`로 쓰면 셸이 find
+          # 실행 전에 그 파일을 미리 만들어 find 결과에 자기 자신이 잡히므로,
+          # stage 밖에 먼저 쓰고 이동한다. macos-14 러너이므로 shasum -a 256
+          # 사용(macOS 기본 제공, Linux에서도 동일하게 동작).
+          (cd stage && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 > ../SHA256SUMS.txt && mv ../SHA256SUMS.txt .)
           ditto -c -k stage "KubeMetal-${TAG}-aarch64.zip"
       - name: Create GitHub release
         env:
