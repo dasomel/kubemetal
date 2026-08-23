@@ -114,11 +114,20 @@ pub struct SystemMetrics {
 /// 실제로 스로틀링을 유발하는 신호는 발열이다. Nativ가 tok/s와 함께 이 값을 표면화하는
 /// 이유이기도 하다.
 pub fn read_thermal_state() -> Option<String> {
-    use objc2_foundation::{NSProcessInfo, NSProcessInfoThermalState};
+    use objc2_foundation::NSProcessInfo;
 
-    let info = NSProcessInfo::processInfo();
+    thermal_state_name(NSProcessInfo::processInfo().thermalState())
+}
+
+/// `NSProcessInfoThermalState` 원시값 → 문자열 매핑을 순수 함수로 분리한 것. objc 호출과
+/// 분리해 두면 애플이 정의하지 않은(또는 아직 이 바인딩이 모르는) raw 값이 들어왔을 때도
+/// 실제 기기 호출 없이 테스트할 수 있다 — 이름을 지어내지 않고 None으로 남기는 동작(D22)이
+/// 이 함수의 계약이다.
+fn thermal_state_name(state: objc2_foundation::NSProcessInfoThermalState) -> Option<String> {
+    use objc2_foundation::NSProcessInfoThermalState;
+
     Some(
-        match info.thermalState() {
+        match state {
             NSProcessInfoThermalState::Nominal => "nominal",
             NSProcessInfoThermalState::Fair => "fair",
             NSProcessInfoThermalState::Serious => "serious",
@@ -385,5 +394,51 @@ mod tests {
         // 한쪽만 있는 경우 — 나머지는 None으로 남아 호출부가 경고를 낼 수 있어야 한다
         let (pct, mem) = parse_ioreg_accelerator(r#""Device Utilization %"=42"#);
         assert_eq!((pct, mem), (Some(42.0), None));
+    }
+
+    /// 손으로 구성한 픽스처(`ioreg-ioaccelerator-util-only-hand-built.txt`) — 실측 캡처가
+    /// 아니다. 2026-08-20~21에 실제로 관측된 CI 러너 패턴은 정반대였다: `In use system
+    /// memory`는 노출하지만 `Device Utilization %`는 없었다(mistakes-log 2026-08-22). 이
+    /// 테스트는 그 역방향 — 사용률은 있고 메모리가 없는 가상 환경에서도 파서가 있는 필드만
+    /// 정확히 읽고 없는 필드는 None으로 남기는지 확인한다(D22, 지어낸 값 금지).
+    #[test]
+    fn hand_built_ci_pattern_reversed_utilization_present_memory_absent() {
+        const FIXTURE: &str =
+            include_str!("../../tests/fixtures/ioreg-ioaccelerator-util-only-hand-built.txt");
+        let (pct, mem) = parse_ioreg_accelerator(FIXTURE);
+        assert_eq!(pct, Some(12.0), "존재하는 Device Utilization %를 읽지 못했다");
+        assert_eq!(
+            mem, None,
+            "In use system memory가 없는데 값을 만들어냈다 — 0으로 뭉개면 안 된다(D22)"
+        );
+    }
+
+    /// 손으로 구성한 raw 값 — 실제 기기에서 관측된 값이 아니다. 애플이 아직 정의하지 않았거나
+    /// 이 objc2 바인딩이 모르는 `NSProcessInfoThermalState` raw 값이 들어와도 이름을 지어내지
+    /// 않고 None으로 남아야 한다(D22). `NSProcessInfoThermalState`는 `pub NSInteger` 튜플이라
+    /// objc 호출 없이 임의 값을 직접 구성해 테스트할 수 있다.
+    #[test]
+    fn thermal_state_name_returns_none_for_unmapped_raw_value() {
+        let unmapped = objc2_foundation::NSProcessInfoThermalState(99);
+        assert_eq!(
+            thermal_state_name(unmapped),
+            None,
+            "정의되지 않은 thermal raw 값에 이름을 지어냈다"
+        );
+    }
+
+    /// 손으로 구성한 값 — 두 필드가 모두 존재하고 값이 0인 경우. "필드가 없음"과 "필드 값이
+    /// 0"을 구분하는 기존 로직(D22)이 값 0에서도 여전히 Some(0.0)을 내는지 확인한다 —
+    /// missing_or_malformed_fields_are_none_not_zero가 "없으면 None"을 보장한다면, 이
+    /// 테스트는 그 반대쪽 "있으면 0이어도 Some"을 보장한다.
+    #[test]
+    fn hand_built_both_present_but_zero_are_not_confused_with_missing() {
+        let line = r#""Device Utilization %"=0,"In use system memory"=0"#;
+        let (pct, mem) = parse_ioreg_accelerator(line);
+        assert_eq!(
+            (pct, mem),
+            (Some(0.0), Some(0.0)),
+            "값이 0인 필드를 필드 부재(None)와 혼동했다"
+        );
     }
 }
