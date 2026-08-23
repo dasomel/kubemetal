@@ -1878,11 +1878,14 @@ name = "kubemetal"
 version = "0.2.0"
 dependencies = [
  "base64 0.23.1",
+ "hex",
  "libc",
  "objc2",
  "objc2-foundation",
  "serde",
  "serde_json",
+ "sha2",
+ "sha2",
  "sysinfo",
  "tauri",
  "tauri-build",

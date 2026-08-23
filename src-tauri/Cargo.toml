@@ -21,6 +21,10 @@ sysinfo = "0.39"
 tauri-plugin-opener = "2"
 libc = "0.2"
 base64 = "0.23"
+# 학습 산출물 sha256 매니페스트(이슈 #22) — 둘 다 이미 tauri-codegen/wry 경유로
+# Cargo.lock에 잠겨 있어(sha2 0.10.9, hex 0.4.3) 오프라인 빌드 비용이 늘지 않는다.
+sha2 = "0.10"
+hex = "0.4"
 # 발열 상태(D2 개정)는 CLI로 읽을 수 없다 — 이 기기 실측(2026-07-27): `pmset -g therm`은
 # "No thermal warning level has been recorded", sysctl에 thermal 키 없음, ioreg AppleSMC에
 # 온도 항목 0개. 유일한 sudo-free 경로가 NSProcessInfo.thermalState다.

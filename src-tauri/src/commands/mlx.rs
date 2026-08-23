@@ -3,6 +3,7 @@ use std::process::Stdio;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -177,6 +178,68 @@ fn read_adapter_base_model(adapter_dir: &std::path::Path) -> Option<String> {
     let content = std::fs::read_to_string(adapter_dir.join("adapter_config.json")).ok()?;
     let parsed: AdapterConfigFile = serde_json::from_str(&content).ok()?;
     parsed.model
+}
+
+#[derive(Debug, Serialize)]
+struct ManifestFileEntry {
+    file: String,
+    sha256: String,
+    size_bytes: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct TrainingManifest {
+    adapter_dir: String,
+    generated_at_unix: u64,
+    files: Vec<ManifestFileEntry>,
+}
+
+/// `adapter_dir` 안의 파일들(어댑터 가중치, adapter_config.json 등)의 sha256을 계산해
+/// 같은 디렉터리에 `manifest.json`으로 쓴다(이슈 #22 — 산출물 무결성 증빙). 호출부
+/// (`apply_training_event`의 "done" 분기)가 학습 성공 시에만 부르므로 실패 케이스에는
+/// 쓰이지 않는다. 서브디렉터리·심볼릭 링크는 건너뛰고, 실패는 에러로 전파해 조용히
+/// 삼키지 않는다(D22) — 호출부가 로그로 남긴다.
+fn write_training_manifest(adapter_dir: &std::path::Path) -> Result<(), String> {
+    let entries = std::fs::read_dir(adapter_dir)
+        .map_err(|e| format!("Failed to read adapter directory: {e}"))?;
+
+    let mut files = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read directory entry: {e}"))?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        if file_name == "manifest.json" {
+            continue; // 매니페스트 자신은 대상에서 제외한다.
+        }
+        let bytes =
+            std::fs::read(&path).map_err(|e| format!("Failed to read {file_name}: {e}"))?;
+        let digest = Sha256::digest(&bytes);
+        files.push(ManifestFileEntry {
+            file: file_name,
+            sha256: hex::encode(digest),
+            size_bytes: bytes.len() as u64,
+        });
+    }
+    // read_dir은 순서를 보장하지 않는다 — 매니페스트 내용을 재현 가능하게 정렬한다.
+    files.sort_by(|a, b| a.file.cmp(&b.file));
+
+    let generated_at_unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let manifest = TrainingManifest {
+        adapter_dir: adapter_dir.to_string_lossy().to_string(),
+        generated_at_unix,
+        files,
+    };
+    let json = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| format!("Failed to serialize manifest: {e}"))?;
+    std::fs::write(adapter_dir.join("manifest.json"), json)
+        .map_err(|e| format!("Failed to write manifest.json: {e}"))
 }
 
 #[derive(Debug, Deserialize)]
@@ -387,6 +450,12 @@ fn apply_training_event(app: &tauri::AppHandle, value: &serde_json::Value) {
             training.status = "done".into();
             if let Some(p) = value.get("adapter_path").and_then(|v| v.as_str()) {
                 training.adapter_path = Some(p.to_string());
+                // 성공 케이스에서만 매니페스트를 쓴다(이슈 #22) — "error"/"warning" 분기는
+                // 이 코드를 부르지 않는다. 실패는 학습 완료 처리 자체를 막지 않고 로그로만
+                // 남긴다(D22 — 조용히 삼키지 않는다).
+                if let Err(e) = write_training_manifest(std::path::Path::new(p)) {
+                    eprintln!("[mlx] Failed to write training manifest for {p}: {e}");
+                }
             }
             if let Some(l) = value.get("last_loss").and_then(|v| v.as_f64()) {
                 training.last_loss = Some(l);
@@ -1391,5 +1460,33 @@ mod tests {
         let got = revert_config_or_error(&state).expect("saved config should be returned");
 
         assert_eq!(got.pid, 42);
+    }
+
+    #[test]
+    fn write_training_manifest_records_matching_sha256() {
+        let dir = make_temp_model_dir("manifest");
+        std::fs::write(dir.join("adapters.safetensors"), b"dummy-lora-weights").unwrap();
+        std::fs::write(dir.join("adapter_config.json"), br#"{"model":"/base"}"#).unwrap();
+
+        write_training_manifest(&dir).expect("manifest write should succeed");
+
+        let manifest_content = std::fs::read_to_string(dir.join("manifest.json")).unwrap();
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_content).unwrap();
+        let files = manifest["files"].as_array().expect("files must be an array");
+        // manifest.json 자신은 대상에서 제외되므로 원본 2개 파일만 남는다.
+        assert_eq!(files.len(), 2);
+
+        for entry in files {
+            let name = entry["file"].as_str().unwrap();
+            let expected_bytes = std::fs::read(dir.join(name)).unwrap();
+            let expected_hash = hex::encode(Sha256::digest(&expected_bytes));
+            assert_eq!(entry["sha256"].as_str().unwrap(), expected_hash);
+            assert_eq!(
+                entry["size_bytes"].as_u64().unwrap(),
+                expected_bytes.len() as u64
+            );
+        }
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
