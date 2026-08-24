@@ -41,6 +41,40 @@ fn thermal_should_pause(state: Option<&str>) -> bool {
     matches!(state, Some("serious") | Some("critical"))
 }
 
+/// 스폰 시점 admission 게이트(이슈 #31/#32 통합 축소 스코프). 이미 자원 상태가 나쁜데
+/// 새 학습/서빙 프로세스를 아예 시작하지 못하게 막는다 — `run_mlx_finetune`/
+/// `start_model_serving` 양쪽이 스폰 직전에 부른다.
+///
+/// "학습 vs 서빙 동시 실행 우선순위"(#32)는 여기서 별도로 구현하지 않는다:
+/// `spawn_guardrail_loop`가 학습 프로세스에만 붙어 자동 SIGSTOP하는 기존 구조 자체가
+/// 이미 그 정책이다 — 서빙은 절대 자동으로 정지되지 않으므로 "서빙이 학습보다 우선"이
+/// 구조적으로 이미 성립해 있었다. 빠져 있던 건 스폰 시점의 사전 거부뿐이다.
+///
+/// - memory_pressure_level == "critical"이면 원인과 무관하게 항상 거부(D16: critical은
+///   오버라이드 불가 정책 — 방치하면 jetsam이 프로세스를 죽인다).
+/// - thermal_pause_enabled가 켜져 있고 thermal_state가 serious/critical이면 거부(D28).
+///   thermal_pause_enabled가 꺼져 있으면 발열은 admission에 관여하지 않는다 — 옵트인
+///   기능이라 스폰 거부도 옵트인이다.
+/// - 판정 불가(thermal_state: None)는 통과시킨다(D22) — 모르면 막지 않는다.
+pub(crate) fn check_spawn_admission(
+    memory_pressure_level: &str,
+    thermal_state: Option<&str>,
+    thermal_pause_enabled: bool,
+) -> Result<(), String> {
+    if memory_pressure_level == "critical" {
+        return Err(format!(
+            "Cannot start — memory pressure is critical (level: {memory_pressure_level})"
+        ));
+    }
+    if thermal_pause_enabled && thermal_should_pause(thermal_state) {
+        return Err(format!(
+            "Cannot start — thermal state is {} and thermal pause is enabled",
+            thermal_state.unwrap_or("unknown")
+        ));
+    }
+    Ok(())
+}
+
 /// D16 개정: 수동 재개는 사용자 의사 표명이므로 같은 원인의 advisory 신호(warn)로 다시 멈추지 않는다, critical은 예외.
 fn memory_should_auto_pause(level: &str, overridden: bool) -> bool {
     level == "critical" || (level == "warn" && !overridden)
@@ -80,7 +114,7 @@ fn parse_on_battery(text: &str) -> bool {
     text.contains("Battery Power")
 }
 
-async fn measure_memory_pressure_level() -> String {
+pub(crate) async fn measure_memory_pressure_level() -> String {
     let mut cmd = match external_command("sysctl") {
         Ok(c) => c,
         Err(_) => return "unknown".into(),
@@ -507,6 +541,36 @@ mod tests {
         assert!(!battery_should_auto_pause(true, true, true));
         assert!(!battery_should_auto_pause(false, true, false));
         assert!(!battery_should_auto_pause(true, false, false));
+    }
+
+    #[test]
+    fn check_spawn_admission_rejects_critical_memory() {
+        let err = check_spawn_admission("critical", Some("nominal"), false).unwrap_err();
+        assert!(err.contains("critical"), "예상과 다른 오류: {err}");
+    }
+
+    #[test]
+    fn check_spawn_admission_rejects_serious_thermal_when_enabled() {
+        let err = check_spawn_admission("normal", Some("serious"), true).unwrap_err();
+        assert!(err.contains("serious"), "예상과 다른 오류: {err}");
+    }
+
+    #[test]
+    fn check_spawn_admission_allows_serious_thermal_when_disabled() {
+        // 발열 일시정지가 꺼져 있으면 옵트인 기능이라 스폰 거부에도 관여하지 않는다.
+        assert!(check_spawn_admission("normal", Some("serious"), false).is_ok());
+    }
+
+    #[test]
+    fn check_spawn_admission_allows_unknown_thermal_state() {
+        // 판정 불가(None)는 통과시킨다(D22) — 모르면 막지 않는다.
+        assert!(check_spawn_admission("normal", None, true).is_ok());
+    }
+
+    #[test]
+    fn check_spawn_admission_allows_warn_and_normal_memory() {
+        assert!(check_spawn_admission("warn", None, false).is_ok());
+        assert!(check_spawn_admission("normal", None, false).is_ok());
     }
 
     #[test]
