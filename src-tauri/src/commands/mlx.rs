@@ -180,14 +180,16 @@ fn read_adapter_base_model(adapter_dir: &std::path::Path) -> Option<String> {
     parsed.model
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct ManifestFileEntry {
     file: String,
     sha256: String,
     size_bytes: u64,
 }
 
-#[derive(Debug, Serialize)]
+// `Deserialize`는 이슈 #33(체크포인트 상태 판정)이 `write_training_manifest`가 쓴
+// manifest.json을 되읽기 위해 추가했다 — 별도 파서를 만들지 않고 같은 구조체를 쓴다.
+#[derive(Debug, Serialize, Deserialize)]
 struct TrainingManifest {
     adapter_dir: String,
     generated_at_unix: u64,
@@ -240,6 +242,76 @@ fn write_training_manifest(adapter_dir: &std::path::Path) -> Result<(), String> 
         .map_err(|e| format!("Failed to serialize manifest: {e}"))?;
     std::fs::write(adapter_dir.join("manifest.json"), json)
         .map_err(|e| format!("Failed to write manifest.json: {e}"))
+}
+
+/// 어댑터 디렉터리의 매니페스트 검증 상태(이슈 #33 축소 스코프 — 체크포인트 상태
+/// 판정). `write_training_manifest`(#22)가 남긴 manifest.json을 그대로 읽어 재계산한
+/// sha256과 대조한다 — 별도 파서를 두지 않는다.
+///
+/// - manifest.json이 없으면 `"missing"`(이번 세션 #22 이전 산출물이거나 실패한 학습).
+/// - 있고 JSON 파싱과 모든 파일의 sha256이 일치하면 `"verified"`.
+/// - 있는데 파싱에 실패했거나 파일이 없거나 sha256이 하나라도 다르면 `"corrupt"`.
+///
+/// 프런트 소비자가 아직 없어 IPC로는 노출하지 않는다 — `commands` 모듈이 `lib.rs`에서
+/// `pub`이 아니므로 이 함수는 어차피 크레이트 외부에 도달 불가능하다. dead_code는
+/// "미등록 상태에서는 호출부가 없다"는 사실 그대로이므로 지어내지 않고 `allow`로
+/// 명시한다(IPC 등록 시 이 allow를 제거한다).
+#[allow(dead_code)]
+pub(crate) fn manifest_verification_status(adapter_dir: &std::path::Path) -> &'static str {
+    let content = match std::fs::read_to_string(adapter_dir.join("manifest.json")) {
+        Ok(c) => c,
+        Err(_) => return "missing",
+    };
+    let manifest: TrainingManifest = match serde_json::from_str(&content) {
+        Ok(m) => m,
+        Err(_) => return "corrupt",
+    };
+    for entry in &manifest.files {
+        let bytes = match std::fs::read(adapter_dir.join(&entry.file)) {
+            Ok(b) => b,
+            Err(_) => return "corrupt",
+        };
+        if hex::encode(Sha256::digest(&bytes)) != entry.sha256 {
+            return "corrupt";
+        }
+    }
+    "verified"
+}
+
+/// 어댑터가 삭제해도 안전한지 판정하는 GC 가드(이슈 #33 축소 스코프) — 실제 삭제(파일
+/// 시스템 rm) 기능은 이 스코프에 포함하지 않는다, 삭제 UI/커맨드는 별도 결정 사항이다.
+/// 현재 서빙 중인 adapter, 또는 `last_known_good_serving`에 기록된 adapter와 경로가
+/// 같으면 삭제를 금지한다.
+///
+/// 프런트 소비자가 아직 없어 IPC로는 노출하지 않는다(위 `manifest_verification_status`와
+/// 같은 이유).
+#[allow(dead_code)]
+pub(crate) fn is_adapter_safe_to_delete(adapter_dir: &std::path::Path, mlx_state: &MlxState) -> bool {
+    let matches_adapter_path = |status: &Option<ServingStatus>| -> bool {
+        status
+            .as_ref()
+            .and_then(|s| s.adapter_path.as_deref())
+            .map(|p| std::path::Path::new(p) == adapter_dir)
+            .unwrap_or(false)
+    };
+
+    let is_serving = mlx_state
+        .serving
+        .lock()
+        .ok()
+        .map(|g| matches_adapter_path(&g))
+        .unwrap_or(false);
+    if is_serving {
+        return false;
+    }
+
+    let is_last_known_good = mlx_state
+        .last_known_good_serving
+        .lock()
+        .ok()
+        .map(|g| matches_adapter_path(&g))
+        .unwrap_or(false);
+    !is_last_known_good
 }
 
 #[derive(Debug, Deserialize)]
@@ -1537,5 +1609,79 @@ mod tests {
         }
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn manifest_verification_status_returns_missing_without_manifest() {
+        let dir = make_temp_model_dir("manifest-missing");
+        assert_eq!(manifest_verification_status(&dir), "missing");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn manifest_verification_status_returns_verified_when_hashes_match() {
+        let dir = make_temp_model_dir("manifest-verified");
+        std::fs::write(dir.join("adapters.safetensors"), b"weights").unwrap();
+        write_training_manifest(&dir).expect("manifest write should succeed");
+        assert_eq!(manifest_verification_status(&dir), "verified");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn manifest_verification_status_returns_corrupt_when_hash_mismatches() {
+        let dir = make_temp_model_dir("manifest-corrupt");
+        std::fs::write(dir.join("adapters.safetensors"), b"weights").unwrap();
+        write_training_manifest(&dir).expect("manifest write should succeed");
+        // 학습 산출물이 매니페스트 작성 이후 손상된 상황을 재현한다.
+        std::fs::write(dir.join("adapters.safetensors"), b"tampered").unwrap();
+        assert_eq!(manifest_verification_status(&dir), "corrupt");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn is_adapter_safe_to_delete_forbids_currently_serving_adapter() {
+        let dir = make_temp_model_dir("safe-delete-serving");
+        let state = MlxState::default();
+        *state.serving.lock().unwrap() = Some(ServingStatus {
+            pid: 1,
+            port: 8080,
+            model_path: "/models/base".into(),
+            adapter_path: Some(dir.to_string_lossy().to_string()),
+            runtime: MlxRuntime::MlxLm,
+        });
+        assert!(!is_adapter_safe_to_delete(&dir, &state));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn is_adapter_safe_to_delete_forbids_last_known_good_adapter() {
+        let dir = make_temp_model_dir("safe-delete-lkg");
+        let state = MlxState::default();
+        *state.last_known_good_serving.lock().unwrap() = Some(ServingStatus {
+            pid: 2,
+            port: 8080,
+            model_path: "/models/base".into(),
+            adapter_path: Some(dir.to_string_lossy().to_string()),
+            runtime: MlxRuntime::MlxLm,
+        });
+        assert!(!is_adapter_safe_to_delete(&dir, &state));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn is_adapter_safe_to_delete_allows_unrelated_adapter() {
+        let dir = make_temp_model_dir("safe-delete-unrelated");
+        let other_dir = make_temp_model_dir("safe-delete-other");
+        let state = MlxState::default();
+        *state.serving.lock().unwrap() = Some(ServingStatus {
+            pid: 3,
+            port: 8080,
+            model_path: "/models/base".into(),
+            adapter_path: Some(other_dir.to_string_lossy().to_string()),
+            runtime: MlxRuntime::MlxLm,
+        });
+        assert!(is_adapter_safe_to_delete(&dir, &state));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_dir_all(&other_dir).ok();
     }
 }
