@@ -605,6 +605,31 @@ pub async fn run_mlx_finetune(
         prev
     };
 
+    // 스폰 전 admission 게이트(이슈 #31/#32 통합 축소 스코프) — 이미 메모리 압력이
+    // critical이거나(D16) 발열 일시정지가 켜진 채 serious 이상이면(D28) 학습 자체를
+    // 시작하지 않는다. 학습 vs 서빙 우선순위는 별도 구현하지 않는다: `spawn_guardrail_loop`가
+    // 학습에만 붙어 자동 SIGSTOP하는 기존 구조가 이미 그 정책이다.
+    let memory_pressure_level = crate::commands::guardrails::measure_memory_pressure_level().await;
+    let thermal_state = crate::commands::metrics::read_thermal_state();
+    let thermal_pause_enabled = match app
+        .state::<crate::commands::guardrails::GuardrailState>()
+        .thermal_pause_enabled
+        .lock()
+    {
+        Ok(g) => *g,
+        Err(_) => false,
+    };
+    if let Err(e) = crate::commands::guardrails::check_spawn_admission(
+        &memory_pressure_level,
+        thermal_state.as_deref(),
+        thermal_pause_enabled,
+    ) {
+        if let Ok(mut guard) = state.training.lock() {
+            *guard = prev_training;
+        }
+        return Err(e);
+    }
+
     let res = (|| -> Result<(u32, tokio::process::Child), String> {
         if config.iters == 0 {
             return Err("iters must be at least 1.".into());
@@ -877,6 +902,30 @@ pub async fn start_model_serving(
             adapter_path: adapter_path.clone(),
             runtime,
         });
+    }
+
+    // 스폰 전 admission 게이트(이슈 #31/#32 통합 축소 스코프) — 학습과 동일한 기준.
+    // 서빙에는 `spawn_guardrail_loop`가 붙지 않아(학습 전용) 스폰 후 자동 정지가 없으므로,
+    // 나쁜 자원 상태에서 서빙을 막는 유일한 지점이 여기다.
+    let memory_pressure_level = crate::commands::guardrails::measure_memory_pressure_level().await;
+    let thermal_state = crate::commands::metrics::read_thermal_state();
+    let thermal_pause_enabled = match app
+        .state::<crate::commands::guardrails::GuardrailState>()
+        .thermal_pause_enabled
+        .lock()
+    {
+        Ok(g) => *g,
+        Err(_) => false,
+    };
+    if let Err(e) = crate::commands::guardrails::check_spawn_admission(
+        &memory_pressure_level,
+        thermal_state.as_deref(),
+        thermal_pause_enabled,
+    ) {
+        if let Ok(mut guard) = state.serving.lock() {
+            *guard = None;
+        }
+        return Err(e);
     }
 
     let res = (|| -> Result<(u32, tokio::process::Child, String, Option<String>, u16), String> {
