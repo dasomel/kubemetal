@@ -34,7 +34,12 @@ pub struct KagentDiagnosticReport {
 
 /// 이 앱이 Agent CRD로 직접 설치/삭제할 수 있는 에이전트 목록(`toggle_kagent_agent`의
 /// 매니페스트 분기와 1:1로 대응한다). k8s-agent·helm-agent는 Helm 차트가 관리하므로 제외.
-const TOGGLEABLE_AGENTS: [&str; 3] = ["security-agent", "promql-agent", "observability-agent"];
+const TOGGLEABLE_AGENTS: [&str; 4] = [
+    "security-agent",
+    "promql-agent",
+    "observability-agent",
+    "rca-agent",
+];
 
 /// 파드가 실제로 Ready인지 — phase만으로는 CrashLoopBackOff 파드도 Running으로 보인다.
 fn pod_is_ready(pod: &serde_json::Value) -> bool {
@@ -312,6 +317,42 @@ spec:
     modelConfig: default-model-config
     systemMessage: |
       You are ObservabilityAssist, an AI agent analyzing OpenTelemetry and trace data.
+"#,
+            "rca-agent" => r#"apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: rca-agent
+  namespace: kagent
+  labels:
+    app.kubernetes.io/instance: kagent
+    app.kubernetes.io/name: rca-agent
+    app.kubernetes.io/part-of: kagent
+spec:
+  type: Declarative
+  description: Kubernetes root-cause hypothesis agent grounded in Warning events and restarted pods.
+  declarative:
+    runtime: python
+    modelConfig: default-model-config
+    systemMessage: |
+      You are RCAAssist, a Kubernetes root-cause analysis agent. In the target namespace, first use k8s_get_events to read the most recent Warning-type events, then use k8s_get_resources to find pods that have restarted recently and k8s_describe_resource to inspect the relevant pods. Produce exactly one line: a root-cause hypothesis that explicitly cites the specific Warning event and/or restarted pod evidence used. Only state a root-cause hypothesis when a returned Warning-type event or pod description expressly reports or establishes the cause; do not infer causation from correlation or give vague or hedged non-answers. Otherwise output exactly "insufficient evidence" and do not invent a plausible cause.
+    deployment:
+      resources:
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 50m
+          memory: 128Mi
+    tools:
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: RemoteMCPServer
+        name: kagent-tool-server
+        toolNames:
+        - k8s_get_resources
+        - k8s_describe_resource
+        - k8s_get_events
 "#,
             other => {
                 return Err(format!(
