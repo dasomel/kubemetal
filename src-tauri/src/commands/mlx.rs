@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Mutex;
 
@@ -163,6 +163,105 @@ pub(crate) fn validate_home_subpath(p: &str) -> Result<PathBuf, String> {
         return Err(format!("Path not allowed (only paths under the home directory are allowed): {p}"));
     }
     Ok(canonical)
+}
+
+/// GitHub #13(축소 스코프) — 앱 프로세스 자체가 죽어 `MlxState`가 사라져도 아직 살아있는
+/// MLX 파이썬 자식(고아 프로세스)을 다음 실행이 알아챌 수 있게 남기는 pid marker 파일 경로.
+/// `kind`는 `"training"` 또는 `"serving"`이다.
+fn pid_marker_path(kind: &str) -> Result<PathBuf, String> {
+    Ok(home_dir()?.join(".kubemetal").join(format!("mlx-{kind}.pid")))
+}
+
+/// 스폰 성공 직후(실제 child pid를 얻은 시점) marker 파일에 pid를 기록한다. 쓰기 실패는
+/// 학습/서빙 자체를 막지 않는다 — 이 marker는 다음 실행의 고아 탐지 편의 기능이지 이번
+/// 실행의 필수 조건이 아니다. 대신 조용히 삼키지 않고 로그로 남긴다(D22).
+fn write_pid_marker(kind: &str, pid: u32) -> Result<(), String> {
+    let path = pid_marker_path(kind)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
+    }
+    std::fs::write(&path, pid.to_string())
+        .map_err(|e| format!("Failed to write pid marker {}: {e}", path.display()))
+}
+
+/// marker 파일이 여전히 이 pid를 가리킬 때만 지운다. pid를 확인하지 않고 지우면, 중지
+/// 직후 재시작하는 레이스에서 방금 새로 쓴(다른 pid의) marker를 이전 프로세스의 reader가
+/// 뒤늦게 지워버릴 수 있다.
+fn remove_pid_marker_if_matches(kind: &str, pid: u32) {
+    let Ok(path) = pid_marker_path(kind) else {
+        return;
+    };
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if content.trim().parse::<u32>() == Ok(pid) {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
+/// pid 생존 확인 — 시그널 0은 실제로 죽이지 않고 생존만 확인한다(kill(2) 관례).
+/// pid 0은 거부한다: `kill(0, ...)`은 호출자 자신의 프로세스 그룹으로 가므로, 0을 살아있는
+/// 것으로 오판해 이 앱 자신을 고아라고 보고하는 사고를 막는다(guardrails::signal_pid의
+/// pid==0 가드와 같은 이유 — 목적만 시그널 전송에서 생존 확인으로 조정했다).
+/// 알려진 한계: PID는 재사용된다 — marker의 pid가 죽은 뒤 OS가 그 번호를 무관한 다른
+/// 프로세스에 재배정하면 이 함수는 오탐(false positive)한다. 이 커맨드가 자동으로 아무것도
+/// kill하지 않고 사용자 판단에 맡기는 이유 중 하나가 이 한계다 — 완전히 없애려면 커맨드라인
+/// 일치 확인(`ps`)이나 별도 슈퍼바이저가 필요하며 이 lane 스코프 밖이다.
+fn pid_is_alive(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
+/// marker 파일 안의 pid를 읽고 생존 여부로 고아 여부를 판정하는 순수 함수. 테스트가 실제
+/// `~/.kubemetal`을 건드리지 않도록 경로를 파라미터화했다 — 얇은 래퍼(`detect_orphaned_mlx_process`)가
+/// 실제 홈 경로를 계산해 이 함수를 부른다.
+///
+/// - marker 없음(또는 파싱 불가) → `None`.
+/// - marker 있고 pid가 죽어있음 → 앱이 크래시하면서 파이썬도 같이 죽은 정상 케이스다.
+///   marker를 지우고 `None`을 반환한다 — 죽은 프로세스를 고아라고 지어내지 않는다(D22).
+/// - marker 있고 pid가 살아있음 → `Some(pid)`.
+fn detect_orphan_from_marker(marker_path: &Path) -> Option<u32> {
+    let content = std::fs::read_to_string(marker_path).ok()?;
+    let pid: u32 = match content.trim().parse() {
+        Ok(p) => p,
+        Err(_) => {
+            let _ = std::fs::remove_file(marker_path);
+            return None;
+        }
+    };
+    if pid_is_alive(pid) {
+        Some(pid)
+    } else {
+        let _ = std::fs::remove_file(marker_path);
+        None
+    }
+}
+
+/// 앱 시작 시 고아 MLX 프로세스 탐지(GitHub #13). 자동으로 죽이지 않는다 — 사용자가
+/// 학습 중인 걸 모르고 앱만 재시작했을 가능성이 있어, 강제 종료는 별도 결정 사항이다.
+pub(crate) fn detect_orphaned_mlx_process(kind: &str) -> Option<OrphanedProcessInfo> {
+    let marker_path = pid_marker_path(kind).ok()?;
+    let pid = detect_orphan_from_marker(&marker_path)?;
+    Some(OrphanedProcessInfo {
+        pid,
+        kind: kind.to_string(),
+    })
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct OrphanedProcessInfo {
+    pub pid: u32,
+    pub kind: String,
+}
+
+#[tauri::command]
+pub fn check_for_orphaned_mlx_processes() -> Vec<OrphanedProcessInfo> {
+    ["training", "serving"]
+        .into_iter()
+        .filter_map(detect_orphaned_mlx_process)
+        .collect()
 }
 
 #[derive(Debug, Deserialize)]
@@ -599,9 +698,15 @@ fn should_record_exit(status: &str) -> bool {
 
 fn finalize_training(
     app: &tauri::AppHandle,
+    pid: u32,
     exit: std::io::Result<std::process::ExitStatus>,
     stderr_text: String,
 ) {
+    // child.wait()가 이미 완료됐다 — 프로세스는 실제로 종료됐으므로 기록된 상태(done/
+    // error/killed 중 무엇이든)와 무관하게 marker를 지운다(GitHub #13). 그래야 다음 실행이
+    // 이미 죽은 프로세스를 고아로 오탐하지 않는다.
+    remove_pid_marker_if_matches("training", pid);
+
     let state = app.state::<MlxState>();
     let mut guard = match state.training.lock() {
         Ok(g) => g,
@@ -631,7 +736,7 @@ fn finalize_training(
     }
 }
 
-async fn run_training_reader(app: tauri::AppHandle, mut child: tokio::process::Child) {
+async fn run_training_reader(app: tauri::AppHandle, mut child: tokio::process::Child, pid: u32) {
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
@@ -648,7 +753,7 @@ async fn run_training_reader(app: tauri::AppHandle, mut child: tokio::process::C
     };
 
     let exit = child.wait().await;
-    finalize_training(&app, exit, stderr_text);
+    finalize_training(&app, pid, exit, stderr_text);
 }
 
 #[tauri::command]
@@ -790,10 +895,15 @@ pub async fn run_mlx_finetune(
                 });
             }
 
+            // 앱 크래시 후에도 이 pid를 다음 실행이 고아로 탐지할 수 있게 남긴다(GitHub #13).
+            if let Err(e) = write_pid_marker("training", pid) {
+                eprintln!("[mlx] Failed to write training pid marker: {e}");
+            }
+
             crate::commands::guardrails::start_caffeinate(&app, pid);
             crate::commands::guardrails::spawn_guardrail_loop(app.clone(), pid);
 
-            tokio::spawn(run_training_reader(app, child));
+            tokio::spawn(run_training_reader(app, child, pid));
 
             Ok(pid)
         }
@@ -906,6 +1016,10 @@ async fn run_serving_reader(app: tauri::AppHandle, mut child: tokio::process::Ch
     let stderr_task = stderr.map(|err| tokio::spawn(collect_stderr(err)));
 
     let exit = child.wait().await;
+    // child.wait()가 이미 완료됐다 — 프로세스는 실제로 종료됐으므로 아래 still_current
+    // 판정과 무관하게 marker를 지운다(GitHub #13). 그래야 다음 실행이 이미 죽은 프로세스를
+    // 고아로 오탐하지 않는다.
+    remove_pid_marker_if_matches("serving", pid);
     let stderr_text = if let Some(t) = stderr_task {
         t.await.unwrap_or_default()
     } else {
@@ -1070,6 +1184,10 @@ pub async fn start_model_serving(
                     adapter_path: effective_adapter_str.clone(),
                     runtime,
                 });
+            }
+            // 앱 크래시 후에도 이 pid를 다음 실행이 고아로 탐지할 수 있게 남긴다(GitHub #13).
+            if let Err(e) = write_pid_marker("serving", pid) {
+                eprintln!("[mlx] Failed to write serving pid marker: {e}");
             }
             // 서빙 포트도 레지스트리에 기록해 다른 소비자가 같은 값을 본다.
             ports::set_assigned("serving", actual_port);
@@ -1684,4 +1802,69 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
         std::fs::remove_dir_all(&other_dir).ok();
     }
+
+    // GitHub #13(축소 스코프) — 고아 MLX 프로세스 탐지. 실제 `~/.kubemetal`을 건드리지
+    // 않도록 임시 디렉터리 안의 marker 파일 경로를 순수 함수(`detect_orphan_from_marker`)에
+    // 직접 넘긴다.
+
+    #[test]
+    fn detect_orphan_from_marker_returns_none_without_marker_file() {
+        let dir = make_temp_model_dir("orphan-no-marker");
+        let marker = dir.join("mlx-training.pid");
+        assert_eq!(detect_orphan_from_marker(&marker), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn detect_orphan_from_marker_returns_some_for_live_pid() {
+        let dir = make_temp_model_dir("orphan-live-pid");
+        let marker = dir.join("mlx-training.pid");
+        // 이 테스트 프로세스 자신은 확실히 살아있다.
+        std::fs::write(&marker, std::process::id().to_string()).unwrap();
+
+        assert_eq!(
+            detect_orphan_from_marker(&marker),
+            Some(std::process::id())
+        );
+        // 살아있는 pid를 가리키는 marker는 지워지지 않아야 한다.
+        assert!(marker.is_file());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn detect_orphan_from_marker_returns_none_and_removes_marker_for_dead_pid() {
+        let dir = make_temp_model_dir("orphan-dead-pid");
+        let marker = dir.join("mlx-training.pid");
+        // 자식을 spawn 후 wait()로 reap하면 그 pid는 확실히 죽어있다.
+        let mut child = std::process::Command::new("true")
+            .spawn()
+            .expect("failed to spawn /usr/bin/true");
+        let dead_pid = child.id();
+        child.wait().expect("failed to wait for child");
+        std::fs::write(&marker, dead_pid.to_string()).unwrap();
+
+        assert_eq!(detect_orphan_from_marker(&marker), None);
+        // 죽은 프로세스의 흔적이므로 marker가 삭제되어야 한다(D22 — 지어내지 않는다).
+        assert!(!marker.exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn detect_orphan_from_marker_returns_none_and_removes_marker_for_corrupt_content() {
+        let dir = make_temp_model_dir("orphan-corrupt");
+        let marker = dir.join("mlx-training.pid");
+        std::fs::write(&marker, "not-a-pid").unwrap();
+
+        assert_eq!(detect_orphan_from_marker(&marker), None);
+        assert!(!marker.exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn pid_is_alive_rejects_pid_zero() {
+        // pid 0은 `kill(0, ...)`이 호출자 자신의 프로세스 그룹으로 가버리므로 항상 거부한다 —
+        // 살아있는 것으로 오판해 이 앱 자신을 고아라고 보고하면 안 된다.
+        assert!(!pid_is_alive(0));
+    }
+
 }
