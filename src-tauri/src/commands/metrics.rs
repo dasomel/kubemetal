@@ -1,10 +1,12 @@
+use std::path::PathBuf;
 use std::sync::{Mutex, Once};
+use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sysinfo::System;
-use tauri::State;
+use tauri::{Manager, State};
 
-use crate::services::process::external_command;
+use crate::services::process::{augmented_path, external_command, resolve_bundled_resource};
 
 /// 정적 하드웨어 스펙. `gpu_cores`만 `Option`인 이유 — sysctl은 어떤 Mac에서도 CPU/RAM을
 /// 돌려주지만 GPU 코어 수는 `system_profiler` 출력 포맷에 의존해 파싱이 실패할 수 있다.
@@ -279,9 +281,151 @@ pub async fn get_system_metrics(state: State<'_, Mutex<System>>) -> Result<Syste
     })
 }
 
+/// 실측 MLX matmul 벤치마크 결과(이슈 #11 축소 스코프). `GpuTelemetryBackend`는 순간
+/// 사용률/메모리를 폴링하는 인터페이스라 여기 맞지 않는다 — 이건 한 번 돌려 처리량을 재는
+/// 별개 동작이라 억지로 그 trait을 구현하지 않는다.
+#[derive(Clone, Serialize, Debug)]
+pub struct GpuBenchmarkResult {
+    pub gflops: f64,
+    pub matrix_dim: u32,
+    pub iterations: u32,
+    /// 파이썬 프로세스 내부에서 `mx.eval()` 강제 동기화 이후 측정한 시간(초).
+    pub python_elapsed_seconds: f64,
+    /// Rust 쪽에서 스폰~종료까지 `Instant`로 별도 측정한 wall-clock 시간(초). 인터프리터
+    /// 기동 비용 등 파이썬 자체 시간에 안 잡히는 오버헤드가 섞이므로, 어느 한쪽 시간만
+    /// 믿지 않고 둘 다 기록해 대조 가능하게 한다.
+    pub rust_elapsed_seconds: f64,
+}
+
+/// `gpu_benchmark.py`가 stdout에 내는 JSON 한 줄의 스키마. Rust 쪽 결과 구조체와 필드가
+/// 겹치지만 분리해 둔다 — 파이썬 출력 형식이 바뀌어도 이 구조체만 갱신하면 되고, 파싱
+/// 실패가 어떤 필드 때문인지 컴파일러가 알려준다.
+#[derive(Deserialize)]
+struct GpuBenchmarkPythonOutput {
+    gflops: f64,
+    elapsed_seconds: f64,
+    matrix_dim: u32,
+    iterations: u32,
+}
+
+const GPU_BENCHMARK_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// 스폰·실행·파싱을 전담하는 AppHandle-비의존 내부 함수 — `check_mlx_env_inner`와 같은
+/// 분리 이유다: 유닛 테스트가 `tauri::AppHandle` 없이 실제 venv/스크립트로 이 경로를
+/// 직접 검증할 수 있게 한다.
+async fn run_gpu_benchmark_inner(
+    venv_py: &std::path::Path,
+    script: &std::path::Path,
+) -> Result<GpuBenchmarkResult, String> {
+    if !venv_py.is_file() {
+        return Err("MLX venv does not exist. Run setup_mlx_env first.".into());
+    }
+    if !script.is_file() {
+        return Err(format!(
+            "Could not find the GPU benchmark script: {}",
+            script.display()
+        ));
+    }
+
+    let mut cmd = tokio::process::Command::new(venv_py);
+    cmd.arg(script).env("PATH", augmented_path());
+
+    let rust_start = Instant::now();
+    let output = tokio::time::timeout(GPU_BENCHMARK_TIMEOUT, cmd.output())
+        .await
+        .map_err(|_| {
+            format!(
+                "GPU benchmark timed out after {}s — the environment may be broken (no fake result returned)",
+                GPU_BENCHMARK_TIMEOUT.as_secs()
+            )
+        })?
+        .map_err(|e| format!("Failed to launch GPU benchmark script: {e}"))?;
+    let rust_elapsed_seconds = rust_start.elapsed().as_secs_f64();
+
+    if !output.status.success() {
+        return Err(format!(
+            "GPU benchmark script exited with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let line = stdout
+        .lines()
+        .next_back()
+        .ok_or_else(|| "GPU benchmark script produced no output".to_string())?;
+    let parsed: GpuBenchmarkPythonOutput = serde_json::from_str(line)
+        .map_err(|e| format!("Failed to parse GPU benchmark output ({line}): {e}"))?;
+
+    Ok(GpuBenchmarkResult {
+        gflops: parsed.gflops,
+        matrix_dim: parsed.matrix_dim,
+        iterations: parsed.iterations,
+        python_elapsed_seconds: parsed.elapsed_seconds,
+        rust_elapsed_seconds,
+    })
+}
+
+fn gpu_benchmark_script_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
+    Ok(resolve_bundled_resource(&resource_dir, "scripts/mlx/gpu_benchmark.py"))
+}
+
+/// 실측 GPU matmul 벤치마크(이슈 #11 축소 스코프). 실행 실패·타임아웃·파싱 불가 시 반드시
+/// `Err`를 반환한다 — GFLOPS 0이나 가짜 구조체로 폴백하지 않는다(D22, mistakes-log의
+/// 조작된 메트릭 사례들과 같은 실수를 반복하지 않기 위함).
+#[tauri::command]
+pub async fn run_gpu_benchmark(app: tauri::AppHandle) -> Result<GpuBenchmarkResult, String> {
+    let venv_py = crate::commands::mlx::venv_python()?;
+    let script = gpu_benchmark_script_path(&app)?;
+    run_gpu_benchmark_inner(&venv_py, &script).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 테스트 cwd는 `src-tauri/` — 저장소 루트는 그 상위다(colima.rs의 `repo_k8s_dir`과
+    /// 같은 관례).
+    fn repo_gpu_benchmark_script() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repo root")
+            .join("scripts/mlx/gpu_benchmark.py")
+    }
+
+    /// 실제 venv의 실제 파이썬으로 실제 MLX matmul을 돌려 실측 GFLOPS를 얻는다. CI 러너에는
+    /// `~/.kubemetal/venv`가 없으므로(이 저장소 관례상 CI가 venv를 갖췄다고 가정하지 않는다)
+    /// `#[ignore]`로 표시한다 — 로컬에서 `cargo test -- --ignored`로 실행해 실제 하드웨어
+    /// 값을 확인한다.
+    #[tokio::test]
+    #[ignore = "실제 MLX venv(~/.kubemetal/venv)가 있는 Apple Silicon 기기에서만 실행 가능 — CI 러너엔 venv가 없다"]
+    async fn run_gpu_benchmark_inner_produces_real_measurement() {
+        let venv_py = crate::commands::mlx::venv_python().expect("HOME must resolve");
+        let script = repo_gpu_benchmark_script();
+
+        let result = run_gpu_benchmark_inner(&venv_py, &script)
+            .await
+            .expect("benchmark should succeed on a machine with a working MLX venv");
+
+        assert_eq!(result.matrix_dim, 2048);
+        assert_eq!(result.iterations, 20);
+        assert!(result.gflops > 0.0, "GFLOPS must be a real positive measurement");
+        assert!(result.python_elapsed_seconds > 0.0);
+        assert!(result.rust_elapsed_seconds >= result.python_elapsed_seconds);
+    }
+
+    /// 존재하지 않는 스크립트 경로는 스폰조차 시도하지 않고 즉시 Err여야 한다 — 가짜
+    /// 결과로 폴백하면 안 된다(D22).
+    #[tokio::test]
+    async fn run_gpu_benchmark_inner_errors_on_missing_script() {
+        let venv_py = crate::commands::mlx::venv_python().expect("HOME must resolve");
+        let missing = PathBuf::from("/nonexistent/gpu_benchmark.py");
+
+        let result = run_gpu_benchmark_inner(&venv_py, &missing).await;
+        assert!(result.is_err(), "missing script must error, not fabricate a result");
+    }
 
     /// 이 테스트는 발열 값이 **실제로 읽히는지**를 확인한다. CLI 경로가 전부 비어 있는
     /// 것을 실측으로 확인하고 objc로 넘어온 것이므로, 여기서 None이 나오면 그 전제가
