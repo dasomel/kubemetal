@@ -68,6 +68,11 @@ pub struct TrainingStatus {
     pub last_loss: Option<f64>,
     pub adapter_path: Option<String>,
     pub error: Option<String>,
+    /// `finetune_wrapper.py`가 `reporter.start_run` 성공 직후 보고하는 실제 MLflow run id
+    /// (GitHub #13). 이 값이 있어야 wrapper가 자기 `end_run`을 못 부르고 죽었을 때(시그널로
+    /// kill됨) Rust가 대신 MLflow에 종료 상태를 알릴 수 있다. MLflow 비활성/미도달이면
+    /// wrapper가 이 이벤트를 아예 보내지 않으므로 `None`으로 남는다(D22 — 지어내지 않는다).
+    pub mlflow_run_id: Option<String>,
 }
 
 /// 서빙 런타임(D29). 둘 다 OpenAI 호환 HTTP 서버라 D10 브리지·kagent·평가(D20) 소비자는
@@ -641,7 +646,115 @@ fn apply_training_event(app: &tauri::AppHandle, value: &serde_json::Value) {
         Some("warning") => {
             // 경고는 상태를 바꾸지 않는다(예: MLflow 접근 실패) — 향후 로그 노출용으로만 무시하지 않고 수신.
         }
+        Some("mlflow_run_started") => {
+            // GitHub #13 — wrapper가 자기 end_run을 못 부르고 죽었을 때(시그널 kill) Rust가
+            // 대신 MLflow에 종료를 알리려면 이 run_id가 필요하다. MLflow가 꺼져 있으면
+            // wrapper가 이 이벤트 자체를 안 보내므로 여기 도달하지 않는다(D22).
+            if let Some(id) = value.get("run_id").and_then(|v| v.as_str()) {
+                training.mlflow_run_id = Some(id.to_string());
+            }
+        }
         _ => {}
+    }
+}
+
+/// MLflow run 종료 상태 강제 수렴(GitHub #13)이 필요한지 판정하는 순수 함수.
+///
+/// `finetune_wrapper.py`는 정상 흐름(성공/실패 모두)에서 항상 자기 `reporter.end_run(...)`을
+/// 먼저 부른 뒤에만 종료한다 — 그래서 프로세스가 **시그널**로 죽지 않는 한(exit code로
+/// 정상/비정상 종료했다면) wrapper가 이미 MLflow에 종결 상태를 남겼다고 볼 수 있다.
+/// 반대로 시그널로 죽으면(`kill_mlx_process`의 SIGTERM/SIGKILL 포함) wrapper는 그 코드에
+/// 도달하지 못했으므로 Rust가 대신 알려야 한다.
+///
+/// - `wrapper_reported_terminal`이 true면(이미 "done"/"error" 이벤트를 받음) 항상 `None` —
+///   wrapper가 이미 자기 몫을 했다.
+/// - `run_id`가 없으면 `None` — 갱신할 대상이 없다(지어내지 않는다, D22).
+/// - 시그널로 종료됐으면 `Some(KILLED)` — `status`(호출 시점 Rust 상태, "killed" 또는
+///   "running")와 무관하게 같은 결론이다: 외부 요인이든 우리가 보낸 kill이든, wrapper가
+///   자기 정리를 못 하고 죽었다는 사실은 같다.
+/// - 시그널이 아닌 종료(정상 exit code)면 `None` — wrapper가 그 코드에 도달했다는 것
+///   자체가 이미 `end_run`을 부르고 난 뒤라는 뜻이다.
+fn mlflow_reconciliation_decision(
+    status: &str,
+    run_id: Option<&str>,
+    wrapper_reported_terminal: bool,
+    exit: Option<&std::process::ExitStatus>,
+) -> Option<MlflowRunReconciliation> {
+    let _ = status; // 현재 판정에 영향 없음 — 시그널 여부만이 "wrapper가 정리했는가"를 가른다.
+    if wrapper_reported_terminal {
+        return None;
+    }
+    let run_id = run_id?;
+    let signaled = exit.is_some_and(|e| {
+        #[cfg(unix)]
+        {
+            std::os::unix::process::ExitStatusExt::signal(e).is_some()
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = e;
+            false
+        }
+    });
+    if !signaled {
+        return None;
+    }
+    Some(MlflowRunReconciliation {
+        run_id: run_id.to_string(),
+        status: "KILLED",
+    })
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct MlflowRunReconciliation {
+    run_id: String,
+    status: &'static str,
+}
+
+/// `MlflowRunReconciliation`을 MLflow REST API로 실제 반영한다. `register_model_mlflow`
+/// (modelhub.rs)와 같은 관례(`external_command("curl")` + `ports::local_url("mlflow")`)를
+/// 따른다 — reqwest 등 새 HTTP 클라이언트를 들이지 않는다. 실패는 학습 종료 처리를 막지
+/// 않는 best-effort다(로그만 남긴다, D22 — 조용히 삼키지는 않는다).
+async fn reconcile_mlflow_run(reconciliation: MlflowRunReconciliation) {
+    let body = serde_json::json!({
+        "run_id": reconciliation.run_id,
+        "status": reconciliation.status,
+    })
+    .to_string();
+
+    let cmd = match external_command("curl") {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[mlx] Failed to reconcile MLflow run {}: {e}", reconciliation.run_id);
+            return;
+        }
+    };
+    let mut cmd = cmd;
+    let output = cmd
+        .args([
+            "-s",
+            "-X",
+            "POST",
+            "-H",
+            "Content-Type: application/json",
+            "-d",
+            &body,
+            &format!("{}/api/2.0/mlflow/runs/update", ports::local_url("mlflow")),
+        ])
+        .output()
+        .await;
+
+    match output {
+        Ok(out) if out.status.success() => {}
+        Ok(out) => eprintln!(
+            "[mlx] MLflow run reconciliation for {} returned non-success: {}",
+            reconciliation.run_id,
+            String::from_utf8_lossy(&out.stderr)
+        ),
+        Err(e) => eprintln!(
+            "[mlx] Failed to reach MLflow to reconcile run {}: {e}",
+            reconciliation.run_id
+        ),
     }
 }
 
@@ -716,7 +829,23 @@ fn finalize_training(
         Some(t) => t,
         None => return,
     };
+
+    // GitHub #13 — wrapper가 자기 end_run을 못 부르고 죽었으면 Rust가 대신 MLflow에
+    // 알린다. should_record_exit로 조기 반환하기 전에 계산해야 한다 — "killed"도 그
+    // 조기 반환 대상이지만 정확히 이 리컨실리에이션이 필요한 경우이기도 하다.
+    let wrapper_reported_terminal = matches!(training.status.as_str(), "done" | "error");
+    let reconciliation = mlflow_reconciliation_decision(
+        &training.status,
+        training.mlflow_run_id.as_deref(),
+        wrapper_reported_terminal,
+        exit.as_ref().ok(),
+    );
+
     if !should_record_exit(&training.status) {
+        drop(guard);
+        if let Some(r) = reconciliation {
+            tokio::spawn(reconcile_mlflow_run(r));
+        }
         return;
     }
     match exit {
@@ -733,6 +862,10 @@ fn finalize_training(
             training.status = "error".into();
             training.error = Some(format!("Failed to wait for process: {e}"));
         }
+    }
+    drop(guard);
+    if let Some(r) = reconciliation {
+        tokio::spawn(reconcile_mlflow_run(r));
     }
 }
 
@@ -778,6 +911,7 @@ pub async fn run_mlx_finetune(
             last_loss: None,
             adapter_path: None,
             error: None,
+            mlflow_run_id: None,
         });
         prev
     };
@@ -892,6 +1026,7 @@ pub async fn run_mlx_finetune(
                     last_loss: None,
                     adapter_path: None,
                     error: None,
+                    mlflow_run_id: None,
                 });
             }
 
@@ -1402,6 +1537,8 @@ pub(crate) async fn revert_to_last_serving(app: tauri::AppHandle) -> Result<Stri
 
 #[cfg(test)]
 mod tests {
+    use std::os::unix::process::ExitStatusExt;
+
     #[test]
     fn validate_home_subpath_expands_tilde() {
         // "~"와 "~/..."가 HOME 기준으로 확장되어 검증을 통과해야 한다.
@@ -1501,6 +1638,57 @@ mod tests {
                 "{terminal}은 종착 상태인데 종료 기록이 덮어썼다"
             );
         }
+    }
+
+    #[test]
+    fn mlflow_reconciliation_marks_intentional_kill_as_killed() {
+        let exit = std::process::ExitStatus::from_raw(9);
+        assert_eq!(
+            mlflow_reconciliation_decision("killed", Some("run-123"), false, Some(&exit)),
+            Some(MlflowRunReconciliation {
+                run_id: "run-123".into(),
+                status: "KILLED",
+            })
+        );
+    }
+
+    #[test]
+    fn mlflow_reconciliation_marks_unhandled_signal_as_killed() {
+        let exit = std::process::ExitStatus::from_raw(15);
+        assert_eq!(
+            mlflow_reconciliation_decision("running", Some("run-123"), false, Some(&exit)),
+            Some(MlflowRunReconciliation {
+                run_id: "run-123".into(),
+                status: "KILLED",
+            })
+        );
+    }
+
+    #[test]
+    fn mlflow_reconciliation_suppresses_wrapper_terminal_event() {
+        let exit = std::process::ExitStatus::from_raw(9);
+        assert_eq!(
+            mlflow_reconciliation_decision("done", Some("run-123"), true, Some(&exit)),
+            None
+        );
+    }
+
+    #[test]
+    fn mlflow_reconciliation_suppresses_missing_run_id() {
+        let exit = std::process::ExitStatus::from_raw(9);
+        assert_eq!(
+            mlflow_reconciliation_decision("killed", None, false, Some(&exit)),
+            None
+        );
+    }
+
+    #[test]
+    fn mlflow_reconciliation_suppresses_ordinary_abnormal_exit() {
+        let exit = std::process::ExitStatus::from_raw(1 << 8);
+        assert_eq!(
+            mlflow_reconciliation_decision("running", Some("run-123"), false, Some(&exit)),
+            None
+        );
     }
 
     /// 포트 탐지 자체의 검증은 `services::ports`가 소유한다(와일드카드 점유까지 본다).
