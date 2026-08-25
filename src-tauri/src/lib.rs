@@ -20,6 +20,7 @@ use commands::guardrails::{
     get_guardrail_status, pause_mlx_training, resume_mlx_training, set_guardrail_config,
     GuardrailState,
 };
+use commands::health::get_system_health_summary;
 use commands::kagent::{
     configure_kagent_model, get_kagent_diagnostics, get_kagent_model_status, install_kagent,
     toggle_kagent_agent,
@@ -144,6 +145,7 @@ pub fn run() {
             get_service_access,
             get_guardrail_status,
             set_guardrail_config,
+            get_system_health_summary,
             pause_mlx_training,
             resume_mlx_training,
             get_prefect_status,
