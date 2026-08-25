@@ -15,6 +15,9 @@ set -uo pipefail
 # 로드하기 시작했다). KUBE_CONTEXT가 이미 같은 규약이다.
 AIRGAP_DIR="${AIRGAP_DIR:-${HOME}/.kubemetal/airgap}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-colima}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/airgap/lib.sh
+. "${SCRIPT_DIR}/lib.sh"
 
 if [ ! -d "${AIRGAP_DIR}" ]; then
   echo "Air-Gap 저장소가 없습니다: ${AIRGAP_DIR} — 먼저 패키지 다운로드를 실행하세요." >&2
@@ -35,6 +38,7 @@ FAILED=()
 #
 # 구버전 번들을 알면서 쓰려면 의도를 명시해야 한다 — 기본값이 아니라 옵트아웃이다.
 MANIFEST="${AIRGAP_DIR}/manifest.sha256"
+DIGESTS_LOCK="${AIRGAP_DIR}/digests.lock"
 echo "[0/3] 번들 무결성 검증..."
 if [ ! -f "$MANIFEST" ]; then
   if [ "${AIRGAP_ALLOW_UNVERIFIED:-0}" = "1" ]; then
@@ -58,6 +62,56 @@ else
   fi
 fi
 
+# digests.lock은 tag가 수집 뒤 이동했는지 증명하는 provenance와, docker load가
+# RepoDigests를 버리는 경우에도 비교할 수 있는 image ID를 함께 담는다. 없을 때만
+# 구버전 번들 호환을 위해 전부 건너뛴다; 일부 누락/형식 오류는 D23대로 중단한다.
+VERIFY_DIGESTS=0
+DIGEST_VERIFICATION_FAILED=0
+if [ ! -f "$DIGESTS_LOCK" ]; then
+  echo "  !! digests.lock이 없는 구버전 번들 — 이미지 digest 검증을 건너뜁니다." >&2
+else
+  VERIFY_DIGESTS=1
+fi
+
+verify_loaded_image_digest() {
+  local archive="$1" record locked_image locked_provenance locked_id actual_record actual_provenance actual_id
+  if ! record="$(digest_lock_record_for_archive "$DIGESTS_LOCK" "$(basename "$archive")")"; then
+    echo "  !! $(basename "$archive"): digests.lock에 유효한 항목이 없습니다." >&2
+    FAILED+=("digest-lock-missing-or-malformed:$(basename "$archive")")
+    DIGEST_VERIFICATION_FAILED=1
+    return 1
+  fi
+  IFS=$'\t' read -r locked_image locked_provenance locked_id <<EOF
+$record
+EOF
+  if ! actual_record="$(image_digest_record "$locked_image")"; then
+    echo "  !! ${locked_image}: load 뒤 image ID를 확인하지 못했습니다." >&2
+    FAILED+=("digest-inspect:${locked_image}")
+    DIGEST_VERIFICATION_FAILED=1
+    return 1
+  fi
+  IFS=$'\t' read -r actual_provenance actual_id <<EOF
+$actual_record
+EOF
+
+  # load가 RepoDigests를 보존했을 때만 provenance를 비교한다. 그렇지 않으면 수집
+  # 당시 함께 잠근 ID와 대조한다; 수집 자체가 ID fallback이었던 경우도 이 경로다.
+  if [ "$locked_provenance" != "$locked_id" ] && [ "$actual_provenance" != "$actual_id" ]; then
+    if [ "$actual_provenance" != "$locked_provenance" ]; then
+      echo "  !! ${locked_image}: RepoDigest 불일치 (lock=${locked_provenance}, load=${actual_provenance})" >&2
+      FAILED+=("digest-mismatch:${locked_image}")
+      DIGEST_VERIFICATION_FAILED=1
+      return 1
+    fi
+  elif [ "$actual_id" != "$locked_id" ]; then
+    echo "  !! ${locked_image}: image ID 불일치 (lock=${locked_id}, load=${actual_id})" >&2
+    FAILED+=("digest-mismatch:${locked_image}")
+    DIGEST_VERIFICATION_FAILED=1
+    return 1
+  fi
+  return 0
+}
+
 echo "[1/3] .tar.gz 컨테이너 이미지 로드..."
 if ! command -v docker >/dev/null 2>&1; then
   echo "  !! docker CLI가 없습니다." >&2
@@ -69,6 +123,7 @@ else
     echo "  -> 로드: $(basename "$archive")"
     if gunzip -c "$archive" | docker load; then
       loaded=$((loaded + 1))
+      [ "$VERIFY_DIGESTS" -eq 0 ] || verify_loaded_image_digest "$archive"
     else
       FAILED+=("load:$(basename "$archive")")
     fi
@@ -77,12 +132,18 @@ else
     echo "  -> 로드(비압축): $(basename "$archive")"
     if docker load -i "$archive"; then
       loaded=$((loaded + 1))
+      [ "$VERIFY_DIGESTS" -eq 0 ] || verify_loaded_image_digest "$archive"
     else
       FAILED+=("load:$(basename "$archive")")
     fi
   done
   shopt -u nullglob
   echo "  -> 이미지 ${loaded}건 로드"
+  if [ "$DIGEST_VERIFICATION_FAILED" -ne 0 ]; then
+    echo "  !! 이미지 digest 검증에 실패해 이후 설치를 중단합니다." >&2
+    echo "실패 항목 ${#FAILED[@]}건: ${FAILED[*]}" >&2
+    exit 1
+  fi
   if [ "$loaded" -eq 0 ]; then
     FAILED+=("images:none-found")
   fi
