@@ -40,7 +40,11 @@ Changing a D-registry decision requires updating all affected docs in the same t
   all empty, measured. Thermal-based training pause is opt-in and fires at `serious`, never
   `fair` (D28) — `fair` is normal under load. Manual resume overrides that pause
   cause for the rest of the run; memory-pressure `critical` alone is never
-  overridable (D16 amendment).
+  overridable (D16 amendment). D16/D28 only pause an already-running process — new
+  training/serving spawns are refused up front by `guardrails::check_spawn_admission`
+  under the same critical-memory/serious-thermal conditions (D36). Only training gets
+  auto-paused (`spawn_guardrail_loop` never attaches to serving) — that asymmetry, not
+  a scheduler, is how serving stays protected under load.
 - **VM sizing derived from detected RAM (D4)**: 16GB→4GB/2CPU, 32–48GB→8GB/4CPU,
   64GB+→12GB/6CPU — never hardcoded, backend clamps frontend input.
 - **Pod→host bridge (D10)**: ExternalName `mac-gpu-service` → `host.lima.internal`,
@@ -92,8 +96,14 @@ forwards die with their parent.
   mlx-lm. Both servers get `--host 127.0.0.1` explicitly — mlx_vlm.server defaults to
   0.0.0.0. In `mlx_vlm.lora`, `--adapter-path` means *resume*, not output — output is
   `--output-path`, and its adapter_config.json has no `model` key. `--train-vision`
-  needs a non-quantized (bf16) model — 4-bit dies on `QuantizedMatmul::vjp`.
+  needs a non-quantized (bf16) model — 4-bit dies on `QuantizedMatmul::vjp`; this is now
+  enforced pre-spawn by `reject_incompatible_runtime_combo`, not just documented here.
+  Successful training runs also get a sha256 manifest of the adapter dir (D38) — check
+  `manifest_verification_status`/`is_adapter_safe_to_delete` before writing any adapter
+  cleanup/GC feature; don't `fs::remove_dir_all` a currently-serving or last-known-good
+  adapter directly.
 - colima is not reentrant — one lifecycle op at a time, and never above the D4 profile.
+  Enforced in code now (`ColimaState.lifecycle_in_progress`, D39), not just convention.
 - Files past ~300 lines want splitting.
 
 ## Rules
