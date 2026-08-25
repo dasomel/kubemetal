@@ -63,6 +63,41 @@ jobs:
           # stage 밖에 먼저 쓰고 이동한다. macos-14 러너이므로 shasum -a 256
           # 사용(macOS 기본 제공, Linux에서도 동일하게 동작).
           (cd stage && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 > ../SHA256SUMS.txt && mv ../SHA256SUMS.txt .)
+          # SHA256SUMS.txt에서 이미 계산한 .app 내부 파일의 정렬된 레코드를 다시
+          # 해시해 번들 전체를 나타내고, SBOM/고지의 해시와 함께 단일 파일에 남긴다.
+          # 원본 번들 파일은 재해시하지 않는다.
+          release_tag="$TAG"
+          version="${release_tag#v}"
+          checksum() {
+            awk -v path="$1" '$2 == path { print $1; exit }' stage/SHA256SUMS.txt
+          }
+          app_bundle_sha256="$(awk '$2 ~ /^\.\/KubeMetal\.app\// { print }' stage/SHA256SUMS.txt | shasum -a 256 | awk '{ print $1 }')"
+          cyclonedx_sha256="$(checksum ./sbom-cyclonedx.json)"
+          spdx_sha256="$(checksum ./sbom-spdx.json)"
+          notices_sha256="$(checksum ./THIRD-PARTY-NOTICES.md)"
+          [ -n "$app_bundle_sha256" ] && [ -n "$cyclonedx_sha256" ] && [ -n "$spdx_sha256" ] && [ -n "$notices_sha256" ]
+          RELEASE_TAG="$release_tag" VERSION="$version" APP_BUNDLE_SHA256="$app_bundle_sha256" CYCLONEDX_SHA256="$cyclonedx_sha256" SPDX_SHA256="$spdx_sha256" NOTICES_SHA256="$notices_sha256" python3 - <<'PY' > stage/release-manifest.json
+          import json
+          import os
+
+          json.dump({
+              "release_tag": os.environ["RELEASE_TAG"],
+              "version": os.environ["VERSION"],
+              "app_bundle": {
+                  "filename": "KubeMetal.app",
+                  "sha256": os.environ["APP_BUNDLE_SHA256"],
+                  "digest_source": "sha256 of sorted SHA256SUMS.txt records for files under KubeMetal.app/",
+              },
+              "sboms": [
+                  {"filename": "sbom-cyclonedx.json", "sha256": os.environ["CYCLONEDX_SHA256"]},
+                  {"filename": "sbom-spdx.json", "sha256": os.environ["SPDX_SHA256"]},
+              ],
+              "license_reports": [
+                  {"filename": "THIRD-PARTY-NOTICES.md", "sha256": os.environ["NOTICES_SHA256"]},
+              ],
+          }, __import__("sys").stdout, indent=2)
+          print()
+          PY
           ditto -c -k stage "KubeMetal-${TAG}-aarch64.zip"
       - name: Create GitHub release
         env:
