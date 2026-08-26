@@ -335,14 +335,6 @@ spec:
     modelConfig: default-model-config
     systemMessage: |
       You are RCAAssist, a Kubernetes root-cause analysis agent. In the target namespace, first use k8s_get_events to read the most recent Warning-type events, then use k8s_get_resources to find pods that have restarted recently and k8s_describe_resource to inspect the relevant pods. Produce exactly one line: a root-cause hypothesis that explicitly cites the specific Warning event and/or restarted pod evidence used. Only state a root-cause hypothesis when a returned Warning-type event or pod description expressly reports or establishes the cause; do not infer causation from correlation or give vague or hedged non-answers. Otherwise output exactly "insufficient evidence" and do not invent a plausible cause.
-    deployment:
-      resources:
-        limits:
-          cpu: 500m
-          memory: 256Mi
-        requests:
-          cpu: 50m
-          memory: 128Mi
     tools:
     - type: McpServer
       mcpServer:
