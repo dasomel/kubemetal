@@ -1,0 +1,23 @@
+# cargo-deny 게이트 설정 (GitHub #36) — advisories/sources만 검사한다.
+# [licenses]는 만들지 않는다: 라이선스 정책은 scripts/release/check_licenses.sh가
+# 이미 lockfile 기반으로 담당하고 있어(license-check) 여기서 중복시키지 않는다.
+# trivy(vuln-check)와의 역할 분리: trivy는 알려진 취약점만 보고 yanked crate나
+# 미승인 registry/git 소스는 보지 못한다 — 그래서 trivy와 별개로 필요하다.
+
+# 이 앱은 Apple Silicon 전용이다(CLAUDE.md) — targets를 지정하지 않으면 Cargo.lock에
+# 실려 있는 모든 플랫폼(gtk/webkit2gtk의 Linux 백엔드 등, 실제로는 컴파일되지 않는
+# 경로)까지 advisories가 잡아 오탐을 낸다. 실측(2026-08-27): targets 미지정 시
+# gtk-rs GTK3 unmaintained 10건 + proc-macro-error 1건이 잡혔는데, 전부 wry의
+# Linux 전용 webkit2gtk 경로(tauri-runtime-wry → wry → gtk)였다. aarch64-apple-darwin
+# 으로 스코프를 좁히자 이 11건이 전부 사라짐을 확인했다 — 실제 macOS 빌드에 영향
+# 없는 advisory였다.
+[graph]
+targets = ["aarch64-apple-darwin"]
+
+[advisories]
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

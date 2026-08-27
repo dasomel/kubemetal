@@ -1,0 +1,32 @@
+# 이슈 #36 네거티브 픽스처 — workflow_dispatch로 수동 실행해야 하며, 이 리포는
+# 아직 push된 적이 없어 실행 검증은 안 된 상태다(D39). 실행 후 green이면
+# fixture crate의 build.rs가 example.com 연결 실패를 감지했다는 뜻이고, red면
+# 차단이 작동하지 않는다는 뜻이다.
+name: Supply Chain Egress Fixture
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: macos-14
+    steps:
+      # actions/checkout에 필요한 최소 엔드포인트만 허용한다 — 정확한 목록은
+      # step-security/harden-runner 리포 자체의 도그푸딩 CI(build-check job,
+      # actions/checkout만 사용)에서 실측된 값이다(github.com:443 하나로
+      # 충분함을 그 워크플로가 실증한다). example.com은 절대 포함하지 않는다 —
+      # 이 픽스처의 핵심은 example.com이 반드시 도달 불가능해야 한다는 것이다.
+      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      # 허용한 github.com:443 자체가 닿는지 먼저 확인한다. 이 단계가 없으면 전체
+      # 네트워크 장애도 build.rs의 example.com 실패와 같은 green으로 오인할 수 있다.
+      - name: Verify permitted GitHub egress
+        run: curl --fail --silent --show-error --connect-timeout 10 https://github.com/
+      - name: Build egress probe (must succeed = egress blocked)
+        run: cargo build --manifest-path fixtures/build-script-egress-probe/Cargo.toml
