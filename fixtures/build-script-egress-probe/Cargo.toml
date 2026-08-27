@@ -1,0 +1,12 @@
+# 이슈 #36 네거티브 픽스처 — src-tauri workspace와 무관한 독립 크레이트.
+# build-dependencies를 0으로 유지한다(std::net만 사용) — 이 픽스처 자체의
+# 공급망도 최소화하기 위함이다.
+[package]
+name = "build-script-egress-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+build = "build.rs"
+
+[lib]
+path = "src/lib.rs"
