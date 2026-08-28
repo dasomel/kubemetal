@@ -5,6 +5,7 @@
   "tracePathPrefix": ".agents/evals/traces/",
   "rules": [
     {"risk": "high", "pattern": ".github/workflows/**", "reason": "CI and release behavior"},
+    {"risk": "high", "pattern": "scripts/ci/**", "reason": "CI governance and enforcement logic"},
     {"risk": "high", "pattern": "scripts/airgap/**", "reason": "offline bundle and immutable artifact inputs"},
     {"risk": "high", "pattern": "scripts/k8s/**", "reason": "cluster mutation and deployment behavior"},
     {"risk": "high", "pattern": "scripts/mlx/**", "reason": "native ML runtime behavior"},
