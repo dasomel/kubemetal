@@ -57,6 +57,29 @@ jobs:
             --policy .agents/evals/risk-policy.json \
             --changed-files /tmp/agent-changed-files.txt \
             --report-out /tmp/agent-risk-result.json
+      - name: Bind live immutable-input evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .agents/evals/bind-verification.py \
+            --trace .agents/evals/traces/2026-08-mutable-input-guard.json \
+            --event-id e4 \
+            --event-id e5 \
+            --out /tmp/kubemetal-live-trace.json \
+            -- python3 scripts/ci/check-mutable-inputs.py \
+              .github/workflows/ci.yml \
+              .github/workflows/release.yml \
+              .github/workflows/agent-behavior.yml \
+              scripts/airgap/images-helm.txt
+      - name: Gate live immutable-input behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .agents/evals/gate.py \
+            --trace /tmp/kubemetal-live-trace.json \
+            --baseline .agents/evals/baseline.eval.json \
+            --current-out /tmp/kubemetal-live-eval.json \
+            --comparison-out /tmp/kubemetal-live-comparison.json
       - name: Correlate high-risk changes with trace evidence
         if: github.event_name == 'pull_request'
         shell: bash
