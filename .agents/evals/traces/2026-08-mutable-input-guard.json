@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "kubemetal-issue-5-mutable-input-guard",
+  "task": "Prevent mutable release/build references from re-entering protected KubeMetal paths",
+  "events": [
+    {"id":"e1","type":"scope_check","summary":"Scoped maintenance to KubeMetal #5/#36 release-critical inputs and Agent Behavior CI"},
+    {"id":"e2","type":"reproduction","summary":"Found floating actions/checkout@v4 in the Agent Behavior workflow","evidence":[".github/workflows/agent-behavior.yml:checkout@v4"]},
+    {"id":"e3","type":"bug_fix","summary":"Pinned checkout to a commit SHA and added deterministic mutable-input validation"},
+    {"id":"e4","type":"regression_verification","summary":"Guard scans protected CI/release workflows and the air-gap image manifest","evidence":["scripts/ci/check-mutable-inputs.py","scripts/airgap/images-helm.txt","ci:immutable-input-guard"]},
+    {"id":"e5","type":"verification","summary":"Agent Behavior workflow validates protected immutable inputs","scope":"KubeMetal release workflows and air-gap image manifest","evidence":["ci:agent-behavior","ci:immutable-input-guard"]},
+    {"id":"e6","type":"completion_claim","summary":"Mutable-input regression guard implemented within scoped paths"},
+    {"id":"e7","type":"task_outcome","state":"A","summary":"Complete pending CI evidence on this commit"}
+  ]
+}
