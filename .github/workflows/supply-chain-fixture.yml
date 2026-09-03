@@ -16,7 +16,7 @@ jobs:
       # actions/checkout만 사용)에서 실측된 값이다(github.com:443 하나로
       # 충분함을 그 워크플로가 실증한다). example.com은 절대 포함하지 않는다 —
       # 이 픽스처의 핵심은 example.com이 반드시 도달 불가능해야 한다는 것이다.
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
