@@ -54,6 +54,8 @@ The Tauri backend exposes:
 
 The live probe uses the loopback API only. For oMLX it reads `/health` and `/admin/api/models`, falling back to `/v1/models` when admin model details are unavailable. `mlx_lm.server` uses `/health`/`/v1/models` where available.
 
+Model settings are sent as sparse updates: omitted pin/TTL/default/alias fields are not serialized as JSON `null`, so changing one setting does not reset the others.
+
 ## MLX Studio UI
 
 MLX Studio now separates two serving modes:
@@ -113,9 +115,32 @@ KubeMetal does not reimplement oMLX cache scheduling, prefix sharing, eviction, 
 
 A cache is not model provenance, conversation memory, or a source of truth. It may be removed when the runtime is stopped after confirming no active runtime owns it.
 
+## Agent/application connection profile
+
+Applications should treat the selected runtime as an API endpoint rather than depending on oMLX internals.
+
+Local macOS clients:
+
+```text
+OpenAI base URL:     http://127.0.0.1:<runtime-port>/v1
+Anthropic endpoint:  http://127.0.0.1:<runtime-port>/v1/messages   (oMLX capability)
+Models:              GET http://127.0.0.1:<runtime-port>/v1/models
+```
+
+K3s clients use the explicitly enabled bridge instead of binding oMLX to all interfaces:
+
+```text
+OpenAI base URL:     http://mac-gpu-service:<bridge-port>/v1
+Anthropic endpoint:  http://mac-gpu-service:<bridge-port>/v1/messages
+```
+
+Hermes, Codex, OpenCode, Raycast, Tailscale, and similar clients are optional integrations. They must not become KubeMetal core dependencies. Remote/LAN exposure remains opt-in and is outside the default loopback-only profile.
+
 ## Reproducible benchmark
 
 Use the stdlib-only benchmark harness so the test can run in an offline environment once the runtime/model artifacts are already present.
+
+Non-streaming throughput/latency:
 
 ```bash
 python3 scripts/mlx/benchmark_local_inference.py \
@@ -126,6 +151,20 @@ python3 scripts/mlx/benchmark_local_inference.py \
   --concurrency 1 \
   --cache-state cold \
   --output evidence/omlx-cold-c1.json
+```
+
+Streaming TTFT + total latency:
+
+```bash
+python3 scripts/mlx/benchmark_local_inference.py \
+  --runtime omlx \
+  --endpoint http://127.0.0.1:8000 \
+  --model '<model-id>' \
+  --requests 8 \
+  --concurrency 1 \
+  --stream \
+  --cache-state warm \
+  --output evidence/omlx-warm-stream-c1.json
 ```
 
 Repeat at minimum:
@@ -220,7 +259,7 @@ Run the same long-prefix request as:
 - warm cache
 - after oMLX restart with SSD cache enabled
 
-Capture benchmark JSON for each. Confirm cache disk usage is visible through the cache inspection command/UI integration and that deleting cache is treated as performance cleanup, not model/data deletion.
+Capture benchmark JSON for each. Confirm cache disk usage is visible through `inspect_local_inference_cache` and that deleting cache is treated as performance cleanup, not model/data deletion.
 
 ### 7. Failure checks
 
@@ -243,6 +282,7 @@ Keep the following with the PR/issue validation note:
 - `~/.kubemetal/logs/omlx.log` excerpt without secrets
 - bridge verification output
 - cold/warm/SSD-restore benchmark JSON
+- streaming TTFT result
 - concurrency matrix
 - model load/unload/pin/TTL result
 - any capability that upstream does not expose as measurable evidence, marked `unavailable` rather than estimated
