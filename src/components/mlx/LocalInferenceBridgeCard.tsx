@@ -13,10 +13,11 @@ const inputClass =
 const buttonClass =
   'inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-caption font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed';
 
-export const LocalInferenceBridgeCard: React.FC<{ targetPort?: number }> = ({ targetPort = 8000 }) => {
+export const LocalInferenceBridgeCard: React.FC<{ defaultTargetPort?: number }> = ({ defaultTargetPort = 8000 }) => {
   const [status, setStatus] = useState<BridgeStatus>();
   const [bindHost, setBindHost] = useState('192.168.64.1');
   const [bindPort, setBindPort] = useState(18000);
+  const [targetPort, setTargetPort] = useState(defaultTargetPort);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -54,7 +55,7 @@ export const LocalInferenceBridgeCard: React.FC<{ targetPort?: number }> = ({ ta
             <Cable className="w-4 h-4 text-primary" /> Private inference relay
           </h3>
           <p className="text-caption text-inkMuted mt-1">
-            Keeps oMLX on 127.0.0.1 and exposes a KubeMetal-owned TCP relay only on an explicitly selected private host IP.
+            Keeps the inference runtime on 127.0.0.1 and exposes a KubeMetal-owned TCP relay only on an explicitly selected private host IP.
           </p>
         </div>
         <button className={`${buttonClass} bg-surfaceRaised text-ink`} onClick={refresh} disabled={busy}>
@@ -75,7 +76,7 @@ export const LocalInferenceBridgeCard: React.FC<{ targetPort?: number }> = ({ ta
         </label>
         <label className="text-caption text-inkMuted">
           Loopback target port
-          <input className={`${inputClass} mt-1`} type="number" value={targetPort} readOnly />
+          <input className={`${inputClass} mt-1`} type="number" min={1} max={65535} value={targetPort} onChange={(e) => setTargetPort(Number(e.target.value))} disabled={status?.running} />
         </label>
       </div>
 
