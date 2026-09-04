@@ -46,7 +46,7 @@ The Tauri backend exposes:
 - `stop_local_inference_runtime`
 - `load_omlx_model`
 - `unload_omlx_model`
-- `set_omlx_model_settings`
+- `set_omlx_model_settings_sparse`
 - `inspect_local_inference_cache`
 - `get_local_inference_bridge_status`
 - `start_local_inference_bridge`

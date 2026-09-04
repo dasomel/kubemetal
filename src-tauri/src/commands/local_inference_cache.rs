@@ -212,27 +212,26 @@ fn cleanup_tree(path: &Path, root: &Path, cutoff: SystemTime, result: &mut Cache
 pub async fn inspect_local_inference_cache(
     request: CacheInspectionRequest,
 ) -> Result<CacheInspection, String> {
-    let path = expand_and_validate_home_path(&request.path)?;
-    let mut inspection = CacheInspection {
-        path: path.display().to_string(),
-        exists: path.exists(),
-        bytes: 0,
-        files: 0,
-        directories: 0,
-        partial: false,
-        errors: Vec::new(),
-    };
-    if inspection.exists {
-        let scan_path = path.clone();
-        inspection = tokio::task::spawn_blocking(move || {
-            let mut result = inspection;
-            scan(&scan_path, &mut result);
-            result
-        })
-        .await
-        .map_err(|e| format!("Cache inspection task failed: {e}"))?;
-    }
-    Ok(inspection)
+    // Path validation (canonicalize/exists) is blocking FS work — keep it inside
+    // spawn_blocking so it never runs directly on the async runtime.
+    tokio::task::spawn_blocking(move || -> Result<CacheInspection, String> {
+        let path = expand_and_validate_home_path(&request.path)?;
+        let mut inspection = CacheInspection {
+            path: path.display().to_string(),
+            exists: path.exists(),
+            bytes: 0,
+            files: 0,
+            directories: 0,
+            partial: false,
+            errors: Vec::new(),
+        };
+        if inspection.exists {
+            scan(&path, &mut inspection);
+        }
+        Ok(inspection)
+    })
+    .await
+    .map_err(|e| format!("Cache inspection task failed: {e}"))?
 }
 
 #[tauri::command]
@@ -245,32 +244,37 @@ pub async fn cleanup_local_inference_cache(
                 .into(),
         );
     }
-    let path = expand_and_validate_home_path(&request.path)?;
-    validate_cleanup_root(&path)?;
-    let mut result = CacheCleanupResult {
-        path: path.display().to_string(),
-        dry_run: request.dry_run,
-        max_age_hours: request.max_age_hours,
-        candidate_files: 0,
-        candidate_bytes: 0,
-        removed_files: 0,
-        removed_bytes: 0,
-        removed_directories: 0,
-        errors: Vec::new(),
-    };
-    if !path.exists() {
-        return Ok(result);
-    }
+    let dry_run = request.dry_run;
+    let max_age_hours = request.max_age_hours;
     let cutoff = SystemTime::now()
-        .checked_sub(Duration::from_secs(request.max_age_hours.saturating_mul(3600)))
+        .checked_sub(Duration::from_secs(max_age_hours.saturating_mul(3600)))
         .ok_or_else(|| "Invalid cache retention duration".to_string())?;
-    let root = path.clone();
-    tokio::task::spawn_blocking(move || {
+    // Path validation (canonicalize/exists) is blocking FS work — keep it inside
+    // spawn_blocking together with the cleanup walk so no std::fs call runs on the
+    // async runtime directly.
+    tokio::task::spawn_blocking(move || -> Result<CacheCleanupResult, String> {
+        let path = expand_and_validate_home_path(&request.path)?;
+        validate_cleanup_root(&path)?;
+        let mut result = CacheCleanupResult {
+            path: path.display().to_string(),
+            dry_run,
+            max_age_hours,
+            candidate_files: 0,
+            candidate_bytes: 0,
+            removed_files: 0,
+            removed_bytes: 0,
+            removed_directories: 0,
+            errors: Vec::new(),
+        };
+        if !path.exists() {
+            return Ok(result);
+        }
+        let root = path.clone();
         cleanup_tree(&path, &root, cutoff, &mut result);
-        result
+        Ok(result)
     })
     .await
-    .map_err(|e| format!("Cache cleanup task failed: {e}"))
+    .map_err(|e| format!("Cache cleanup task failed: {e}"))?
 }
 
 #[cfg(test)]

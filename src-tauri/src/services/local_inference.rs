@@ -111,14 +111,6 @@ pub struct RuntimeModel {
     pub ttl_seconds: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct OmlxModelSettingsPatch {
-    pub model_alias: Option<String>,
-    pub ttl_seconds: Option<u64>,
-    pub is_pinned: Option<bool>,
-    pub is_default: Option<bool>,
-}
-
 #[derive(Debug)]
 pub struct HttpResponse {
     pub status: u16,
@@ -295,6 +287,16 @@ fn validate_home_path(value: &str, must_exist: bool) -> Result<PathBuf, String> 
     Ok(path)
 }
 
+/// `validate_home_path` canonicalizes paths (blocking `std::fs`). `build_omlx_command` runs on
+/// the async runtime, so this offloads the check to a blocking-pool thread instead of stalling
+/// the runtime while resolving the filesystem.
+async fn validate_home_path_blocking(value: &str, must_exist: bool) -> Result<PathBuf, String> {
+    let owned = value.to_string();
+    tokio::task::spawn_blocking(move || validate_home_path(&owned, must_exist))
+        .await
+        .map_err(|e| format!("Path validation task failed: {e}"))?
+}
+
 fn validate_size(value: &str) -> Result<(), String> {
     let trimmed = value.trim();
     if trimmed.is_empty()
@@ -326,10 +328,16 @@ pub async fn build_omlx_command(config: &RuntimeLaunchConfig) -> Result<Command,
         .env("PATH", augmented_path());
 
     if let Some(model_dir) = config.model_dir.as_deref() {
-        let path = validate_home_path(model_dir, true)?;
-        if !path.is_dir() {
-            return Err(format!("Model directory is not a directory: {model_dir}"));
-        }
+        let owned = model_dir.to_string();
+        let path = tokio::task::spawn_blocking(move || -> Result<PathBuf, String> {
+            let path = validate_home_path(&owned, true)?;
+            if !path.is_dir() {
+                return Err(format!("Model directory is not a directory: {owned}"));
+            }
+            Ok(path)
+        })
+        .await
+        .map_err(|e| format!("Path validation task failed: {e}"))??;
         command.arg("--model-dir").arg(path);
     }
     if !config.pinned_models.is_empty() {
@@ -344,7 +352,7 @@ pub async fn build_omlx_command(config: &RuntimeLaunchConfig) -> Result<Command,
         command.arg("--no-cache");
     }
     if let Some(dir) = config.paged_ssd_cache_dir.as_deref() {
-        let path = validate_home_path(dir, false)?;
+        let path = validate_home_path_blocking(dir, false).await?;
         command.arg("--paged-ssd-cache-dir").arg(path);
     }
     if let Some(size) = config.paged_ssd_cache_max_size.as_deref() {
@@ -613,37 +621,6 @@ pub async fn omlx_model_action(
         "POST",
         &format!("/admin/api/models/{model_id}/{action}"),
         None,
-        api_key,
-    )
-    .await
-}
-
-pub async fn update_omlx_model_settings(
-    endpoint: &str,
-    model_id: &str,
-    patch: &OmlxModelSettingsPatch,
-    api_key: Option<&str>,
-) -> Result<HttpResponse, String> {
-    if model_id.trim().is_empty()
-        || model_id.contains('/')
-        || model_id.contains('?')
-        || model_id.contains('#')
-        || model_id.contains('\r')
-        || model_id.contains('\n')
-    {
-        return Err("Invalid oMLX model id".into());
-    }
-    if let Some(alias) = patch.model_alias.as_deref() {
-        if alias.contains('\r') || alias.contains('\n') || alias.len() > 128 {
-            return Err("Invalid model alias".into());
-        }
-    }
-    let body = serde_json::to_string(patch).map_err(|e| e.to_string())?;
-    loopback_http_request(
-        endpoint,
-        "PUT",
-        &format!("/admin/api/models/{model_id}/settings"),
-        Some(&body),
         api_key,
     )
     .await

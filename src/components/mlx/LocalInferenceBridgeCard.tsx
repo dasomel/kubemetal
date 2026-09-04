@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { Cable, Loader2, Play, RefreshCw, Square } from 'lucide-react';
+import type { DeployTarget } from '../../types/ipc';
 
 interface BridgeStatus {
   running: boolean;
@@ -31,6 +32,18 @@ export const LocalInferenceBridgeCard: React.FC<{ defaultTargetPort?: number }> 
 
   useEffect(() => {
     refresh();
+    // Prefill from the deploy target's D10-verified bridge address when one exists, instead
+    // of leaving the hardcoded placeholder — an unverified/keep_base target (e.g. colima's
+    // DNS-name bridge) has no stored numeric address, so the placeholder is left as-is.
+    invoke<DeployTarget>('get_deploy_target')
+      .then((target) => {
+        if (target.bridge.kind === 'verified') {
+          setBindHost(target.bridge.host);
+        }
+      })
+      .catch(() => {
+        // Best-effort prefill only — leave the placeholder if the target can't be read.
+      });
   }, [refresh]);
 
   const run = async (action: () => Promise<unknown>) => {

@@ -1,9 +1,6 @@
 mod commands;
 mod services;
 
-#[doc(hidden)]
-pub use services::local_inference::{update_omlx_model_settings, OmlxModelSettingsPatch};
-
 use std::sync::Mutex;
 use sysinfo::System;
 

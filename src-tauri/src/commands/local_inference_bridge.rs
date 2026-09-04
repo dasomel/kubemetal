@@ -6,6 +6,8 @@ use tokio::io::copy_bidirectional;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::AbortHandle;
 
+use crate::services::deploy_target::active_verified_bridge_host;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct LocalInferenceBridgeConfig {
     pub bind_host: String,
@@ -31,20 +33,33 @@ pub struct LocalInferenceBridgeState {
     task: Mutex<Option<BridgeTask>>,
 }
 
+/// 릴레이 바인드 주소 가드(finding 5). 어떤 private/link-local 주소든 받아주면, 인증 없는
+/// 릴레이가 colima vz 브리지가 아니라 사용자의 실제 LAN 인터페이스(예: 사무실 Wi-Fi)에 뜰 수
+/// 있다 — `192.168.x.x`는 vmnet 서브넷과 사무실 LAN 서브넷을 구분해 주지 않는다.
+///
+/// 그래서 loopback을 넘어서는 바인드는 D26 배포 대상의 `BridgeState::Verified { host }` —
+/// 클러스터 **안에서** 실측 도달을 확인한 그 주소 — 와 정확히 일치할 때만 허용한다
+/// (`active_verified_bridge_host()`, `services/deploy_target.rs`). colima의 기본 브리지는
+/// DNS 이름(`host.lima.internal`) 기반이라 이 코드베이스에 검증된 숫자 주소가 없고, 추측
+/// 주소를 릴레이에 실어 보내지 않는다는 원칙(D22–D25, docs/11 "do not infer or guess a
+/// reachable host address")은 colima에도 그대로 적용된다 — 현재는 loopback만 허용된다.
 fn allowed_private_bind_host(host: &str) -> Result<IpAddr, String> {
     let ip = host
         .parse::<IpAddr>()
         .map_err(|_| "Bridge bind_host must be a literal IP address".to_string())?;
-    let allowed = match ip {
-        IpAddr::V4(v4) => v4.is_private() || v4.is_loopback() || v4.is_link_local(),
-        IpAddr::V6(v6) => v6.is_loopback() || v6.is_unique_local() || v6.is_unicast_link_local(),
-    };
-    if !allowed || ip.is_unspecified() {
-        return Err(format!(
-            "Refusing public/unspecified inference bridge bind address: {host}"
-        ));
+    if ip.is_loopback() {
+        return Ok(ip);
     }
-    Ok(ip)
+    if let Some(verified) = active_verified_bridge_host() {
+        if verified.parse::<IpAddr>().as_ref() == Ok(&ip) {
+            return Ok(ip);
+        }
+    }
+    Err(format!(
+        "Refusing inference bridge bind address {host}: it is not loopback and does not match \
+         the deploy target's verified host bridge address. Run host bridge detection (D10) \
+         first, or bind to a loopback address."
+    ))
 }
 
 fn target_addr(port: u16) -> SocketAddr {
@@ -171,14 +186,36 @@ pub async fn stop_local_inference_bridge(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::deploy_target::{
+        set_active, BridgeState, DeployTarget, ACTIVE_TARGET_TEST_LOCK, COLIMA_CONTEXT,
+    };
 
+    /// 전역 `ACTIVE_BRIDGE` 캐시를 조작하는 테스트라 다른 모듈의 같은 계열 테스트
+    /// (`services::deploy_target::tests`)와도 레이스한다 — 크레이트 전역 락으로 상호
+    /// 배제하고, 두 시나리오는 한 테스트 함수에 몰아 이 테스트 안에서의 순서도 보장한다.
     #[test]
-    fn bridge_rejects_public_or_wildcard_addresses() {
+    fn bridge_bind_host_is_gated_by_the_active_verified_bridge() {
+        let _guard = ACTIVE_TARGET_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        set_active(&DeployTarget::for_context(COLIMA_CONTEXT));
         assert!(allowed_private_bind_host("0.0.0.0").is_err());
         assert!(allowed_private_bind_host("8.8.8.8").is_err());
         assert!(allowed_private_bind_host("127.0.0.1").is_ok());
+        // colima's default bridge (BridgeState::KeepBase) has no stored numeric address —
+        // no private address is trusted without D10 verification.
+        assert!(allowed_private_bind_host("192.168.64.1").is_err());
+        assert!(allowed_private_bind_host("10.0.0.2").is_err());
+
+        let mut target = DeployTarget::for_context("narwhal");
+        target.bridge = BridgeState::Verified {
+            host: "192.168.64.1".into(),
+        };
+        set_active(&target);
         assert!(allowed_private_bind_host("192.168.64.1").is_ok());
-        assert!(allowed_private_bind_host("10.0.0.2").is_ok());
+        // A different private address is rejected even though it is also private —
+        // the address must match the verified bridge exactly, not just be private.
+        assert!(allowed_private_bind_host("192.168.1.10").is_err());
+
+        set_active(&DeployTarget::for_context(COLIMA_CONTEXT));
     }
 
     #[test]
