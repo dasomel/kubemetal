@@ -1,6 +1,12 @@
 mod commands;
 mod services;
 
+// Compatibility export for the first #58 adapter slice. The active Tauri command uses the
+// sparse updater in `commands::omlx_settings`; these legacy service items remain externally
+// reachable only so downstream Rust callers are not broken while the adapter stabilizes.
+#[doc(hidden)]
+pub use services::local_inference::{update_omlx_model_settings, OmlxModelSettingsPatch};
+
 use std::sync::Mutex;
 use sysinfo::System;
 
