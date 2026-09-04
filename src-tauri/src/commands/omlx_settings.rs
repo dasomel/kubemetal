@@ -55,11 +55,11 @@ fn sparse_settings_json(patch: &SafeOmlxModelSettingsPatch) -> Result<String, St
     serde_json::to_string(&body).map_err(|e| e.to_string())
 }
 
-/// Sparse oMLX settings update. This intentionally owns the public Tauri command name
-/// `set_omlx_model_settings`, replacing the earlier direct struct serialization path where
-/// omitted `Option` fields could be emitted as JSON null and reset unrelated settings.
+/// Sparse oMLX settings update. It intentionally has a distinct Rust/Tauri command name so
+/// it can coexist with the earlier compatibility implementation without generating duplicate
+/// Tauri command symbols. New UI code must call this command.
 #[tauri::command]
-pub async fn set_omlx_model_settings(
+pub async fn set_omlx_model_settings_sparse(
     request: SafeOmlxModelSettingsRequest,
 ) -> Result<RuntimeActionResult, String> {
     validate_model_id(&request.model_id)?;
