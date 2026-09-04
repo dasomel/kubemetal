@@ -6,6 +6,7 @@ pub mod guardrails;
 pub mod kagent;
 pub mod local_inference;
 pub mod local_inference_bridge;
+pub mod local_inference_cache;
 pub mod metrics;
 pub mod mlx;
 pub mod modelhub;
