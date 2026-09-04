@@ -23,7 +23,11 @@ use commands::kagent::{
     configure_kagent_model, get_kagent_diagnostics, get_kagent_model_status, install_kagent,
     toggle_kagent_agent,
 };
-use commands::local_inference::{get_local_inference_status, probe_local_inference_runtime};
+use commands::local_inference::{
+    get_local_inference_status, load_omlx_model, probe_local_inference_live,
+    probe_local_inference_runtime, set_omlx_model_settings, start_local_inference_runtime,
+    stop_local_inference_runtime, unload_omlx_model, LocalInferenceState,
+};
 use commands::metrics::{get_hardware_spec, get_system_metrics};
 use commands::mlx::{
     check_mlx_env, get_mlx_status, kill_mlx_process, run_mlx_finetune, setup_mlx_env,
@@ -56,6 +60,7 @@ pub fn run() {
         .manage(PortForwardState::default())
         .manage(ModelHubState::default())
         .manage(MlxState::default())
+        .manage(LocalInferenceState::default())
         .manage(GuardrailState::default())
         .manage(PrefectState::default())
         .manage(RagState::default())
@@ -101,6 +106,12 @@ pub fn run() {
             suggest_serving_port,
             get_local_inference_status,
             probe_local_inference_runtime,
+            probe_local_inference_live,
+            start_local_inference_runtime,
+            stop_local_inference_runtime,
+            load_omlx_model,
+            unload_omlx_model,
+            set_omlx_model_settings,
             crate::services::ports::get_host_ports,
             get_service_access,
             get_guardrail_status,
