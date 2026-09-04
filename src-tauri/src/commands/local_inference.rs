@@ -4,6 +4,9 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::commands::local_inference_ops::{
+    preflight_local_inference_model_load, AdmissionDecision, ModelLoadPreflightRequest,
+};
 use crate::services::local_inference::{
     build_omlx_command, endpoint_for, omlx_model_action, pid_is_running, probe_all_runtimes,
     probe_live_runtime, probe_runtime, terminate_pid, LocalInferenceRuntimeKind,
@@ -42,6 +45,7 @@ pub struct OmlxModelActionRequest {
     pub endpoint: String,
     pub model_id: String,
     pub api_key: Option<String>,
+    pub estimated_memory_bytes: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -169,7 +173,6 @@ pub async fn start_local_inference_runtime(
         *guard = Some(process.clone());
     }
 
-    // Reap the process asynchronously. The status command reconciles stale state via pid probing.
     tokio::spawn(async move {
         let _ = child.wait().await;
     });
@@ -185,8 +188,6 @@ pub async fn stop_local_inference_runtime(
         .ok_or_else(|| "No KubeMetal-managed local inference runtime is running".to_string())?;
     terminate_pid(process.pid)?;
 
-    // Do not release ownership until SIGTERM has actually taken effect. This keeps Restart from
-    // racing a still-listening process and also avoids pretending a stubborn process is stopped.
     for _ in 0..50 {
         if !pid_is_running(process.pid) {
             let mut guard = state
@@ -211,8 +212,28 @@ pub async fn stop_local_inference_runtime(
 
 #[tauri::command]
 pub async fn load_omlx_model(
+    app: tauri::AppHandle,
     request: OmlxModelActionRequest,
 ) -> Result<RuntimeActionResult, String> {
+    let preflight = preflight_local_inference_model_load(
+        app,
+        ModelLoadPreflightRequest {
+            model_id: request.model_id.clone(),
+            estimated_memory_bytes: request.estimated_memory_bytes,
+        },
+    )
+    .await?;
+    if preflight.decision == AdmissionDecision::Deny {
+        return Ok(RuntimeActionResult {
+            ok: false,
+            status_code: None,
+            detail: Some(format!(
+                "KubeMetal host guardrail denied model load: {}",
+                preflight.reasons.join("; ")
+            )),
+        });
+    }
+
     let response = omlx_model_action(
         &request.endpoint,
         &request.model_id,
@@ -220,10 +241,18 @@ pub async fn load_omlx_model(
         request.api_key.as_deref(),
     )
     .await?;
+    let mut detail = (!response.body.trim().is_empty()).then_some(response.body);
+    if preflight.decision == AdmissionDecision::Warn {
+        let warning = format!("Guardrail warning: {}", preflight.reasons.join("; "));
+        detail = Some(match detail {
+            Some(existing) => format!("{warning}\n{existing}"),
+            None => warning,
+        });
+    }
     Ok(RuntimeActionResult {
         ok: (200..300).contains(&response.status),
         status_code: Some(response.status),
-        detail: (!response.body.trim().is_empty()).then_some(response.body),
+        detail,
     })
 }
 
