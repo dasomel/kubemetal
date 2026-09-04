@@ -5,6 +5,7 @@ pub mod deploy_target;
 pub mod guardrails;
 pub mod kagent;
 pub mod local_inference;
+pub mod local_inference_bridge;
 pub mod metrics;
 pub mod mlx;
 pub mod modelhub;
