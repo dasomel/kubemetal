@@ -1,8 +1,9 @@
 use std::process::Stdio;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 
 use crate::commands::local_inference_ops::{
     preflight_local_inference_model_load, AdmissionDecision, ModelLoadPreflightRequest,
@@ -18,6 +19,7 @@ pub struct LocalInferenceStatus {
     pub preferred_runtime: Option<LocalInferenceRuntimeKind>,
     pub runtimes: Vec<RuntimeProbe>,
     pub managed_process: Option<ManagedRuntimeProcess>,
+    pub last_exit: Option<RuntimeExitEvidence>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -26,11 +28,26 @@ pub struct ManagedRuntimeProcess {
     pub pid: u32,
     pub endpoint: String,
     pub running: bool,
+    pub started_at_epoch_ms: u128,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RuntimeExitEvidence {
+    pub runtime: LocalInferenceRuntimeKind,
+    pub pid: u32,
+    pub endpoint: String,
+    pub exit_code: Option<i32>,
+    pub success: bool,
+    pub expected_stop: bool,
+    pub observed_at_epoch_ms: u128,
+    pub detail: Option<String>,
 }
 
 #[derive(Default)]
 pub struct LocalInferenceState {
     managed: Mutex<Option<ManagedRuntimeProcess>>,
+    last_exit: Mutex<Option<RuntimeExitEvidence>>,
+    stopping_pid: Mutex<Option<u32>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,6 +72,13 @@ pub struct RuntimeActionResult {
     pub detail: Option<String>,
 }
 
+fn epoch_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+}
+
 fn managed_process(state: &LocalInferenceState) -> Result<Option<ManagedRuntimeProcess>, String> {
     let mut guard = state
         .managed
@@ -67,6 +91,14 @@ fn managed_process(state: &LocalInferenceState) -> Result<Option<ManagedRuntimeP
         }
     }
     Ok(guard.clone())
+}
+
+fn last_exit(state: &LocalInferenceState) -> Result<Option<RuntimeExitEvidence>, String> {
+    state
+        .last_exit
+        .lock()
+        .map(|guard| guard.clone())
+        .map_err(|_| "Local inference exit-evidence lock poisoned".to_string())
 }
 
 #[tauri::command]
@@ -88,6 +120,7 @@ pub async fn get_local_inference_status(
         preferred_runtime,
         runtimes,
         managed_process: managed_process(&state)?,
+        last_exit: last_exit(&state)?,
     })
 }
 
@@ -112,6 +145,7 @@ pub async fn probe_local_inference_live(
 
 #[tauri::command]
 pub async fn start_local_inference_runtime(
+    app: tauri::AppHandle,
     config: RuntimeLaunchConfig,
     state: tauri::State<'_, LocalInferenceState>,
 ) -> Result<ManagedRuntimeProcess, String> {
@@ -164,6 +198,7 @@ pub async fn start_local_inference_runtime(
         pid,
         endpoint,
         running: true,
+        started_at_epoch_ms: epoch_ms(),
     };
     {
         let mut guard = state
@@ -172,9 +207,52 @@ pub async fn start_local_inference_runtime(
             .map_err(|_| "Local inference state lock poisoned".to_string())?;
         *guard = Some(process.clone());
     }
+    {
+        let mut guard = state
+            .stopping_pid
+            .lock()
+            .map_err(|_| "Local inference stopping-state lock poisoned".to_string())?;
+        *guard = None;
+    }
 
+    let observed_process = process.clone();
     tokio::spawn(async move {
-        let _ = child.wait().await;
+        let wait_result = child.wait().await;
+        let state = app.state::<LocalInferenceState>();
+        let expected_stop = state
+            .stopping_pid
+            .lock()
+            .ok()
+            .and_then(|mut guard| {
+                if *guard == Some(pid) {
+                    *guard = None;
+                    Some(true)
+                } else {
+                    Some(false)
+                }
+            })
+            .unwrap_or(false);
+        let (exit_code, success, detail) = match wait_result {
+            Ok(status) => (status.code(), status.success(), None),
+            Err(error) => (None, false, Some(format!("Failed to wait for process: {error}"))),
+        };
+        if let Ok(mut guard) = state.last_exit.lock() {
+            *guard = Some(RuntimeExitEvidence {
+                runtime: observed_process.runtime,
+                pid,
+                endpoint: observed_process.endpoint.clone(),
+                exit_code,
+                success,
+                expected_stop,
+                observed_at_epoch_ms: epoch_ms(),
+                detail,
+            });
+        }
+        if let Ok(mut guard) = state.managed.lock() {
+            if guard.as_ref().is_some_and(|managed| managed.pid == pid) {
+                *guard = None;
+            }
+        }
     });
 
     Ok(process)
@@ -186,15 +264,22 @@ pub async fn stop_local_inference_runtime(
 ) -> Result<RuntimeActionResult, String> {
     let process = managed_process(&state)?
         .ok_or_else(|| "No KubeMetal-managed local inference runtime is running".to_string())?;
-    terminate_pid(process.pid)?;
+    {
+        let mut stopping = state
+            .stopping_pid
+            .lock()
+            .map_err(|_| "Local inference stopping-state lock poisoned".to_string())?;
+        *stopping = Some(process.pid);
+    }
+    if let Err(error) = terminate_pid(process.pid) {
+        if let Ok(mut stopping) = state.stopping_pid.lock() {
+            *stopping = None;
+        }
+        return Err(error);
+    }
 
     for _ in 0..50 {
         if !pid_is_running(process.pid) {
-            let mut guard = state
-                .managed
-                .lock()
-                .map_err(|_| "Local inference state lock poisoned".to_string())?;
-            *guard = None;
             return Ok(RuntimeActionResult {
                 ok: true,
                 status_code: None,
@@ -215,9 +300,6 @@ pub async fn load_omlx_model(
     app: tauri::AppHandle,
     request: OmlxModelActionRequest,
 ) -> Result<RuntimeActionResult, String> {
-    // Re-read the model pool in the backend so safety does not depend on the UI passing a size.
-    // Prefer actual_size when upstream reports it, then estimated_size, then an explicit caller
-    // estimate. Missing size remains unknown; memory/thermal/training guardrails still apply.
     let discovered_size = probe_live_runtime(
         LocalInferenceRuntimeKind::Omlx,
         &request.endpoint,
