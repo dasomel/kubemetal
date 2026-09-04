@@ -16,6 +16,7 @@ use commands::kagent::{configure_kagent_model, get_kagent_diagnostics, get_kagen
 use commands::local_inference::{get_local_inference_status, load_omlx_model, probe_local_inference_live, probe_local_inference_runtime, start_local_inference_runtime, stop_local_inference_runtime, unload_omlx_model, LocalInferenceState};
 use commands::local_inference_bridge::{get_local_inference_bridge_status, start_local_inference_bridge, stop_local_inference_bridge, LocalInferenceBridgeState};
 use commands::local_inference_cache::{cleanup_local_inference_cache, inspect_local_inference_cache};
+use commands::local_inference_cache_identity::evaluate_local_inference_cache_compatibility;
 use commands::local_inference_ops::{get_local_inference_connection_profile, get_local_inference_diagnostics, list_local_inference_adapters, preflight_local_inference_model_load, probe_local_inference_api_capabilities};
 use commands::metrics::{get_hardware_spec, get_system_metrics};
 use commands::mlx::{check_mlx_env, get_mlx_status, kill_mlx_process, run_mlx_finetune, setup_mlx_env, start_model_serving, stop_model_serving, suggest_serving_port, MlxState};
@@ -54,9 +55,9 @@ pub fn run() {
             get_local_inference_status, probe_local_inference_runtime, probe_local_inference_live,
             list_local_inference_adapters, probe_local_inference_api_capabilities,
             get_local_inference_connection_profile, get_local_inference_diagnostics,
-            preflight_local_inference_model_load, start_local_inference_runtime,
-            stop_local_inference_runtime, load_omlx_model, unload_omlx_model,
-            set_omlx_model_settings_sparse, get_local_inference_bridge_status,
+            preflight_local_inference_model_load, evaluate_local_inference_cache_compatibility,
+            start_local_inference_runtime, stop_local_inference_runtime, load_omlx_model,
+            unload_omlx_model, set_omlx_model_settings_sparse, get_local_inference_bridge_status,
             start_local_inference_bridge, stop_local_inference_bridge, inspect_local_inference_cache,
             cleanup_local_inference_cache, crate::services::ports::get_host_ports, get_service_access,
             get_guardrail_status, set_guardrail_config, pause_mlx_training, resume_mlx_training,
