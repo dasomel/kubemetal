@@ -92,8 +92,13 @@ export const RAM_SIZE_PROFILES: RamSizeProfile[] = [
   },
 ];
 
-/** 총 메모리(GB)에 해당하는 RAM 프로필을 찾는다 — minGb 내림차순으로 첫 매치를 반환. */
+/**
+ * 총 메모리(GB)에 해당하는 RAM 프로필을 찾는다.
+ * RAM_SIZE_PROFILES는 minGb 오름차순이므로 뒤에서부터 가장 구체적인 프로필을 찾는다.
+ */
 export function matchRamProfile(totalGb: number): RamSizeProfile {
-  const sorted = [...RAM_SIZE_PROFILES].sort((a, b) => b.minGb - a.minGb);
-  return sorted.find((p) => totalGb >= p.minGb) ?? RAM_SIZE_PROFILES[0];
+  for (let i = RAM_SIZE_PROFILES.length - 1; i >= 0; i -= 1) {
+    if (totalGb >= RAM_SIZE_PROFILES[i].minGb) return RAM_SIZE_PROFILES[i];
+  }
+  return RAM_SIZE_PROFILES[0];
 }

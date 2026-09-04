@@ -130,10 +130,13 @@ pub async fn get_kagent_diagnostics(
 
     // kagent 네임스페이스 — 파드가 하나도 없으면 미설치, 있으면 전부 Ready일 때만 ready.
     let kagent_pods = kagent_pods?;
-    let kagent_items = kagent_pods["items"].as_array().cloned().unwrap_or_default();
+    let kagent_items = kagent_pods["items"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
 
     let mut active_agents: Vec<String> = Vec::new();
-    for pod in &kagent_items {
+    for pod in kagent_items {
         if !pod_is_ready(pod) {
             continue;
         }
@@ -154,12 +157,15 @@ pub async fn get_kagent_diagnostics(
 
     // default 네임스페이스 파드 장애 탐지 — 원인 문자열은 클러스터가 준 reason/message만 쓴다.
     let default_pods = default_pods?;
-    let default_items = default_pods["items"].as_array().cloned().unwrap_or_default();
+    let default_items = default_pods["items"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
 
     let mut pod_issues_count = 0usize;
     let mut issue_details: Vec<String> = Vec::new();
 
-    for pod in &default_items {
+    for pod in default_items {
         let pod_name = pod["metadata"]["name"].as_str().unwrap_or("unknown");
         let phase = pod["status"]["phase"].as_str().unwrap_or("");
         let mut has_issue = phase_is_failing(phase);

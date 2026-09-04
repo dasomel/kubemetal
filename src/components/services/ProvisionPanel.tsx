@@ -1,15 +1,11 @@
 import React from 'react';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { useColima } from '../../hooks/useColima';
 import { useDeployTarget } from '../../hooks/useDeployTarget';
 import { usePrefect } from '../../hooks/usePrefect';
 import { useServiceAccess } from '../../hooks/useServiceAccess';
 import { useTranslation } from '../../i18n/i18nContext';
+import { openEndpoint } from '../../lib/openEndpoint';
 import { Boxes, ExternalLink, RefreshCw, Zap, ArrowUpRight, Radio } from 'lucide-react';
-
-const openEndpoint = (url: string) => {
-  openUrl(url).catch(() => window.open(url, '_blank'));
-};
 
 export const ProvisionPanel: React.FC = () => {
   const {

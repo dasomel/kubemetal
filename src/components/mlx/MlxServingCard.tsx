@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { Rocket, Loader2, Play, Square, ArrowUpRight, AlertTriangle } from 'lucide-react';
 import type { LocalModel, MlxServingState, MlxRuntime } from '../../types/ipc';
 import { ModelChatPlayground } from './ModelChatPlayground';
 import { useTranslation } from '../../i18n/i18nContext';
+import { openEndpoint } from '../../lib/openEndpoint';
 
 interface MlxServingCardProps {
   serving?: MlxServingState;
@@ -27,10 +27,6 @@ interface MlxServingCardProps {
 const inputClass =
   'w-full px-3.5 py-2.5 rounded-md bg-surfaceRaised text-ink text-body placeholder:text-inkFaint border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary';
 const labelClass = 'text-label uppercase text-inkFaint mb-1.5 block';
-
-const openEndpoint = (url: string) => {
-  openUrl(url).catch(() => window.open(url, '_blank'));
-};
 
 export const MlxServingCard: React.FC<MlxServingCardProps> = ({
   serving,
@@ -228,4 +224,3 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
     </div>
   );
 };
-

@@ -1,15 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { Workflow, Loader2, Play, Square, Cpu, ArrowUpRight, Rocket, FlaskConical } from 'lucide-react';
 import { usePrefect } from '../../hooks/usePrefect';
 import { useHostPorts } from '../../hooks/useHostPorts';
 import { useMlx } from '../../hooks/useMlx';
 import { useTranslation } from '../../i18n/i18nContext';
+import { openEndpoint } from '../../lib/openEndpoint';
 import type { FlowRunInfo, FineTuneConfig } from '../../types/ipc';
-
-const openEndpoint = (url: string) => {
-  openUrl(url).catch(() => window.open(url, '_blank'));
-};
 
 type DotColor = 'success' | 'warning' | 'danger' | 'inkFaint';
 

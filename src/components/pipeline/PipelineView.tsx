@@ -1,6 +1,5 @@
 import React, { useEffect } from 'react';
 import { isTrainingActive } from '../../lib/trainingStatus';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { ChevronDown, ChevronRight, Server, Database, Cpu, Archive, Rocket, FlaskConical, ArrowUpRight, Bot } from 'lucide-react';
 import { useColima } from '../../hooks/useColima';
 import { useHostPorts } from '../../hooks/useHostPorts';
@@ -9,6 +8,7 @@ import { useMlx } from '../../hooks/useMlx';
 import { useRegisteredModels } from '../../hooks/useRegisteredModels';
 import { usePrefect } from '../../hooks/usePrefect';
 import { useTranslation } from '../../i18n/i18nContext';
+import { openEndpoint } from '../../lib/openEndpoint';
 import { OrchestrationCard } from './OrchestrationCard';
 
 type DotColor = 'success' | 'warning' | 'danger' | 'inkFaint';
@@ -29,10 +29,6 @@ const dotClass: Record<DotColor, string> = {
   warning: 'bg-warning',
   danger: 'bg-danger',
   inkFaint: 'bg-inkFaint',
-};
-
-const openEndpoint = (url: string) => {
-  openUrl(url).catch(() => window.open(url, '_blank'));
 };
 
 const StageCard: React.FC<{ stage: StageInfo }> = ({ stage }) => {

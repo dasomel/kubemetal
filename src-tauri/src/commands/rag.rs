@@ -420,7 +420,7 @@ pub async fn query_rag(
         ));
     }
 
-    let res: serde_json::Value = serde_json::from_str(&stdout_str)
+    let mut res: serde_json::Value = serde_json::from_str(&stdout_str)
         .map_err(|e| format!("JSON parse failed ({e}): {stdout_str}"))?;
 
     if res.get("status").and_then(|v| v.as_str()) != Some("ok") {
@@ -432,11 +432,12 @@ pub async fn query_rag(
     }
 
     let raw_results = res
-        .get("results")
-        .and_then(|v| v.as_array())
+        .get_mut("results")
+        .and_then(serde_json::Value::as_array_mut)
+        .map(std::mem::take)
         .ok_or_else(|| "Cannot read results array.".to_string())?;
 
-    let search_results: Vec<RagSearchResult> = serde_json::from_value(serde_json::Value::Array(raw_results.clone()))
+    let search_results: Vec<RagSearchResult> = serde_json::from_value(serde_json::Value::Array(raw_results))
         .map_err(|e| format!("Failed to convert to RagSearchResult: {e}"))?;
 
     Ok(search_results)

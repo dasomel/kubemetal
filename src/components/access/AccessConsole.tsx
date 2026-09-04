@@ -1,13 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { Archive, Database, HardDrive, Rocket, ArrowUpRight, Eye, EyeOff, RefreshCw, Bot } from 'lucide-react';
 import { useServiceAccess } from '../../hooks/useServiceAccess';
 import type { ServiceAccess, CredentialItem } from '../../types/ipc';
 import { useTranslation } from '../../i18n/i18nContext';
-
-const openEndpoint = (url: string) => {
-  openUrl(url).catch(() => window.open(url, '_blank'));
-};
+import { openEndpoint } from '../../lib/openEndpoint';
 
 const SERVICE_ICON: Record<string, React.ElementType> = {
   MLflow: Archive,
