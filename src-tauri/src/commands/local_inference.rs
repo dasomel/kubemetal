@@ -171,17 +171,23 @@ pub async fn start_local_inference_runtime(
         .ok_or_else(|| "HOME is unavailable".to_string())?
         .join(".kubemetal")
         .join("logs");
-    std::fs::create_dir_all(&log_dir)
-        .map_err(|e| format!("Failed to create local inference log directory: {e}"))?;
     let log_path = log_dir.join("omlx.log");
-    let stdout = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-        .map_err(|e| format!("Failed to open {}: {e}", log_path.display()))?;
-    let stderr = stdout
-        .try_clone()
-        .map_err(|e| format!("Failed to clone oMLX log handle: {e}"))?;
+    // 로그 디렉터리 생성·파일 열기는 블로킹 FS 호출이라 async 커맨드 본문에서 직접 부르지 않는다.
+    let (stdout, stderr) = tokio::task::spawn_blocking(move || -> Result<_, String> {
+        std::fs::create_dir_all(&log_dir)
+            .map_err(|e| format!("Failed to create local inference log directory: {e}"))?;
+        let stdout = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .map_err(|e| format!("Failed to open {}: {e}", log_path.display()))?;
+        let stderr = stdout
+            .try_clone()
+            .map_err(|e| format!("Failed to clone oMLX log handle: {e}"))?;
+        Ok((stdout, stderr))
+    })
+    .await
+    .map_err(|e| format!("Log file task failed: {e}"))??;
     command
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr))
