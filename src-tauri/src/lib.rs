@@ -32,6 +32,7 @@ use commands::local_inference_bridge::{
     get_local_inference_bridge_status, start_local_inference_bridge,
     stop_local_inference_bridge, LocalInferenceBridgeState,
 };
+use commands::local_inference_cache::inspect_local_inference_cache;
 use commands::metrics::{get_hardware_spec, get_system_metrics};
 use commands::mlx::{
     check_mlx_env, get_mlx_status, kill_mlx_process, run_mlx_finetune, setup_mlx_env,
@@ -120,6 +121,7 @@ pub fn run() {
             get_local_inference_bridge_status,
             start_local_inference_bridge,
             stop_local_inference_bridge,
+            inspect_local_inference_cache,
             crate::services::ports::get_host_ports,
             get_service_access,
             get_guardrail_status,
