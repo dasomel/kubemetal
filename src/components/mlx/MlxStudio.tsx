@@ -8,6 +8,7 @@ import { MlxServingCard } from './MlxServingCard';
 import { LocalInferenceRuntimeCard } from './LocalInferenceRuntimeCard';
 import { LocalInferenceBridgeCard } from './LocalInferenceBridgeCard';
 import { LocalInferenceOpsCard } from './LocalInferenceOpsCard';
+import { LocalInferenceBenchmarkCard } from './LocalInferenceBenchmarkCard';
 import { LockedPreview } from '../dashboard/LockedPreview';
 
 export const MlxStudio: React.FC = () => {
@@ -35,8 +36,6 @@ export const MlxStudio: React.FC = () => {
   } = useMlx();
   const { t } = useTranslation();
 
-  // The oMLX runtime is independent from KubeMetal's private mlx-lm venv, so expose its
-  // discovery/lifecycle card even when the fine-tuning environment has not been installed.
   const envReady = !!(envStatus?.venv_exists && envStatus?.mlx_lm_installed);
 
   const fineTune = (
@@ -90,6 +89,7 @@ export const MlxStudio: React.FC = () => {
       <LocalInferenceRuntimeCard />
       <LocalInferenceBridgeCard />
       <LocalInferenceOpsCard />
+      <LocalInferenceBenchmarkCard />
 
       {envReady ? (
         <>
