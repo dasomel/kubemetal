@@ -219,38 +219,41 @@ pub async fn start_local_inference_runtime(
     tokio::spawn(async move {
         let wait_result = child.wait().await;
         let state = app.state::<LocalInferenceState>();
-        let expected_stop = state
-            .stopping_pid
-            .lock()
-            .ok()
-            .and_then(|mut guard| {
-                if *guard == Some(pid) {
-                    *guard = None;
-                    Some(true)
-                } else {
-                    Some(false)
-                }
-            })
-            .unwrap_or(false);
+        let expected_stop = {
+            let mut stopping = match state.stopping_pid.lock() {
+                Ok(guard) => guard,
+                Err(_) => return,
+            };
+            if *stopping == Some(pid) {
+                *stopping = None;
+                true
+            } else {
+                false
+            }
+        };
         let (exit_code, success, detail) = match wait_result {
             Ok(status) => (status.code(), status.success(), None),
             Err(error) => (None, false, Some(format!("Failed to wait for process: {error}"))),
         };
-        if let Ok(mut guard) = state.last_exit.lock() {
-            *guard = Some(RuntimeExitEvidence {
-                runtime: observed_process.runtime,
-                pid,
-                endpoint: observed_process.endpoint.clone(),
-                exit_code,
-                success,
-                expected_stop,
-                observed_at_epoch_ms: epoch_ms(),
-                detail,
-            });
+        {
+            if let Ok(mut guard) = state.last_exit.lock() {
+                *guard = Some(RuntimeExitEvidence {
+                    runtime: observed_process.runtime,
+                    pid,
+                    endpoint: observed_process.endpoint.clone(),
+                    exit_code,
+                    success,
+                    expected_stop,
+                    observed_at_epoch_ms: epoch_ms(),
+                    detail,
+                });
+            }
         }
-        if let Ok(mut guard) = state.managed.lock() {
-            if guard.as_ref().is_some_and(|managed| managed.pid == pid) {
-                *guard = None;
+        {
+            if let Ok(mut guard) = state.managed.lock() {
+                if guard.as_ref().is_some_and(|managed| managed.pid == pid) {
+                    *guard = None;
+                }
             }
         }
     });
