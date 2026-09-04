@@ -28,6 +28,10 @@ use commands::local_inference::{
     probe_local_inference_runtime, set_omlx_model_settings, start_local_inference_runtime,
     stop_local_inference_runtime, unload_omlx_model, LocalInferenceState,
 };
+use commands::local_inference_bridge::{
+    get_local_inference_bridge_status, start_local_inference_bridge,
+    stop_local_inference_bridge, LocalInferenceBridgeState,
+};
 use commands::metrics::{get_hardware_spec, get_system_metrics};
 use commands::mlx::{
     check_mlx_env, get_mlx_status, kill_mlx_process, run_mlx_finetune, setup_mlx_env,
@@ -61,6 +65,7 @@ pub fn run() {
         .manage(ModelHubState::default())
         .manage(MlxState::default())
         .manage(LocalInferenceState::default())
+        .manage(LocalInferenceBridgeState::default())
         .manage(GuardrailState::default())
         .manage(PrefectState::default())
         .manage(RagState::default())
@@ -112,6 +117,9 @@ pub fn run() {
             load_omlx_model,
             unload_omlx_model,
             set_omlx_model_settings,
+            get_local_inference_bridge_status,
+            start_local_inference_bridge,
+            stop_local_inference_bridge,
             crate::services::ports::get_host_ports,
             get_service_access,
             get_guardrail_status,
