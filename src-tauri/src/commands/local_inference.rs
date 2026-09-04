@@ -235,25 +235,23 @@ pub async fn start_local_inference_runtime(
             Ok(status) => (status.code(), status.success(), None),
             Err(error) => (None, false, Some(format!("Failed to wait for process: {error}"))),
         };
-        {
-            if let Ok(mut guard) = state.last_exit.lock() {
-                *guard = Some(RuntimeExitEvidence {
-                    runtime: observed_process.runtime,
-                    pid,
-                    endpoint: observed_process.endpoint.clone(),
-                    exit_code,
-                    success,
-                    expected_stop,
-                    observed_at_epoch_ms: epoch_ms(),
-                    detail,
-                });
-            }
+        let last_exit_lock = state.last_exit.lock();
+        if let Ok(mut guard) = last_exit_lock {
+            *guard = Some(RuntimeExitEvidence {
+                runtime: observed_process.runtime,
+                pid,
+                endpoint: observed_process.endpoint.clone(),
+                exit_code,
+                success,
+                expected_stop,
+                observed_at_epoch_ms: epoch_ms(),
+                detail,
+            });
         }
-        {
-            if let Ok(mut guard) = state.managed.lock() {
-                if guard.as_ref().is_some_and(|managed| managed.pid == pid) {
-                    *guard = None;
-                }
+        let managed_lock = state.managed.lock();
+        if let Ok(mut guard) = managed_lock {
+            if guard.as_ref().is_some_and(|managed| managed.pid == pid) {
+                *guard = None;
             }
         }
     });
