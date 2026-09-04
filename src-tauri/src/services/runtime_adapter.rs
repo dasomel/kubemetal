@@ -32,7 +32,20 @@ impl LocalInferenceRuntimeAdapter for OmlxAdapter {
     }
 
     fn capabilities(&self) -> RuntimeCapabilities {
-        RuntimeCapabilities::omlx()
+        RuntimeCapabilities {
+            openai_chat: true,
+            openai_responses: true,
+            anthropic_messages: true,
+            embeddings: true,
+            rerank: true,
+            multi_model: true,
+            model_load_unload: true,
+            model_pinning: true,
+            model_ttl: true,
+            continuous_batching: true,
+            tiered_kv_cache: true,
+            mcp: true,
+        }
     }
 
     fn install_hint(&self) -> &'static str {
@@ -57,7 +70,20 @@ impl LocalInferenceRuntimeAdapter for MlxLmAdapter {
     }
 
     fn capabilities(&self) -> RuntimeCapabilities {
-        RuntimeCapabilities::mlx_lm()
+        RuntimeCapabilities {
+            openai_chat: true,
+            openai_responses: false,
+            anthropic_messages: false,
+            embeddings: false,
+            rerank: false,
+            multi_model: false,
+            model_load_unload: false,
+            model_pinning: false,
+            model_ttl: false,
+            continuous_batching: false,
+            tiered_kv_cache: false,
+            mcp: false,
+        }
     }
 
     fn install_hint(&self) -> &'static str {
