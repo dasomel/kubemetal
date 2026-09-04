@@ -25,8 +25,8 @@ use commands::kagent::{
 };
 use commands::local_inference::{
     get_local_inference_status, load_omlx_model, probe_local_inference_live,
-    probe_local_inference_runtime, set_omlx_model_settings, start_local_inference_runtime,
-    stop_local_inference_runtime, unload_omlx_model, LocalInferenceState,
+    probe_local_inference_runtime, start_local_inference_runtime, stop_local_inference_runtime,
+    unload_omlx_model, LocalInferenceState,
 };
 use commands::local_inference_bridge::{
     get_local_inference_bridge_status, start_local_inference_bridge,
@@ -42,6 +42,7 @@ use commands::modelhub::{
     download_hf_model, get_model_downloads, list_local_models, list_registered_models,
     register_model_mlflow, search_hf_models, upload_model_to_storage, ModelHubState,
 };
+use commands::omlx_settings::set_omlx_model_settings;
 use commands::port_forward::{
     open_kagent_ui, start_port_forward, stop_port_forward, PortForwardState,
 };
