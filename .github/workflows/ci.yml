@@ -12,7 +12,7 @@ jobs:
     # Apple Silicon 전용 앱 — arm64 macOS 러너에서만 의미 있는 검증이다.
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
         with:
           version: 10
