@@ -1,5 +1,6 @@
 use std::process::Stdio;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -183,16 +184,29 @@ pub async fn stop_local_inference_runtime(
     let process = managed_process(&state)?
         .ok_or_else(|| "No KubeMetal-managed local inference runtime is running".to_string())?;
     terminate_pid(process.pid)?;
-    let mut guard = state
-        .managed
-        .lock()
-        .map_err(|_| "Local inference state lock poisoned".to_string())?;
-    *guard = None;
-    Ok(RuntimeActionResult {
-        ok: true,
-        status_code: None,
-        detail: Some(format!("SIGTERM sent to pid {}", process.pid)),
-    })
+
+    // Do not release ownership until SIGTERM has actually taken effect. This keeps Restart from
+    // racing a still-listening process and also avoids pretending a stubborn process is stopped.
+    for _ in 0..50 {
+        if !pid_is_running(process.pid) {
+            let mut guard = state
+                .managed
+                .lock()
+                .map_err(|_| "Local inference state lock poisoned".to_string())?;
+            *guard = None;
+            return Ok(RuntimeActionResult {
+                ok: true,
+                status_code: None,
+                detail: Some(format!("Process {} stopped after SIGTERM", process.pid)),
+            });
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    Err(format!(
+        "Process {} did not exit within 5 seconds after SIGTERM; ownership is retained",
+        process.pid
+    ))
 }
 
 #[tauri::command]
