@@ -168,9 +168,17 @@ impl DeployTarget {
 /// 대상을 고른 적 없는 기존 사용자의 동작이 그대로 유지된다.
 static ACTIVE: std::sync::RwLock<Option<(String, String)>> = std::sync::RwLock::new(None);
 
+/// 활성 대상의 브리지 상태 캐시. 로컬 추론 릴레이(K3s→host TCP relay)가 임의의
+/// private/link-local 주소가 아니라, D10 탐지로 **실제 검증된** 주소에만 바인딩하도록
+/// `active_verified_bridge_host()`가 여기서 읽는다.
+static ACTIVE_BRIDGE: std::sync::RwLock<Option<BridgeState>> = std::sync::RwLock::new(None);
+
 pub fn set_active(target: &DeployTarget) {
     if let Ok(mut guard) = ACTIVE.write() {
         *guard = Some((target.context.clone(), target.namespace.clone()));
+    }
+    if let Ok(mut guard) = ACTIVE_BRIDGE.write() {
+        *guard = Some(target.bridge.clone());
     }
 }
 
@@ -182,6 +190,31 @@ pub fn active_context() -> (String, String) {
         .and_then(|g| g.clone())
         .unwrap_or_else(|| (COLIMA_CONTEXT.to_string(), "default".to_string()))
 }
+
+/// 활성 대상의 **실측 검증된** 브리지 호스트.
+///
+/// `BridgeState::Verified { host }`(D26 외부 클러스터)만 값을 낸다. `KeepBase`(colima)는
+/// DNS 이름(`host.lima.internal`) 기반이라 이 코드베이스에 숫자 주소가 저장된 적이 없고,
+/// `Unverified`는 정의상 검증되지 않았다 — 둘 다 추측 주소를 릴레이 바인드에 실어 보내지
+/// 않기 위해 `None`을 낸다(D22–D25, 로컬 추론 릴레이 바인드 가드).
+pub fn active_verified_bridge_host() -> Option<String> {
+    ACTIVE_BRIDGE
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .and_then(|bridge| match bridge {
+            BridgeState::Verified { host } => Some(host),
+            BridgeState::KeepBase | BridgeState::Unverified { .. } => None,
+        })
+}
+
+/// `ACTIVE`/`ACTIVE_BRIDGE`는 프로세스 전역이라, 이걸 건드리는 테스트는 러스트 기본
+/// 병렬 테스트 실행 하에서 **다른 모듈의** 그런 테스트와도 레이스한다(`commands::
+/// local_inference_bridge::tests`가 `active_verified_bridge_host()`로 이 상태를 읽는다).
+/// 이 락을 잡고 있는 동안만 `set_active`를 호출·검증·원복하도록 크레이트 전역에서
+/// 공유해 상호 배제한다.
+#[cfg(test)]
+pub(crate) static ACTIVE_TARGET_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// 임의 컨텍스트의 MLOps 스택 네임스페이스.
 ///
@@ -380,6 +413,9 @@ en0: flags=8863<UP,BROADCAST>
     /// "0 pod(s)"를 정상처럼 보고했다(D26/D30 L2).
     #[test]
     fn namespace_for_context_follows_the_requested_context() {
+        // 전역 ACTIVE/ACTIVE_BRIDGE를 건드리는 테스트라 크레이트 전역 락으로 다른 모듈의
+        // 같은 계열 테스트(`commands::local_inference_bridge::tests`)와 상호 배제한다.
+        let _guard = ACTIVE_TARGET_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         // 저장된 대상과 무관한 컨텍스트는 그 컨텍스트의 기본 네임스페이스를 쓴다.
         assert_eq!(namespace_for_context(COLIMA_CONTEXT), "default");
         assert_eq!(namespace_for_context("some-external"), DEFAULT_EXTERNAL_NAMESPACE);
