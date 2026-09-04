@@ -5,9 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::services::local_inference::{
     build_omlx_command, endpoint_for, omlx_model_action, pid_is_running, probe_all_runtimes,
-    probe_live_runtime, probe_runtime, terminate_pid, update_omlx_model_settings,
-    LocalInferenceRuntimeKind, OmlxModelSettingsPatch, RuntimeLaunchConfig, RuntimeLiveStatus,
-    RuntimeProbe,
+    probe_live_runtime, probe_runtime, terminate_pid, LocalInferenceRuntimeKind,
+    RuntimeLaunchConfig, RuntimeLiveStatus, RuntimeProbe,
 };
 
 #[derive(Debug, Serialize)]
@@ -41,14 +40,6 @@ pub struct RuntimeLiveProbeRequest {
 pub struct OmlxModelActionRequest {
     pub endpoint: String,
     pub model_id: String,
-    pub api_key: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct OmlxModelSettingsRequest {
-    pub endpoint: String,
-    pub model_id: String,
-    pub patch: OmlxModelSettingsPatch,
     pub api_key: Option<String>,
 }
 
@@ -230,24 +221,6 @@ pub async fn unload_omlx_model(
         &request.endpoint,
         &request.model_id,
         "unload",
-        request.api_key.as_deref(),
-    )
-    .await?;
-    Ok(RuntimeActionResult {
-        ok: (200..300).contains(&response.status),
-        status_code: Some(response.status),
-        detail: (!response.body.trim().is_empty()).then_some(response.body),
-    })
-}
-
-#[tauri::command]
-pub async fn set_omlx_model_settings(
-    request: OmlxModelSettingsRequest,
-) -> Result<RuntimeActionResult, String> {
-    let response = update_omlx_model_settings(
-        &request.endpoint,
-        &request.model_id,
-        &request.patch,
         request.api_key.as_deref(),
     )
     .await?;
