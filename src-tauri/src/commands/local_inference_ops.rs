@@ -24,6 +24,8 @@ pub struct ApiCapabilityProbeRequest {
 pub struct ApiRouteProbe {
     pub name: String,
     pub path: String,
+    pub advertised: bool,
+    pub route_present: Option<bool>,
     pub supported: Option<bool>,
     pub status_code: Option<u16>,
     pub detail: Option<String>,
@@ -139,15 +141,18 @@ async fn route_probe(
     name: &str,
     path: &str,
     body: &str,
-    expected: bool,
+    advertised: bool,
 ) -> ApiRouteProbe {
     match loopback_http_request(endpoint, "POST", path, Some(body), api_key).await {
         Ok(response) => {
-            let exists = !matches!(response.status, 404 | 405);
+            // Auth/model/validation failures prove route existence. 404/405 means route absent.
+            let route_present = !matches!(response.status, 404 | 405);
             ApiRouteProbe {
                 name: name.into(),
                 path: path.into(),
-                supported: Some(exists && expected),
+                advertised,
+                route_present: Some(route_present),
+                supported: Some(route_present && advertised),
                 status_code: Some(response.status),
                 detail: (!response.body.trim().is_empty())
                     .then(|| response.body.chars().take(300).collect()),
@@ -156,6 +161,8 @@ async fn route_probe(
         Err(error) => ApiRouteProbe {
             name: name.into(),
             path: path.into(),
+            advertised,
+            route_present: None,
             supported: None,
             status_code: None,
             detail: Some(error),
@@ -170,6 +177,14 @@ pub async fn probe_local_inference_api_capabilities(
     let advertised = capability_defaults(request.runtime);
     let token = request.api_key.as_deref();
     let model = "__kubemetal_capability_probe__";
+    let chat_body = format!(
+        r#"{{"model":"{model}","messages":[{{"role":"user","content":"probe"}}],"max_tokens":1}}"#
+    );
+    let anthropic_body = chat_body.clone();
+    let embeddings_body = format!(r#"{{"model":"{model}","input":"probe"}}"#);
+    let rerank_body = format!(
+        r#"{{"model":"{model}","query":"probe","documents":["probe"]}}"#
+    );
 
     let (chat, anthropic, embeddings, rerank) = tokio::join!(
         route_probe(
@@ -177,7 +192,7 @@ pub async fn probe_local_inference_api_capabilities(
             token,
             "OpenAI chat",
             "/v1/chat/completions",
-            &format!(r#"{{"model":"{model}","messages":[{{"role":"user","content":"probe"}}],"max_tokens":1}}"#),
+            &chat_body,
             advertised.openai_chat,
         ),
         route_probe(
@@ -185,7 +200,7 @@ pub async fn probe_local_inference_api_capabilities(
             token,
             "Anthropic messages",
             "/v1/messages",
-            &format!(r#"{{"model":"{model}","messages":[{{"role":"user","content":"probe"}}],"max_tokens":1}}"#),
+            &anthropic_body,
             advertised.anthropic_messages,
         ),
         route_probe(
@@ -193,7 +208,7 @@ pub async fn probe_local_inference_api_capabilities(
             token,
             "Embeddings",
             "/v1/embeddings",
-            &format!(r#"{{"model":"{model}","input":"probe"}}"#),
+            &embeddings_body,
             advertised.embeddings,
         ),
         route_probe(
@@ -201,7 +216,7 @@ pub async fn probe_local_inference_api_capabilities(
             token,
             "Rerank",
             "/v1/rerank",
-            &format!(r#"{{"model":"{model}","query":"probe","documents":["probe"]}}"#),
+            &rerank_body,
             advertised.rerank,
         )
     );
@@ -294,24 +309,34 @@ pub async fn preflight_local_inference_model_load(
     let mut decision = AdmissionDecision::Allow;
     let mut reasons = Vec::new();
 
-    if guardrail.memory_pressure_level == "critical" {
-        decision = AdmissionDecision::Deny;
-        reasons.push("macOS memory pressure is critical".into());
-    } else if guardrail.memory_pressure_level == "warn" {
-        decision = AdmissionDecision::Warn;
-        reasons.push("macOS memory pressure is elevated".into());
-    } else if guardrail.memory_pressure_level == "unknown" {
-        decision = AdmissionDecision::Warn;
-        reasons.push("memory pressure could not be measured".into());
+    match guardrail.memory_pressure_level.as_str() {
+        "critical" => {
+            decision = AdmissionDecision::Deny;
+            reasons.push("macOS memory pressure is critical".into());
+        }
+        "warn" => {
+            decision = AdmissionDecision::Warn;
+            reasons.push("macOS memory pressure is elevated".into());
+        }
+        "unknown" => {
+            decision = AdmissionDecision::Warn;
+            reasons.push("memory pressure could not be measured".into());
+        }
+        _ => {}
     }
 
-    if matches!(guardrail.thermal_state.as_deref(), Some("critical") | Some("serious")) {
+    if matches!(
+        guardrail.thermal_state.as_deref(),
+        Some("critical") | Some("serious")
+    ) {
         decision = AdmissionDecision::Deny;
         reasons.push(format!(
             "thermal state is {}",
             guardrail.thermal_state.as_deref().unwrap_or("unknown")
         ));
-    } else if guardrail.thermal_state.as_deref() == Some("fair") && decision == AdmissionDecision::Allow {
+    } else if guardrail.thermal_state.as_deref() == Some("fair")
+        && decision == AdmissionDecision::Allow
+    {
         decision = AdmissionDecision::Warn;
         reasons.push("thermal state is fair; additional inference load may throttle".into());
     }
@@ -321,7 +346,9 @@ pub async fn preflight_local_inference_model_load(
         reasons.push("MLX fine-tuning is active; model load will compete for unified memory".into());
     }
 
-    if let (Some(estimated), Some(limit_mb)) = (request.estimated_memory_bytes, metal_wired_limit_mb) {
+    if let (Some(estimated), Some(limit_mb)) =
+        (request.estimated_memory_bytes, metal_wired_limit_mb)
+    {
         let limit_bytes = limit_mb.saturating_mul(1024 * 1024);
         let safe_bytes = limit_bytes.saturating_mul(9) / 10;
         if estimated > safe_bytes {
@@ -331,7 +358,10 @@ pub async fn preflight_local_inference_model_load(
                 estimated / 1024 / 1024,
                 limit_mb
             ));
-        } else if training_active && estimated > safe_bytes / 2 && decision != AdmissionDecision::Deny {
+        } else if training_active
+            && estimated > safe_bytes / 2
+            && decision != AdmissionDecision::Deny
+        {
             decision = AdmissionDecision::Warn;
             reasons.push("estimated model memory consumes more than half of the guarded Metal budget while training is active".into());
         }
@@ -468,9 +498,17 @@ mod tests {
             api_key_configured: true,
         };
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        let profile = runtime.block_on(get_local_inference_connection_profile(request)).unwrap();
-        assert!(profile.environment_lines.iter().all(|line| !line.contains("secret")));
-        assert!(profile.environment_lines.iter().any(|line| line.contains("<set-at-runtime>")));
+        let profile = runtime
+            .block_on(get_local_inference_connection_profile(request))
+            .unwrap();
+        assert!(profile
+            .environment_lines
+            .iter()
+            .all(|line| !line.contains("secret")));
+        assert!(profile
+            .environment_lines
+            .iter()
+            .any(|line| line.contains("<set-at-runtime>")));
     }
 
     #[test]
