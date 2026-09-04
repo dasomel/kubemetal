@@ -10,6 +10,7 @@ pub mod local_inference_cache;
 pub mod metrics;
 pub mod mlx;
 pub mod modelhub;
+pub mod omlx_settings;
 pub mod port_forward;
 pub mod prefect;
 pub mod provision;
