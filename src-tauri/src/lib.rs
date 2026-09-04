@@ -23,6 +23,7 @@ use commands::kagent::{
     configure_kagent_model, get_kagent_diagnostics, get_kagent_model_status, install_kagent,
     toggle_kagent_agent,
 };
+use commands::local_inference::{get_local_inference_status, probe_local_inference_runtime};
 use commands::metrics::{get_hardware_spec, get_system_metrics};
 use commands::mlx::{
     check_mlx_env, get_mlx_status, kill_mlx_process, run_mlx_finetune, setup_mlx_env,
@@ -98,6 +99,8 @@ pub fn run() {
             start_model_serving,
             stop_model_serving,
             suggest_serving_port,
+            get_local_inference_status,
+            probe_local_inference_runtime,
             crate::services::ports::get_host_ports,
             get_service_access,
             get_guardrail_status,
