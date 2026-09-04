@@ -5,6 +5,9 @@ RUNTIME="${RUNTIME:-omlx}"
 ENDPOINT="${ENDPOINT:-http://127.0.0.1:8000}"
 MODEL_DIR="${MODEL_DIR:-$HOME/.omlx/models}"
 API_KEY="${API_KEY:-}"
+TMP_HEALTH="${TMPDIR:-/tmp}/kubemetal-airgap-health.$$"
+TMP_MODELS="${TMPDIR:-/tmp}/kubemetal-airgap-models.$$"
+trap 'rm -f "$TMP_HEALTH" "$TMP_MODELS"' EXIT
 
 case "$ENDPOINT" in
   http://127.0.0.1:*|http://localhost:*) ;;
@@ -21,7 +24,9 @@ else
 fi
 
 [[ -d "$MODEL_DIR" ]] || { echo "FAIL: local model directory not found: $MODEL_DIR" >&2; exit 1; }
-if ! find "$MODEL_DIR" -type f -maxdepth 4 -print -quit 2>/dev/null | grep -q .; then
+# BSD find on macOS does not provide GNU -maxdepth. The model tree is intentionally traversed
+# without following symlinks (find's default) and stops after the first regular file.
+if ! find "$MODEL_DIR" -type f -print -quit 2>/dev/null | grep -q .; then
   echo "FAIL: no local model files found under $MODEL_DIR" >&2
   exit 1
 fi
@@ -37,18 +42,17 @@ if [[ -n "$API_KEY" ]]; then
   headers+=(-H "Authorization: Bearer $API_KEY")
 fi
 
-health_code=$(curl -sS -o /tmp/kubemetal-airgap-health.$$ -w '%{http_code}' "${headers[@]}" "$ENDPOINT/health" || true)
-models_code=$(curl -sS -o /tmp/kubemetal-airgap-models.$$ -w '%{http_code}' "${headers[@]}" "$ENDPOINT/v1/models" || true)
-trap 'rm -f /tmp/kubemetal-airgap-health.$$ /tmp/kubemetal-airgap-models.$$' EXIT
+health_code=$(curl -sS -o "$TMP_HEALTH" -w '%{http_code}' "${headers[@]}" "$ENDPOINT/health" || true)
+models_code=$(curl -sS -o "$TMP_MODELS" -w '%{http_code}' "${headers[@]}" "$ENDPOINT/v1/models" || true)
 
 if [[ ! "$health_code" =~ ^2 ]]; then
   echo "FAIL: local health probe returned HTTP ${health_code:-unreachable}" >&2
-  cat /tmp/kubemetal-airgap-health.$$ 2>/dev/null || true
+  cat "$TMP_HEALTH" 2>/dev/null || true
   exit 1
 fi
 if [[ ! "$models_code" =~ ^2 ]]; then
   echo "FAIL: local /v1/models probe returned HTTP ${models_code:-unreachable}" >&2
-  cat /tmp/kubemetal-airgap-models.$$ 2>/dev/null || true
+  cat "$TMP_MODELS" 2>/dev/null || true
   exit 1
 fi
 
