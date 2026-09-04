@@ -9,6 +9,7 @@ import { LocalInferenceRuntimeCard } from './LocalInferenceRuntimeCard';
 import { LocalInferenceBridgeCard } from './LocalInferenceBridgeCard';
 import { LocalInferenceOpsCard } from './LocalInferenceOpsCard';
 import { LocalInferenceBenchmarkCard } from './LocalInferenceBenchmarkCard';
+import { LocalInferenceReadinessCard } from './LocalInferenceReadinessCard';
 import { LockedPreview } from '../dashboard/LockedPreview';
 
 export const MlxStudio: React.FC = () => {
@@ -86,6 +87,7 @@ export const MlxStudio: React.FC = () => {
         compact={envReady}
       />
 
+      <LocalInferenceReadinessCard />
       <LocalInferenceRuntimeCard />
       <LocalInferenceBridgeCard />
       <LocalInferenceOpsCard />
