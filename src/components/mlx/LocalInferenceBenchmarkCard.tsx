@@ -9,7 +9,7 @@ const inputClass =
 const buttonClass =
   'inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-md text-caption font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50 disabled:cursor-not-allowed';
 
-const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+const shellQuote = (value: string) => `'${value.split("'").join("'\\''")}'`;
 
 export const LocalInferenceBenchmarkCard: React.FC = () => {
   const [runtime, setRuntime] = useState<RuntimeKind>('omlx');
