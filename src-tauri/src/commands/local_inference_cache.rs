@@ -36,25 +36,33 @@ fn expand_and_validate_home_path(value: &str) -> Result<PathBuf, String> {
     let canonical_home = home
         .canonicalize()
         .map_err(|e| format!("Failed to resolve HOME: {e}"))?;
-    if !expanded.exists() {
-        let parent = expanded
-            .parent()
-            .ok_or_else(|| format!("Invalid cache path: {value}"))?;
-        let canonical_parent = parent
+
+    if expanded.exists() {
+        let canonical = expanded
             .canonicalize()
-            .map_err(|e| format!("Cache parent path not found: {} ({e})", parent.display()))?;
-        if !canonical_parent.starts_with(&canonical_home) {
+            .map_err(|e| format!("Failed to resolve cache path {value}: {e}"))?;
+        if !canonical.starts_with(&canonical_home) {
             return Err(format!("Cache path must stay under HOME: {value}"));
         }
-        return Ok(expanded);
+        return Ok(canonical);
     }
-    let canonical = expanded
+
+    // A cache directory may legitimately not exist before the first oMLX run. Walk upward to
+    // the nearest existing ancestor and canonicalize that ancestor, which both permits a future
+    // ~/.omlx/cache path and still rejects `~/../...` or symlink escapes.
+    let mut ancestor = expanded.as_path();
+    while !ancestor.exists() {
+        ancestor = ancestor
+            .parent()
+            .ok_or_else(|| format!("Cache path has no existing ancestor: {value}"))?;
+    }
+    let canonical_ancestor = ancestor
         .canonicalize()
-        .map_err(|e| format!("Failed to resolve cache path {value}: {e}"))?;
-    if !canonical.starts_with(&canonical_home) {
+        .map_err(|e| format!("Failed to resolve cache ancestor {}: {e}", ancestor.display()))?;
+    if !canonical_ancestor.starts_with(&canonical_home) {
         return Err(format!("Cache path must stay under HOME: {value}"));
     }
-    Ok(canonical)
+    Ok(expanded)
 }
 
 fn scan(path: &Path, inspection: &mut CacheInspection) {
@@ -134,6 +142,7 @@ mod tests {
     #[test]
     fn rejects_paths_outside_home() {
         assert!(expand_and_validate_home_path("/tmp").is_err());
+        assert!(expand_and_validate_home_path("~/../tmp/cache").is_err());
     }
 
     #[test]
