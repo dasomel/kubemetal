@@ -9,7 +9,7 @@ Model tiering, agy rotation, and the failure ladder are owned by the global
 
 | Lane | Scope (disjoint — do not cross) | Worker | Model |
 |------|--------------------------------|--------|-------|
-| `rust-backend` | `src-tauri/**`, `scripts/**` (k8s manifests, mlx/prefect/ingest/airgap/e2e host scripts), `Cargo.toml`, `tauri.conf.json`, `capabilities/` | agy (primary) | `Gemini 3.6 Flash (High)` → `Claude Opus 4.6 (Thinking)` on quota exhaustion; native fallback `sonnet` |
+| `rust-backend` | `src-tauri/**`, `scripts/**` (k8s manifests, mlx/prefect/ingest/airgap/e2e host scripts), `Cargo.toml`, `tauri.conf.json`, `capabilities/` | agy (primary) | `Gemini 3.8 Flash (High)` → `Claude Opus 4.6 (Thinking)` on quota exhaustion; native fallback `sonnet` |
 | `frontend` | `src/**`, `package.json`, `tsconfig.json`, `vite.config.ts`, `index.html` | agy (primary) | same rotation; native fallback `sonnet` |
 | `ui-design` | `DESIGN.md`, `tailwind.config.js`, component styling | `designer` subagent | `sonnet` |
 | `qa/verify` | `cargo check`/`clippy`, `tsc --noEmit`, DESIGN.md lint, doc↔code sync (D-registry, IPC names) | `verifier` / `code-reviewer` subagent | `sonnet` (1st pass) |
@@ -26,9 +26,11 @@ not thorough.
 Dispatch mechanics (`agyp` vs raw `agy`, `--add-dir`, permission flags, rotation, failure
 ladder) belong to the global `<agy_cli>` — don't restate them here. What this repo adds:
 
-- **`agyp` injection reaches `CLAUDE.md` + this file, and nothing else.** `docs/02` §4.1
-  (IPC names) and `docs/03` §4 (D-registry) are *not* injected, so a prompt saying "follow the
-  registry" gives the worker nothing. Quote the specific decisions the lane must honor.
+- **`agyp` injection reaches `CLAUDE.md` (which now expands one level to `AGENTS.md`) + this
+  file, and nothing else.** `AGENTS.md` carries the D-registry decisions as summary bullets, but
+  the full `docs/02` §4.1 (IPC names) and `docs/03` §4 (D-registry) source docs are *not*
+  injected, so a prompt saying "follow the registry" still gives the worker only the summary.
+  Quote the specific decision text the lane must honor when it matters.
 - **Lanes own disjoint paths** (table above), max 5 concurrent. If scopes must overlap, use
   worktree isolation. On lane silence: one follow-up with a timeout, and stop it before
   starting a replacement — two lanes on one file has bitten this repo twice.
