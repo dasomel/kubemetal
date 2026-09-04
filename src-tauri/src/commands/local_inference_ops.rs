@@ -2,8 +2,11 @@ use std::path::PathBuf;
 use std::process::Stdio;
 
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 use tokio::process::Command;
 
+use crate::commands::guardrails::get_guardrail_status;
+use crate::commands::mlx::MlxState;
 use crate::services::local_inference::{
     loopback_http_request, LocalInferenceRuntimeKind, RuntimeCapabilities,
 };
@@ -79,6 +82,31 @@ pub struct LocalInferenceDiagnostics {
     pub findings: Vec<RuntimeDiagnosticFinding>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ModelLoadPreflightRequest {
+    pub model_id: String,
+    pub estimated_memory_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum AdmissionDecision {
+    Allow,
+    Warn,
+    Deny,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ModelLoadPreflight {
+    pub model_id: String,
+    pub decision: AdmissionDecision,
+    pub reasons: Vec<String>,
+    pub memory_pressure_level: String,
+    pub thermal_state: Option<String>,
+    pub training_active: bool,
+    pub metal_wired_limit_mb: Option<u64>,
+}
+
 #[tauri::command]
 pub async fn list_local_inference_adapters() -> Result<Vec<RuntimeAdapterDescriptor>, String> {
     Ok(all_runtime_adapters())
@@ -115,8 +143,6 @@ async fn route_probe(
 ) -> ApiRouteProbe {
     match loopback_http_request(endpoint, "POST", path, Some(body), api_key).await {
         Ok(response) => {
-            // A model/auth/validation error still proves the route exists. Only 404/405 means
-            // the advertised compatibility surface is not available at this endpoint.
             let exists = !matches!(response.status, 404 | 405);
             ApiRouteProbe {
                 name: name.into(),
@@ -246,6 +272,84 @@ async fn sysctl_u64(name: &str) -> Option<u64> {
         return None;
     }
     String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+}
+
+#[tauri::command]
+pub async fn preflight_local_inference_model_load(
+    app: tauri::AppHandle,
+    request: ModelLoadPreflightRequest,
+) -> Result<ModelLoadPreflight, String> {
+    if request.model_id.trim().is_empty() {
+        return Err("model_id is required".into());
+    }
+    let guardrail = get_guardrail_status(app.clone()).await?;
+    let training_active = {
+        let state = app.state::<MlxState>();
+        let guard = state.training.lock().map_err(|e| e.to_string())?;
+        guard.as_ref().is_some_and(|training| {
+            !matches!(training.status.as_str(), "done" | "error" | "killed")
+        })
+    };
+    let metal_wired_limit_mb = sysctl_u64("iogpu.wired_limit_mb").await;
+    let mut decision = AdmissionDecision::Allow;
+    let mut reasons = Vec::new();
+
+    if guardrail.memory_pressure_level == "critical" {
+        decision = AdmissionDecision::Deny;
+        reasons.push("macOS memory pressure is critical".into());
+    } else if guardrail.memory_pressure_level == "warn" {
+        decision = AdmissionDecision::Warn;
+        reasons.push("macOS memory pressure is elevated".into());
+    } else if guardrail.memory_pressure_level == "unknown" {
+        decision = AdmissionDecision::Warn;
+        reasons.push("memory pressure could not be measured".into());
+    }
+
+    if matches!(guardrail.thermal_state.as_deref(), Some("critical") | Some("serious")) {
+        decision = AdmissionDecision::Deny;
+        reasons.push(format!(
+            "thermal state is {}",
+            guardrail.thermal_state.as_deref().unwrap_or("unknown")
+        ));
+    } else if guardrail.thermal_state.as_deref() == Some("fair") && decision == AdmissionDecision::Allow {
+        decision = AdmissionDecision::Warn;
+        reasons.push("thermal state is fair; additional inference load may throttle".into());
+    }
+
+    if training_active && decision != AdmissionDecision::Deny {
+        decision = AdmissionDecision::Warn;
+        reasons.push("MLX fine-tuning is active; model load will compete for unified memory".into());
+    }
+
+    if let (Some(estimated), Some(limit_mb)) = (request.estimated_memory_bytes, metal_wired_limit_mb) {
+        let limit_bytes = limit_mb.saturating_mul(1024 * 1024);
+        let safe_bytes = limit_bytes.saturating_mul(9) / 10;
+        if estimated > safe_bytes {
+            decision = AdmissionDecision::Deny;
+            reasons.push(format!(
+                "estimated model memory {} MiB exceeds 90% of Metal wired limit {} MiB",
+                estimated / 1024 / 1024,
+                limit_mb
+            ));
+        } else if training_active && estimated > safe_bytes / 2 && decision != AdmissionDecision::Deny {
+            decision = AdmissionDecision::Warn;
+            reasons.push("estimated model memory consumes more than half of the guarded Metal budget while training is active".into());
+        }
+    }
+
+    if reasons.is_empty() {
+        reasons.push("host guardrails report no blocking condition".into());
+    }
+
+    Ok(ModelLoadPreflight {
+        model_id: request.model_id,
+        decision,
+        reasons,
+        memory_pressure_level: guardrail.memory_pressure_level,
+        thermal_state: guardrail.thermal_state,
+        training_active,
+        metal_wired_limit_mb,
+    })
 }
 
 fn tail_file(path: &PathBuf, max_bytes: usize) -> String {
