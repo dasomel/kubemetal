@@ -73,9 +73,6 @@ fn expand_and_validate_home_path(value: &str) -> Result<PathBuf, String> {
         return Ok(canonical);
     }
 
-    // A cache directory may legitimately not exist before the first oMLX run. Walk upward to
-    // the nearest existing ancestor and canonicalize that ancestor, which both permits a future
-    // ~/.omlx/cache path and still rejects `~/../...` or symlink escapes.
     let mut ancestor = expanded.as_path();
     while !ancestor.exists() {
         ancestor = ancestor
@@ -117,9 +114,6 @@ fn scan(path: &Path, inspection: &mut CacheInspection) {
             return;
         }
     };
-
-    // Never follow symlinks while accounting a cache tree. A cache entry pointing outside HOME
-    // must not turn a harmless size inspection into arbitrary filesystem traversal.
     if metadata.file_type().is_symlink() {
         return;
     }
@@ -152,7 +146,10 @@ fn scan(path: &Path, inspection: &mut CacheInspection) {
 }
 
 fn file_is_older_than(metadata: &std::fs::Metadata, cutoff: SystemTime) -> bool {
-    metadata.modified().map(|modified| modified <= cutoff).unwrap_or(false)
+    metadata
+        .modified()
+        .map(|modified| modified <= cutoff)
+        .unwrap_or(false)
 }
 
 fn cleanup_tree(path: &Path, root: &Path, cutoff: SystemTime, result: &mut CacheCleanupResult) {
@@ -200,15 +197,14 @@ fn cleanup_tree(path: &Path, root: &Path, cutoff: SystemTime, result: &mut Cache
         }
     }
 
-    // Empty subdirectories are disposable cache structure. Never remove the selected root.
-    if !result.dry_run && path != root {
-        if std::fs::read_dir(path)
+    if !result.dry_run
+        && path != root
+        && std::fs::read_dir(path)
             .map(|mut entries| entries.next().is_none())
             .unwrap_or(false)
-            && std::fs::remove_dir(path).is_ok()
-        {
-            result.removed_directories += 1;
-        }
+        && std::fs::remove_dir(path).is_ok()
+    {
+        result.removed_directories += 1;
     }
 }
 
@@ -244,7 +240,10 @@ pub async fn cleanup_local_inference_cache(
     request: CacheCleanupRequest,
 ) -> Result<CacheCleanupResult, String> {
     if request.max_age_hours == 0 {
-        return Err("max_age_hours must be at least 1; use an explicit age threshold for cache cleanup".into());
+        return Err(
+            "max_age_hours must be at least 1; use an explicit age threshold for cache cleanup"
+                .into(),
+        );
     }
     let path = expand_and_validate_home_path(&request.path)?;
     validate_cleanup_root(&path)?;
