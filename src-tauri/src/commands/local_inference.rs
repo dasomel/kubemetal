@@ -215,11 +215,26 @@ pub async fn load_omlx_model(
     app: tauri::AppHandle,
     request: OmlxModelActionRequest,
 ) -> Result<RuntimeActionResult, String> {
+    // Re-read the model pool in the backend so safety does not depend on the UI passing a size.
+    // Prefer actual_size when upstream reports it, then estimated_size, then an explicit caller
+    // estimate. Missing size remains unknown; memory/thermal/training guardrails still apply.
+    let discovered_size = probe_live_runtime(
+        LocalInferenceRuntimeKind::Omlx,
+        &request.endpoint,
+        request.api_key.as_deref(),
+    )
+    .await
+    .models
+    .into_iter()
+    .find(|model| model.id == request.model_id)
+    .and_then(|model| model.actual_size.or(model.estimated_size));
+    let estimated_memory_bytes = discovered_size.or(request.estimated_memory_bytes);
+
     let preflight = preflight_local_inference_model_load(
         app,
         ModelLoadPreflightRequest {
             model_id: request.model_id.clone(),
-            estimated_memory_bytes: request.estimated_memory_bytes,
+            estimated_memory_bytes,
         },
     )
     .await?;
