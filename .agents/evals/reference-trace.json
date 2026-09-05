@@ -1,0 +1,14 @@
+{
+  "schema":"openforge-agent-trace/v1",
+  "traceId":"kubemetal-reference-change",
+  "repository":"dasomel/kubemetal",
+  "taskType":"bug-fix",
+  "events":[
+    {"id":"1","type":"scope","approved":true,"detail":"Keep change inside the affected desktop/native adapter boundary"},
+    {"id":"2","type":"reproduction","success":true,"evidence":["native/runtime defect reproduced"]},
+    {"id":"3","type":"change","scope":"approved","detail":"Minimal adapter/service change"},
+    {"id":"4","type":"verification","success":true,"class":"regression","evidence":["regression test passes"]},
+    {"id":"5","type":"verification","success":true,"class":"runtime","evidence":["representative macOS/Tauri/ML runtime behavior verified"]},
+    {"id":"6","type":"completion","state":"A","evidenceRefs":["4","5"]}
+  ]
+}
