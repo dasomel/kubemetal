@@ -5,6 +5,11 @@ import { MlxEnvCard } from './MlxEnvCard';
 import { MlxFineTuneCard } from './MlxFineTuneCard';
 import { MlxGuardrailCard } from './MlxGuardrailCard';
 import { MlxServingCard } from './MlxServingCard';
+import { LocalInferenceRuntimeCard } from './LocalInferenceRuntimeCard';
+import { LocalInferenceBridgeCard } from './LocalInferenceBridgeCard';
+import { LocalInferenceOpsCard } from './LocalInferenceOpsCard';
+import { LocalInferenceBenchmarkCard } from './LocalInferenceBenchmarkCard';
+import { LocalInferenceReadinessCard } from './LocalInferenceReadinessCard';
 import { LockedPreview } from '../dashboard/LockedPreview';
 
 export const MlxStudio: React.FC = () => {
@@ -32,9 +37,6 @@ export const MlxStudio: React.FC = () => {
   } = useMlx();
   const { t } = useTranslation();
 
-  // 환경이 준비되기 전엔 설치 카드만 히어로로 노출하고, 파인튜닝/가드레일/서빙은
-  // "다음 단계" 잠긴 프리뷰로 축소한다. 준비되면 환경 카드는 한 줄 배지로 접혀
-  // 파인튜닝 카드(진행 상황 포함)가 자연스럽게 상단으로 올라온다.
   const envReady = !!(envStatus?.venv_exists && envStatus?.mlx_lm_installed);
 
   const fineTune = (
@@ -84,6 +86,12 @@ export const MlxStudio: React.FC = () => {
         onSetup={setupEnv}
         compact={envReady}
       />
+
+      <LocalInferenceReadinessCard />
+      <LocalInferenceRuntimeCard />
+      <LocalInferenceBridgeCard />
+      <LocalInferenceOpsCard />
+      <LocalInferenceBenchmarkCard />
 
       {envReady ? (
         <>

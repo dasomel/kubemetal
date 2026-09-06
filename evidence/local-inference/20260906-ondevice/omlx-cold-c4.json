@@ -1,0 +1,155 @@
+{
+  "schema_version": 2,
+  "captured_at": "2026-09-06T12:15:22.936276+00:00",
+  "runtime": "omlx",
+  "runtime_version": "0.6.4",
+  "runtime_pid": 53467,
+  "endpoint": "http://127.0.0.1:8000",
+  "model": {
+    "id": "mlx-community__Qwen2.5-0.5B-Instruct-4bit",
+    "repo": null,
+    "revision": null,
+    "digest": null,
+    "quantization": null
+  },
+  "cache": {
+    "state": "cold",
+    "directory": "/Users/m/.omlx/cache",
+    "bytes_before": 0,
+    "bytes_after": 0
+  },
+  "traffic": {
+    "requests": 8,
+    "concurrency": 4,
+    "max_tokens": 128,
+    "prompt_chars": 61,
+    "stream": true
+  },
+  "host": {
+    "platform": "macOS-26.6.2-arm64-arm-64bit",
+    "machine": "arm64",
+    "macos": "26.6.2",
+    "chip": "Apple M4 Pro",
+    "memory_bytes": 68719476736,
+    "memory_pressure_level": "1",
+    "thermal_state": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded",
+    "metal_wired_limit_mb": 0
+  },
+  "process": {
+    "rss_bytes_before": 743243776,
+    "rss_bytes_after": 761511936,
+    "peak_unified_memory_bytes": null,
+    "note": "RSS is measured at the process boundary; peak unified/Metal allocation requires runtime or host telemetry and remains null here."
+  },
+  "summary": {
+    "success": 8,
+    "failed": 0,
+    "wall_seconds": 1.5735134999267757,
+    "requests_per_second": 5.0841635615914855,
+    "completion_tokens_per_second": 563.0711144462571,
+    "latency_ms_p50": 745.9260204341263,
+    "latency_ms_p95": 1023.0101669440046,
+    "latency_ms_max": 1023.0101669440046,
+    "ttft_ms_p50": 5.19681244622916,
+    "ttft_ms_p95": 9.107875055633485,
+    "prefill_tokens_per_second_p50_api_boundary": 13716.283461856063,
+    "generation_tokens_per_second_p50": 144.46094621908213,
+    "queue_wait_ms": null,
+    "model_load_ms": null
+  },
+  "measurement_notes": [
+    "API-boundary prefill tok/s is prompt_tokens / TTFT and includes scheduling/network/model-load overhead.",
+    "queue wait and engine-only model load time remain null unless the upstream runtime exposes trustworthy values.",
+    "unsupported values are null, never zero-filled."
+  ],
+  "samples": [
+    {
+      "ok": true,
+      "latency_ms": 748.5458329319954,
+      "ttft_ms": 9.057082934305072,
+      "prompt_tokens": 38,
+      "completion_tokens": 96,
+      "total_tokens": 134,
+      "prefill_tokens_per_second": 4195.611354740857,
+      "generation_tokens_per_second": 129.81941915992616,
+      "error": null
+    },
+    {
+      "ok": true,
+      "latency_ms": 785.4021668899804,
+      "ttft_ms": 8.747791987843812,
+      "prompt_tokens": 38,
+      "completion_tokens": 100,
+      "total_tokens": 138,
+      "prefill_tokens_per_second": 4343.9533144827765,
+      "generation_tokens_per_second": 128.75740256095335,
+      "error": null
+    },
+    {
+      "ok": true,
+      "latency_ms": 983.3654590183869,
+      "ttft_ms": 9.107875055633485,
+      "prompt_tokens": 38,
+      "completion_tokens": 118,
+      "total_tokens": 156,
+      "prefill_tokens_per_second": 4172.213580872071,
+      "generation_tokens_per_second": 121.11786650922414,
+      "error": null
+    },
+    {
+      "ok": true,
+      "latency_ms": 1023.0101669440046,
+      "ttft_ms": 9.032416972331703,
+      "prompt_tokens": 38,
+      "completion_tokens": 118,
+      "total_tokens": 156,
+      "prefill_tokens_per_second": 4207.068840643919,
+      "generation_tokens_per_second": 116.37336223925675,
+      "error": null
+    },
+    {
+      "ok": true,
+      "latency_ms": 743.3062079362571,
+      "ttft_ms": 1.6458329046145082,
+      "prompt_tokens": 38,
+      "completion_tokens": 118,
+      "total_tokens": 156,
+      "prefill_tokens_per_second": 23088.61360922935,
+      "generation_tokens_per_second": 159.10247327823814,
+      "error": null
+    },
+    {
+      "ok": true,
+      "latency_ms": 706.370749976486,
+      "ttft_ms": 1.4641250018030405,
+      "prompt_tokens": 38,
+      "completion_tokens": 118,
+      "total_tokens": 156,
+      "prefill_tokens_per_second": 25954.068097466927,
+      "generation_tokens_per_second": 167.39805786934977,
+      "error": null
+    },
+    {
+      "ok": true,
+      "latency_ms": 503.61012492794544,
+      "ttft_ms": 1.4264999190345407,
+      "prompt_tokens": 38,
+      "completion_tokens": 100,
+      "total_tokens": 138,
+      "prefill_tokens_per_second": 26638.62751966962,
+      "generation_tokens_per_second": 199.13034798421708,
+      "error": null
+    },
+    {
+      "ok": true,
+      "latency_ms": 587.527499999851,
+      "ttft_ms": 1.6175410710275173,
+      "prompt_tokens": 38,
+      "completion_tokens": 118,
+      "total_tokens": 156,
+      "prefill_tokens_per_second": 23492.448309742827,
+      "generation_tokens_per_second": 201.39613297533091,
+      "error": null
+    }
+  ]
+}

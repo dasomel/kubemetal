@@ -1,0 +1,6 @@
+macOS loopback             http://127.0.0.1:8000/health ... OK
+{"status":"healthy","default_model":"mlx-community__Qwen2-VL-2B-Instruct-4bit","engine_pool":{"model_count":6,"loaded_count":1,"final_ceiling":29893194216,"current_model_memory":4498563567},"mcp":null}
+private bridge on host     http://127.0.0.1:18000/health ... OK
+{"status":"healthy","default_model":"mlx-community__Qwen2-VL-2B-Instruct-4bit","engine_pool":{"model_count":6,"loaded_count":1,"final_ceiling":29893194216,"current_model_memory":4498563567},"mcp":null}
+Colima VM                  http://host.lima.internal:18000/health ... {"status":"healthy","default_model":"mlx-community__Qwen2-VL-2B-Instruct-4bit","engine_pool":{"model_count":6,"loaded_count":0,"final_ceiling":25338422688,"current_model_memory":0},"mcp":null}
+Colima VM → KubeMetal private bridge → oMLX: OK
