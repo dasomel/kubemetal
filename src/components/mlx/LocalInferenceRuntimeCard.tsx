@@ -375,10 +375,19 @@ export const LocalInferenceRuntimeCard: React.FC = () => {
           )}
         </div>
 
-        <label className="block text-caption text-inkMuted max-w-xl">
-          oMLX API key (session only; never persisted)
-          <input className={`${inputClass} mt-1`} type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Optional" />
-        </label>
+        <div className="grid grid-cols-1 gap-2">
+          <label className="text-caption text-inkMuted">
+            oMLX API key (session only; never persisted)
+            <input
+              className={`${inputClass} mt-1`}
+              type="password"
+              autoComplete="off"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="Optional — leave blank if admin auth is disabled"
+            />
+          </label>
+        </div>
 
         <div className="flex gap-2">
           {status?.managed_process ? (

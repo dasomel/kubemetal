@@ -1,0 +1,9 @@
+PASS: local inference air-gap readiness
+  runtime:   omlx
+  endpoint:  http://127.0.0.1:8000
+  model dir: /Users/m/.kubemetal/models
+  health:    HTTP 200
+  models:    HTTP 200
+
+This proves the selected runtime/model path and API probes are local-only. Final acceptance still
+requires repeating this command with external networking actually disconnected.

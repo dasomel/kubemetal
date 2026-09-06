@@ -16,7 +16,7 @@ const buttonClass =
 
 export const LocalInferenceBridgeCard: React.FC<{ defaultTargetPort?: number }> = ({ defaultTargetPort = 8000 }) => {
   const [status, setStatus] = useState<BridgeStatus>();
-  const [bindHost, setBindHost] = useState('192.168.64.1');
+  const [bindHost, setBindHost] = useState('127.0.0.1');
   const [bindPort, setBindPort] = useState(18000);
   const [targetPort, setTargetPort] = useState(defaultTargetPort);
   const [busy, setBusy] = useState(false);
@@ -33,8 +33,10 @@ export const LocalInferenceBridgeCard: React.FC<{ defaultTargetPort?: number }> 
   useEffect(() => {
     refresh();
     // Prefill from the deploy target's D10-verified bridge address when one exists, instead
-    // of leaving the hardcoded placeholder — an unverified/keep_base target (e.g. colima's
-    // DNS-name bridge) has no stored numeric address, so the placeholder is left as-is.
+    // of leaving the loopback default — an unverified/keep_base target (e.g. colima's
+    // DNS-name bridge, mac-gpu-service -> host.lima.internal) has no stored numeric address,
+    // so the loopback default is left as-is and is already reachable from pods through
+    // host.lima.internal.
     invoke<DeployTarget>('get_deploy_target')
       .then((target) => {
         if (target.bridge.kind === 'verified') {
@@ -42,7 +44,7 @@ export const LocalInferenceBridgeCard: React.FC<{ defaultTargetPort?: number }> 
         }
       })
       .catch(() => {
-        // Best-effort prefill only — leave the placeholder if the target can't be read.
+        // Best-effort prefill only — leave the loopback default if the target can't be read.
       });
   }, [refresh]);
 
@@ -68,7 +70,7 @@ export const LocalInferenceBridgeCard: React.FC<{ defaultTargetPort?: number }> 
             <Cable className="w-4 h-4 text-primary" /> Private inference relay
           </h3>
           <p className="text-caption text-inkMuted mt-1">
-            Keeps the inference runtime on 127.0.0.1 and exposes a KubeMetal-owned TCP relay only on an explicitly selected private host IP.
+            Keeps the inference runtime on 127.0.0.1 and exposes a KubeMetal-owned TCP relay only on an explicitly selected private host IP. On colima the bridge (mac-gpu-service) targets host.lima.internal with no numeric address, so a loopback bind here is already reachable from pods through host.lima.internal — a non-loopback bind is accepted only when it matches the D10-verified bridge address.
           </p>
         </div>
         <button className={`${buttonClass} bg-surfaceRaised text-ink`} onClick={refresh} disabled={busy}>

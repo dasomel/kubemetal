@@ -1,6 +1,6 @@
 # Local Inference Runtime (Issue #58)
 
-> Status: implementation complete enough for static/CI verification. Apple Silicon + real oMLX/model execution remains an on-device verification gate and must not be claimed until the runbook below passes.
+> Status: the runbook below passed on-device on 2026-09-06 (Apple M4 Pro, 64 GB, macOS 26, oMLX 0.6.4, colima vz) — see docs/12 §12 for the run record and evidence. Remaining gaps: external-network-disconnected repeat, warm/ssd-restore cache runs, external-cluster L2 bridge, and the mlx-lm fallback path via this UI.
 
 ## Goal
 
@@ -148,6 +148,8 @@ oMLX / MLX / Metal
 ```
 
 The relay is byte-transparent and therefore does not terminate or rewrite HTTP/SSE. OpenAI/Anthropic streaming responses can pass through unchanged.
+
+On colima (vz) the deploy target's bridge is `BridgeState::KeepBase` (DNS name `host.lima.internal`, no numeric address), so the bridge card defaults its private host IP to `127.0.0.1`: from inside the colima VM, `curl http://host.lima.internal:<bridge-port>/health` already reaches a relay bound to loopback, and a non-loopback bind is accepted only when it matches the D10-verified bridge address (measured 2026-09-06).
 
 For external clusters, do not infer or guess a reachable host address. Continue using KubeMetal's existing deploy-target/preflight bridge discovery and only bind an address that has been verified reachable from the target environment.
 

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "runtime": "omlx",
+  "endpoint": "http://127.0.0.1:8000",
+  "model_a": "mlx-community__Qwen2.5-0.5B-Instruct-4bit",
+  "model_b": "mlx-community__Qwen2.5-7B-Instruct-4bit",
+  "cache_state": "cold",
+  "runtime_pid": "53467",
+  "bridge_requested": 1,
+  "external_network_disconnected": false
+}

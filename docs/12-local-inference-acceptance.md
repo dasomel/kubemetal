@@ -162,3 +162,43 @@ Close #58 only after all code/CI gates are green **and** evidence exists for the
 managed start/stop/restart, two-model operations, API compatibility, private bridge, cold/warm/SSD
 cache behavior, concurrency 1/2/4/8, Metal/memory/thermal behavior, wrong-key/occupied-port/public-
 bind negative cases, and actual external-network-disconnected inference.
+
+## 12. Run record — 2026-09-06
+
+Target Mac: Apple M4 Pro, 64 GB, macOS 26, oMLX 0.6.4 (Homebrew), colima (vz) running. Packaged app
+built from this branch via `make app` at commit `3f94200` plus the uncommitted bridge-default/API-key
+UI fixes on top. Evidence: `evidence/local-inference/20260906-ondevice/` (`acceptance.log`,
+`airgap-readiness.txt`, `bridge.txt`, `manifest.json`, `multi-model.json`,
+`omlx-cold-c{1,2,4,8}.json`).
+
+- **Managed runtime**: started from MLX Studio → Local AI Runtime, managed PID 53467, argv `omlx
+  serve --host 127.0.0.1 --port 8000 --model-dir ~/.kubemetal/models --paged-ssd-cache-dir
+  ~/.omlx/cache --paged-ssd-cache-max-size 20GB --hot-cache-max-size 4GB
+  --max-concurrent-requests 4 --memory-guard balanced`; `/health` healthy. 6 models discovered from
+  `~/.kubemetal/models` once the API key was entered in the card (admin cookie session works). Load
+  + Pin of `mlx-community/Qwen2.5-0.5B-Instruct-4bit` reflected as Loaded/Pinned, actual size 457.8 MB.
+- **Private bridge**: started at `127.0.0.1:18000 → 127.0.0.1:8000`. From inside the colima VM,
+  `curl http://host.lima.internal:18000/health` and `http://host.lima.internal:8000/health` both
+  returned 200 (`bridge.txt`: "Colima VM → KubeMetal private bridge → oMLX: OK").
+- **Air-gap readiness**: `verify_local_inference_airgap.sh` PASS (local-only probes only; the
+  external-network-disconnected repeat was **not** done).
+- **Benchmark matrix**, model `Qwen2.5-0.5B-Instruct-4bit`, 8 streaming requests per concurrency,
+  cache label `cold` (label only — the model had already been loaded once before the matrix, so
+  treat as warm-ish; an `ssd-restore` run was not done):
+
+  | Concurrency | TTFT p50 | Gen tok/s p50 | Latency p50 |
+  |---|---|---|---|
+  | 1 | 1.5 ms | 327 tok/s | 307 ms |
+  | 2 | 2.1 ms | 195 tok/s | 506 ms |
+  | 4 | 5.2 ms | 144 tok/s | 746 ms |
+  | 8 | 10.2 ms | 100 tok/s | 1207 ms |
+
+  0 errors across 32 requests; runtime RSS after the c8 run was 733 MB.
+- **Multi-model harness** (0.5B ↔ 7B-Instruct-4bit, 2 cycles, 1 chat round each): `success=true`,
+  14 events, 7B load 2675 ms cold then 800 ms on the second cycle, no errors.
+- **Stop**: "Stop managed oMLX" sent SIGTERM to PID 53467 only; `omlx.log` shows a clean "Engine
+  pool shutdown … Finished server process [53467]"; port 8000 released; no separate exit-code
+  evidence was recorded (user-initiated stop, by design). Quitting the app closed the relay port
+  18000.
+- **Not verified in this run**: air-gapped (network actually disconnected) repeat, warm/ssd-restore
+  cache runs, external-cluster L2 bridge, the mlx-lm fallback path via this UI.
