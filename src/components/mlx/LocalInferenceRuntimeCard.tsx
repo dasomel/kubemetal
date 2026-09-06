@@ -13,6 +13,12 @@ import {
 
 type RuntimeKind = 'omlx' | 'mlx-lm';
 
+// `omlx serve --memory-guard` requires one of these values (bare `--memory-guard` fails
+// argparse — measured against installed oMLX 0.6.4). Keep in sync with
+// MEMORY_GUARD_TIERS in src-tauri/src/services/local_inference.rs.
+const MEMORY_GUARD_TIERS = ['off', 'safe', 'balanced', 'aggressive'] as const;
+type MemoryGuardTier = (typeof MEMORY_GUARD_TIERS)[number];
+
 interface RuntimeCapabilities {
   openai_chat: boolean;
   openai_responses: boolean;
@@ -129,14 +135,14 @@ export const LocalInferenceRuntimeCard: React.FC = () => {
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
   const [port, setPort] = useState(8000);
-  const [modelDir, setModelDir] = useState('~/.omlx/models');
+  const [modelDir, setModelDir] = useState('~/.kubemetal/models');
   const [apiKey, setApiKey] = useState('');
   const [cacheEnabled, setCacheEnabled] = useState(true);
   const [ssdCacheDir, setSsdCacheDir] = useState('~/.omlx/cache');
   const [ssdCacheSize, setSsdCacheSize] = useState('20GB');
   const [hotCacheSize, setHotCacheSize] = useState('4GB');
   const [maxConcurrency, setMaxConcurrency] = useState(4);
-  const [memoryGuard, setMemoryGuard] = useState(true);
+  const [memoryGuardTier, setMemoryGuardTier] = useState<MemoryGuardTier>('balanced');
   const [modelTtl, setModelTtl] = useState<Record<string, string>>({});
   const [modelAlias, setModelAlias] = useState<Record<string, string>>({});
 
@@ -204,13 +210,12 @@ export const LocalInferenceRuntimeCard: React.FC = () => {
     runtime: 'omlx' as const,
     port,
     model_dir: modelDir || null,
-    pinned_models: [],
     cache_enabled: cacheEnabled,
     paged_ssd_cache_dir: cacheEnabled && ssdCacheDir ? ssdCacheDir : null,
     paged_ssd_cache_max_size: cacheEnabled && ssdCacheSize ? ssdCacheSize : null,
     hot_cache_max_size: cacheEnabled && hotCacheSize ? hotCacheSize : null,
     max_concurrent_requests: maxConcurrency,
-    memory_guard: memoryGuard,
+    memory_guard_tier: memoryGuardTier,
   });
 
   const start = () =>
@@ -345,8 +350,19 @@ export const LocalInferenceRuntimeCard: React.FC = () => {
             Tiered KV cache
           </label>
           <label className="inline-flex items-center gap-2">
-            <input type="checkbox" checked={memoryGuard} onChange={(e) => setMemoryGuard(e.target.checked)} disabled={!!status?.managed_process} />
             Memory guard
+            <select
+              className={`${inputClass} w-auto py-1`}
+              value={memoryGuardTier}
+              onChange={(e) => setMemoryGuardTier(e.target.value as MemoryGuardTier)}
+              disabled={!!status?.managed_process}
+            >
+              {MEMORY_GUARD_TIERS.map((tier) => (
+                <option key={tier} value={tier}>
+                  {tier}
+                </option>
+              ))}
+            </select>
           </label>
           <button className={`${buttonClass} bg-surfaceRaised text-ink`} onClick={inspectCache} disabled={!cacheEnabled || !ssdCacheDir.trim()}>
             <Database className="w-3.5 h-3.5" /> Inspect cache

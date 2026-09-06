@@ -50,21 +50,26 @@ pub struct RuntimeLaunchConfig {
     pub runtime: LocalInferenceRuntimeKind,
     pub port: u16,
     pub model_dir: Option<String>,
-    #[serde(default)]
-    pub pinned_models: Vec<String>,
     #[serde(default = "default_true")]
     pub cache_enabled: bool,
     pub paged_ssd_cache_dir: Option<String>,
     pub paged_ssd_cache_max_size: Option<String>,
     pub hot_cache_max_size: Option<String>,
     pub max_concurrent_requests: Option<u32>,
-    #[serde(default)]
-    pub memory_guard: bool,
+    /// `omlx serve --memory-guard` takes a required value (measured 2026-09-06: bare
+    /// `--memory-guard` fails argparse). `None` omits the flag; `Some` must be one of
+    /// `MEMORY_GUARD_TIERS`, validated in `build_omlx_command`. Pinning is a post-start
+    /// admin-API concern (`set_omlx_model_settings_sparse`), not a launch flag — `omlx serve`
+    /// has no `--pin` (measured); there is no launch-config field for it.
+    pub memory_guard_tier: Option<String>,
 }
 
 fn default_true() -> bool {
     true
 }
+
+/// Valid values for `omlx serve --memory-guard <tier>` (measured against 0.6.4's argparse).
+pub const MEMORY_GUARD_TIERS: [&str; 4] = ["off", "safe", "balanced", "aggressive"];
 
 impl Default for RuntimeLaunchConfig {
     fn default() -> Self {
@@ -72,13 +77,12 @@ impl Default for RuntimeLaunchConfig {
             runtime: LocalInferenceRuntimeKind::Omlx,
             port: 8000,
             model_dir: None,
-            pinned_models: Vec::new(),
             cache_enabled: true,
             paged_ssd_cache_dir: None,
             paged_ssd_cache_max_size: None,
             hot_cache_max_size: None,
             max_concurrent_requests: None,
-            memory_guard: false,
+            memory_guard_tier: None,
         }
     }
 }
@@ -114,6 +118,11 @@ pub struct RuntimeModel {
 #[derive(Debug)]
 pub struct HttpResponse {
     pub status: u16,
+    /// Header name/value pairs in wire order, name un-lowercased (HTTP header names are
+    /// case-insensitive — callers that need to find one should compare case-insensitively,
+    /// see `extract_admin_session_cookie`). A repeated header (e.g. multiple `Set-Cookie`)
+    /// appears as multiple entries.
+    pub headers: Vec<(String, String)>,
     pub body: String,
 }
 
@@ -309,6 +318,17 @@ fn validate_size(value: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_memory_guard_tier(tier: &str) -> Result<(), String> {
+    if MEMORY_GUARD_TIERS.contains(&tier) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Invalid memory guard tier: {tier} (expected one of {})",
+            MEMORY_GUARD_TIERS.join(", ")
+        ))
+    }
+}
+
 pub async fn build_omlx_command(config: &RuntimeLaunchConfig) -> Result<Command, String> {
     if config.runtime != LocalInferenceRuntimeKind::Omlx {
         return Err("The shared runtime lifecycle currently owns only oMLX. mlx-lm remains managed by the existing MLX Studio serving path.".into());
@@ -340,14 +360,6 @@ pub async fn build_omlx_command(config: &RuntimeLaunchConfig) -> Result<Command,
         .map_err(|e| format!("Path validation task failed: {e}"))??;
         command.arg("--model-dir").arg(path);
     }
-    if !config.pinned_models.is_empty() {
-        for model in &config.pinned_models {
-            if model.trim().is_empty() || model.contains(',') || model.contains('\n') {
-                return Err(format!("Invalid pinned model id: {model}"));
-            }
-        }
-        command.arg("--pin").arg(config.pinned_models.join(","));
-    }
     if !config.cache_enabled {
         command.arg("--no-cache");
     }
@@ -369,8 +381,9 @@ pub async fn build_omlx_command(config: &RuntimeLaunchConfig) -> Result<Command,
         }
         command.arg("--max-concurrent-requests").arg(max.to_string());
     }
-    if config.memory_guard {
-        command.arg("--memory-guard");
+    if let Some(tier) = config.memory_guard_tier.as_deref() {
+        validate_memory_guard_tier(tier)?;
+        command.arg("--memory-guard").arg(tier);
     }
 
     command.stdin(Stdio::null());
@@ -407,6 +420,31 @@ pub async fn loopback_http_request(
     body: Option<&str>,
     bearer_token: Option<&str>,
 ) -> Result<HttpResponse, String> {
+    loopback_http_request_inner(endpoint, method, path, body, bearer_token, None).await
+}
+
+/// Sibling of [`loopback_http_request`] for oMLX's `/admin/api/*` routes, which authenticate
+/// via a signed session cookie (`omlx_admin_session`) rather than the bearer token `/v1/*`
+/// accepts — measured 2026-09-06: a valid bearer key against `/admin/api/models` still 401s.
+/// Get the cookie pair from [`omlx_admin_session`] first.
+pub async fn loopback_http_request_with_cookie(
+    endpoint: &str,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    cookie: Option<&str>,
+) -> Result<HttpResponse, String> {
+    loopback_http_request_inner(endpoint, method, path, body, None, cookie).await
+}
+
+async fn loopback_http_request_inner(
+    endpoint: &str,
+    method: &str,
+    path: &str,
+    body: Option<&str>,
+    bearer_token: Option<&str>,
+    cookie: Option<&str>,
+) -> Result<HttpResponse, String> {
     let (host, port) = parse_loopback_endpoint(endpoint)?;
     if !path.starts_with('/') || path.contains('\r') || path.contains('\n') {
         return Err("Invalid HTTP path".into());
@@ -436,6 +474,14 @@ pub async fn loopback_http_request(
         request.push_str(token);
         request.push_str("\r\n");
     }
+    if let Some(cookie_value) = cookie.filter(|c| !c.is_empty()) {
+        if cookie_value.contains('\r') || cookie_value.contains('\n') {
+            return Err("Invalid session cookie".into());
+        }
+        request.push_str("Cookie: ");
+        request.push_str(cookie_value);
+        request.push_str("\r\n");
+    }
     request.push_str("\r\n");
     request.push_str(payload);
 
@@ -459,9 +505,71 @@ pub async fn loopback_http_request(
         .and_then(|line| line.split_whitespace().nth(1))
         .and_then(|code| code.parse::<u16>().ok())
         .ok_or_else(|| "Malformed HTTP status line".to_string())?;
+    let headers = head
+        .lines()
+        .skip(1)
+        .filter_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            Some((name.trim().to_string(), value.trim().to_string()))
+        })
+        .collect();
     Ok(HttpResponse {
         status,
+        headers,
         body: body.to_string(),
+    })
+}
+
+/// Extracts the `omlx_admin_session=<token>` pair from `Set-Cookie` response headers
+/// (case-insensitive header name; the cookie value ends at the first `;` — attributes like
+/// `HttpOnly`/`SameSite` follow). oMLX may emit multiple `Set-Cookie` headers, so every
+/// occurrence is scanned rather than assuming the admin session cookie is first or only.
+fn extract_admin_session_cookie(headers: &[(String, String)]) -> Option<String> {
+    headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("set-cookie"))
+        .find_map(|(_, value)| {
+            let pair = value.split(';').next()?.trim();
+            let (name, val) = pair.split_once('=')?;
+            let (name, val) = (name.trim(), val.trim());
+            // Defense in depth: `loopback_http_request_with_cookie` also rejects an embedded
+            // CR/LF before it would go out on the wire, but a tampered/synthesized header
+            // value must never survive extraction as a usable cookie pair in the first place.
+            if val.contains('\r') || val.contains('\n') {
+                return None;
+            }
+            (name == "omlx_admin_session" && !val.is_empty()).then(|| format!("{name}={val}"))
+        })
+}
+
+/// Exchanges the configured oMLX server API key for an admin session cookie via
+/// `/admin/api/login`. `/admin/api/*` (model load/unload/settings, the model list used for
+/// live probing) is guarded by a signed session cookie, never the bearer token `/v1/*` takes
+/// (measured 2026-09-06). Every admin-API caller must go through this first.
+pub async fn omlx_admin_session(endpoint: &str, api_key: &str) -> Result<String, String> {
+    if api_key.trim().is_empty() {
+        return Err(
+            "oMLX admin API requires the server API key configured in oMLX settings; enter it in the runtime card"
+                .into(),
+        );
+    }
+    let body = serde_json::json!({ "api_key": api_key, "remember": false }).to_string();
+    let response =
+        loopback_http_request_with_cookie(endpoint, "POST", "/admin/api/login", Some(&body), None)
+            .await?;
+    if !(200..300).contains(&response.status) {
+        // oMLX returns {"detail": "..."} for both failure modes: 400 "No API key configured.
+        // Please set up an API key first." and 401 "Invalid API key" — surface that text
+        // verbatim rather than inventing our own guidance for a case we didn't reproduce.
+        let detail = serde_json::from_str::<serde_json::Value>(&response.body)
+            .ok()
+            .and_then(|v| v.get("detail").and_then(|d| d.as_str()).map(str::to_string))
+            .filter(|d| !d.trim().is_empty())
+            .unwrap_or_else(|| format!("oMLX admin login failed (HTTP {})", response.status));
+        return Err(detail);
+    }
+    extract_admin_session_cookie(&response.headers).ok_or_else(|| {
+        "oMLX admin login succeeded but did not return a session cookie".to_string()
     })
 }
 
@@ -560,13 +668,30 @@ pub async fn probe_live_runtime(
     let models = if reachable {
         match runtime {
             LocalInferenceRuntimeKind::Omlx => {
-                match loopback_http_request(endpoint, "GET", "/admin/api/models", None, api_key)
-                    .await
-                {
-                    Ok(response) if (200..300).contains(&response.status) => {
-                        parse_admin_models(&response.body)
-                    }
-                    _ => loopback_http_request(endpoint, "GET", "/v1/models", None, api_key)
+                // `/admin/api/models` needs a session cookie, not the bearer key (measured
+                // 2026-09-06). Best-effort: no key, a login failure, or a non-2xx admin
+                // response all fall back to the unauthenticated `/v1/models` view rather than
+                // failing the probe outright — this is discovery, not a guarded mutation.
+                let admin_models = match api_key.filter(|key| !key.is_empty()) {
+                    Some(key) => match omlx_admin_session(endpoint, key).await {
+                        Ok(cookie) => loopback_http_request_with_cookie(
+                            endpoint,
+                            "GET",
+                            "/admin/api/models",
+                            None,
+                            Some(&cookie),
+                        )
+                        .await
+                        .ok()
+                        .filter(|r| (200..300).contains(&r.status))
+                        .map(|r| parse_admin_models(&r.body)),
+                        Err(_) => None,
+                    },
+                    None => None,
+                };
+                match admin_models {
+                    Some(models) => models,
+                    None => loopback_http_request(endpoint, "GET", "/v1/models", None, api_key)
                         .await
                         .ok()
                         .filter(|r| (200..300).contains(&r.status))
@@ -616,12 +741,15 @@ pub async fn omlx_model_action(
     if !matches!(action, "load" | "unload") {
         return Err(format!("Unsupported model action: {action}"));
     }
-    loopback_http_request(
+    // Unlike the probe, load/unload is a guarded mutation: no key or a bad login must fail
+    // loudly with the reason, never silently no-op or hit an unauthenticated route.
+    let cookie = omlx_admin_session(endpoint, api_key.unwrap_or("")).await?;
+    loopback_http_request_with_cookie(
         endpoint,
         "POST",
         &format!("/admin/api/models/{model_id}/{action}"),
         None,
-        api_key,
+        Some(&cookie),
     )
     .await
 }
@@ -696,5 +824,93 @@ mod tests {
         for id in ["", "../foo", "foo/bar", "foo?x=1", "foo\nbar"] {
             assert!(id.trim().is_empty() || id.contains('/') || id.contains('?') || id.contains('\n'));
         }
+    }
+
+    #[test]
+    fn accepts_documented_memory_guard_tiers() {
+        for tier in MEMORY_GUARD_TIERS {
+            assert!(validate_memory_guard_tier(tier).is_ok());
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_memory_guard_tier() {
+        assert!(validate_memory_guard_tier("bare").is_err());
+        assert!(validate_memory_guard_tier("").is_err());
+    }
+
+    #[test]
+    fn extracts_admin_session_cookie_from_normal_set_cookie() {
+        let headers = vec![(
+            "Set-Cookie".to_string(),
+            "omlx_admin_session=abc.def.ghi; HttpOnly; SameSite=lax".to_string(),
+        )];
+        assert_eq!(
+            extract_admin_session_cookie(&headers).as_deref(),
+            Some("omlx_admin_session=abc.def.ghi")
+        );
+    }
+
+    #[test]
+    fn extracts_admin_session_cookie_case_insensitively() {
+        let headers = vec![(
+            "set-cookie".to_string(),
+            "omlx_admin_session=tok; Path=/".to_string(),
+        )];
+        assert_eq!(
+            extract_admin_session_cookie(&headers).as_deref(),
+            Some("omlx_admin_session=tok")
+        );
+    }
+
+    #[test]
+    fn returns_none_when_admin_session_cookie_missing() {
+        let headers = vec![("Set-Cookie".to_string(), "other=value; Path=/".to_string())];
+        assert_eq!(extract_admin_session_cookie(&headers), None);
+        assert_eq!(extract_admin_session_cookie(&[]), None);
+    }
+
+    #[test]
+    fn finds_admin_session_cookie_among_multiple_set_cookie_headers() {
+        let headers = vec![
+            ("Set-Cookie".to_string(), "tracking=xyz; Path=/".to_string()),
+            (
+                "Set-Cookie".to_string(),
+                "omlx_admin_session=tok2; HttpOnly".to_string(),
+            ),
+        ];
+        assert_eq!(
+            extract_admin_session_cookie(&headers).as_deref(),
+            Some("omlx_admin_session=tok2")
+        );
+    }
+
+    #[test]
+    fn rejects_crlf_tampered_cookie_value() {
+        // A value carrying a real embedded CR/LF (e.g. a synthesized/tampered header, since
+        // the wire parser itself splits on line boundaries before this function ever runs)
+        // must be rejected rather than handed back as a cookie pair ready for the next request.
+        let tampered = vec![(
+            "Set-Cookie".to_string(),
+            "omlx_admin_session=tok\r\nX-Injected: 1".to_string(),
+        )];
+        assert_eq!(extract_admin_session_cookie(&tampered), None);
+
+        // The tampered entry must not block a legitimate cookie found elsewhere in the list.
+        let mixed = vec![
+            (
+                "Set-Cookie".to_string(),
+                "omlx_admin_session=tok\r\nX-Injected: 1".to_string(),
+            ),
+            ("Set-Cookie".to_string(), "omlx_admin_session=real; Path=/".to_string()),
+        ];
+        assert_eq!(
+            extract_admin_session_cookie(&mixed).as_deref(),
+            Some("omlx_admin_session=real")
+        );
+
+        // A genuinely malformed header (no '=' before ';') must not be mistaken for the cookie.
+        let malformed = vec![("Set-Cookie".to_string(), "; Path=/".to_string())];
+        assert_eq!(extract_admin_session_cookie(&malformed), None);
     }
 }

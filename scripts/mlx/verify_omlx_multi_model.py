@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -36,6 +37,7 @@ def request(
     api_key: str | None,
     body: dict[str, Any] | None = None,
     timeout: int = 300,
+    cookie: str | None = None,
 ) -> tuple[int | None, str, float]:
     headers = {"Accept": "application/json"}
     payload = None
@@ -44,6 +46,8 @@ def request(
         payload = json.dumps(body).encode()
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
+    if cookie:
+        headers["Cookie"] = cookie
     req = urllib.request.Request(
         endpoint.rstrip("/") + path,
         data=payload,
@@ -60,12 +64,61 @@ def request(
         return None, str(exc), (time.perf_counter() - started) * 1000
 
 
-def event(endpoint: str, operation: str, model: str, api_key: str | None) -> Event:
+def login_for_admin_cookie(endpoint: str, api_key: str, timeout: int = 30) -> str:
+    """Exchanges the oMLX server API key for the `omlx_admin_session` cookie pair.
+
+    `/admin/api/*` (model load/unload, the `/admin/api/models` snapshot) is guarded by a
+    signed session cookie set by `POST /admin/api/login`, not the bearer token `/v1/*` accepts
+    -- measured 2026-09-06: a valid bearer key against `/admin/api/models` still returns 401.
+    A one-time API key must already be configured on the oMLX server itself (its own admin
+    setup page, or `POST /admin/api/setup-api-key`) before this login can succeed; this harness
+    never calls that setup route on the user's behalf.
+    """
+    payload = json.dumps({"api_key": api_key, "remember": False}).encode()
+    req = urllib.request.Request(
+        endpoint.rstrip("/") + "/admin/api/login",
+        data=payload,
+        headers={"Accept": "application/json", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            status, cookie_header, body = (
+                response.status,
+                response.headers.get("Set-Cookie"),
+                response.read().decode(errors="replace"),
+            )
+    except urllib.error.HTTPError as exc:
+        status, cookie_header, body = exc.code, None, exc.read().decode(errors="replace")
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise RuntimeError(f"oMLX admin login request failed: {exc}") from exc
+
+    if not (200 <= status < 300):
+        # oMLX returns {"detail": "..."} for both failure modes (400 "No API key configured",
+        # 401 "Invalid API key") -- surface that text verbatim instead of guessing.
+        detail = None
+        try:
+            detail = json.loads(body).get("detail")
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            pass
+        raise RuntimeError(detail or f"oMLX admin login failed (HTTP {status})")
+
+    if not cookie_header:
+        raise RuntimeError("oMLX admin login succeeded but did not return a session cookie")
+    pair = cookie_header.split(";", 1)[0].strip()
+    name, _, value = pair.partition("=")
+    if name.strip() != "omlx_admin_session" or not value.strip():
+        raise RuntimeError("oMLX admin login response did not include the expected session cookie")
+    return pair
+
+
+def event(endpoint: str, operation: str, model: str, cookie: str) -> Event:
     status, detail, latency = request(
         endpoint,
         "POST",
         f"/admin/api/models/{model}/{operation}",
-        api_key,
+        None,
+        cookie=cookie,
     )
     return Event(
         operation=operation,
@@ -100,8 +153,8 @@ def chat(endpoint: str, model: str, prompt: str, api_key: str | None) -> Event:
     )
 
 
-def snapshot(endpoint: str, api_key: str | None) -> dict[str, Any]:
-    status, body, latency = request(endpoint, "GET", "/admin/api/models", api_key, timeout=30)
+def snapshot(endpoint: str, cookie: str) -> dict[str, Any]:
+    status, body, latency = request(endpoint, "GET", "/admin/api/models", None, timeout=30, cookie=cookie)
     parsed: Any = None
     if body:
         try:
@@ -130,28 +183,40 @@ def main() -> int:
         parser.error("--model-a and --model-b must be different")
     if not (args.endpoint.startswith("http://127.0.0.1:") or args.endpoint.startswith("http://localhost:")):
         parser.error("endpoint must remain loopback-only")
+    if not args.api_key:
+        parser.error(
+            "--api-key is required: /admin/api/* needs a session-cookie login, not just a "
+            "config value. Configure a server API key first through oMLX's own admin setup "
+            "page (or POST /admin/api/setup-api-key), then pass it here."
+        )
+
+    try:
+        cookie = login_for_admin_cookie(args.endpoint, args.api_key)
+    except RuntimeError as exc:
+        print(f"error: oMLX admin login failed: {exc}", file=sys.stderr)
+        return 1
 
     events: list[Event] = []
-    snapshots: list[dict[str, Any]] = [{"label": "initial", **snapshot(args.endpoint, args.api_key)}]
+    snapshots: list[dict[str, Any]] = [{"label": "initial", **snapshot(args.endpoint, cookie)}]
 
     for cycle in range(args.cycles):
         for model in (args.model_a, args.model_b):
-            events.append(event(args.endpoint, "load", model, args.api_key))
-        snapshots.append({"label": f"loaded-cycle-{cycle + 1}", **snapshot(args.endpoint, args.api_key)})
+            events.append(event(args.endpoint, "load", model, cookie))
+        snapshots.append({"label": f"loaded-cycle-{cycle + 1}", **snapshot(args.endpoint, cookie)})
         for _ in range(args.chat_rounds):
             events.append(chat(args.endpoint, args.model_a, args.prompt, args.api_key))
             events.append(chat(args.endpoint, args.model_b, args.prompt, args.api_key))
         if cycle < args.cycles - 1:
-            events.append(event(args.endpoint, "unload", args.model_a, args.api_key))
-            events.append(event(args.endpoint, "load", args.model_a, args.api_key))
-            events.append(event(args.endpoint, "unload", args.model_b, args.api_key))
-            events.append(event(args.endpoint, "load", args.model_b, args.api_key))
-            snapshots.append({"label": f"switch-cycle-{cycle + 1}", **snapshot(args.endpoint, args.api_key)})
+            events.append(event(args.endpoint, "unload", args.model_a, cookie))
+            events.append(event(args.endpoint, "load", args.model_a, cookie))
+            events.append(event(args.endpoint, "unload", args.model_b, cookie))
+            events.append(event(args.endpoint, "load", args.model_b, cookie))
+            snapshots.append({"label": f"switch-cycle-{cycle + 1}", **snapshot(args.endpoint, cookie)})
 
     if not args.leave_loaded:
-        events.append(event(args.endpoint, "unload", args.model_a, args.api_key))
-        events.append(event(args.endpoint, "unload", args.model_b, args.api_key))
-    snapshots.append({"label": "final", **snapshot(args.endpoint, args.api_key)})
+        events.append(event(args.endpoint, "unload", args.model_a, cookie))
+        events.append(event(args.endpoint, "unload", args.model_b, cookie))
+    snapshots.append({"label": "final", **snapshot(args.endpoint, cookie)})
 
     failed = [item for item in events if not item.ok]
     report = {

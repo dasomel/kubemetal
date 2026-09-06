@@ -28,7 +28,7 @@ The existing `mlx_lm.server` path is preserved. oMLX is discovered as an optiona
 1. oMLX is always launched on `127.0.0.1` by KubeMetal.
 2. KubeMetal only stops a runtime process that it started and whose PID it owns in the current app session.
 3. If a server already answers on the requested port, KubeMetal refuses to take ownership.
-4. API keys are held in UI memory and sent as an HTTP `Authorization` header. They are not placed in process arguments or logs by KubeMetal.
+4. API keys are held in UI memory. `/v1/*` requests send them as an HTTP `Authorization: Bearer` header; `/admin/api/*` requests exchange the key for a session cookie first (see "oMLX 0.6.4 measured contract" below) — either way they are not placed in process arguments or logs by KubeMetal.
 5. Model/cache paths supplied to the managed runtime are restricted to the user's home directory.
 6. The K3s bridge never targets a public endpoint. It relays from an explicitly selected loopback/private/link-local host address to `127.0.0.1:<runtime-port>`.
 7. `0.0.0.0` and public bridge bind addresses are rejected.
@@ -53,6 +53,53 @@ The Tauri backend exposes:
 - `stop_local_inference_bridge`
 
 The live probe uses the loopback API only. For oMLX it reads `/health` and `/admin/api/models`, falling back to `/v1/models` when admin model details are unavailable. `mlx_lm.server` uses `/health`/`/v1/models` where available.
+
+## oMLX 0.6.4 measured contract
+
+The following was measured directly against `/opt/homebrew/bin/omlx` (0.6.4) and its installed
+Python source, not inferred from docs. Any future oMLX upgrade should re-check `omlx serve --help`
+and the admin routes before assuming these still hold.
+
+- **`--memory-guard` requires a value.** `omlx serve --memory-guard` with no argument fails
+  argparse; the accepted values are `off`, `safe`, `balanced`, `aggressive`
+  (`RuntimeLaunchConfig.memory_guard_tier: Option<String>`, validated in `build_omlx_command`
+  before the flag is emitted as `--memory-guard <tier>`).
+- **There is no `--pin` flag on `omlx serve`.** Pinning is a post-start admin-API concern —
+  `PUT /admin/api/models/{id}/settings` with `is_pinned` — already covered by
+  `set_omlx_model_settings_sparse`. `RuntimeLaunchConfig` has no pinned-models field.
+- **`/admin/api/*` authenticates via a session cookie, never the bearer token.** `require_admin`
+  (`admin/auth.py`) reads the `omlx_admin_session` cookie; a valid bearer key against
+  `/admin/api/models` still returns `401 {"detail":"Admin authentication required"}`. The flow is
+  `POST /admin/api/login {"api_key","remember"}` → `200 {"success":true}` with
+  `Set-Cookie: omlx_admin_session=<token>; SameSite=lax` → subsequent admin calls send
+  `Cookie: omlx_admin_session=<token>`. `services::local_inference::omlx_admin_session()` performs
+  this exchange; `load_omlx_model`/`unload_omlx_model`/`set_omlx_model_settings_sparse` all route
+  through it and fail with a clear message when no server API key is configured.
+  `probe_local_inference_live`'s model-pool read is best-effort: no key, a login failure, or a
+  non-2xx admin response all fall back to the unauthenticated `/v1/models` view rather than
+  failing the probe. If no API key is configured on the server at all, login returns
+  `400 {"detail":"No API key configured. Please set up an API key first."}` — KubeMetal surfaces
+  that detail text verbatim and never calls the setup endpoint on the user's behalf. `/v1/*`
+  routes are unaffected and keep using the bearer header as before.
+- **A server API key is a one-time, user-driven setup step, not something KubeMetal configures.**
+  Until one exists, `/admin/api/login` always returns 400 `"No API key configured. Please set up
+  an API key first."`, so every admin-authenticated operation above fails until the user sets one
+  up. The initial key is set via `POST /admin/api/setup-api-key` — body
+  `{"api_key": "...", "api_key_confirm": "..."}` (`SetupApiKeyRequest`, `admin/routes.py:77`; route
+  at `admin/routes.py:1575`) — which is only reachable while no key is configured yet, and which
+  also auto-logs in (sets the session cookie) on success. In practice a user does this once
+  through oMLX's own admin web page rather than by calling the route directly. **KubeMetal must
+  never call `/admin/api/setup-api-key` automatically** — choosing/confirming the server's
+  admin credential is the user's decision, not something the app should do on their behalf.
+- **oMLX persists most launch flags into `~/.omlx/settings.json` on every launch** —
+  `--model-dir`, `--paged-ssd-cache-dir`, `--memory-guard`, and `--max-concurrent-requests` are
+  written there — while `--api-key` is never accepted on the CLI and is not persisted by
+  KubeMetal either; the server's own admin setup page is the only place that sets
+  `auth.api_key`.
+- **The app's model store default is `~/.kubemetal/models`, not `~/.omlx/models`.** oMLX accepts
+  plain HF snapshot directories (`config.json` + safetensors) there without needing its own
+  layout — measured with 6 models discovered from that path — so the UI defaults `modelDir` to
+  it instead of a directory that does not exist on a fresh install.
 
 Model settings are sent as sparse updates: omitted pin/TTL/default/alias fields are not serialized as JSON `null`, so changing one setting does not reset the others.
 

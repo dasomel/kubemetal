@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use crate::commands::local_inference::RuntimeActionResult;
-use crate::services::local_inference::loopback_http_request;
+use crate::services::local_inference::{loopback_http_request_with_cookie, omlx_admin_session};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SafeOmlxModelSettingsPatch {
@@ -64,12 +64,13 @@ pub async fn set_omlx_model_settings_sparse(
 ) -> Result<RuntimeActionResult, String> {
     validate_model_id(&request.model_id)?;
     let body = sparse_settings_json(&request.patch)?;
-    let response = loopback_http_request(
+    let cookie = omlx_admin_session(&request.endpoint, request.api_key.as_deref().unwrap_or("")).await?;
+    let response = loopback_http_request_with_cookie(
         &request.endpoint,
         "PUT",
         &format!("/admin/api/models/{}/settings", request.model_id),
         Some(&body),
-        request.api_key.as_deref(),
+        Some(&cookie),
     )
     .await?;
     Ok(RuntimeActionResult {
