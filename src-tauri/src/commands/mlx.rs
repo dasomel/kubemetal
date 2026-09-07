@@ -669,18 +669,16 @@ fn apply_training_event(app: &tauri::AppHandle, value: &serde_json::Value) {
 /// - `wrapper_reported_terminal`이 true면(이미 "done"/"error" 이벤트를 받음) 항상 `None` —
 ///   wrapper가 이미 자기 몫을 했다.
 /// - `run_id`가 없으면 `None` — 갱신할 대상이 없다(지어내지 않는다, D22).
-/// - 시그널로 종료됐으면 `Some(KILLED)` — `status`(호출 시점 Rust 상태, "killed" 또는
-///   "running")와 무관하게 같은 결론이다: 외부 요인이든 우리가 보낸 kill이든, wrapper가
-///   자기 정리를 못 하고 죽었다는 사실은 같다.
+/// - 시그널로 종료됐으면 `Some(KILLED)` — 호출 시점의 Rust 상태("killed"든 "running"이든)와
+///   무관하게 같은 결론이다: 외부 요인이든 우리가 보낸 kill이든, wrapper가 자기 정리를
+///   못 하고 죽었다는 사실은 같다(그래서 이 함수는 상태 문자열을 파라미터로 받지 않는다).
 /// - 시그널이 아닌 종료(정상 exit code)면 `None` — wrapper가 그 코드에 도달했다는 것
 ///   자체가 이미 `end_run`을 부르고 난 뒤라는 뜻이다.
 fn mlflow_reconciliation_decision(
-    status: &str,
     run_id: Option<&str>,
     wrapper_reported_terminal: bool,
     exit: Option<&std::process::ExitStatus>,
 ) -> Option<MlflowRunReconciliation> {
-    let _ = status; // 현재 판정에 영향 없음 — 시그널 여부만이 "wrapper가 정리했는가"를 가른다.
     if wrapper_reported_terminal {
         return None;
     }
@@ -716,9 +714,18 @@ struct MlflowRunReconciliation {
 /// 따른다 — reqwest 등 새 HTTP 클라이언트를 들이지 않는다. 실패는 학습 종료 처리를 막지
 /// 않는 best-effort다(로그만 남긴다, D22 — 조용히 삼키지는 않는다).
 async fn reconcile_mlflow_run(reconciliation: MlflowRunReconciliation) {
+    // MLflow의 runs/update는 status만 주면 end_time을 건드리지 않는다 — wrapper가
+    // 정상 종료했다면 자기 end_run()에서 이미 채웠을 값이므로, 여기서 대신 알리는
+    // 강제 KILLED 수렴에서는 우리가 직접 채워야 run이 "여전히 진행 중"인 것처럼
+    // (end_time 없이) 남지 않는다.
+    let end_time_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
     let body = serde_json::json!({
         "run_id": reconciliation.run_id,
         "status": reconciliation.status,
+        "end_time": end_time_ms,
     })
     .to_string();
 
@@ -835,7 +842,6 @@ fn finalize_training(
     // 조기 반환 대상이지만 정확히 이 리컨실리에이션이 필요한 경우이기도 하다.
     let wrapper_reported_terminal = matches!(training.status.as_str(), "done" | "error");
     let reconciliation = mlflow_reconciliation_decision(
-        &training.status,
         training.mlflow_run_id.as_deref(),
         wrapper_reported_terminal,
         exit.as_ref().ok(),
@@ -1644,7 +1650,7 @@ mod tests {
     fn mlflow_reconciliation_marks_intentional_kill_as_killed() {
         let exit = std::process::ExitStatus::from_raw(9);
         assert_eq!(
-            mlflow_reconciliation_decision("killed", Some("run-123"), false, Some(&exit)),
+            mlflow_reconciliation_decision(Some("run-123"), false, Some(&exit)),
             Some(MlflowRunReconciliation {
                 run_id: "run-123".into(),
                 status: "KILLED",
@@ -1656,7 +1662,7 @@ mod tests {
     fn mlflow_reconciliation_marks_unhandled_signal_as_killed() {
         let exit = std::process::ExitStatus::from_raw(15);
         assert_eq!(
-            mlflow_reconciliation_decision("running", Some("run-123"), false, Some(&exit)),
+            mlflow_reconciliation_decision(Some("run-123"), false, Some(&exit)),
             Some(MlflowRunReconciliation {
                 run_id: "run-123".into(),
                 status: "KILLED",
@@ -1668,7 +1674,7 @@ mod tests {
     fn mlflow_reconciliation_suppresses_wrapper_terminal_event() {
         let exit = std::process::ExitStatus::from_raw(9);
         assert_eq!(
-            mlflow_reconciliation_decision("done", Some("run-123"), true, Some(&exit)),
+            mlflow_reconciliation_decision(Some("run-123"), true, Some(&exit)),
             None
         );
     }
@@ -1677,7 +1683,7 @@ mod tests {
     fn mlflow_reconciliation_suppresses_missing_run_id() {
         let exit = std::process::ExitStatus::from_raw(9);
         assert_eq!(
-            mlflow_reconciliation_decision("killed", None, false, Some(&exit)),
+            mlflow_reconciliation_decision(None, false, Some(&exit)),
             None
         );
     }
@@ -1686,7 +1692,7 @@ mod tests {
     fn mlflow_reconciliation_suppresses_ordinary_abnormal_exit() {
         let exit = std::process::ExitStatus::from_raw(1 << 8);
         assert_eq!(
-            mlflow_reconciliation_decision("running", Some("run-123"), false, Some(&exit)),
+            mlflow_reconciliation_decision(Some("run-123"), false, Some(&exit)),
             None
         );
     }

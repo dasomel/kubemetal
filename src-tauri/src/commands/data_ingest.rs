@@ -154,6 +154,9 @@ pub struct DatasetProvenance {
     pub collection_name: String,
     pub source_type: String,
     pub source_path: String,
+    /// `hash_source_path`의 sha256 — 파일 경계를 함께 고정하는 길이 접두 프레이밍을 쓰고
+    /// (재-split 충돌 방지), 재귀 순회 중 만나는 심볼릭 링크는(최상위·중첩 모두) 대상을
+    /// 따라가지 않고 건너뛴다 — 그 파일들은 이 해시에 반영되지 않는다.
     pub source_hash: Option<String>,
     pub source_hash_reason: Option<String>,
     pub embedding_model: String,
@@ -202,12 +205,26 @@ fn collect_files_sorted(path: &Path, out: &mut Vec<PathBuf>) -> Result<(), Strin
 
 /// 파일 또는 디렉터리(재귀)의 sha256 — `write_training_manifest`(#22)가 어댑터 디렉터리를
 /// 다루는 방식과 같은 사상: 정렬된 파일 순서로 이어붙여 재현 가능한 해시를 만든다.
+///
+/// 각 파일은 파일 내용 바이트만이 아니라 `(상대 경로 길이, 상대 경로, 내용 길이, 내용)`
+/// 프레이밍으로 해시에 들어간다. 내용 바이트만 이어붙이면 총 바이트열이 같은 한 파일
+/// 경계를 어디서 나누는지가 해시에 드러나지 않아, 같은 콘텐츠를 다른 파일로 재분할한
+/// (re-split) 데이터셋이 원본과 같은 해시로 충돌할 수 있었다 — 길이 접두로 경계를,
+/// 상대 경로로 파일 정체성을 함께 고정해 그 충돌을 막는다. 재귀 순회(`collect_files_sorted`)
+/// 는 최상위뿐 아니라 중첩된 심볼릭 링크도 건너뛴다 — 해시가 심볼릭 링크가 가리키는
+/// 대상을 몰래 따라가 지어낸 provenance를 남기지 않는다.
 fn hash_source_path(path: &Path) -> Result<String, String> {
     let mut files = Vec::new();
     collect_files_sorted(path, &mut files)?;
     let mut hasher = Sha256::new();
     for f in &files {
         let bytes = std::fs::read(f).map_err(|e| format!("Failed to read {}: {e}", f.display()))?;
+        let rel = f.strip_prefix(path).unwrap_or(f.as_path());
+        let rel_bytes = rel.to_string_lossy();
+        let rel_bytes = rel_bytes.as_bytes();
+        hasher.update((rel_bytes.len() as u64).to_le_bytes());
+        hasher.update(rel_bytes);
+        hasher.update((bytes.len() as u64).to_le_bytes());
         hasher.update(&bytes);
     }
     Ok(hex::encode(hasher.finalize()))
@@ -570,7 +587,12 @@ mod tests {
         let file_path = dir.join("doc.txt");
         std::fs::write(&file_path, b"hello kubemetal").unwrap();
 
-        let expected = hex::encode(Sha256::digest(b"hello kubemetal"));
+        // 단일 파일은 자기 자신에 대한 상대 경로가 빈 문자열이다(strip_prefix(self)).
+        let mut hasher = Sha256::new();
+        hasher.update(0u64.to_le_bytes()); // 상대 경로 길이(빈 문자열)
+        hasher.update(("hello kubemetal".len() as u64).to_le_bytes());
+        hasher.update(b"hello kubemetal");
+        let expected = hex::encode(hasher.finalize());
         assert_eq!(hash_source_path(&file_path).unwrap(), expected);
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -581,15 +603,41 @@ mod tests {
         std::fs::write(dir.join("b.txt"), b"second").unwrap();
         std::fs::write(dir.join("a.txt"), b"first").unwrap();
 
-        // read_dir 순서와 무관하게 파일명 정렬(a.txt, b.txt) 순으로 이어붙인 해시와 같아야
-        // 재현성이 보장된다.
+        // read_dir 순서와 무관하게 파일명 정렬(a.txt, b.txt) 순으로, 각각
+        // (상대 경로 길이, 상대 경로, 내용 길이, 내용) 프레이밍으로 이어붙인 해시와
+        // 같아야 재현성이 보장된다.
         let mut hasher = Sha256::new();
-        hasher.update(b"first");
-        hasher.update(b"second");
+        for (name, content) in [("a.txt", &b"first"[..]), ("b.txt", &b"second"[..])] {
+            hasher.update((name.len() as u64).to_le_bytes());
+            hasher.update(name.as_bytes());
+            hasher.update((content.len() as u64).to_le_bytes());
+            hasher.update(content);
+        }
         let expected = hex::encode(hasher.finalize());
 
         assert_eq!(hash_source_path(&dir).unwrap(), expected);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 회귀 방지: 같은 총 바이트를 다른 파일 경계로 재분할하면(re-split) 예전 구현은
+    /// 내용만 이어붙였으므로 우연히 같은 해시가 나올 수 있었다 — 길이 접두 프레이밍은
+    /// 이 두 데이터셋을 반드시 다른 해시로 구분해야 한다.
+    #[test]
+    fn hash_source_path_distinguishes_resplit_content_across_files() {
+        let dir_one = make_temp_dir("resplit-one");
+        std::fs::write(dir_one.join("a.txt"), b"firstsecond").unwrap();
+
+        let dir_two = make_temp_dir("resplit-two");
+        std::fs::write(dir_two.join("a.txt"), b"first").unwrap();
+        std::fs::write(dir_two.join("b.txt"), b"second").unwrap();
+
+        assert_ne!(
+            hash_source_path(&dir_one).unwrap(),
+            hash_source_path(&dir_two).unwrap(),
+            "재분할된 같은 바이트열이 서로 다른 해시를 내야 한다"
+        );
+        std::fs::remove_dir_all(&dir_one).ok();
+        std::fs::remove_dir_all(&dir_two).ok();
     }
 
     #[test]

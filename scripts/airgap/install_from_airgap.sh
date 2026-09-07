@@ -73,8 +73,15 @@ else
   VERIFY_DIGESTS=1
 fi
 
+# docker load의 stdout에서 실제로 로드된 참조를 뽑는다: 태그가 있으면
+# `Loaded image: <ref>`, 태그 없이 로드되면 `Loaded image ID: sha256:<id>`.
+loaded_refs_from_output() { sed -n 's/^Loaded image: //p' "$1"; }
+loaded_ids_from_output() { sed -n 's/^Loaded image ID: //p' "$1"; }
+
 verify_loaded_image_digest() {
-  local archive="$1" record locked_image locked_provenance locked_id actual_record actual_provenance actual_id
+  local archive="$1" load_output="$2"
+  local record locked_image locked_provenance locked_id actual_record actual_provenance actual_id
+  local loaded_refs loaded_ids ref
   if ! record="$(digest_lock_record_for_archive "$DIGESTS_LOCK" "$(basename "$archive")")"; then
     echo "  !! $(basename "$archive"): digests.lock에 유효한 항목이 없습니다." >&2
     FAILED+=("digest-lock-missing-or-malformed:$(basename "$archive")")
@@ -84,6 +91,44 @@ verify_loaded_image_digest() {
   IFS=$'\t' read -r locked_image locked_provenance locked_id <<EOF
 $record
 EOF
+
+  # docker load가 이번 호출에서 실제로 보고한 참조/ID만 신뢰한다. lock이 기대하는
+  # 태그를 이름으로 바로 inspect하면, 데몬에 같은 태그의 이전(무관한) 이미지가 이미
+  # 있을 때 이번 아카이브의 실제 페이로드가 검증 없이 다른 태그로(또는 태그 없이)
+  # 자리잡아도 통과해 버린다 — docker 자신이 이번 load에서 무엇을 로드했다고 보고
+  # 했는지부터 확인한다.
+  loaded_refs="$(loaded_refs_from_output "$load_output")"
+  loaded_ids="$(loaded_ids_from_output "$load_output")"
+
+  if [ -n "$loaded_refs" ]; then
+    if ! grep -Fxq "$locked_image" <<<"$loaded_refs"; then
+      echo "  !! ${locked_image}: 이번 load가 보고한 참조($(tr '\n' ' ' <<<"$loaded_refs"))에 없습니다 — 아카이브의 페이로드가 다른 곳에 로드되었습니다." >&2
+      FAILED+=("digest-mismatch:${locked_image}")
+      DIGEST_VERIFICATION_FAILED=1
+      while IFS= read -r ref; do
+        [ -n "$ref" ] && docker rmi "$ref" >/dev/null 2>&1
+      done <<<"$loaded_refs"
+      return 1
+    fi
+  elif [ -n "$loaded_ids" ]; then
+    # 태그 없이 로드됨 — inspect할 이름이 없으므로 docker load가 보고한 image ID를
+    # lock의 ID와 직접 비교한다.
+    if ! grep -Fxq "$locked_id" <<<"$loaded_ids"; then
+      echo "  !! ${locked_image}: 이번 load가 보고한 image ID($(tr '\n' ' ' <<<"$loaded_ids"))가 lock(${locked_id})과 다릅니다." >&2
+      FAILED+=("digest-mismatch:${locked_image}")
+      DIGEST_VERIFICATION_FAILED=1
+      while IFS= read -r ref; do
+        [ -n "$ref" ] && docker rmi "$ref" >/dev/null 2>&1
+      done <<<"$loaded_ids"
+      return 1
+    fi
+  else
+    echo "  !! ${locked_image}: docker load 출력에서 로드된 참조/ID를 찾지 못했습니다." >&2
+    FAILED+=("digest-lock-missing-or-malformed:$(basename "$archive")")
+    DIGEST_VERIFICATION_FAILED=1
+    return 1
+  fi
+
   if ! actual_record="$(image_digest_record "$locked_image")"; then
     echo "  !! ${locked_image}: load 뒤 image ID를 확인하지 못했습니다." >&2
     FAILED+=("digest-inspect:${locked_image}")
@@ -101,12 +146,14 @@ EOF
       echo "  !! ${locked_image}: RepoDigest 불일치 (lock=${locked_provenance}, load=${actual_provenance})" >&2
       FAILED+=("digest-mismatch:${locked_image}")
       DIGEST_VERIFICATION_FAILED=1
+      docker rmi "$locked_image" >/dev/null 2>&1
       return 1
     fi
   elif [ "$actual_id" != "$locked_id" ]; then
     echo "  !! ${locked_image}: image ID 불일치 (lock=${locked_id}, load=${actual_id})" >&2
     FAILED+=("digest-mismatch:${locked_image}")
     DIGEST_VERIFICATION_FAILED=1
+    docker rmi "$locked_image" >/dev/null 2>&1
     return 1
   fi
   return 0
@@ -121,21 +168,25 @@ else
   shopt -s nullglob
   for archive in "${AIRGAP_DIR}/images/"*.tar.gz; do
     echo "  -> 로드: $(basename "$archive")"
-    if gunzip -c "$archive" | docker load; then
+    load_output="$(mktemp)"
+    if gunzip -c "$archive" | docker load | tee "$load_output"; then
       loaded=$((loaded + 1))
-      [ "$VERIFY_DIGESTS" -eq 0 ] || verify_loaded_image_digest "$archive"
+      [ "$VERIFY_DIGESTS" -eq 0 ] || verify_loaded_image_digest "$archive" "$load_output"
     else
       FAILED+=("load:$(basename "$archive")")
     fi
+    rm -f "$load_output"
   done
   for archive in "${AIRGAP_DIR}/images/"*.tar; do
     echo "  -> 로드(비압축): $(basename "$archive")"
-    if docker load -i "$archive"; then
+    load_output="$(mktemp)"
+    if docker load -i "$archive" | tee "$load_output"; then
       loaded=$((loaded + 1))
-      [ "$VERIFY_DIGESTS" -eq 0 ] || verify_loaded_image_digest "$archive"
+      [ "$VERIFY_DIGESTS" -eq 0 ] || verify_loaded_image_digest "$archive" "$load_output"
     else
       FAILED+=("load:$(basename "$archive")")
     fi
+    rm -f "$load_output"
   done
   shopt -u nullglob
   echo "  -> 이미지 ${loaded}건 로드"

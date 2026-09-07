@@ -14,18 +14,34 @@ pub struct ColimaState {
 }
 
 impl ColimaState {
-    /// 진행 중이 아니면 점유하고 true, 이미 진행 중이면 점유하지 않고 false.
-    fn try_acquire(&self) -> Result<bool, String> {
+    /// 진행 중이 아니면 점유하고 해제 시 자동으로 플래그를 되돌리는 가드를 반환한다.
+    /// 이미 진행 중이면 점유하지 않고 `None`.
+    ///
+    /// RAII로 바꾼 이유: 이전의 `try_acquire`/`release` 쌍은 `?`로 인한 조기 반환이나
+    /// 퓨처 드롭(취소)·패닉 시 `release()`가 호출되지 않아 플래그가 영구히 `true`로
+    /// 남는 경로가 있었다 — colima는 재진입 불가이므로 그 상태에선 실제로는 아무 작업도
+    /// 진행 중이 아닌데 모든 후속 lifecycle 커맨드가 영구히 거부된다.
+    fn try_acquire(&self) -> Result<Option<LifecycleGuard<'_>>, String> {
         let mut in_progress = self.lifecycle_in_progress.lock().map_err(|e| e.to_string())?;
         if *in_progress {
-            return Ok(false);
+            return Ok(None);
         }
         *in_progress = true;
-        Ok(true)
+        Ok(Some(LifecycleGuard {
+            flag: &self.lifecycle_in_progress,
+        }))
     }
+}
 
-    fn release(&self) {
-        if let Ok(mut in_progress) = self.lifecycle_in_progress.lock() {
+/// `ColimaState::try_acquire`가 반환하는 가드 — 드롭 시(정상 반환·조기 반환·패닉·퓨처
+/// 취소 모두) `lifecycle_in_progress`를 해제한다.
+struct LifecycleGuard<'a> {
+    flag: &'a std::sync::Mutex<bool>,
+}
+
+impl Drop for LifecycleGuard<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut in_progress) = self.flag.lock() {
             *in_progress = false;
         }
     }
@@ -137,16 +153,14 @@ pub async fn start_cluster(
     cpu: u32,
     memory: u32,
 ) -> Result<String, String> {
-    if !state.try_acquire()? {
+    let Some(_guard) = state.try_acquire()? else {
         return Err(
             "colima start is already in progress — wait for it to finish before retrying \
              (colima is not reentrant)."
                 .into(),
         );
-    }
-    let result = start_cluster_inner(cpu, memory).await;
-    state.release();
-    result
+    };
+    start_cluster_inner(cpu, memory).await
 }
 
 async fn start_cluster_inner(cpu: u32, memory: u32) -> Result<String, String> {
@@ -184,7 +198,15 @@ async fn start_cluster_inner(cpu: u32, memory: u32) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn stop_cluster() -> Result<String, String> {
+pub async fn stop_cluster(state: State<'_, ColimaState>) -> Result<String, String> {
+    let Some(_guard) = state.try_acquire()? else {
+        return Err(
+            "colima stop is already in progress — wait for it to finish before retrying \
+             (colima is not reentrant)."
+                .into(),
+        );
+    };
+
     let output = external_command("colima")?
         .arg("stop")
         .output()
@@ -551,15 +573,35 @@ mod tests {
     #[test]
     fn colima_state_rejects_concurrent_lifecycle_ops() {
         let state = ColimaState::default();
-        assert!(state.try_acquire().unwrap(), "first acquire must succeed");
+        let guard = state.try_acquire().unwrap();
+        assert!(guard.is_some(), "first acquire must succeed");
         assert!(
-            !state.try_acquire().unwrap(),
+            state.try_acquire().unwrap().is_none(),
             "a second concurrent acquire must be rejected while one is in progress"
         );
-        state.release();
+        drop(guard);
         assert!(
-            state.try_acquire().unwrap(),
-            "after release, a new acquire must succeed again"
+            state.try_acquire().unwrap().is_some(),
+            "after the guard is dropped, a new acquire must succeed again"
+        );
+    }
+
+    /// RAII regression: a guard released by `Drop` (not an explicit `release()` call — the
+    /// bug this replaces) must free the slot, covering early-return/panic/cancellation paths
+    /// that never reach a manual release.
+    #[test]
+    fn colima_state_guard_release_on_drop_frees_slot_for_reacquire() {
+        let state = ColimaState::default();
+        {
+            let _guard = state.try_acquire().unwrap().expect("slot must be free");
+            assert!(
+                state.try_acquire().unwrap().is_none(),
+                "slot must stay held while the guard is alive"
+            );
+        } // guard drops here without any explicit release call
+        assert!(
+            state.try_acquire().unwrap().is_some(),
+            "dropping the guard must release the slot for the next acquire"
         );
     }
 

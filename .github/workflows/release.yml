@@ -57,24 +57,19 @@ jobs:
           mkdir -p stage
           cp -R src-tauri/target/release/bundle/macos/KubeMetal.app stage/
           cp LICENSE NOTICE THIRD-PARTY-NOTICES.md sbom-cyclonedx.json sbom-spdx.json stage/
-          # 체크섬은 zip에 들어가는 모든 파일(.app 번들 내부 바이너리 포함)을
-          # 대상으로 한다. stage 안에 바로 `> SHA256SUMS.txt`로 쓰면 셸이 find
-          # 실행 전에 그 파일을 미리 만들어 find 결과에 자기 자신이 잡히므로,
-          # stage 밖에 먼저 쓰고 이동한다. macos-14 러너이므로 shasum -a 256
-          # 사용(macOS 기본 제공, Linux에서도 동일하게 동작).
-          (cd stage && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 > ../SHA256SUMS.txt && mv ../SHA256SUMS.txt .)
-          # SHA256SUMS.txt에서 이미 계산한 .app 내부 파일의 정렬된 레코드를 다시
-          # 해시해 번들 전체를 나타내고, SBOM/고지의 해시와 함께 단일 파일에 남긴다.
-          # 원본 번들 파일은 재해시하지 않는다.
+          # release-manifest.json을 먼저 stage에 써서, 그 뒤에 도는 SHA256SUMS.txt
+          # 스윕이 이 파일도 포함하게 한다 — 순서를 반대로 하면(예전처럼) 매니페스트가
+          # 체크섬 목록에 없는 채로 zip에 들어간다. 그래서 여기서는 SHA256SUMS.txt에
+          # 기대지 않고 각 파일을 직접 shasum한다(macos-14 러너 기본 제공 shasum -a 256,
+          # Linux에서도 동일 동작). .app 번들 해시는 예전과 같은 방식 —
+          # 내부 파일의 정렬된 shasum 레코드 목록을 다시 해시한 값 — 이지만
+          # 이제 SHA256SUMS.txt를 거치지 않고 stage에서 직접 구한다.
           release_tag="$TAG"
           version="${release_tag#v}"
-          checksum() {
-            awk -v path="$1" '$2 == path { print $1; exit }' stage/SHA256SUMS.txt
-          }
-          app_bundle_sha256="$(awk '$2 ~ /^\.\/KubeMetal\.app\// { print }' stage/SHA256SUMS.txt | shasum -a 256 | awk '{ print $1 }')"
-          cyclonedx_sha256="$(checksum ./sbom-cyclonedx.json)"
-          spdx_sha256="$(checksum ./sbom-spdx.json)"
-          notices_sha256="$(checksum ./THIRD-PARTY-NOTICES.md)"
+          app_bundle_sha256="$(cd stage && find ./KubeMetal.app -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256 | awk '{ print $1 }')"
+          cyclonedx_sha256="$(shasum -a 256 stage/sbom-cyclonedx.json | awk '{ print $1 }')"
+          spdx_sha256="$(shasum -a 256 stage/sbom-spdx.json | awk '{ print $1 }')"
+          notices_sha256="$(shasum -a 256 stage/THIRD-PARTY-NOTICES.md | awk '{ print $1 }')"
           [ -n "$app_bundle_sha256" ] && [ -n "$cyclonedx_sha256" ] && [ -n "$spdx_sha256" ] && [ -n "$notices_sha256" ]
           RELEASE_TAG="$release_tag" VERSION="$version" APP_BUNDLE_SHA256="$app_bundle_sha256" CYCLONEDX_SHA256="$cyclonedx_sha256" SPDX_SHA256="$spdx_sha256" NOTICES_SHA256="$notices_sha256" python3 - <<'PY' > stage/release-manifest.json
           import json
@@ -86,7 +81,7 @@ jobs:
               "app_bundle": {
                   "filename": "KubeMetal.app",
                   "sha256": os.environ["APP_BUNDLE_SHA256"],
-                  "digest_source": "sha256 of sorted SHA256SUMS.txt records for files under KubeMetal.app/",
+                  "digest_source": "sha256 of sorted shasum records for files under KubeMetal.app/",
               },
               "sboms": [
                   {"filename": "sbom-cyclonedx.json", "sha256": os.environ["CYCLONEDX_SHA256"]},
@@ -98,6 +93,12 @@ jobs:
           }, __import__("sys").stdout, indent=2)
           print()
           PY
+          # 체크섬은 zip에 들어가는 모든 파일(.app 번들 내부 바이너리, 이제
+          # release-manifest.json 포함)을 대상으로 하는 마지막 단계다. stage 안에
+          # 바로 `> SHA256SUMS.txt`로 쓰면 셸이 find 실행 전에 그 파일을 미리 만들어
+          # find 결과에 자기 자신이 잡히므로, stage 밖에 먼저 쓰고 이동한다 — 그래서
+          # SHA256SUMS.txt만 자기 자신의 체크섬 목록에서 의도적으로 빠진다.
+          (cd stage && find . -type f -print0 | sort -z | xargs -0 shasum -a 256 > ../SHA256SUMS.txt && mv ../SHA256SUMS.txt .)
           ditto -c -k stage "KubeMetal-${TAG}-aarch64.zip"
       - name: Create GitHub release
         env:
