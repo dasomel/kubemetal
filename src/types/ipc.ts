@@ -387,3 +387,33 @@ export interface PreflightReport {
   /** 차단 사유. 비어 있으면 배포 가능. code는 i18n 테이블(deployTarget.blockerCode.*)로 매핑(D31). */
   blockers: { code: string; detail: string | null }[];
 }
+
+export interface OperationSummary {
+  context: string;
+  namespace: string;
+  action: string;
+  target_description: string;
+}
+
+export interface GpuBenchmarkResult {
+  gflops: number;
+  matrix_dim: number;
+  iterations: number;
+  python_elapsed_seconds: number;
+  rust_elapsed_seconds: number;
+}
+
+export interface OrphanedProcessInfo {
+  pid: number;
+  kind: string;
+}
+
+export interface SystemHealthSummary {
+  colima: ClusterStatus | null;
+  colima_error: string | null;
+  guardrails: GuardrailStatus | null;
+  guardrails_error: string | null;
+  kagent: KagentDiagnosticReport | null;
+  kagent_error: string | null;
+  overall: 'healthy' | 'degraded' | 'unknown';
+}

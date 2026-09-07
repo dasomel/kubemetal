@@ -386,34 +386,33 @@ pub async fn run_gpu_benchmark(app: tauri::AppHandle) -> Result<GpuBenchmarkResu
 mod tests {
     use super::*;
 
-    /// 테스트 cwd는 `src-tauri/` — 저장소 루트는 그 상위다(colima.rs의 `repo_k8s_dir`과
-    /// 같은 관례).
-    fn repo_gpu_benchmark_script() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("repo root")
-            .join("scripts/mlx/gpu_benchmark.py")
-    }
-
-    /// 실제 venv의 실제 파이썬으로 실제 MLX matmul을 돌려 실측 GFLOPS를 얻는다. CI 러너에는
-    /// `~/.kubemetal/venv`가 없으므로(이 저장소 관례상 CI가 venv를 갖췄다고 가정하지 않는다)
-    /// `#[ignore]`로 표시한다 — 로컬에서 `cargo test -- --ignored`로 실행해 실제 하드웨어
-    /// 값을 확인한다.
+    /// 벤치마크 런처가 실제 stdout JSON을 실행·파싱하는지를 격리 검증한다. MLX 하드웨어
+    /// 측정은 앱에서만 수행하며, 테스트가 로컬 venv의 존재를 전제하지 않는다.
     #[tokio::test]
-    #[ignore = "실제 MLX venv(~/.kubemetal/venv)가 있는 Apple Silicon 기기에서만 실행 가능 — CI 러너엔 venv가 없다"]
-    async fn run_gpu_benchmark_inner_produces_real_measurement() {
-        let venv_py = crate::commands::mlx::venv_python().expect("HOME must resolve");
-        let script = repo_gpu_benchmark_script();
+    async fn run_gpu_benchmark_inner_parses_measured_output() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = std::env::temp_dir().join(format!("kubemetal-gpu-benchmark-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create test directory");
+        let venv_py = dir.join("python3");
+        let script = dir.join("gpu_benchmark.py");
+        std::fs::write(&venv_py, "#!/bin/sh\nprintf '%s\\n' '{\"gflops\": 42.5, \"elapsed_seconds\": 0.000001, \"matrix_dim\": 2048, \"iterations\": 20}'\n")
+            .expect("write fake python");
+        let mut permissions = std::fs::metadata(&venv_py).expect("stat fake python").permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&venv_py, permissions).expect("make fake python executable");
+        std::fs::write(&script, "# placeholder").expect("write benchmark script");
 
         let result = run_gpu_benchmark_inner(&venv_py, &script)
             .await
-            .expect("benchmark should succeed on a machine with a working MLX venv");
+            .expect("fake runner should emit a valid measurement");
 
         assert_eq!(result.matrix_dim, 2048);
         assert_eq!(result.iterations, 20);
-        assert!(result.gflops > 0.0, "GFLOPS must be a real positive measurement");
+        assert_eq!(result.gflops, 42.5);
         assert!(result.python_elapsed_seconds > 0.0);
         assert!(result.rust_elapsed_seconds >= result.python_elapsed_seconds);
+        std::fs::remove_dir_all(dir).ok();
     }
 
     /// 존재하지 않는 스크립트 경로는 스폰조차 시도하지 않고 즉시 Err여야 한다 — 가짜

@@ -146,7 +146,7 @@ pub struct DataIngestState {
     pub last_result: Mutex<Option<IngestFlowResult>>,
 }
 
-/// D37과 같은 사상(성공한 산출물에 sha256 증빙을 남긴다, `mlx.rs::write_training_manifest`
+/// D38과 같은 사상(성공한 산출물에 sha256 증빙을 남긴다, `mlx.rs::write_training_manifest`
 /// #22)을 데이터셋 ingest에도 적용한다(#14 축소 스코프) — dedup/DVC 연결 검증/버전 관리는
 /// 이 스코프에 없다, 판정 함수만 제공한다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -219,7 +219,7 @@ fn build_provenance_json(provenance: &DatasetProvenance) -> Result<String, Strin
         .map_err(|e| format!("Failed to serialize dataset provenance: {e}"))
 }
 
-/// ingest 성공 경로에서만 호출한다(D37과 동일 원칙 — 실패 시에는 provenance.json을 남기지
+/// ingest 성공 경로에서만 호출한다(D38과 동일 원칙 — 실패 시에는 provenance.json을 남기지
 /// 않는다). `source_type`이 local이면 `resolved_source_path`(검증·확장된 실제 경로)의
 /// sha256을 기록하고, web/rss/hf처럼 로컬 파일이 없는 소스는 해시를 지어내지 않고(D22)
 /// `source_hash: null` + 이유를 남긴다. 프런트 소비자가 아직 없어 IPC로는 노출하지
@@ -443,7 +443,7 @@ pub async fn run_data_ingest(
         return Err(err_msg.to_string());
     }
 
-    // #14 축소 스코프(D37과 동일 사상): 성공한 ingest 산출물에만 provenance 매니페스트를
+    // #14 축소 스코프(D38과 동일 사상): 성공한 ingest 산출물에만 provenance 매니페스트를
     // 남긴다. 매니페스트 기록 실패가 이미 성공한 ingest 결과 반환을 막아서는 안 되므로
     // 에러는 전파하지 않고 로그로만 남긴다(D22 — 조용히 삼키지 않되, ingest 자체의
     // 성공/실패 판정과는 분리한다).
