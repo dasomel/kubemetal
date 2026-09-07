@@ -29,7 +29,7 @@ VITE_PORT := 5173
 .DEFAULT_GOAL := help
 
 .PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap \
-        lint fmt verify license-check vuln-check clean-light cluster-up cluster-down provision provision-all kagent-up \
+        lint fmt verify license-check vuln-check supply-chain-check clean-light cluster-up cluster-down provision provision-all kagent-up \
         preflight render export-gitops \
         forward forward-stop status index-code analyze-code serve-codegraph clean
 
@@ -118,6 +118,12 @@ license-check: ## 번들 의존성 라이선스 정책 게이트 (self-test 포�
 # 돌아야 한다. 릴리스 워크플로가 같은 검사를 게이트로 건다(이슈 #35).
 vuln-check: ## 번들 의존성 취약점 스캔 (HIGH/CRITICAL, 네트워크 필요)
 	trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --skip-version-check .
+
+# verify에 넣지 않는다 — RUSTSEC advisory DB 조회는 네트워크를 타고, verify는
+# 폐쇄망에서도 돌아야 한다. trivy(vuln-check)는 알려진 취약점만 보고 yanked crate나
+# 미승인 registry/git 소스는 보지 못하므로 trivy와 별개로 필요하다(이슈 #36).
+supply-chain-check: ## RUSTSEC 권고/yanked/미승인 소스 게이트 (네트워크 필요, verify에서 제외, 이슈 #36)
+	cargo deny --manifest-path $(CARGO_MANIFEST) check advisories sources
 
 fmt: ## rustfmt
 	cargo fmt --manifest-path $(CARGO_MANIFEST)

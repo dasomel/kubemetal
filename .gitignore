@@ -12,6 +12,7 @@ dist/
 # Rust / Tauri
 src-tauri/target/
 src-tauri/gen/
+fixtures/build-script-egress-probe/target/
 
 # Claude Code / OMC operational state (committable exception: .omc/skills/)
 .omc/*

@@ -69,7 +69,9 @@ Changing a D-registry decision requires updating all affected docs in the same t
 
 `make help` is the entrypoint — recipes there are canonical, so read them rather than
 reconstructing flags. The gates worth knowing by name: `make verify` (tests + clippy + tsc +
-design lint + web build), `make verify-airgap` (offline-startup probe, D25).
+design lint + web build), `make verify-airgap` (offline-startup probe, D25), `make
+supply-chain-check` (cargo-deny advisories/sources, network required, excluded from
+`verify`, D40).
 
 Green gates say the code compiles, not that the feature works. Anything user-facing gets
 observed in the running app; anything cluster-facing gets checked against real colima as the

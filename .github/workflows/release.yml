@@ -5,27 +5,41 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build-release:
+  # 빌드 스텝(pnpm install, cargo/tauri build, trivy, SBOM 생성 등)이 공급망 공격의
+  # 실제 표적이다 — 이 job에는 릴리스 생성 권한을 주지 않는다(contents: read).
+  # persist-credentials: false로 체크아웃된 워크스페이스에도 쓰기 가능한
+  # 자격증명을 남기지 않는다(GitHub #36, D40).
+  build:
     runs-on: macos-14
+    permissions:
+      contents: read
     # 컨텍스트 값은 run 셸에 직접 보간하지 않고 env로 넘긴다(인젝션 방지 관행).
     env:
       TAG: ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      # 이 리포는 이제 origin에 push되어 실제 CI가 돈다 — 하지만 아직 egress
+      # baseline을 몇 차례 수집한 적이 없어 audit(로깅만)으로 시작한다. 몇 번의
+      # 실제 실행 로그를 검토한 뒤 block으로 승격한다(#36, D40).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
-      - uses: aquasecurity/setup-trivy@v0.3.1
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
           version: v0.69.3
       - run: pnpm install --frozen-lockfile
@@ -42,6 +56,25 @@ jobs:
         run: |
           trivy fs --scanners vuln --severity HIGH,CRITICAL \
             --exit-code 1 --skip-version-check .
+      # RUSTSEC 권고/yanked/미승인 소스 게이트 — trivy는 취약점만 보고 yanked나
+      # 미승인 registry/git 소스는 못 본다(이슈 #36). EmbarkStudios/cargo-deny-action은
+      # Docker container action이라 GitHub 정책상 Linux 러너에서만 실행 가능하고
+      # 이 job은 macos-14라 실행할 수 없다(공식 문서 확인) — 대신 cargo-deny를
+      # 직접 설치해 Makefile의 supply-chain-check와 동일한 검사를 수행한다.
+      #
+      # report-only(continue-on-error)로 두는 이유(D40, 실측 2026-09-08): 도입
+      # 시점에 이미 존재하던 findings(tauri-utils → urlpattern → unic-* 경로의
+      # unmaintained 5건 — 전부 Tauri 자체의 전이 의존성, 현재 안전한 업그레이드
+      # 없음)가 있어 지금 바로 hard-block하면 이 리포가 만든 적 없는 원인으로
+      # 릴리스가 항상 막힌다. 각 finding의 실제 도달 가능성(공격자 제어 입력이 그
+      # 경로를 타는지)을 심사한 뒤 hard-block으로 승격하는 것이 후속 작업이다 —
+      # 이 게이트를 "통과 안 해도 되는 장식"으로 만들려는 게 아니라, 검증 없는
+      # block이 harden-runner에서도 피한 것과 같은 실수(#36 자체 기준)이기 때문이다.
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --version 0.20.2 --locked
+      - name: Supply-chain gate (advisories/yanked/unapproved sources) — report-only, see D40
+        continue-on-error: true
+        run: cargo deny --manifest-path src-tauri/Cargo.toml check advisories sources
       # .dmg 번들 단계는 헤드리스 세션에서 Finder AppleScript 대기로 멈춘다(README
       # "빌드 / 패키징" 절 실측) — 릴리스 산출물은 .app을 zip으로 배포한다.
       - run: pnpm tauri build --bundles app
@@ -99,9 +132,41 @@ jobs:
           print()
           PY
           ditto -c -k stage "KubeMetal-${TAG}-aarch64.zip"
+      # 릴리스에 첨부할 산출물만 다음 job(publish, contents: write)으로 넘긴다 —
+      # 이 job 자체는 릴리스 생성 권한이 없다(GitHub #36, D40).
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-assets
+          path: |
+            KubeMetal-${{ github.ref_name }}-aarch64.zip
+            stage/SHA256SUMS.txt
+            stage/release-manifest.json
+          if-no-files-found: error
+
+  # build job이 만든 산출물을 받아 GitHub 릴리스를 생성하기만 한다 — 빌드 스텝
+  # 전체는 이 권한을 갖지 않는다(GitHub #36, D40). 아티팩트 자체는 OS 무관이지만
+  # 이번 스코프는 변경 최소화를 위해 macos-14로 통일한다.
+  publish:
+    needs: build
+    runs-on: macos-14
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-assets
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          # publish job은 checkout을 하지 않는다(코드를 받을 필요가 없다) — gh는
+          # 보통 로컬 git remote로 대상 저장소를 추론하는데, checkout이 없으면
+          # 그 추론이 불가능해 실패한다. GH_REPO로 명시해 checkout 없이도 동작하게 한다.
+          GH_REPO: ${{ github.repository }}
         run: >
           gh release create "$TAG"
           --title "KubeMetal $TAG"

@@ -7,20 +7,33 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   verify:
     # Apple Silicon 전용 앱 — arm64 macOS 러너에서만 의미 있는 검증이다.
     runs-on: macos-14
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
+      # 이 리포는 이제 origin에 push되어 실제 CI가 돈다 — 하지만 아직 egress
+      # baseline을 몇 차례 수집한 적이 없어 audit(로깅만)으로 시작한다. 몇 번의
+      # 실제 실행 로그를 검토한 뒤 block으로 승격한다(#36, D40).
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 10
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
           cache: pnpm
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: src-tauri
       - run: pnpm install --frozen-lockfile
