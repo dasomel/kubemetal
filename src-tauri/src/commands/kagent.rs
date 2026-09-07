@@ -181,7 +181,10 @@ pub async fn get_kagent_diagnostics(
             for cs in cs_list {
                 if let Some(waiting) = cs["state"]["waiting"].as_object() {
                     let reason = waiting.get("reason").and_then(|r| r.as_str()).unwrap_or("");
-                    if reason.is_empty() || reason == "ContainerCreating" || reason == "PodInitializing" {
+                    if reason.is_empty()
+                        || reason == "ContainerCreating"
+                        || reason == "PodInitializing"
+                    {
                         continue;
                     }
                     has_issue = true;
@@ -218,7 +221,10 @@ pub async fn get_kagent_diagnostics(
     } else if pod_issues_count > 0 {
         format!("Check events via kagent UI or `kubectl --context {target_ctx} describe pod <name>`, and request a diagnosis from k8s-agent.")
     } else {
-        format!("No further action needed. {} active agent(s) Ready.", active_agents.len())
+        format!(
+            "No further action needed. {} active agent(s) Ready.",
+            active_agents.len()
+        )
     };
 
     Ok(KagentDiagnosticReport {
@@ -243,7 +249,8 @@ pub async fn toggle_kagent_agent(
 
     if enable {
         let manifest = match agent_name.as_str() {
-            "security-agent" => r#"apiVersion: kagent.dev/v1alpha2
+            "security-agent" => {
+                r#"apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:
   name: security-agent
@@ -278,8 +285,10 @@ spec:
         - k8s_get_resources
         - k8s_describe_resource
         - k8s_get_events
-"#,
-            "promql-agent" => r#"apiVersion: kagent.dev/v1alpha2
+"#
+            }
+            "promql-agent" => {
+                r#"apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:
   name: promql-agent
@@ -295,8 +304,10 @@ spec:
     modelConfig: default-model-config
     systemMessage: |
       You are PromQLAssist, an AI agent for cluster metrics and Prometheus analysis.
-"#,
-            "observability-agent" => r#"apiVersion: kagent.dev/v1alpha2
+"#
+            }
+            "observability-agent" => {
+                r#"apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:
   name: observability-agent
@@ -312,7 +323,8 @@ spec:
     modelConfig: default-model-config
     systemMessage: |
       You are ObservabilityAssist, an AI agent analyzing OpenTelemetry and trace data.
-"#,
+"#
+            }
             other => {
                 return Err(format!(
                     "Agent [{other}] cannot be installed by this app. Installable: {}",
@@ -351,7 +363,13 @@ spec:
     } else {
         let output = external_command("kubectl")?
             .args([
-                "--context", &target_ctx, "delete", "agent.kagent.dev", &agent_name, "-n", "kagent",
+                "--context",
+                &target_ctx,
+                "delete",
+                "agent.kagent.dev",
+                &agent_name,
+                "-n",
+                "kagent",
             ])
             .output()
             .await
@@ -534,7 +552,15 @@ async fn get_model_config_json(
 ) -> Result<Option<serde_json::Value>, String> {
     match kubectl_json(
         context,
-        &["-n", namespace, "get", "modelconfig", MODEL_CONFIG_NAME, "-o", "json"],
+        &[
+            "-n",
+            namespace,
+            "get",
+            "modelconfig",
+            MODEL_CONFIG_NAME,
+            "-o",
+            "json",
+        ],
     )
     .await
     {
@@ -558,7 +584,19 @@ enum BridgePortCheck {
 /// best-effort 조회 — kubectl 실패/파싱 실패는 `Unknown`으로 흡수해 전체 상태 조회
 /// 자체는 막지 않지만, 그 실패를 `stale_code=None`(정상)으로 위장하지도 않는다.
 async fn check_bridge_port(context: &str, namespace: &str, serving_port: u16) -> BridgePortCheck {
-    let Ok(svc) = kubectl_json(context, &["-n", namespace, "get", "svc", "mac-gpu-service", "-o", "json"]).await
+    let Ok(svc) = kubectl_json(
+        context,
+        &[
+            "-n",
+            namespace,
+            "get",
+            "svc",
+            "mac-gpu-service",
+            "-o",
+            "json",
+        ],
+    )
+    .await
     else {
         return BridgePortCheck::Unknown;
     };
@@ -568,7 +606,10 @@ async fn check_bridge_port(context: &str, namespace: &str, serving_port: u16) ->
     let Some(ports) = svc["spec"]["ports"].as_array() else {
         return BridgePortCheck::Unknown;
     };
-    if ports.iter().any(|p| p["port"].as_u64() == Some(serving_port as u64)) {
+    if ports
+        .iter()
+        .any(|p| p["port"].as_u64() == Some(serving_port as u64))
+    {
         BridgePortCheck::Proxied
     } else {
         BridgePortCheck::NotProxied
@@ -599,18 +640,27 @@ pub async fn get_kagent_model_status(
         });
 
     let model_config_json = get_model_config_json(&target.context, "kagent").await?;
-    let model_config = model_config_json.as_ref().map(|v| KagentModelConfigSummary {
-        base_url: v["spec"]["openAI"]["baseUrl"].as_str().map(str::to_string),
-        model: v["spec"]["model"].as_str().map(str::to_string),
-    });
+    let model_config = model_config_json
+        .as_ref()
+        .map(|v| KagentModelConfigSummary {
+            base_url: v["spec"]["openAI"]["baseUrl"].as_str().map(str::to_string),
+            model: v["spec"]["model"].as_str().map(str::to_string),
+        });
 
     let stale_code = match (&serving, &model_config) {
         (Some(srv), Some(mc)) => {
             let base_url = mc.base_url.clone().unwrap_or_default();
             let model = mc.model.clone().unwrap_or_default();
-            match classify_model_stale(&base_url, &model, &target.namespace, srv.port, &srv.model_id) {
+            match classify_model_stale(
+                &base_url,
+                &model,
+                &target.namespace,
+                srv.port,
+                &srv.model_id,
+            ) {
                 Some(code) => Some(code.to_string()),
-                None => match check_bridge_port(&target.context, &target.namespace, srv.port).await {
+                None => match check_bridge_port(&target.context, &target.namespace, srv.port).await
+                {
                     BridgePortCheck::NotProxied => Some("bridge_port_not_proxied".to_string()),
                     BridgePortCheck::Unknown => Some("bridge_state_unknown".to_string()),
                     BridgePortCheck::Proxied | BridgePortCheck::NotApplicable => None,
@@ -732,7 +782,10 @@ mod tests {
     /// 보고했다 — 거짓 경보이고, 거짓 성공의 반대편이다.
     #[test]
     fn pending_pod_is_not_an_issue_by_phase_alone() {
-        assert!(!phase_is_failing("Pending"), "갓 생성된 파드가 장애로 잡힌다");
+        assert!(
+            !phase_is_failing("Pending"),
+            "갓 생성된 파드가 장애로 잡힌다"
+        );
         assert!(!phase_is_failing("Running"));
         assert!(!phase_is_failing("Succeeded"));
         assert!(phase_is_failing("Failed"));
@@ -758,7 +811,10 @@ mod tests {
         });
         let reason = unschedulable_reason(&stuck).expect("스케줄 실패를 놓쳤다");
         assert!(reason.contains("Unschedulable"));
-        assert!(reason.contains("insufficient memory"), "클러스터 메시지가 유실됐다");
+        assert!(
+            reason.contains("insufficient memory"),
+            "클러스터 메시지가 유실됐다"
+        );
 
         // 정상 기동 중인 Pending(스케줄은 됐고 이미지 받는 중)은 장애가 아니다.
         let starting = serde_json::json!({
@@ -777,7 +833,13 @@ mod tests {
     #[test]
     fn classify_model_stale_flags_non_bridge_baseurl_as_not_configured() {
         // 차트 기본값(gpt-4 등) — 우리 브리지 패턴이 아니다.
-        let code = classify_model_stale("https://api.openai.com/v1", "gpt-4", "default", 8081, "/models/foo");
+        let code = classify_model_stale(
+            "https://api.openai.com/v1",
+            "gpt-4",
+            "default",
+            8081,
+            "/models/foo",
+        );
         assert_eq!(code, Some("not_configured"));
     }
 
@@ -819,6 +881,9 @@ mod tests {
 
     #[test]
     fn yaml_dquote_escapes_backslash_and_quote() {
-        assert_eq!(yaml_dquote(r#"C:\path\"weird""#), r#""C:\\path\\\"weird\"""#);
+        assert_eq!(
+            yaml_dquote(r#"C:\path\"weird""#),
+            r#""C:\\path\\\"weird\"""#
+        );
     }
 }

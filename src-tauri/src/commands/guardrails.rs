@@ -102,14 +102,9 @@ async fn measure_on_battery() -> bool {
         Ok(c) => c,
         Err(_) => return false,
     };
-    let output = cmd
-        .args(["-g", "batt"])
-        .output()
-        .await;
+    let output = cmd.args(["-g", "batt"]).output().await;
     match output {
-        Ok(out) if out.status.success() => {
-            parse_on_battery(&String::from_utf8_lossy(&out.stdout))
-        }
+        Ok(out) if out.status.success() => parse_on_battery(&String::from_utf8_lossy(&out.stdout)),
         _ => false,
     }
 }
@@ -557,4 +552,3 @@ mod tests {
         );
     }
 }
-

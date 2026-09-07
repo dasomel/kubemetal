@@ -195,7 +195,9 @@ mod tests {
     /// 배제하고, 두 시나리오는 한 테스트 함수에 몰아 이 테스트 안에서의 순서도 보장한다.
     #[test]
     fn bridge_bind_host_is_gated_by_the_active_verified_bridge() {
-        let _guard = ACTIVE_TARGET_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = ACTIVE_TARGET_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         set_active(&DeployTarget::for_context(COLIMA_CONTEXT));
         assert!(allowed_private_bind_host("0.0.0.0").is_err());
         assert!(allowed_private_bind_host("8.8.8.8").is_err());
@@ -220,6 +222,9 @@ mod tests {
 
     #[test]
     fn target_is_always_loopback() {
-        assert_eq!(target_addr(8000), SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8000));
+        assert_eq!(
+            target_addr(8000),
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8000)
+        );
     }
 }

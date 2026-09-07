@@ -102,7 +102,8 @@ test-e2e: ## 종합 E2E 자율 피드백 검증 스위트 실행 (합성데이�
 verify-airgap: ## 폐쇄망 기동 가능성 검증 (imagePullPolicy: Never 프로브)
 	./scripts/airgap/verify_offline_images.sh
 
-lint: ## clippy(-D warnings) + tsc + DESIGN.md 토큰 린트 + IPC 타입 대조
+lint: ## rustfmt --check + clippy(-D warnings) + tsc + DESIGN.md 토큰 린트 + IPC 타입 대조
+	cargo fmt --manifest-path $(CARGO_MANIFEST) --check
 	cargo clippy --manifest-path $(CARGO_MANIFEST) --all-targets -- -D warnings
 	npx tsc --noEmit
 	npx @google/design.md lint DESIGN.md

@@ -55,7 +55,16 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
         // 배포한 경우까지 default로 조회하면 스택이 없다고 오판한다.
         let (_, namespace) = crate::services::deploy_target::active_context();
         let deploy_out = external_command("kubectl")?
-            .args(["--context", "colima", "get", "deploy", "-n", &namespace, "-o", "json"])
+            .args([
+                "--context",
+                "colima",
+                "get",
+                "deploy",
+                "-n",
+                &namespace,
+                "-o",
+                "json",
+            ])
             .output()
             .await
             .map_err(|e| format!("kubectl get deploy failed: {e}"))?;
@@ -89,7 +98,11 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
                     })
                     .unwrap_or(false)
         });
-        (is_ready("mlflow"), is_ready("seaweedfs"), artifact_store_wired)
+        (
+            is_ready("mlflow"),
+            is_ready("seaweedfs"),
+            artifact_store_wired,
+        )
     } else {
         (false, false, false)
     };
@@ -121,8 +134,10 @@ pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
     let output = external_command("colima")?
         .args([
             "start",
-            "--cpu", &cpu.to_string(),
-            "--memory", &memory.to_string(),
+            "--cpu",
+            &cpu.to_string(),
+            "--memory",
+            &memory.to_string(),
             "--vm-type=vz",
             "--mount-type=virtiofs",
             "--kubernetes",
@@ -209,23 +224,78 @@ pub struct AirgapStatusReport {
 /// 매니페스트에 선언되지 않는 자산 — Helm 차트가 배포하는 이미지, 바이너리, 차트 자체.
 /// 형식: (category, 표시 이름, 버전, 번들 내 상대경로)
 const STATIC_AIRGAP_TARGETS: [(&str, &str, &str, &str); 11] = [
-    ("Binary", "K3s Kubernetes Engine", "v1.28.2 (arm64)", "binaries/k3s"),
-    ("Binary", "Kubescape Security CLI", "v3.0.0", "binaries/kubescape"),
+    (
+        "Binary",
+        "K3s Kubernetes Engine",
+        "v1.28.2 (arm64)",
+        "binaries/k3s",
+    ),
+    (
+        "Binary",
+        "Kubescape Security CLI",
+        "v3.0.0",
+        "binaries/kubescape",
+    ),
     // CRD 차트는 본 차트의 선행 조건이다(D33 개정 2) — 이것 없이는 폐쇄망 최초 설치가
     // helm 렌더 단계에서 죽는다. 번들에 빠져 있으면 상태 화면이 "완비"라고 말하게 된다.
-    ("Helm Chart", "kagent CRD Helm Chart", "0.9.12", "charts/kagent-crds-0.9.12.tgz"),
-    ("Helm Chart", "kagent Helm Chart", "0.9.12", "charts/kagent-0.9.12.tgz"),
-    ("Container Image", "kagent Controller Image", "0.9.12", "images/cr.kagent.dev_kagent-dev_kagent_controller_0.9.12.tar.gz"),
-    ("Container Image", "kagent Declarative App Image", "0.9.12", "images/cr.kagent.dev_kagent-dev_kagent_app_0.9.12.tar.gz"),
-    ("Container Image", "kagent UI Dashboard Image", "0.9.12", "images/cr.kagent.dev_kagent-dev_kagent_ui_0.9.12.tar.gz"),
-    ("Container Image", "kagent Tools Server Image", "0.2.1", "images/ghcr.io_kagent-dev_kagent_tools_0.2.1.tar.gz"),
-    ("Container Image", "kmcp Controller Image", "0.3.0", "images/ghcr.io_kagent-dev_kmcp_controller_0.3.0.tar.gz"),
+    (
+        "Helm Chart",
+        "kagent CRD Helm Chart",
+        "0.9.12",
+        "charts/kagent-crds-0.9.12.tgz",
+    ),
+    (
+        "Helm Chart",
+        "kagent Helm Chart",
+        "0.9.12",
+        "charts/kagent-0.9.12.tgz",
+    ),
+    (
+        "Container Image",
+        "kagent Controller Image",
+        "0.9.12",
+        "images/cr.kagent.dev_kagent-dev_kagent_controller_0.9.12.tar.gz",
+    ),
+    (
+        "Container Image",
+        "kagent Declarative App Image",
+        "0.9.12",
+        "images/cr.kagent.dev_kagent-dev_kagent_app_0.9.12.tar.gz",
+    ),
+    (
+        "Container Image",
+        "kagent UI Dashboard Image",
+        "0.9.12",
+        "images/cr.kagent.dev_kagent-dev_kagent_ui_0.9.12.tar.gz",
+    ),
+    (
+        "Container Image",
+        "kagent Tools Server Image",
+        "0.2.1",
+        "images/ghcr.io_kagent-dev_kagent_tools_0.2.1.tar.gz",
+    ),
+    (
+        "Container Image",
+        "kmcp Controller Image",
+        "0.3.0",
+        "images/ghcr.io_kagent-dev_kmcp_controller_0.3.0.tar.gz",
+    ),
     // kagent이 요구하는 Postgres. 다운로더는 받아왔지만 이 목록에 없어 상태 화면이 존재를
     // 검사하지 않던 자산이다 — static_airgap_targets_match_images_helm_txt가 잡아냈다.
-    ("Container Image", "kagent Postgres Database", "18.3-alpine", "images/postgres_18.3-alpine.tar.gz"),
+    (
+        "Container Image",
+        "kagent Postgres Database",
+        "18.3-alpine",
+        "images/postgres_18.3-alpine.tar.gz",
+    ),
     // 태그를 고정한다(이슈 #5) — `latest`는 수집 시점마다 다른 내용을 받아오므로
     // "번들은 불변"이라는 전제가 성립하지 않는다. 저장소 전체에서 유일한 `latest`였다.
-    ("Container Image", "Trivy Vulnerability Scanner", "0.69.3", "images/aquasec_trivy_0.69.3.tar.gz"),
+    (
+        "Container Image",
+        "Trivy Vulnerability Scanner",
+        "0.69.3",
+        "images/aquasec_trivy_0.69.3.tar.gz",
+    ),
 ];
 
 /// `docker save`가 만든 파일명 규칙 — 다운로더의 `tr '/:' '_'`와 동일해야 한다.
@@ -275,8 +345,11 @@ fn images_from_manifests(manifest_dir: &std::path::Path) -> Vec<String> {
 
 #[tauri::command]
 pub async fn get_airgap_status(app: tauri::AppHandle) -> Result<AirgapStatusReport, String> {
-    let home_str = std::env::var("HOME").map_err(|_| "HOME environment variable not found.".to_string())?;
-    let airgap_dir = std::path::PathBuf::from(home_str).join(".kubemetal").join("airgap");
+    let home_str =
+        std::env::var("HOME").map_err(|_| "HOME environment variable not found.".to_string())?;
+    let airgap_dir = std::path::PathBuf::from(home_str)
+        .join(".kubemetal")
+        .join("airgap");
 
     let mut targets: Vec<(String, String, String, String)> = STATIC_AIRGAP_TARGETS
         .iter()
@@ -518,7 +591,10 @@ mod tests {
             image_archive_name("ghcr.io/mlflow/mlflow:v3.14.0"),
             "images/ghcr.io_mlflow_mlflow_v3.14.0.tar.gz"
         );
-        assert_eq!(image_archive_name("nginx:alpine"), "images/nginx_alpine.tar.gz");
+        assert_eq!(
+            image_archive_name("nginx:alpine"),
+            "images/nginx_alpine.tar.gz"
+        );
     }
 
     #[test]

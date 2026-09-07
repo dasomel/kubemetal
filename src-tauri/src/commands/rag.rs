@@ -147,9 +147,7 @@ pub async fn get_dvc_status() -> Result<DvcStatus, String> {
             current_tag: None,
             dataset_path,
             tags: Vec::new(),
-            last_error: Some(
-                "DVC is not initialized yet — run dvc_commit_dataset first.".into(),
-            ),
+            last_error: Some("DVC is not initialized yet — run dvc_commit_dataset first.".into()),
         });
     }
 
@@ -304,14 +302,12 @@ pub async fn index_documents(
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
     let rag_script = resolve_bundled_resource(&resource_dir, "scripts/rag/rag_host.py");
     if !rag_script.is_file() {
-        return Err(format!(
-            "RAG script not found: {}",
-            rag_script.display()
-        ));
+        return Err(format!("RAG script not found: {}", rag_script.display()));
     }
 
     let collection = collection_name.unwrap_or_else(|| "default".to_string());
-    let model = embedding_model.unwrap_or_else(|| "sentence-transformers/all-MiniLM-L6-v2".to_string());
+    let model =
+        embedding_model.unwrap_or_else(|| "sentence-transformers/all-MiniLM-L6-v2".to_string());
     let db_dir = default_lancedb_dir()?;
 
     let output = tokio::process::Command::new(&venv_py)
@@ -379,14 +375,12 @@ pub async fn query_rag(
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
     let rag_script = resolve_bundled_resource(&resource_dir, "scripts/rag/rag_host.py");
     if !rag_script.is_file() {
-        return Err(format!(
-            "RAG script not found: {}",
-            rag_script.display()
-        ));
+        return Err(format!("RAG script not found: {}", rag_script.display()));
     }
 
     let collection = collection_name.unwrap_or_else(|| "default".to_string());
-    let model = embedding_model.unwrap_or_else(|| "sentence-transformers/all-MiniLM-L6-v2".to_string());
+    let model =
+        embedding_model.unwrap_or_else(|| "sentence-transformers/all-MiniLM-L6-v2".to_string());
     let k = top_k.unwrap_or(3);
     let db_dir = default_lancedb_dir()?;
 
@@ -437,8 +431,9 @@ pub async fn query_rag(
         .map(std::mem::take)
         .ok_or_else(|| "Cannot read results array.".to_string())?;
 
-    let search_results: Vec<RagSearchResult> = serde_json::from_value(serde_json::Value::Array(raw_results))
-        .map_err(|e| format!("Failed to convert to RagSearchResult: {e}"))?;
+    let search_results: Vec<RagSearchResult> =
+        serde_json::from_value(serde_json::Value::Array(raw_results))
+            .map_err(|e| format!("Failed to convert to RagSearchResult: {e}"))?;
 
     Ok(search_results)
 }
@@ -458,10 +453,7 @@ pub async fn dvc_commit_dataset(
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
     let rag_script = resolve_bundled_resource(&resource_dir, "scripts/rag/rag_host.py");
     if !rag_script.is_file() {
-        return Err(format!(
-            "RAG script not found: {}",
-            rag_script.display()
-        ));
+        return Err(format!("RAG script not found: {}", rag_script.display()));
     }
 
     let target_dir = match data_path {

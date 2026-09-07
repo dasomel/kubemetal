@@ -6,9 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
 use crate::commands::access::resolve_s3_credentials;
-use crate::commands::mlx::{
-    validate_home_subpath, venv_python,
-};
+use crate::commands::mlx::{validate_home_subpath, venv_python};
 use crate::commands::rag::default_lancedb_dir;
 use crate::services::ports;
 use crate::services::process::{augmented_path, resolve_bundled_resource};
@@ -55,13 +53,17 @@ fn validate_ingest_url(url: &str) -> Result<String, String> {
         || host_lower.ends_with(".internal")
         || host_lower.ends_with(".local")
     {
-        return Err(format!("Private/loopback network targets are not allowed: {host}"));
+        return Err(format!(
+            "Private/loopback network targets are not allowed: {host}"
+        ));
     }
 
     if let Ok(ip) = host_lower.parse::<IpAddr>() {
         let blocked = ip_blocked(ip);
         if blocked {
-            return Err(format!("Private/loopback network targets are not allowed: {host}"));
+            return Err(format!(
+                "Private/loopback network targets are not allowed: {host}"
+            ));
         }
     }
 
@@ -92,7 +94,10 @@ async fn ensure_public_resolution(host: &str) -> Result<(), String> {
         .map_err(|e| format!("Host resolution failed (blocked): {host} ({e})"))?;
     for sa in addrs {
         if ip_blocked(sa.ip()) {
-            return Err(format!("Host resolves to a blocked IP: {host} -> {}", sa.ip()));
+            return Err(format!(
+                "Host resolves to a blocked IP: {host} -> {}",
+                sa.ip()
+            ));
         }
     }
     Ok(())
@@ -247,7 +252,8 @@ pub async fn run_data_ingest(
     }
 
     let collection = collection_name.unwrap_or_else(|| "dataset_ingest".to_string());
-    let model = embedding_model.unwrap_or_else(|| "sentence-transformers/all-MiniLM-L6-v2".to_string());
+    let model =
+        embedding_model.unwrap_or_else(|| "sentence-transformers/all-MiniLM-L6-v2".to_string());
     let c_size = chunk_size.unwrap_or(500);
     let c_overlap = chunk_overlap.unwrap_or(50);
     let db_dir = default_lancedb_dir()?;
@@ -279,7 +285,8 @@ pub async fn run_data_ingest(
                 cmd.arg("--remote-url").arg(r_url);
             }
             None => {
-                cmd.arg("--remote-url").arg(ports::local_url("seaweedfs-s3"));
+                cmd.arg("--remote-url")
+                    .arg(ports::local_url("seaweedfs-s3"));
             }
         }
         if let Some(ref bucket) = dvc_bucket {
@@ -310,7 +317,10 @@ pub async fn run_data_ingest(
     }
 
     if result.status != "ok" {
-        let err_msg = result.error.as_deref().unwrap_or("An error occurred during data ingest.");
+        let err_msg = result
+            .error
+            .as_deref()
+            .unwrap_or("An error occurred during data ingest.");
         return Err(err_msg.to_string());
     }
 

@@ -239,7 +239,11 @@ pub async fn start_local_inference_runtime(
         };
         let (exit_code, success, detail) = match wait_result {
             Ok(status) => (status.code(), status.success(), None),
-            Err(error) => (None, false, Some(format!("Failed to wait for process: {error}"))),
+            Err(error) => (
+                None,
+                false,
+                Some(format!("Failed to wait for process: {error}")),
+            ),
         };
         let last_exit_lock = state.last_exit.lock();
         if let Ok(mut guard) = last_exit_lock {

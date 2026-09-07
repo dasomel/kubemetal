@@ -24,12 +24,36 @@ pub struct PortSpec {
 /// `serving`은 포워딩이 아니라 호스트 프로세스지만, 범위(8080~8099)를 여기서 함께
 /// 소유해야 `suggest_serving_port`와 실제 기동 경로가 같은 값을 본다.
 pub const SPECS: [PortSpec; 6] = [
-    PortSpec { key: "mlflow", preferred: 5001, range_end: 5010 },
-    PortSpec { key: "seaweedfs-s3", preferred: 8333, range_end: 8343 },
-    PortSpec { key: "seaweedfs-filer", preferred: 8888, range_end: 8898 },
-    PortSpec { key: "prefect", preferred: 4200, range_end: 4210 },
-    PortSpec { key: "kagent-ui", preferred: 8090, range_end: 8099 },
-    PortSpec { key: "serving", preferred: 8080, range_end: 8099 },
+    PortSpec {
+        key: "mlflow",
+        preferred: 5001,
+        range_end: 5010,
+    },
+    PortSpec {
+        key: "seaweedfs-s3",
+        preferred: 8333,
+        range_end: 8343,
+    },
+    PortSpec {
+        key: "seaweedfs-filer",
+        preferred: 8888,
+        range_end: 8898,
+    },
+    PortSpec {
+        key: "prefect",
+        preferred: 4200,
+        range_end: 4210,
+    },
+    PortSpec {
+        key: "kagent-ui",
+        preferred: 8090,
+        range_end: 8099,
+    },
+    PortSpec {
+        key: "serving",
+        preferred: 8080,
+        range_end: 8099,
+    },
 ];
 
 /// 배정된 실제 포트. 0은 "아직 배정 안 됨"이며 그때는 `preferred`를 돌려준다 —

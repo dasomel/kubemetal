@@ -38,7 +38,10 @@ fn sparse_settings_json(patch: &SafeOmlxModelSettingsPatch) -> Result<String, St
         if alias.contains('\r') || alias.contains('\n') || alias.len() > 128 {
             return Err("Invalid model alias".into());
         }
-        body.insert("model_alias".into(), serde_json::Value::String(alias.to_string()));
+        body.insert(
+            "model_alias".into(),
+            serde_json::Value::String(alias.to_string()),
+        );
     }
     if let Some(ttl) = patch.ttl_seconds {
         body.insert("ttl_seconds".into(), serde_json::Value::from(ttl));
@@ -64,7 +67,8 @@ pub async fn set_omlx_model_settings_sparse(
 ) -> Result<RuntimeActionResult, String> {
     validate_model_id(&request.model_id)?;
     let body = sparse_settings_json(&request.patch)?;
-    let cookie = omlx_admin_session(&request.endpoint, request.api_key.as_deref().unwrap_or("")).await?;
+    let cookie =
+        omlx_admin_session(&request.endpoint, request.api_key.as_deref().unwrap_or("")).await?;
     let response = loopback_http_request_with_cookie(
         &request.endpoint,
         "PUT",

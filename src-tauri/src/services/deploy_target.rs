@@ -109,9 +109,11 @@ impl DeployTarget {
 
     pub fn full_stack_gate(&self) -> Result<(), String> {
         if !self.is_colima() && self.effective_integration_level() == IntegrationLevel::AgentOnly {
-            Err("External clusters default to agent-only integration (D30) — select L2 full-stack \
+            Err(
+                "External clusters default to agent-only integration (D30) — select L2 full-stack \
                  explicitly on the deploy target card and save before provisioning the full stack"
-                .into())
+                    .into(),
+            )
         } else {
             Ok(())
         }
@@ -350,7 +352,10 @@ en0: flags=8863<UP,BROADCAST>
     #[test]
     fn parses_macos_hex_netmask() {
         let ifaces = parse_ifconfig(IFCONFIG_CLUSTER_UP);
-        let bridge = ifaces.iter().find(|i| i.name == "bridge102").expect("bridge102");
+        let bridge = ifaces
+            .iter()
+            .find(|i| i.name == "bridge102")
+            .expect("bridge102");
         assert_eq!(bridge.addr, "192.168.56.1".parse::<Ipv4Addr>().unwrap());
         assert_eq!(bridge.mask, "255.255.255.0".parse::<Ipv4Addr>().unwrap());
     }
@@ -415,10 +420,15 @@ en0: flags=8863<UP,BROADCAST>
     fn namespace_for_context_follows_the_requested_context() {
         // 전역 ACTIVE/ACTIVE_BRIDGE를 건드리는 테스트라 크레이트 전역 락으로 다른 모듈의
         // 같은 계열 테스트(`commands::local_inference_bridge::tests`)와 상호 배제한다.
-        let _guard = ACTIVE_TARGET_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = ACTIVE_TARGET_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         // 저장된 대상과 무관한 컨텍스트는 그 컨텍스트의 기본 네임스페이스를 쓴다.
         assert_eq!(namespace_for_context(COLIMA_CONTEXT), "default");
-        assert_eq!(namespace_for_context("some-external"), DEFAULT_EXTERNAL_NAMESPACE);
+        assert_eq!(
+            namespace_for_context("some-external"),
+            DEFAULT_EXTERNAL_NAMESPACE
+        );
 
         // 저장된 대상과 컨텍스트가 같으면 저장된 네임스페이스를 존중한다 —
         // 사용자가 커스텀 네임스페이스를 골랐을 수 있다.
@@ -427,7 +437,10 @@ en0: flags=8863<UP,BROADCAST>
         set_active(&custom);
         assert_eq!(namespace_for_context("some-external"), "team-ml");
         // 다른 컨텍스트에는 그 값이 새지 않아야 한다.
-        assert_eq!(namespace_for_context("other-cluster"), DEFAULT_EXTERNAL_NAMESPACE);
+        assert_eq!(
+            namespace_for_context("other-cluster"),
+            DEFAULT_EXTERNAL_NAMESPACE
+        );
 
         // 전역 상태를 원복해 다른 테스트에 영향을 주지 않는다.
         set_active(&DeployTarget::for_context(COLIMA_CONTEXT));
@@ -465,7 +478,9 @@ en0: flags=8863<UP,BROADCAST>
     fn full_stack_gate_rejects_external_none() {
         let t = DeployTarget::for_context("narwhal");
         assert_eq!(t.effective_integration_level(), IntegrationLevel::AgentOnly);
-        let err = t.full_stack_gate().expect_err("external + None must be blocked");
+        let err = t
+            .full_stack_gate()
+            .expect_err("external + None must be blocked");
         assert!(err.contains("D30"), "D30 message must be included: {err}");
     }
 

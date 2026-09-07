@@ -55,8 +55,14 @@ pub async fn provision_mlops_stack(app: tauri::AppHandle) -> Result<String, Stri
 pub(crate) async fn ensure_namespace(context: &str, namespace: &str) -> Result<(), String> {
     let manifest = external_command("kubectl")?
         .args([
-            "--context", context, "create", "namespace", namespace,
-            "--dry-run=client", "-o", "yaml",
+            "--context",
+            context,
+            "create",
+            "namespace",
+            namespace,
+            "--dry-run=client",
+            "-o",
+            "yaml",
         ])
         .output()
         .await
@@ -80,7 +86,14 @@ async fn apply_stdin(context: &str, manifest: &[u8]) -> Result<String, String> {
     use tokio::io::AsyncWriteExt;
 
     let mut child = external_command("kubectl")?
-        .args(["--context", context, "--request-timeout=120s", "apply", "-f", "-"])
+        .args([
+            "--context",
+            context,
+            "--request-timeout=120s",
+            "apply",
+            "-f",
+            "-",
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -167,7 +180,10 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(&path).expect("metadata").permissions().mode();
+            let mode = std::fs::metadata(&path)
+                .expect("metadata")
+                .permissions()
+                .mode();
             assert!(mode & 0o111 != 0, "render.sh is not executable");
         }
     }
