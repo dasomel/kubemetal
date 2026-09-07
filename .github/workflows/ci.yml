@@ -24,4 +24,5 @@ jobs:
         with:
           workspaces: src-tauri
       - run: pnpm install --frozen-lockfile
-      - run: make verify
+      - name: Verify (test + rustfmt/clippy/tsc lint + DESIGN.md lint + license + web build)
+        run: make verify
