@@ -79,9 +79,12 @@ fn expand_and_validate_home_path(value: &str) -> Result<PathBuf, String> {
             .parent()
             .ok_or_else(|| format!("Cache path has no existing ancestor: {value}"))?;
     }
-    let canonical_ancestor = ancestor
-        .canonicalize()
-        .map_err(|e| format!("Failed to resolve cache ancestor {}: {e}", ancestor.display()))?;
+    let canonical_ancestor = ancestor.canonicalize().map_err(|e| {
+        format!(
+            "Failed to resolve cache ancestor {}: {e}",
+            ancestor.display()
+        )
+    })?;
     if !canonical_ancestor.starts_with(&canonical_home) {
         return Err(format!("Cache path must stay under HOME: {value}"));
     }
@@ -110,7 +113,9 @@ fn scan(path: &Path, inspection: &mut CacheInspection) {
         Ok(metadata) => metadata,
         Err(error) => {
             inspection.partial = true;
-            inspection.errors.push(format!("{}: {error}", path.display()));
+            inspection
+                .errors
+                .push(format!("{}: {error}", path.display()));
             return;
         }
     };
@@ -130,7 +135,9 @@ fn scan(path: &Path, inspection: &mut CacheInspection) {
         Ok(entries) => entries,
         Err(error) => {
             inspection.partial = true;
-            inspection.errors.push(format!("{}: {error}", path.display()));
+            inspection
+                .errors
+                .push(format!("{}: {error}", path.display()));
             return;
         }
     };
@@ -139,7 +146,9 @@ fn scan(path: &Path, inspection: &mut CacheInspection) {
             Ok(entry) => scan(&entry.path(), inspection),
             Err(error) => {
                 inspection.partial = true;
-                inspection.errors.push(format!("{}: {error}", path.display()));
+                inspection
+                    .errors
+                    .push(format!("{}: {error}", path.display()));
             }
         }
     }

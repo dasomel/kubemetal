@@ -203,9 +203,7 @@ fn parse_ioreg_accelerator(text: &str) -> (Option<f32>, Option<f64>) {
     fn field_after<'a>(text: &'a str, key: &str) -> Option<&'a str> {
         let needle = format!("{key}\"=");
         let rest = text.split(&needle).nth(1)?;
-        let end = rest
-            .find(|c: char| !c.is_numeric())
-            .unwrap_or(rest.len());
+        let end = rest.find(|c: char| !c.is_numeric()).unwrap_or(rest.len());
         Some(&rest[..end]).filter(|s| !s.is_empty())
     }
 

@@ -182,9 +182,7 @@ pub async fn probe_local_inference_api_capabilities(
     );
     let anthropic_body = chat_body.clone();
     let embeddings_body = format!(r#"{{"model":"{model}","input":"probe"}}"#);
-    let rerank_body = format!(
-        r#"{{"model":"{model}","query":"probe","documents":["probe"]}}"#
-    );
+    let rerank_body = format!(r#"{{"model":"{model}","query":"probe","documents":["probe"]}}"#);
 
     let (chat, anthropic, embeddings, rerank) = tokio::join!(
         route_probe(
@@ -343,7 +341,8 @@ pub async fn preflight_local_inference_model_load(
 
     if training_active && decision != AdmissionDecision::Deny {
         decision = AdmissionDecision::Warn;
-        reasons.push("MLX fine-tuning is active; model load will compete for unified memory".into());
+        reasons
+            .push("MLX fine-tuning is active; model load will compete for unified memory".into());
     }
 
     if let (Some(estimated), Some(limit_mb)) =
@@ -415,7 +414,10 @@ pub async fn get_local_inference_diagnostics() -> Result<LocalInferenceDiagnosti
 
     if let Some(line) = first_matching_line(
         &text,
-        &["Insufficient Memory", "kIOGPUCommandBufferCallbackErrorOutOfMemory"],
+        &[
+            "Insufficient Memory",
+            "kIOGPUCommandBufferCallbackErrorOutOfMemory",
+        ],
     ) {
         findings.push(RuntimeDiagnosticFinding {
             code: "metal-oom".into(),
@@ -426,7 +428,11 @@ pub async fn get_local_inference_diagnostics() -> Result<LocalInferenceDiagnosti
     }
     if let Some(line) = first_matching_line(
         &text,
-        &["Prefill context too large", "prefill safety cap", "guard:chunked_step"],
+        &[
+            "Prefill context too large",
+            "prefill safety cap",
+            "guard:chunked_step",
+        ],
     ) {
         findings.push(RuntimeDiagnosticFinding {
             code: "prefill-memory-guard".into(),
@@ -435,7 +441,9 @@ pub async fn get_local_inference_diagnostics() -> Result<LocalInferenceDiagnosti
             evidence: Some(line),
         });
     }
-    if let Some(line) = first_matching_line(&text, &["Metal cap", "wired_limit_mb", "static ceiling"]) {
+    if let Some(line) =
+        first_matching_line(&text, &["Metal cap", "wired_limit_mb", "static ceiling"])
+    {
         findings.push(RuntimeDiagnosticFinding {
             code: "metal-cap-conflict".into(),
             severity: DiagnosticSeverity::Warning,
@@ -445,7 +453,11 @@ pub async fn get_local_inference_diagnostics() -> Result<LocalInferenceDiagnosti
     }
     if let Some(line) = first_matching_line(
         &text,
-        &["Reconstructed cache from tiered cache", "Cache hit for", "paged cache"],
+        &[
+            "Reconstructed cache from tiered cache",
+            "Cache hit for",
+            "paged cache",
+        ],
     ) {
         findings.push(RuntimeDiagnosticFinding {
             code: "tiered-cache-evidence".into(),

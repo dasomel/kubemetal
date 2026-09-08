@@ -15,9 +15,15 @@ pub trait LocalInferenceRuntimeAdapter {
 pub struct OmlxAdapter;
 
 impl LocalInferenceRuntimeAdapter for OmlxAdapter {
-    fn kind(&self) -> LocalInferenceRuntimeKind { LocalInferenceRuntimeKind::Omlx }
-    fn display_name(&self) -> &'static str { "oMLX" }
-    fn default_port(&self) -> u16 { 8000 }
+    fn kind(&self) -> LocalInferenceRuntimeKind {
+        LocalInferenceRuntimeKind::Omlx
+    }
+    fn display_name(&self) -> &'static str {
+        "oMLX"
+    }
+    fn default_port(&self) -> u16 {
+        8000
+    }
     fn capabilities(&self) -> RuntimeCapabilities {
         RuntimeCapabilities {
             openai_chat: true,
@@ -50,9 +56,15 @@ impl LocalInferenceRuntimeAdapter for OmlxAdapter {
 pub struct MlxLmAdapter;
 
 impl LocalInferenceRuntimeAdapter for MlxLmAdapter {
-    fn kind(&self) -> LocalInferenceRuntimeKind { LocalInferenceRuntimeKind::MlxLm }
-    fn display_name(&self) -> &'static str { "mlx-lm" }
-    fn default_port(&self) -> u16 { 8080 }
+    fn kind(&self) -> LocalInferenceRuntimeKind {
+        LocalInferenceRuntimeKind::MlxLm
+    }
+    fn display_name(&self) -> &'static str {
+        "mlx-lm"
+    }
+    fn default_port(&self) -> u16 {
+        8080
+    }
     fn capabilities(&self) -> RuntimeCapabilities {
         RuntimeCapabilities {
             openai_chat: true,
@@ -72,7 +84,9 @@ impl LocalInferenceRuntimeAdapter for MlxLmAdapter {
     fn install_hint(&self) -> &'static str {
         "Use KubeMetal MLX Studio environment setup. mlx-lm remains the basic/fallback serving runtime."
     }
-    fn install_commands(&self) -> &'static [&'static str] { &[] }
+    fn install_commands(&self) -> &'static [&'static str] {
+        &[]
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -92,7 +106,11 @@ fn descriptor(adapter: &impl LocalInferenceRuntimeAdapter) -> RuntimeAdapterDesc
         default_port: adapter.default_port(),
         capabilities: adapter.capabilities(),
         install_hint: adapter.install_hint().into(),
-        install_commands: adapter.install_commands().iter().map(|value| (*value).into()).collect(),
+        install_commands: adapter
+            .install_commands()
+            .iter()
+            .map(|value| (*value).into())
+            .collect(),
     }
 }
 
@@ -111,7 +129,10 @@ mod tests {
         assert_eq!(adapters[0].runtime, LocalInferenceRuntimeKind::Omlx);
         assert_eq!(adapters[0].default_port, 8000);
         assert!(adapters[0].capabilities.multi_model);
-        assert!(adapters[0].install_commands.iter().any(|value| value.contains("jundot/omlx/omlx")));
+        assert!(adapters[0]
+            .install_commands
+            .iter()
+            .any(|value| value.contains("jundot/omlx/omlx")));
         assert_eq!(adapters[1].runtime, LocalInferenceRuntimeKind::MlxLm);
         assert_eq!(adapters[1].default_port, 8080);
         assert!(!adapters[1].capabilities.multi_model);

@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-openforge-compliance-gaps",
+  "task": "Close OpenForge auditor gaps (archetype, semantic token map, rustfmt gate, architecture doc) without changing runtime behavior",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      ".github/workflows/**",
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped to documentation, DESIGN.md declarations, and formatting-only Rust changes; no Tauri command, IPC name, or D-registry decision changed"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "OpenForge audit-portfolio.py scored DESIGN-001/DESIGN-002/CI-002/DOC-005 below 2 on main; after rebase onto #65 the new cargo fmt --check gate failed on agent_execution_security.rs",
+      "evidence": [
+        "policy:openforge-audit-portfolio-gaps",
+        "ci:cargo-fmt-check-after-rebase"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Declared Desktop Operator archetype and token mapping in DESIGN.md, added cargo fmt --check to the lint gate, added docs/architecture.md, and rustfmt-formatted the crate"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "make verify on macOS: 112 Rust tests passed, clippy, tsc, design lint, and web build green after rebase",
+      "scope": "src-tauri formatting-only diff and lint gate wiring",
+      "evidence": [
+        "test:make-verify-112-rust-tests",
+        "ci:verify-job-pr-66"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "OpenForge audit-portfolio.py rerun locally against the branch reports 95.9% with only DOC-004 and I18N-001 remaining, both recorded as time-bounded exceptions in ADR-0002",
+      "scope": "OpenForge compliance checks DESIGN-001, DESIGN-002, CI-002, DOC-005",
+      "evidence": [
+        "policy:openforge-audit-portfolio-95.9"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Auditor gaps closed except the two ADR-0002 exceptions; runtime behavior unchanged",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified by local make verify, the CI verify job, and a real auditor rerun"
+    }
+  ]
+}

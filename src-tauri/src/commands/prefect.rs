@@ -105,7 +105,15 @@ async fn check_prefect_server_ready() -> bool {
     let (context, namespace) = crate::services::deploy_target::active_context();
     let output = cmd
         .args([
-            "--context", &context, "get", "deploy", "prefect", "-n", &namespace, "-o", "json",
+            "--context",
+            &context,
+            "get",
+            "deploy",
+            "prefect",
+            "-n",
+            &namespace,
+            "-o",
+            "json",
         ])
         .output()
         .await;
@@ -157,7 +165,8 @@ async fn check_eval_env_installed() -> bool {
 /// 최신순으로 조회한다. 포워딩 미활성 등 어떤 이유로든 실패하면 빈 배열을 반환한다.
 async fn fetch_recent_flow_runs() -> Vec<FlowRunInfo> {
     let body = serde_json::json!({ "limit": 5, "sort": "START_TIME_DESC" });
-    let Some(value) = curl_post_json(&format!("{}/flow_runs/filter", prefect_api_base()), &body).await
+    let Some(value) =
+        curl_post_json(&format!("{}/flow_runs/filter", prefect_api_base()), &body).await
     else {
         return Vec::new();
     };
@@ -168,7 +177,11 @@ async fn fetch_recent_flow_runs() -> Vec<FlowRunInfo> {
         .filter_map(|r| {
             Some(FlowRunInfo {
                 id: r.get("id")?.as_str()?.to_string(),
-                name: r.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                name: r
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 state_type: r
                     .get("state_type")
                     .and_then(|v| v.as_str())
@@ -455,9 +468,7 @@ pub async fn start_prefect_runner(
             .spawn()
             .map_err(|e| format!("Failed to start Prefect runner: {e}"))?;
 
-        let pid = child
-            .id()
-            .ok_or_else(|| "Failed to get PID.".to_string())?;
+        let pid = child.id().ok_or_else(|| "Failed to get PID.".to_string())?;
 
         Ok((pid, child))
     })();
@@ -543,18 +554,20 @@ pub async fn trigger_finetune_flow(config: FineTuneConfig) -> Result<String, Str
     let model_path = validate_home_subpath(&config.model_path)?;
     let data_path = validate_home_subpath(&config.data_path)?;
 
-    let deployment = curl_get_json(&format!("{}/deployments/name/finetune/finetune", prefect_api_base()))
-        .await
-        .ok_or_else(|| {
-            "Cannot connect to Prefect server — check that port-forwarding (4200) is active."
-                .to_string()
-        })?;
+    let deployment = curl_get_json(&format!(
+        "{}/deployments/name/finetune/finetune",
+        prefect_api_base()
+    ))
+    .await
+    .ok_or_else(|| {
+        "Cannot connect to Prefect server — check that port-forwarding (4200) is active."
+            .to_string()
+    })?;
     let deployment_id = deployment
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            "finetune deployment not found — check that the Prefect runner is running."
-                .to_string()
+            "finetune deployment not found — check that the Prefect runner is running.".to_string()
         })?;
 
     let body = serde_json::json!({
@@ -569,7 +582,10 @@ pub async fn trigger_finetune_flow(config: FineTuneConfig) -> Result<String, Str
     });
 
     let run = curl_post_json(
-        &format!("{}/deployments/{deployment_id}/create_flow_run", prefect_api_base()),
+        &format!(
+            "{}/deployments/{deployment_id}/create_flow_run",
+            prefect_api_base()
+        ),
         &body,
     )
     .await
@@ -606,18 +622,20 @@ pub async fn trigger_evaluate_flow(
 
     let serving_url = format!("http://127.0.0.1:{serving_port}/v1");
 
-    let deployment = curl_get_json(&format!("{}/deployments/name/evaluate/evaluate", prefect_api_base()))
-        .await
-        .ok_or_else(|| {
-            "Cannot connect to Prefect server — check that port-forwarding (4200) is active."
-                .to_string()
-        })?;
+    let deployment = curl_get_json(&format!(
+        "{}/deployments/name/evaluate/evaluate",
+        prefect_api_base()
+    ))
+    .await
+    .ok_or_else(|| {
+        "Cannot connect to Prefect server — check that port-forwarding (4200) is active."
+            .to_string()
+    })?;
     let deployment_id = deployment
         .get("id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| {
-            "evaluate deployment not found — check that the Prefect runner is running."
-                .to_string()
+            "evaluate deployment not found — check that the Prefect runner is running.".to_string()
         })?;
 
     let body = serde_json::json!({
@@ -629,7 +647,10 @@ pub async fn trigger_evaluate_flow(
     });
 
     let run = curl_post_json(
-        &format!("{}/deployments/{deployment_id}/create_flow_run", prefect_api_base()),
+        &format!(
+            "{}/deployments/{deployment_id}/create_flow_run",
+            prefect_api_base()
+        ),
         &body,
     )
     .await
@@ -669,8 +690,11 @@ pub async fn get_eval_results() -> Result<Vec<EvalMetric>, String> {
         "max_results": 10,
         "order_by": ["attribute.start_time DESC"],
     });
-    let Some(search) =
-        curl_post_json(&format!("{}/api/2.0/mlflow/runs/search", mlflow_base()), &body).await
+    let Some(search) = curl_post_json(
+        &format!("{}/api/2.0/mlflow/runs/search", mlflow_base()),
+        &body,
+    )
+    .await
     else {
         return Ok(Vec::new());
     };

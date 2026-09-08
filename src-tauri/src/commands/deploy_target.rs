@@ -49,7 +49,10 @@ pub async fn save_deploy_target(
     Ok(target)
 }
 
-pub(crate) async fn kubectl_json(context: &str, args: &[&str]) -> Result<serde_json::Value, String> {
+pub(crate) async fn kubectl_json(
+    context: &str,
+    args: &[&str],
+) -> Result<serde_json::Value, String> {
     let output = external_command("kubectl")?
         .args(["--context", context, "--request-timeout=30s"])
         .args(args)
@@ -64,7 +67,8 @@ pub(crate) async fn kubectl_json(context: &str, args: &[&str]) -> Result<serde_j
             String::from_utf8_lossy(&output.stderr).trim()
         ));
     }
-    serde_json::from_slice(&output.stdout).map_err(|e| format!("failed to parse kubectl output: {e}"))
+    serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("failed to parse kubectl output: {e}"))
 }
 
 /// 배포 차단 사유를 안정 코드로 나른다(D31). `detail`은 IP·개수 같은 언어중립 가변값만
@@ -110,9 +114,10 @@ pub async fn preflight_deploy_target(
             items
                 .iter()
                 .filter_map(|n| {
-                    n["status"]["addresses"].as_array()?.iter().find_map(|a| {
-                        (a["type"] == "InternalIP").then(|| a["address"].as_str())?
-                    })
+                    n["status"]["addresses"]
+                        .as_array()?
+                        .iter()
+                        .find_map(|a| (a["type"] == "InternalIP").then(|| a["address"].as_str())?)
                 })
                 .map(str::to_string)
                 .collect()
@@ -242,9 +247,10 @@ pub async fn detect_host_bridge(context: String, namespace: String) -> Result<Br
             items
                 .iter()
                 .filter_map(|n| {
-                    n["status"]["addresses"].as_array()?.iter().find_map(|a| {
-                        (a["type"] == "InternalIP").then(|| a["address"].as_str())?
-                    })
+                    n["status"]["addresses"]
+                        .as_array()?
+                        .iter()
+                        .find_map(|a| (a["type"] == "InternalIP").then(|| a["address"].as_str())?)
                 })
                 .map(str::to_string)
                 .collect()
@@ -289,10 +295,7 @@ async fn probe_candidate(context: &str, namespace: &str, candidate: &str) -> Res
     let listener = tokio::net::TcpListener::bind(format!("{candidate}:0"))
         .await
         .map_err(|e| format!("failed to bind listener: {e}"))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| e.to_string())?
-        .port();
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
 
     let server = tokio::spawn(async move {
         // 프로브 파드 한 번의 접속만 받으면 된다.
@@ -338,8 +341,16 @@ async fn probe_candidate(context: &str, namespace: &str, candidate: &str) -> Res
     // 파드가 남아 있으면 다음 탐지가 이름 충돌로 실패한다. --rm이 실패했을 경우를 대비해 정리.
     let _ = external_command("kubectl")?
         .args([
-            "--context", context, "delete", "pod", &pod, "-n", namespace,
-            "--ignore-not-found", "--force", "--grace-period=0",
+            "--context",
+            context,
+            "delete",
+            "pod",
+            &pod,
+            "-n",
+            namespace,
+            "--ignore-not-found",
+            "--force",
+            "--grace-period=0",
         ])
         .output()
         .await;

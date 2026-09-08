@@ -212,7 +212,8 @@ fn rel_to_url_path(rel: &Path) -> String {
 }
 
 fn models_root() -> Result<PathBuf, String> {
-    let home = std::env::var("HOME").map_err(|_| "Could not find HOME environment variable.".to_string())?;
+    let home = std::env::var("HOME")
+        .map_err(|_| "Could not find HOME environment variable.".to_string())?;
     Ok(PathBuf::from(home).join(".kubemetal").join("models"))
 }
 
@@ -296,8 +297,7 @@ fn update_status(app: &tauri::AppHandle, repo_id: &str, f: impl FnOnce(&mut Down
 
 async fn run_download_inner(app: &tauri::AppHandle, repo_id: &str) -> Result<(), String> {
     validate_repo_id(repo_id)?;
-    let tree_url =
-        format!("https://huggingface.co/api/models/{repo_id}/tree/main?recursive=true");
+    let tree_url = format!("https://huggingface.co/api/models/{repo_id}/tree/main?recursive=true");
     let output = external_command("curl")?
         .args(["-sL", &tree_url])
         .output()
@@ -418,7 +418,8 @@ pub fn list_local_models() -> Result<Vec<LocalModel>, String> {
         return Ok(Vec::new());
     }
     let mut result = Vec::new();
-    let entries = std::fs::read_dir(&root).map_err(|e| format!("Failed to read model directory: {e}"))?;
+    let entries =
+        std::fs::read_dir(&root).map_err(|e| format!("Failed to read model directory: {e}"))?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
         // `entry.file_type()`은 심볼릭 링크를 따라가지 않는다 — HF 캐시의 모델을 수 GB
@@ -462,7 +463,11 @@ pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> 
         ])
         .output()
         .await
-        .map_err(|e| format!("Failed to connect to SeaweedFS (8333) — check that port forwarding is active: {e}"))?;
+        .map_err(|e| {
+            format!(
+                "Failed to connect to SeaweedFS (8333) — check that port forwarding is active: {e}"
+            )
+        })?;
     let bucket_code = String::from_utf8_lossy(&create_bucket.stdout).to_string();
     if !(bucket_code.starts_with('2') || bucket_code == "409") {
         return Err(format!(
@@ -490,7 +495,16 @@ pub async fn upload_model_to_storage(repo_id: String) -> Result<String, String> 
             rel_to_url_path(&safe_rel_path)
         );
         let out = external_command("curl")?
-            .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-X", "PUT", "--data-binary"])
+            .args([
+                "-s",
+                "-o",
+                "/dev/null",
+                "-w",
+                "%{http_code}",
+                "-X",
+                "PUT",
+                "--data-binary",
+            ])
             .arg(format!("@{}", abs.display()))
             .arg(&url)
             .output()
@@ -529,11 +543,18 @@ pub async fn register_model_mlflow(repo_id: String) -> Result<String, String> {
             "Content-Type: application/json",
             "-d",
             &create_body,
-            &format!("{}/api/2.0/mlflow/registered-models/create", ports::local_url("mlflow")),
+            &format!(
+                "{}/api/2.0/mlflow/registered-models/create",
+                ports::local_url("mlflow")
+            ),
         ])
         .output()
         .await
-        .map_err(|e| format!("Failed to connect to MLflow (5001) — check that port forwarding is active: {e}"))?;
+        .map_err(|e| {
+            format!(
+                "Failed to connect to MLflow (5001) — check that port forwarding is active: {e}"
+            )
+        })?;
 
     let create_json: serde_json::Value =
         serde_json::from_slice(&create_out.stdout).unwrap_or(serde_json::json!({}));
@@ -560,7 +581,10 @@ pub async fn register_model_mlflow(repo_id: String) -> Result<String, String> {
             "Content-Type: application/json",
             "-d",
             &version_body,
-            &format!("{}/api/2.0/mlflow/model-versions/create", ports::local_url("mlflow")),
+            &format!(
+                "{}/api/2.0/mlflow/model-versions/create",
+                ports::local_url("mlflow")
+            ),
         ])
         .output()
         .await
@@ -593,11 +617,18 @@ pub async fn list_registered_models() -> Result<Vec<RegisteredModel>, String> {
     let output = external_command("curl")?
         .args([
             "-s",
-            &format!("{}/api/2.0/mlflow/registered-models/search", ports::local_url("mlflow")),
+            &format!(
+                "{}/api/2.0/mlflow/registered-models/search",
+                ports::local_url("mlflow")
+            ),
         ])
         .output()
         .await
-        .map_err(|e| format!("Failed to connect to MLflow (5001) — check that port forwarding is active: {e}"))?;
+        .map_err(|e| {
+            format!(
+                "Failed to connect to MLflow (5001) — check that port forwarding is active: {e}"
+            )
+        })?;
 
     if !output.status.success() {
         return Err(format!(
@@ -644,7 +675,8 @@ mod tests {
         parameters.insert("U32".to_string(), 951_910_400u64);
         let info = HfSafetensorsInfo { parameters };
 
-        let estimated = estimate_size_bytes(&info).expect("should be Some because safetensors info is present");
+        let estimated =
+            estimate_size_bytes(&info).expect("should be Some because safetensors info is present");
         let actual_file_size = 4_284_346_255u64;
         let diff = actual_file_size.abs_diff(estimated);
         // 0.1% 이내 오차만 허용 — 텐서 원소 수 x dtype 바이트폭 가중합이 실제 파일 크기의

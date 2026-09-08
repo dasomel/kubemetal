@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
-use tokio::process::Child;
-use tauri::State;
 use crate::services::ports;
 use crate::services::process::external_command;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use tauri::State;
+use tokio::process::Child;
 
 #[derive(Default)]
 pub struct PortForwardState {
@@ -39,7 +39,12 @@ const JOBS: [(&str, &str, Option<&str>, u16); 5] = [
 
 /// 우리 앱이 관리하는 서비스만 대상으로 하는 pgrep 패턴의 서비스 부분. 무관한 kubectl
 /// 포워드는 매칭되지 않도록 서비스명을 포함시킨다(불가침 경계).
-const SERVICE_NAMES: [&str; 4] = ["svc/mlflow", "svc/seaweedfs", "svc/prefect", "svc/kagent-ui"];
+const SERVICE_NAMES: [&str; 4] = [
+    "svc/mlflow",
+    "svc/seaweedfs",
+    "svc/prefect",
+    "svc/kagent-ui",
+];
 
 /// 특정 컨텍스트를 대상으로 하는 우리 포워드만 매칭하는 pgrep 패턴.
 ///
@@ -92,7 +97,16 @@ async fn check_port_alive(host_port: &str) -> bool {
         return false;
     };
     match cmd
-        .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "-m", "2", &url])
+        .args([
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            "-m",
+            "2",
+            &url,
+        ])
         .output()
         .await
     {
@@ -210,7 +224,9 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
         ));
     }
     if reaped_external > 0 {
-        msg.push_str(&format!(" (took over {reaped_external} leftover external forward(s))"));
+        msg.push_str(&format!(
+            " (took over {reaped_external} leftover external forward(s))"
+        ));
     }
     Ok(msg)
 }
@@ -279,7 +295,14 @@ pub async fn open_kagent_ui(
     let port = ports::find_free_port(preferred, range_end)?;
 
     let child = external_command("kubectl")?
-        .args(["--context", &context, "port-forward", "-n", "kagent", "svc/kagent-ui"])
+        .args([
+            "--context",
+            &context,
+            "port-forward",
+            "-n",
+            "kagent",
+            "svc/kagent-ui",
+        ])
         .arg(format!("{port}:8080"))
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -334,7 +357,9 @@ pub async fn stop_port_forward(state: State<'_, PortForwardState>) -> Result<Str
     let reaped_external = reap_external_port_forwards(&target_context).await;
 
     let total = tracked_count + reaped_external;
-    Ok(format!("Port forwarding stopped. ({total} process(es) cleaned up)"))
+    Ok(format!(
+        "Port forwarding stopped. ({total} process(es) cleaned up)"
+    ))
 }
 
 #[cfg(test)]
@@ -368,6 +393,10 @@ mod tests {
                     .and_then(|n| n.parse::<usize>().ok())
             })
             .expect("PORT_FORWARD_TOTAL not found in useColima.ts");
-        assert_eq!(declared, JOBS.len(), "PORT_FORWARD_TOTAL must match JOBS length");
+        assert_eq!(
+            declared,
+            JOBS.len(),
+            "PORT_FORWARD_TOTAL must match JOBS length"
+        );
     }
 }

@@ -32,7 +32,16 @@ async fn check_health(url: &str) -> String {
         Err(_) => return "unreachable".into(),
     };
     let output = cmd
-        .args(["-s", "-o", "/dev/null", "-m", "2", "-w", "%{http_code}", url])
+        .args([
+            "-s",
+            "-o",
+            "/dev/null",
+            "-m",
+            "2",
+            "-w",
+            "%{http_code}",
+            url,
+        ])
         .output()
         .await;
     let code = match output {
@@ -60,7 +69,16 @@ async fn check_serving_health(base_url: &str) -> String {
     };
     let url = format!("{base_url}/models");
     let output = cmd
-        .args(["-s", "-o", "/dev/null", "-m", "2", "-w", "%{http_code}", &url])
+        .args([
+            "-s",
+            "-o",
+            "/dev/null",
+            "-m",
+            "2",
+            "-w",
+            "%{http_code}",
+            &url,
+        ])
         .output()
         .await;
     match output {
@@ -76,7 +94,12 @@ async fn check_serving_health(base_url: &str) -> String {
 pub(crate) async fn fetch_seaweedfs_credentials() -> (Vec<CredentialItem>, Option<String>) {
     let mut cmd = match external_command("kubectl") {
         Ok(c) => c,
-        Err(e) => return (Vec::new(), Some(format!("kubectl executable not found: {e}"))),
+        Err(e) => {
+            return (
+                Vec::new(),
+                Some(format!("kubectl executable not found: {e}")),
+            )
+        }
     };
     let (context, namespace) = crate::services::deploy_target::active_context();
     let output = match cmd
@@ -109,7 +132,12 @@ pub(crate) async fn fetch_seaweedfs_credentials() -> (Vec<CredentialItem>, Optio
 
     let json: serde_json::Value = match serde_json::from_slice(&output.stdout) {
         Ok(v) => v,
-        Err(e) => return (Vec::new(), Some(format!("Failed to parse secret response: {e}"))),
+        Err(e) => {
+            return (
+                Vec::new(),
+                Some(format!("Failed to parse secret response: {e}")),
+            )
+        }
     };
     let data = match json.get("data").and_then(|d| d.as_object()) {
         Some(d) => d,
@@ -121,14 +149,20 @@ pub(crate) async fn fetch_seaweedfs_credentials() -> (Vec<CredentialItem>, Optio
         if let Some(encoded) = data.get(key).and_then(|v| v.as_str()) {
             if let Ok(bytes) = BASE64.decode(encoded) {
                 if let Ok(value) = String::from_utf8(bytes) {
-                    creds.push(CredentialItem { key: key.into(), value });
+                    creds.push(CredentialItem {
+                        key: key.into(),
+                        value,
+                    });
                 }
             }
         }
     }
 
     if creds.is_empty() {
-        (Vec::new(), Some("Failed to read credential values from secret.".into()))
+        (
+            Vec::new(),
+            Some("Failed to read credential values from secret.".into()),
+        )
     } else {
         (creds, None)
     }

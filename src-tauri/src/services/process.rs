@@ -93,8 +93,8 @@ mod tests {
     #[test]
     fn resolve_cli_path_finds_system_shells() {
         for bin in ["bash", "sh"] {
-            let path = resolve_cli_path(bin)
-                .unwrap_or_else(|e| panic!("failed to resolve '{bin}': {e}"));
+            let path =
+                resolve_cli_path(bin).unwrap_or_else(|e| panic!("failed to resolve '{bin}': {e}"));
             assert!(path.is_absolute(), "{bin}: not an absolute path ({path:?})");
             assert!(path.is_file(), "{bin}: not an executable file ({path:?})");
         }

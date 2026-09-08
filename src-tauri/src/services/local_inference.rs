@@ -379,7 +379,9 @@ pub async fn build_omlx_command(config: &RuntimeLaunchConfig) -> Result<Command,
         if max == 0 || max > 1024 {
             return Err("max_concurrent_requests must be between 1 and 1024".into());
         }
-        command.arg("--max-concurrent-requests").arg(max.to_string());
+        command
+            .arg("--max-concurrent-requests")
+            .arg(max.to_string());
     }
     if let Some(tier) = config.memory_guard_tier.as_deref() {
         validate_memory_guard_tier(tier)?;
@@ -568,9 +570,8 @@ pub async fn omlx_admin_session(endpoint: &str, api_key: &str) -> Result<String,
             .unwrap_or_else(|| format!("oMLX admin login failed (HTTP {})", response.status));
         return Err(detail);
     }
-    extract_admin_session_cookie(&response.headers).ok_or_else(|| {
-        "oMLX admin login succeeded but did not return a session cookie".to_string()
-    })
+    extract_admin_session_cookie(&response.headers)
+        .ok_or_else(|| "oMLX admin login succeeded but did not return a session cookie".to_string())
 }
 
 fn json_bool(value: &serde_json::Value, key: &str) -> Option<bool> {
@@ -822,7 +823,9 @@ mod tests {
     #[test]
     fn rejects_unsafe_model_ids() {
         for id in ["", "../foo", "foo/bar", "foo?x=1", "foo\nbar"] {
-            assert!(id.trim().is_empty() || id.contains('/') || id.contains('?') || id.contains('\n'));
+            assert!(
+                id.trim().is_empty() || id.contains('/') || id.contains('?') || id.contains('\n')
+            );
         }
     }
 
@@ -902,7 +905,10 @@ mod tests {
                 "Set-Cookie".to_string(),
                 "omlx_admin_session=tok\r\nX-Injected: 1".to_string(),
             ),
-            ("Set-Cookie".to_string(), "omlx_admin_session=real; Path=/".to_string()),
+            (
+                "Set-Cookie".to_string(),
+                "omlx_admin_session=real; Path=/".to_string(),
+            ),
         ];
         assert_eq!(
             extract_admin_session_cookie(&mixed).as_deref(),

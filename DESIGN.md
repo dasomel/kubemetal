@@ -254,3 +254,53 @@ components:
   않는다. 오직 상태 표시 전용이다.
 - Don't: 순백(`#FFFFFF`) 배경 위에 순흑(`#000000`) 텍스트, 또는 그 반대 조합을 쓰지
   않는다. 가장 진한 텍스트도 `ink`(`#23262B`)로 제한해 과도한 대비를 피한다.
+
+## OpenForge Product Archetype & Semantic Token Mapping (아키타입 & 시맨틱 토큰 매핑)
+
+**Archetype:** Desktop Operator — OpenForge's standard archetype set is {Platform Portal,
+Data Control Plane, Desktop Operator, Operations Dashboard, Admin Console, Developer Tool}.
+KubeMetal's variant within it, per OpenForge `design-system.md` §6, is **"Desktop ML
+Infrastructure"**: guided lifecycle; hardware/runtime visibility; long-running progress and
+logs; native desktop dialogs and recovery paths.
+
+**아키타입 (ADR-0007):** "KubeMetal — Desktop ML Infrastructure: Guided lifecycle;
+hardware/runtime visibility; long-running progress and logs; native desktop dialogs and
+recovery paths." — 계기판형 라이트 UI, 3단 엘리베이션, 단일 액센트라는 위 토큰 설계는
+이 아키타입(가이드형 라이프사이클 + 하드웨어/런타임 가시성)을 그대로 따른 결과다.
+
+**시맨틱 토큰 매핑:** web alias 열은 OpenForge 역할을 웹 구현용 CSS 커스텀 프로퍼티로
+문서화 수준에서 매핑한 것이며(`--of-color-<group>-<role>` 명명), 실제로 발행되는 CSS
+변수는 아니다 — Tailwind 설정은 오늘도 frontmatter 토큰을 1:1로 그대로 매핑한다.
+
+| OpenForge 역할 | DESIGN.md 토큰 | web alias (`--of-*`) |
+|---|---|---|
+| `color/bg/canvas` | `base` | `--of-color-bg-canvas` |
+| `color/bg/surface` | `surface` | `--of-color-bg-surface` |
+| `color/bg/subtle` | `surfaceRaised` | `--of-color-bg-subtle` |
+| `color/bg/inverse` | 해당 없음 / 의도적 미정의 — 다크 배경 토큰 없음(라이트 온리) | — |
+| `color/text/primary` | `ink` | `--of-color-text-primary` |
+| `color/text/secondary` | `inkMuted` | `--of-color-text-secondary` |
+| `color/text/muted` | `inkFaint` | `--of-color-text-muted` |
+| `color/text/inverse` | `inverse` (solid 버튼 배경 위 텍스트 전용) | `--of-color-text-inverse` |
+| `color/border/default` | `hairline` (항상 6~10% 알파, 불투명 사용 금지) | `--of-color-border-default` |
+| `color/action/primary` | `primary`(인터랙티브 텍스트/아이콘) / `primaryStrong`(solid 버튼 배경) | `--of-color-action-primary` |
+| `color/action/hover` | 해당 없음 / 의도적 미정의 — hover 전용 토큰 없음 | — |
+| `color/focus/ring` | `primary` | `--of-color-focus-ring` |
+| `color/status/success` | `success` | `--of-color-status-success` |
+| `color/status/warning` | `warning` | `--of-color-status-warning` |
+| `color/status/serious` | 해당 없음 / 의도적 미정의 — success/warning/danger 3단만 존재 | — |
+| `color/status/danger` | `danger` (solid 배경은 `dangerStrong`) | `--of-color-status-danger` |
+| `color/status/info` | 해당 없음 / 의도적 미정의 — info 상태 토큰 없음 | — |
+
+**의도적 이탈(Deviations):**
+
+- **단일 액센트:** 브랜드 색이 `primary` 하나뿐이라 hover 전용 토큰이 없다(화면당 solid
+  1개 제약과 함께 위계를 단순화하는 선택). 접근성 영향 없음 — hover는 elevation/opacity
+  변화로만 표현되고 색맹 대응은 상태 dot + 텍스트 병기(Do's and Don'ts)로 별도 확보한다.
+- **라이트 온리:** 다크모드 및 `color/bg/inverse`를 정의하지 않는다. 계기판 은유(소프트
+  화이트, 낮은 대비)가 아키타입의 핵심이라 다크 변형은 별도 토큰 세트가 필요한 범위 밖
+  작업이다. 접근성 영향 없음 — 현재 팔레트는 모든 텍스트가 AA(4.5:1) 이상으로 검증됨(Colors
+  섹션).
+- **순흑/순백 배제:** `info`/`serious` 상태 토큰과 순수 `#000000`/`#FFFFFF` 텍스트 조합을
+  두지 않는다(Do's and Don'ts). 상태는 3단(success/warning/danger)으로 충분하다고 판단했고,
+  새 상태가 필요해지면 토큰 추가와 함께 이 매핑도 갱신해야 한다.

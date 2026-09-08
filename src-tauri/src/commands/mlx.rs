@@ -155,7 +155,9 @@ pub(crate) fn validate_home_subpath(p: &str) -> Result<PathBuf, String> {
         .canonicalize()
         .map_err(|e| format!("Path not found: {p} ({e})"))?;
     if !canonical.starts_with(&home) {
-        return Err(format!("Path not allowed (only paths under the home directory are allowed): {p}"));
+        return Err(format!(
+            "Path not allowed (only paths under the home directory are allowed): {p}"
+        ));
     }
     Ok(canonical)
 }
@@ -190,7 +192,10 @@ pub(crate) fn validate_adapter_name(name: &str) -> Result<(), String> {
 
 fn wrapper_script_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
-    Ok(resolve_bundled_resource(&resource_dir, "scripts/mlx/finetune_wrapper.py"))
+    Ok(resolve_bundled_resource(
+        &resource_dir,
+        "scripts/mlx/finetune_wrapper.py",
+    ))
 }
 
 /// venv 패키지 존재/버전 프로브. 블록 들여쓰기를 포함하므로 Rust `\` 줄 연속으로 재작성하면
@@ -561,9 +566,7 @@ pub async fn run_mlx_finetune(
             .spawn()
             .map_err(|e| format!("Failed to launch fine-tuning process: {e}"))?;
 
-        let pid = child
-            .id()
-            .ok_or_else(|| "Could not get PID.".to_string())?;
+        let pid = child.id().ok_or_else(|| "Could not get PID.".to_string())?;
 
         Ok((pid, child))
     })();
@@ -815,9 +818,7 @@ pub async fn start_model_serving(
             .spawn()
             .map_err(|e| format!("Failed to launch serving process: {e}"))?;
 
-        let pid = child
-            .id()
-            .ok_or_else(|| "Could not get PID.".to_string())?;
+        let pid = child.id().ok_or_else(|| "Could not get PID.".to_string())?;
 
         Ok((
             pid,
@@ -1002,7 +1003,12 @@ mod tests {
     fn should_record_exit_protects_terminal_states_but_not_paused() {
         // 아직 결말이 나지 않은 상태 — 종료를 기록해야 한다
         assert!(should_record_exit("running"));
-        for paused in ["paused", "paused_memory_pressure", "paused_battery", "paused_thermal"] {
+        for paused in [
+            "paused",
+            "paused_memory_pressure",
+            "paused_battery",
+            "paused_thermal",
+        ] {
             assert!(
                 should_record_exit(paused),
                 "{paused}에서 죽은 프로세스가 기록되지 않으면 화면이 일시정지에 고립된다"
@@ -1023,7 +1029,10 @@ mod tests {
     #[test]
     fn serving_port_spec_is_registered() {
         let (preferred, range_end) = serving_port_spec();
-        assert_eq!(preferred, 8080, "D1 assigns 8080 as the preferred serving port");
+        assert_eq!(
+            preferred, 8080,
+            "D1 assigns 8080 as the preferred serving port"
+        );
         assert!(range_end >= preferred);
     }
 

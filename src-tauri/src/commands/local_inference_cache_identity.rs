@@ -100,7 +100,10 @@ mod tests {
     fn revision_change_forces_cold_semantics() {
         let result = compare(Some(&identity("r1")), &identity("r2"));
         assert_eq!(result.compatible, Some(false));
-        assert!(result.reasons.iter().any(|reason| reason.contains("revision")));
+        assert!(result
+            .reasons
+            .iter()
+            .any(|reason| reason.contains("revision")));
     }
 
     #[test]
