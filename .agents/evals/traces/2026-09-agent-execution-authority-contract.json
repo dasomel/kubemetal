@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-agent-execution-authority-contract",
+  "task": "Define the fail-closed authority boundary required before any future agent-driven L3 mutation can execute",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Kept existing human-driven Tauri mutation commands unchanged and scoped this change to the future agent-driven L3 execution boundary"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Confirmed KubeMetal exposes local inference/tool-calling capability and human-triggered mutations but has no agent execution authority contract separating proposal from executable authority",
+      "evidence": [
+        "runtime:local-inference-tool-calling-is-not-execution-authorization",
+        "runtime:human-driven-kagent-mutations-remain-separate"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added session authority ceilings, canonical resolved invocation digests, attenuated child grants, exact L3 approval binding, expiry checks, and one-shot replay protection without enabling autonomous mutation"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Dedicated Rust tests exercise out-of-scope denial, L2 non-executability, exact approval binding, expiry, and replay rejection",
+      "scope": "agent execution authority contract and fail-closed pre-execution checks",
+      "evidence": [
+        "test:cargo-test-agent-execution-security"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "The Rust crate type-checks with the generated dependency lockfile and the security contract tests pass on macOS CI",
+      "scope": "src-tauri agent execution security contract and dependency lockfile",
+      "evidence": [
+        "ci:temporary-macos-cargo-check",
+        "ci:temporary-macos-agent-execution-security-tests"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "B",
+      "summary": "Security contract is verified; repository-wide PR gates remain the final merge criterion"
+    }
+  ]
+}
