@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck source=scripts/airgap/lib.sh
 . "${SCRIPT_DIR}/lib.sh"
-AIRGAP_DIR="${HOME}/.kubemetal/airgap"
+AIRGAP_DIR="${AIRGAP_DIR:-${HOME}/.kubemetal/airgap}"
 mkdir -p "${AIRGAP_DIR}/charts" "${AIRGAP_DIR}/images" "${AIRGAP_DIR}/binaries" "${AIRGAP_DIR}/manifests"
 
 FAILED=()
@@ -29,6 +29,9 @@ MIN_VALID_BYTES=1024
 # 우리가 만드는 아카이브(`docker save | gzip`은 바이트 재현성이 없다)는 생성 시점 해시를
 # 여기에 기록해 두어 설치 시 이송 중 손상·변조를 잡는다.
 MANIFEST="${AIRGAP_DIR}/manifest.sha256"
+DIGESTS_LOCK="${AIRGAP_DIR}/digests.lock"
+DIGESTS_TMP="$(mktemp -t kubemetal-airgap-digests)"
+trap 'rm -f "${DIGESTS_TMP:-}"' EXIT
 
 is_valid() {
   local f="$1"
@@ -161,7 +164,7 @@ if ! command -v docker >/dev/null 2>&1; then
   FAILED+=("images:docker-missing")
 else
   for img in "${IMAGES[@]}"; do
-    safe_name="$(echo "$img" | tr '/:' '_')"
+    safe_name="$(image_archive_name "$img")"
     targz_path="${AIRGAP_DIR}/images/${safe_name}.tar.gz"
     tar_path="${AIRGAP_DIR}/images/${safe_name}.tar"
 
@@ -169,11 +172,18 @@ else
     if is_valid "$tar_path" && ! is_valid "$targz_path"; then
       echo "  -> .tar → .tar.gz 전환: $(basename "$tar_path")"
       gzip -f "$tar_path" || FAILED+=("gzip:${safe_name}")
-      continue
     fi
 
     if is_valid "$targz_path"; then
       echo "  -> 이미 보유: ${safe_name}.tar.gz"
+      # 5c022a1 회귀: 캐시 hit에서 재-pull하지 않으므로 새 digest를 관측할 수 없다.
+      # 기존 lock의 항목을 반드시 이어받고, 없으면 provenance를 지어내지 않고 실패한다.
+      if preserve_digest_lock_record "$DIGESTS_LOCK" "${safe_name}.tar.gz" "$DIGESTS_TMP" 2>/dev/null; then
+        :
+      else
+        echo "  !! ${img}: 캐시 archive에 대응하는 digests.lock 항목이 없습니다 — archive를 지운 뒤 재수집하세요." >&2
+        FAILED+=("digest-missing-for-cached:${img}")
+      fi
       continue
     fi
     rm -f "$targz_path"
@@ -183,13 +193,31 @@ else
       FAILED+=("pull:${img}")
       continue
     fi
+    if ! repo_digest="$(image_repo_digest_lock_value "$img")"; then
+      echo "  !! ${img}: pull 뒤 RepoDigest를 조회하지 못했습니다." >&2
+      FAILED+=("repo-digest-inspect:${img}")
+      continue
+    fi
+    if ! image_id="$(image_id_lock_value "$img")" || [ -z "$image_id" ]; then
+      echo "  !! ${img}: pull 뒤 image ID를 조회하지 못했습니다." >&2
+      FAILED+=("image-id-inspect:${img}")
+      continue
+    fi
     if docker save "$img" | gzip > "${targz_path}.part"; then
       mv "${targz_path}.part" "$targz_path"
+      printf '%s %s %s\n' "$img" "$repo_digest" "$image_id" >> "$DIGESTS_TMP"
     else
       rm -f "${targz_path}.part"
       FAILED+=("save:${img}")
     fi
   done
+fi
+
+# 이 실행에서 archive로 확인한 항목만 lock에 남긴다. 일부 항목이 빠지면 설치가 그
+# 불완전성을 fail-closed로 드러낸다.
+if ! write_digest_lock "$DIGESTS_TMP" "$DIGESTS_LOCK"; then
+  rm -f "$DIGESTS_LOCK" "${DIGESTS_LOCK}.part"
+  FAILED+=("digests-lock")
 fi
 
 echo "[4/4] K8s 매니페스트 동기화..."
@@ -207,7 +235,7 @@ echo "[5/5] 번들 무결성 목록 생성..."
 # 작성 중인 임시 파일은 **스캔 대상 밖**에 둔다 — AIRGAP_DIR 안에 두면 find가 그것까지
 # 목록에 넣고, 곧 rename으로 사라져 검증이 항상 깨진다(실측으로 확인).
 MANIFEST_TMP="$(mktemp -t kubemetal-airgap-manifest)"
-trap 'rm -f "$MANIFEST_TMP"' EXIT
+trap 'rm -f "$MANIFEST_TMP" "${DIGESTS_TMP:-}"' EXIT
 (
   cd "${AIRGAP_DIR}" || exit 1
   find . -type f ! -name "$(basename "$MANIFEST")" ! -name '*.part' -print0 \

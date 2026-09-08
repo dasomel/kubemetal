@@ -25,3 +25,70 @@ read_image_list() {
 manifest_images() {
   grep -rhoE 'image: *[^ ]+' "$1"/scripts/k8s/*.yaml | sed 's/image: *//' | sort -u
 }
+
+# 수집 파일명 규칙은 Rust 상태 조회와도 같아야 한다. lock을 archive에서 찾을 때도 이
+# 함수만 쓴다.
+image_archive_name() {
+  printf '%s' "$1" | tr '/:' '_'
+}
+
+# pull 직후 runtime이 관측한 registry RepoDigest를 provenance로 기록한다. locally-built
+# 이미지처럼 RepoDigests가 없는 경우에는 그 사실을 `unverified`로 명시한다. `docker save`
+# / `load`는 이 값을 보존하지 않으므로 설치 무결성 판정에는 쓰지 않는다(D25).
+# stdout: <registry@sha256 digest|unverified>
+image_repo_digest_lock_value() {
+  local image="$1" repo_digest
+  repo_digest="$(docker inspect --format='{{range .RepoDigests}}{{println .}}{{end}}' "$image" 2>/dev/null | head -n 1)" || return 1
+  if [ -z "$repo_digest" ]; then
+    printf '%s\n' 'unverified'
+  else
+    printf '%s\n' "$repo_digest"
+  fi
+}
+
+# docker save/load 뒤에도 남는 config digest를 가져온다. 이 값이 설치 시 실제로 비교하는
+# content-addressed ID다.
+# stdout: <sha256 image ID>
+image_id_lock_value() {
+  docker image inspect --format='{{.Id}}' "$1" 2>/dev/null
+}
+
+# digests.lock의 writer. 레코드는
+# `<image:tag> <registry RepoDigest|unverified> <image ID>` 한 줄이며, 정렬해 수집 순서와
+# 무관하게 재현 가능하게 만든다.
+write_digest_lock() {
+  local records="$1" destination="$2"
+  LC_ALL=C sort -u "$records" > "${destination}.part" && mv "${destination}.part" "$destination"
+}
+
+# 이미지 또는 archive 이름으로 정확히 하나인 lock 항목을 읽는다. 형식 오류·중복·누락은
+# 검증할 수 없는 상태라 실패로 돌린다.
+digest_lock_record_for_archive() {
+  local lock="$1" archive_name="$2"
+  awk -v archive="$archive_name" '
+    NF == 0 { next }
+    NF != 3 || $1 !~ /:.+/ || ($2 != "unverified" && $2 !~ /@sha256:.+/) || $3 !~ /^sha256:.+/ { invalid = 1; next }
+    {
+      safe = $1
+      gsub(/[\/:]/, "_", safe)
+      if (safe ".tar.gz" == archive || safe ".tar" == archive) {
+        matches++
+        record = $0
+      }
+    }
+    END {
+      if (invalid || matches != 1) {
+        exit 1
+      } else {
+        print record
+      }
+    }
+  ' "$lock"
+}
+
+# 캐시 archive는 재-pull 없이 이전 provenance를 그대로 계승해야 한다.
+preserve_digest_lock_record() {
+  local lock="$1" archive_name="$2" destination="$3" record
+  record="$(digest_lock_record_for_archive "$lock" "$archive_name")" || return 1
+  printf '%s\n' "$record" >> "$destination"
+}
