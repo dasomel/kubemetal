@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+use crate::services::artifact_manifest::{write_manifest, ManifestContext};
 use crate::services::ports;
 use crate::services::process::{
     augmented_path, external_command, resolve_bundled_resource, resolve_cli_path,
@@ -370,8 +371,12 @@ fn apply_training_event(app: &tauri::AppHandle, value: &serde_json::Value) {
     }
 }
 
-async fn read_stdout_lines(app: tauri::AppHandle, stdout: tokio::process::ChildStdout) {
+async fn read_stdout_lines(
+    app: tauri::AppHandle,
+    stdout: tokio::process::ChildStdout,
+) -> Option<String> {
     let mut lines = BufReader::new(stdout).lines();
+    let mut completed_adapter_path = None;
     loop {
         match lines.next_line().await {
             Ok(Some(line)) => {
@@ -380,6 +385,12 @@ async fn read_stdout_lines(app: tauri::AppHandle, stdout: tokio::process::ChildS
                     continue;
                 }
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                    if value.get("type").and_then(|value| value.as_str()) == Some("done") {
+                        completed_adapter_path = value
+                            .get("adapter_path")
+                            .and_then(|value| value.as_str())
+                            .map(str::to_owned);
+                    }
                     apply_training_event(&app, &value);
                 }
             }
@@ -387,6 +398,7 @@ async fn read_stdout_lines(app: tauri::AppHandle, stdout: tokio::process::ChildS
             Err(_) => break,
         }
     }
+    completed_adapter_path
 }
 
 async fn collect_stderr(stderr: tokio::process::ChildStderr) -> String {
@@ -425,21 +437,24 @@ fn finalize_training(
     app: &tauri::AppHandle,
     exit: std::io::Result<std::process::ExitStatus>,
     stderr_text: String,
-) {
+) -> bool {
     let state = app.state::<MlxState>();
     let mut guard = match state.training.lock() {
         Ok(g) => g,
-        Err(_) => return,
+        Err(_) => return false,
     };
     let training = match guard.as_mut() {
         Some(t) => t,
-        None => return,
+        None => return false,
     };
     if !should_record_exit(&training.status) {
-        return;
+        return matches!(exit, Ok(status) if status.success()) && training.status == "done";
     }
     match exit {
-        Ok(status) if status.success() => training.status = "done".into(),
+        Ok(status) if status.success() => {
+            training.status = "done".into();
+            true
+        }
         Ok(status) => {
             training.status = "error".into();
             training.error = Some(if stderr_text.trim().is_empty() {
@@ -447,24 +462,32 @@ fn finalize_training(
             } else {
                 stderr_text.trim().to_string()
             });
+            false
         }
         Err(e) => {
             training.status = "error".into();
             training.error = Some(format!("Failed to wait for process: {e}"));
+            false
         }
     }
 }
 
-async fn run_training_reader(app: tauri::AppHandle, mut child: tokio::process::Child) {
+async fn run_training_reader(
+    app: tauri::AppHandle,
+    mut child: tokio::process::Child,
+    manifest_context: ManifestContext,
+) {
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
     let stdout_task = stdout.map(|out| tokio::spawn(read_stdout_lines(app.clone(), out)));
     let stderr_task = stderr.map(|err| tokio::spawn(collect_stderr(err)));
 
-    if let Some(t) = stdout_task {
-        let _ = t.await;
-    }
+    let adapter_path = if let Some(t) = stdout_task {
+        t.await.ok().flatten()
+    } else {
+        None
+    };
     let stderr_text = if let Some(t) = stderr_task {
         t.await.unwrap_or_default()
     } else {
@@ -472,7 +495,23 @@ async fn run_training_reader(app: tauri::AppHandle, mut child: tokio::process::C
     };
 
     let exit = child.wait().await;
-    finalize_training(&app, exit, stderr_text);
+    if !finalize_training(&app, exit, stderr_text) {
+        return;
+    }
+
+    let Some(adapter_path) = adapter_path else {
+        eprintln!("Training warning: artifact manifest was not written because the completed run did not report an adapter path.");
+        return;
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        write_manifest(&PathBuf::from(adapter_path), manifest_context)
+    })
+    .await;
+    match result {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => eprintln!("Training warning: failed to write artifact manifest: {error}"),
+        Err(error) => eprintln!("Training warning: artifact manifest task failed: {error}"),
+    }
 }
 
 #[tauri::command]
@@ -481,6 +520,7 @@ pub async fn run_mlx_finetune(
     state: State<'_, MlxState>,
     config: FineTuneConfig,
 ) -> Result<u32, String> {
+    let training_runtime = config.runtime.unwrap_or(MlxRuntime::MlxLm);
     let prev_training = {
         let mut guard = state.training.lock().map_err(|e| e.to_string())?;
         if let Some(t) = guard.as_ref() {
@@ -501,7 +541,7 @@ pub async fn run_mlx_finetune(
         prev
     };
 
-    let res = (|| -> Result<(u32, tokio::process::Child), String> {
+    let res = (|| -> Result<(u32, tokio::process::Child, PathBuf), String> {
         if config.iters == 0 {
             return Err("iters must be at least 1.".into());
         }
@@ -544,7 +584,7 @@ pub async fn run_mlx_finetune(
             .arg("--adapter-name")
             .arg(&config.adapter_name)
             .arg("--runtime")
-            .arg(match config.runtime.unwrap_or(MlxRuntime::MlxLm) {
+            .arg(match training_runtime {
                 MlxRuntime::MlxLm => "mlx-lm",
                 MlxRuntime::MlxVlm => "mlx-vlm",
             })
@@ -568,11 +608,11 @@ pub async fn run_mlx_finetune(
 
         let pid = child.id().ok_or_else(|| "Could not get PID.".to_string())?;
 
-        Ok((pid, child))
+        Ok((pid, child, model_path))
     })();
 
     match res {
-        Ok((pid, child)) => {
+        Ok((pid, child, model_path)) => {
             {
                 let mut guard = state.training.lock().map_err(|e| e.to_string())?;
                 *guard = Some(TrainingStatus {
@@ -589,7 +629,14 @@ pub async fn run_mlx_finetune(
             crate::commands::guardrails::start_caffeinate(&app, pid);
             crate::commands::guardrails::spawn_guardrail_loop(app.clone(), pid);
 
-            tokio::spawn(run_training_reader(app, child));
+            let manifest_context = ManifestContext {
+                runtime: match training_runtime {
+                    MlxRuntime::MlxLm => "mlx-lm".into(),
+                    MlxRuntime::MlxVlm => "mlx-vlm".into(),
+                },
+                base_model: model_path.to_string_lossy().to_string(),
+            };
+            tokio::spawn(run_training_reader(app, child, manifest_context));
 
             Ok(pid)
         }
