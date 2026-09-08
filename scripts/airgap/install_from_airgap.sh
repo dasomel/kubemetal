@@ -15,6 +15,9 @@ set -uo pipefail
 # 로드하기 시작했다). KUBE_CONTEXT가 이미 같은 규약이다.
 AIRGAP_DIR="${AIRGAP_DIR:-${HOME}/.kubemetal/airgap}"
 KUBE_CONTEXT="${KUBE_CONTEXT:-colima}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/airgap/lib.sh
+. "${SCRIPT_DIR}/lib.sh"
 
 if [ ! -d "${AIRGAP_DIR}" ]; then
   echo "Air-Gap 저장소가 없습니다: ${AIRGAP_DIR} — 먼저 패키지 다운로드를 실행하세요." >&2
@@ -35,6 +38,7 @@ FAILED=()
 #
 # 구버전 번들을 알면서 쓰려면 의도를 명시해야 한다 — 기본값이 아니라 옵트아웃이다.
 MANIFEST="${AIRGAP_DIR}/manifest.sha256"
+DIGESTS_LOCK="${AIRGAP_DIR}/digests.lock"
 echo "[0/3] 번들 무결성 검증..."
 if [ ! -f "$MANIFEST" ]; then
   if [ "${AIRGAP_ALLOW_UNVERIFIED:-0}" = "1" ]; then
@@ -58,6 +62,66 @@ else
   fi
 fi
 
+# legacy bundles predate digests.lock. Missing or malformed entries are otherwise a supply-chain
+# failure, not a warning: tag references alone cannot prove what docker load restored.
+VERIFY_IMAGE_IDS=1
+if [ "${AIRGAP_ALLOW_UNLOCKED:-0}" = "1" ]; then
+  VERIFY_IMAGE_IDS=0
+  echo "  !! AIRGAP_ALLOW_UNLOCKED=1: digests.lock/image ID 검증을 건너뜁니다." >&2
+  echo "     경고: 잘못된 archive나 기존 daemon cache의 다른 이미지를 탐지할 수 없습니다." >&2
+elif [ ! -f "$DIGESTS_LOCK" ]; then
+  echo "  !! digests.lock이 없어 로드할 이미지의 image ID를 검증할 수 없습니다." >&2
+  echo "     설치를 중단합니다. 구버전 번들이 확실할 때만 AIRGAP_ALLOW_UNLOCKED=1로 재실행하세요." >&2
+  exit 1
+fi
+
+read_digest_lock_record() {
+  local archive="$1" record
+  if ! record="$(digest_lock_record_for_archive "$DIGESTS_LOCK" "$(basename "$archive")")"; then
+    echo "  !! $(basename "$archive"): digests.lock 항목이 없거나 형식이 잘못되었습니다." >&2
+    return 1
+  fi
+  read -r LOCKED_IMAGE LOCKED_REPO_DIGEST LOCKED_IMAGE_ID <<< "$record"
+  case "$LOCKED_REPO_DIGEST" in
+    unverified|*@sha256:?*) ;;
+    *)
+      echo "  !! ${LOCKED_IMAGE}: digests.lock의 RepoDigest 형식이 잘못되었습니다." >&2
+      return 1
+      ;;
+  esac
+  case "$LOCKED_IMAGE_ID" in
+    sha256:?*) ;;
+    *)
+      echo "  !! ${LOCKED_IMAGE}: digests.lock의 image ID 형식이 잘못되었습니다." >&2
+      return 1
+      ;;
+  esac
+}
+
+verify_preexisting_image_id() {
+  local archive="$1" existing_id
+  read_digest_lock_record "$archive" || return 1
+  if existing_id="$(image_id_lock_value "$LOCKED_IMAGE")"; then
+    if [ "$existing_id" != "$LOCKED_IMAGE_ID" ]; then
+      echo "  !! ${LOCKED_IMAGE}: load 전 daemon cache image ID 불일치 (lock=${LOCKED_IMAGE_ID}, cache=${existing_id})" >&2
+      return 1
+    fi
+  fi
+}
+
+verify_loaded_image_id() {
+  local archive="$1" actual_id
+  read_digest_lock_record "$archive" || return 1
+  if ! actual_id="$(image_id_lock_value "$LOCKED_IMAGE")" || [ -z "$actual_id" ]; then
+    echo "  !! ${LOCKED_IMAGE}: load 뒤 image ID를 조회하지 못했습니다." >&2
+    return 1
+  fi
+  if [ "$actual_id" != "$LOCKED_IMAGE_ID" ]; then
+    echo "  !! ${LOCKED_IMAGE}: image ID 불일치 (lock=${LOCKED_IMAGE_ID}, load=${actual_id})" >&2
+    return 1
+  fi
+}
+
 echo "[1/3] .tar.gz 컨테이너 이미지 로드..."
 if ! command -v docker >/dev/null 2>&1; then
   echo "  !! docker CLI가 없습니다." >&2
@@ -67,22 +131,37 @@ else
   shopt -s nullglob
   for archive in "${AIRGAP_DIR}/images/"*.tar.gz; do
     echo "  -> 로드: $(basename "$archive")"
-    if gunzip -c "$archive" | docker load; then
+    if [ "$VERIFY_IMAGE_IDS" -eq 1 ] && ! verify_preexisting_image_id "$archive"; then
+      FAILED+=("image-id-cache-mismatch:$(basename "$archive")")
+    elif gunzip -c "$archive" | docker load; then
       loaded=$((loaded + 1))
+      if [ "$VERIFY_IMAGE_IDS" -eq 1 ] && ! verify_loaded_image_id "$archive"; then
+        FAILED+=("image-id-mismatch:$(basename "$archive")")
+      fi
     else
       FAILED+=("load:$(basename "$archive")")
     fi
   done
   for archive in "${AIRGAP_DIR}/images/"*.tar; do
     echo "  -> 로드(비압축): $(basename "$archive")"
-    if docker load -i "$archive"; then
+    if [ "$VERIFY_IMAGE_IDS" -eq 1 ] && ! verify_preexisting_image_id "$archive"; then
+      FAILED+=("image-id-cache-mismatch:$(basename "$archive")")
+    elif docker load -i "$archive"; then
       loaded=$((loaded + 1))
+      if [ "$VERIFY_IMAGE_IDS" -eq 1 ] && ! verify_loaded_image_id "$archive"; then
+        FAILED+=("image-id-mismatch:$(basename "$archive")")
+      fi
     else
       FAILED+=("load:$(basename "$archive")")
     fi
   done
   shopt -u nullglob
   echo "  -> 이미지 ${loaded}건 로드"
+  if [ ${#FAILED[@]} -ne 0 ]; then
+    echo "  !! 이미지 image ID 검증에 실패해 이후 설치를 중단합니다." >&2
+    echo "실패 항목 ${#FAILED[@]}건: ${FAILED[*]}" >&2
+    exit 1
+  fi
   if [ "$loaded" -eq 0 ]; then
     FAILED+=("images:none-found")
   fi

@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-5-airgap-digest-lock",
+  "task": "Lock air-gap bundle images to registry digest and image ID so a re-pointed tag or tampered archive is refused at install (#5)",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/**",
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped to scripts/airgap lib, downloader, installer, a new shim-based test, the D25 amendment and a mistakes-log row; verify_offline_images.sh and the k8s manifests untouched"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Images were identified only by mutable tag; the first implementation compared RepoDigest after docker load, which docker save/load does not preserve — caught by the independent review lane, not by the implementer's shim",
+      "evidence": [
+        "policy:review-round-1-fail-repodigest-not-preserved"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "digests.lock now records image:tag, RepoDigest-or-unverified, and image ID; installer verifies the loaded image ID, refuses a stale daemon tag, fails closed on missing or malformed lock, loud AIRGAP_ALLOW_UNLOCKED=1 opt-out; downloader preserves lock lines on cache reuse"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "test_digest_lock.sh drives the real downloader cache loop and installer with a docker shim modelling save/load semantics: cache reuse, clean load, malformed lock, tampered archive, stale daemon cache, opt-out — all PASS",
+      "scope": "scripts/airgap digest lock write, preservation, and fail-closed install verification",
+      "evidence": [
+        "test:airgap-test-digest-lock-six-scenarios"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "bash -n on all airgap scripts, shellcheck on the four changed files, and the second independent review round passed",
+      "scope": "changed airgap shell scripts",
+      "evidence": [
+        "test:shellcheck-changed-airgap-scripts",
+        "policy:review-round-2-pass"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Digest lock slice complete for the shim-verified behavior; real registry pull and colima load were not exercised in this change",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified with shim-based tests and two review rounds; on-device verification against a real bundle remains a follow-up noted in the PR"
+    }
+  ]
+}
