@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-22-mlx-artifact-manifest",
+  "task": "Write a sha256 integrity manifest for fine-tuning outputs on genuine training success (#22)",
+  "changeContext": { "paths": [ "src-tauri/**", ".agents/**" ] },
+  "events": [
+    { "id": "e1", "type": "scope_check", "summary": "Scoped to one new service module, its call sites, and a D-registry row; no IPC command added, no frontend change" },
+    { "id": "e2", "type": "reproduction", "summary": "Fine-tuning runs completed without any integrity record of the produced adapter files", "evidence": [ "policy:issue-triage-against-main" ] },
+    { "id": "e3", "type": "bug_fix", "summary": "Added services/artifact_manifest.rs (write_manifest/verify_manifest) and called it from the training done path via spawn_blocking; write failure logs a warning and never flips run status" },
+    { "id": "e4", "type": "regression_verification", "status": "passed", "summary": "Module tests: sorted entries with correct sha256, manifest excluded from itself, symlink/subdir ignored, verify detects modified/missing/extra files and missing manifest", "scope": "new service module and its call sites", "evidence": [ "test:artifact-manifest-module-tests" ] },
+    { "id": "e5", "type": "verification", "status": "passed", "summary": "cargo clippy --all-targets -D warnings clean and cargo test --lib: 116 passed; independent agy review PASS", "scope": "src-tauri crate", "evidence": [ "test:cargo-test-lib-116-passed", "test:cargo-clippy-clean", "policy:agy-review-pass" ] },
+    { "id": "e6", "type": "completion_claim", "summary": "Slice complete for unit-verified behavior; on-device end-to-end run not exercised in this change", "evidence": [ "e4", "e5" ] },
+    { "id": "e7", "type": "task_outcome", "state": "A", "summary": "Complete and verified by unit tests, clippy, and an independent review; real-runtime verification noted as follow-up in the PR" }
+  ]
+}
