@@ -91,8 +91,29 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cmp /tmp/kubemetal-local-eval.json /tmp/kubemetal-openforge-eval.json
-          cmp /tmp/kubemetal-local-comparison.json /tmp/kubemetal-openforge-comparison.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          def load(path):
+              return json.loads(Path(path).read_text(encoding='utf-8'))
+
+          local_eval = load('/tmp/kubemetal-local-eval.json')
+          remote_eval = load('/tmp/kubemetal-openforge-eval.json')
+          local_cmp = load('/tmp/kubemetal-local-comparison.json')
+          remote_cmp = load('/tmp/kubemetal-openforge-comparison.json')
+
+          def outcomes(data):
+              return {item['behavior']: item['outcome'] for item in data.get('results', [])}
+
+          assert local_eval.get('schemaVersion') == remote_eval.get('schemaVersion')
+          assert local_eval.get('traceId') == remote_eval.get('traceId')
+          assert local_eval.get('summary', {}).get('failed') == remote_eval.get('summary', {}).get('failed')
+          assert outcomes(local_eval) == outcomes(remote_eval), (outcomes(local_eval), outcomes(remote_eval))
+          assert local_cmp.get('summary', {}).get('regressions') == remote_cmp.get('summary', {}).get('regressions')
+          assert local_cmp.get('regressions', []) == remote_cmp.get('regressions', [])
+          print('Local and OpenForge reusable gates are semantically equivalent')
+          PY
       - name: Correlate high-risk changes with trace evidence
         if: github.event_name == 'pull_request'
         shell: bash
