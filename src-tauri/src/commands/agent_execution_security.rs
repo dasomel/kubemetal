@@ -210,7 +210,11 @@ fn session_allows(
     {
         return Err(AuthorizationError("session-binding-mismatch".into()));
     }
-    if !session.allowed_tools.iter().any(|tool| tool == &invocation.tool) {
+    if !session
+        .allowed_tools
+        .iter()
+        .any(|tool| tool == &invocation.tool)
+    {
         return Err(AuthorizationError("tool-outside-session-authority".into()));
     }
     if !session
@@ -218,7 +222,9 @@ fn session_allows(
         .iter()
         .any(|prefix| invocation.resolved_target.starts_with(prefix))
     {
-        return Err(AuthorizationError("target-outside-session-authority".into()));
+        return Err(AuthorizationError(
+            "target-outside-session-authority".into(),
+        ));
     }
     Ok(())
 }
@@ -237,7 +243,9 @@ pub fn issue_invocation_grant(
 ) -> Result<InvocationGrant, AuthorizationError> {
     session_allows(session, invocation, now_epoch_s)?;
     if risk_level == AgentRiskLevel::L2ProposedAction {
-        return Err(AuthorizationError("proposal-only-no-execution-grant".into()));
+        return Err(AuthorizationError(
+            "proposal-only-no-execution-grant".into(),
+        ));
     }
     if ttl_seconds == 0 {
         return Err(AuthorizationError("invocation-grant-ttl-required".into()));
@@ -384,9 +392,16 @@ mod tests {
         let mut invocation = resolved(json!({"replicas": 2}));
         invocation.tool = "kubectl.exec".into();
         assert_eq!(
-            issue_invocation_grant("ig-1", &session(), &invocation, AgentRiskLevel::L1Diagnostic, 120, 30)
-                .unwrap_err()
-                .0,
+            issue_invocation_grant(
+                "ig-1",
+                &session(),
+                &invocation,
+                AgentRiskLevel::L1Diagnostic,
+                120,
+                30
+            )
+            .unwrap_err()
+            .0,
             "tool-outside-session-authority"
         );
 
@@ -402,9 +417,16 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            issue_invocation_grant("ig-2", &session(), &invocation, AgentRiskLevel::L3ApprovedAction, 120, 30)
-                .unwrap_err()
-                .0,
+            issue_invocation_grant(
+                "ig-2",
+                &session(),
+                &invocation,
+                AgentRiskLevel::L3ApprovedAction,
+                120,
+                30
+            )
+            .unwrap_err()
+            .0,
             "target-outside-session-authority"
         );
     }
@@ -413,9 +435,16 @@ mod tests {
     fn proposed_action_never_receives_execution_authority() {
         let invocation = resolved(json!({"replicas": 2}));
         assert_eq!(
-            issue_invocation_grant("ig-1", &session(), &invocation, AgentRiskLevel::L2ProposedAction, 120, 30)
-                .unwrap_err()
-                .0,
+            issue_invocation_grant(
+                "ig-1",
+                &session(),
+                &invocation,
+                AgentRiskLevel::L2ProposedAction,
+                120,
+                30
+            )
+            .unwrap_err()
+            .0,
             "proposal-only-no-execution-grant"
         );
     }
@@ -433,7 +462,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            validate_exact_approval(&grant, &invocation, None, 125).unwrap_err().0,
+            validate_exact_approval(&grant, &invocation, None, 125)
+                .unwrap_err()
+                .0,
             "approval-required"
         );
 
@@ -495,9 +526,16 @@ mod tests {
     fn expired_session_or_child_grant_fails_closed() {
         let invocation = resolved(json!({"replicas": 2}));
         assert_eq!(
-            issue_invocation_grant("ig-1", &session(), &invocation, AgentRiskLevel::L1Diagnostic, 500, 30)
-                .unwrap_err()
-                .0,
+            issue_invocation_grant(
+                "ig-1",
+                &session(),
+                &invocation,
+                AgentRiskLevel::L1Diagnostic,
+                500,
+                30
+            )
+            .unwrap_err()
+            .0,
             "session-grant-expired"
         );
 
