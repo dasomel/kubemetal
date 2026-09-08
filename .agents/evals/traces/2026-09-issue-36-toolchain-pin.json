@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-36-toolchain-pin",
+  "task": "Pin the Rust toolchain, enforce --locked cargo invocations, and add a fail-closed cargo-deny supply-chain gate (#36)",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/**",
+      ".agents/**",
+      "src-tauri/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped to toolchain pin, Makefile --locked flags, deny.toml policy, a separate CI supply-chain job, and the lockfile bumps the gate required; no application code changed"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "cargo deny check advisories on main reported quick-xml 0.32.0 (RUSTSEC-2026-0194/0195) and time 0.3.37 vulnerabilities plus four unic-* unmaintained crates reachable only through tauri-utils -> urlpattern",
+      "evidence": [
+        "policy:cargo-deny-advisories-failed-on-main"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added rust-toolchain.toml (1.98.0), --locked on cargo check/test/clippy, make supply-chain-check, a CI supply-chain job, plist/time lockfile updates that resolve the vulnerabilities, and scoped unmaintained advisories to workspace crates with the upstream reason recorded in deny.toml"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "cargo check/clippy/test with --locked on the updated lockfile: 112 Rust tests passed, clippy clean",
+      "scope": "src-tauri crate with the updated Cargo.lock",
+      "evidence": [
+        "test:cargo-test-locked-112-passed",
+        "test:cargo-clippy-locked-clean"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "make supply-chain-check reports advisories ok, sources ok after the plist/time updates; actionlint passes on ci.yml and release.yml",
+      "scope": "cargo-deny advisories and sources policy for aarch64-apple-darwin, CI workflow syntax",
+      "evidence": [
+        "policy:cargo-deny-advisories-ok-sources-ok",
+        "ci:actionlint-ci-release-workflows"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Toolchain pin, locked cargo invocations, and a passing supply-chain gate are in place; the CI job itself has not yet run on GitHub at trace time",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified locally (locked cargo check/clippy/test, cargo-deny advisories+sources ok, actionlint); the PR's own CI run exercises the new supply-chain job"
+    }
+  ]
+}

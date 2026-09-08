@@ -13,6 +13,8 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install  # 버전·컴포넌트는 rust-toolchain.toml 하나에서만 읽는다
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
           version: 10
@@ -26,3 +28,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Verify (test + rustfmt/clippy/tsc lint + DESIGN.md lint + license + web build)
         run: make verify
+
+  supply-chain:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install  # 버전·컴포넌트는 rust-toolchain.toml 하나에서만 읽는다
+      # GitHub API로 cargo-deny-action SHA를 확인할 수 없는 환경에서도 action ref를
+      # 추측해 고정하지 않는다. --locked 설치로 동일 정책 검사를 재현한다.
+      - name: Install cargo-deny
+        run: cargo install --locked cargo-deny
+      - name: Supply-chain policy gate
+        run: make supply-chain-check

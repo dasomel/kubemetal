@@ -17,6 +17,12 @@ targets = ["aarch64-apple-darwin"]
 [advisories]
 db-urls = ["https://github.com/rustsec/advisory-db"]
 yanked = "deny"
+# unmaintained는 직접 의존성(workspace)만 실패시킨다. 실측(2026-09-08): 전이 의존성
+# unic-char-property/unic-char-range/unic-common/unic-ucd-ident 4건이 잡혔는데, 전부
+# tauri-utils → urlpattern 경로라 이 저장소에서는 교체할 수 없다(상류 tauri 문제).
+# 취약점(vulnerability) advisory는 전이 의존성까지 그대로 실패한다 — 이 완화는
+# unmaintained에만 적용된다.
+unmaintained = "workspace"
 
 [sources]
 unknown-registry = "deny"
