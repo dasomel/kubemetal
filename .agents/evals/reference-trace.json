@@ -1,14 +1,14 @@
 {
-  "schema":"openforge-agent-trace/v1",
+  "schemaVersion":"openforge-agent-trace/v1",
   "traceId":"kubemetal-reference-change",
-  "repository":"dasomel/kubemetal",
-  "taskType":"bug-fix",
+  "task":"Fix a native/runtime regression without widening desktop capabilities",
   "events":[
-    {"id":"1","type":"scope","approved":true,"detail":"Keep change inside the affected desktop/native adapter boundary"},
-    {"id":"2","type":"reproduction","success":true,"evidence":["native/runtime defect reproduced"]},
-    {"id":"3","type":"change","scope":"approved","detail":"Minimal adapter/service change"},
-    {"id":"4","type":"verification","success":true,"class":"regression","evidence":["regression test passes"]},
-    {"id":"5","type":"verification","success":true,"class":"runtime","evidence":["representative macOS/Tauri/ML runtime behavior verified"]},
-    {"id":"6","type":"completion","state":"A","evidenceRefs":["4","5"]}
+    {"id":"e1","type":"scope_check","summary":"Keep change inside affected desktop/native adapter boundary"},
+    {"id":"e2","type":"reproduction","summary":"Reproduced native/runtime defect","evidence":["test:failure-before-fix"]},
+    {"id":"e3","type":"bug_fix","summary":"Applied minimal adapter/service change"},
+    {"id":"e4","type":"regression_verification","summary":"Regression test passes","evidence":["test:regression-pass"]},
+    {"id":"e5","type":"verification","summary":"Representative macOS/Tauri/ML behavior verified","scope":"targeted regression plus representative native/runtime checks","evidence":["test:regression-pass","runtime:native-pass"]},
+    {"id":"e6","type":"completion_claim","summary":"Task complete within verified native/runtime scope"},
+    {"id":"e7","type":"task_outcome","state":"A","summary":"Complete and verified"}
   ]
 }
