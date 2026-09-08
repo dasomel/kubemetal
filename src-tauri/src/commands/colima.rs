@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
+use crate::services::lifecycle_guard::{self, Operation};
 use crate::services::process::{external_command, resolve_bundled_resource};
 
 /// colima 0.10.x `status --json` 실측 스키마: 기동 중일 때만 exit 0 + stdout에
@@ -118,6 +119,7 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
 
 #[tauri::command]
 pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
+    let _lifecycle_guard = lifecycle_guard::acquire(Operation::StartCluster)?;
     let mut sys = sysinfo::System::new_all();
     sys.refresh_memory();
     sys.refresh_cpu_usage();
@@ -155,6 +157,7 @@ pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn stop_cluster() -> Result<String, String> {
+    let _lifecycle_guard = lifecycle_guard::acquire(Operation::StopCluster)?;
     let output = external_command("colima")?
         .arg("stop")
         .output()

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-18-colima-lifecycle-guard",
+  "task": "Enforce one colima lifecycle mutation at a time with a process-wide RAII guard (#18)",
+  "changeContext": { "paths": [ "src-tauri/**", ".agents/**" ] },
+  "events": [
+    { "id": "e1", "type": "scope_check", "summary": "Scoped to one new service module, its call sites, and a D-registry row; no IPC command added, no frontend change" },
+    { "id": "e2", "type": "reproduction", "summary": "start_cluster and stop_cluster could run concurrently although colima is not reentrant", "evidence": [ "policy:issue-triage-against-main" ] },
+    { "id": "e3", "type": "bug_fix", "summary": "Added services/lifecycle_guard.rs (atomic try-acquire token with RAII release) and wired it into start_cluster and stop_cluster; a concurrent caller gets an immediate named busy error" },
+    { "id": "e4", "type": "regression_verification", "status": "passed", "summary": "Module tests: second concurrent acquire fails naming the in-flight op, release on drop, release after panic unwind", "scope": "new service module and its call sites", "evidence": [ "test:lifecycle-guard-module-tests" ] },
+    { "id": "e5", "type": "verification", "status": "passed", "summary": "cargo clippy --all-targets -D warnings clean and cargo test --lib: 115 passed; independent agy review PASS", "scope": "src-tauri crate", "evidence": [ "test:cargo-test-lib-115-passed", "test:cargo-clippy-clean", "policy:agy-review-pass" ] },
+    { "id": "e6", "type": "completion_claim", "summary": "Slice complete for unit-verified behavior; on-device end-to-end run not exercised in this change", "evidence": [ "e4", "e5" ] },
+    { "id": "e7", "type": "task_outcome", "state": "A", "summary": "Complete and verified by unit tests, clippy, and an independent review; real-runtime verification noted as follow-up in the PR" }
+  ]
+}
