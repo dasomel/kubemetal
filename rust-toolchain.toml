@@ -1,0 +1,7 @@
+# rustup-enabled environments select this pinned toolchain before Cargo executes.
+# Homebrew Cargo/Rust (which has no rustup proxy) ignores this file; install Rust via
+# rustup to enforce the pin locally.
+[toolchain]
+channel = "1.98.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]

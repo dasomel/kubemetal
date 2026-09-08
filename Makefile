@@ -29,7 +29,7 @@ VITE_PORT := 5173
 .DEFAULT_GOAL := help
 
 .PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap \
-        lint fmt verify license-check vuln-check clean-light cluster-up cluster-down provision provision-all kagent-up \
+        lint fmt verify license-check vuln-check supply-chain-check clean-light cluster-up cluster-down provision provision-all kagent-up \
         preflight render export-gitops \
         forward forward-stop status index-code analyze-code serve-codegraph clean
 
@@ -90,10 +90,10 @@ install-app: app ## .app 빌드 후 /Applications에 설치(기존본 교체)
 	@echo "설치 완료: /Applications/KubeMetal.app"
 
 check: ## Rust 타입/컴파일 체크
-	cargo check --manifest-path $(CARGO_MANIFEST)
+	cargo check --locked --manifest-path $(CARGO_MANIFEST)
 
 test: ## Rust 단위 테스트 (경로 방어·가드레일 포함)
-	cargo test --manifest-path $(CARGO_MANIFEST) --lib
+	cargo test --locked --manifest-path $(CARGO_MANIFEST) --lib
 
 test-e2e: ## 종합 E2E 자율 피드백 검증 스위트 실행 (합성데이터→파인튜닝→kagent진단→코딩패치)
 	./scripts/e2e/run_full_e2e_verification.sh
@@ -104,7 +104,7 @@ verify-airgap: ## 폐쇄망 기동 가능성 검증 (imagePullPolicy: Never 프�
 
 lint: ## rustfmt --check + clippy(-D warnings) + tsc + DESIGN.md 토큰 린트 + IPC 타입 대조
 	cargo fmt --manifest-path $(CARGO_MANIFEST) --check
-	cargo clippy --manifest-path $(CARGO_MANIFEST) --all-targets -- -D warnings
+	cargo clippy --locked --manifest-path $(CARGO_MANIFEST) --all-targets -- -D warnings
 	npx tsc --noEmit
 	npx @google/design.md lint DESIGN.md
 	# invoke<T>의 T는 검증되지 않는 주장이라 tsc가 못 잡는다 — Rust 반환 타입과 대조한다.
@@ -119,6 +119,11 @@ license-check: ## 번들 의존성 라이선스 정책 게이트 (self-test 포�
 # 돌아야 한다. 릴리스 워크플로가 같은 검사를 게이트로 건다(이슈 #35).
 vuln-check: ## 번들 의존성 취약점 스캔 (HIGH/CRITICAL, 네트워크 필요)
 	trivy fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --skip-version-check .
+
+# verify에 넣지 않는다 — cargo-deny advisory DB는 네트워크를 타므로 D25의 오프라인
+# 검증 경로를 깨면 안 된다. deny.toml이 구성한 advisories/sources만 검사한다.
+supply-chain-check: ## Rust 의존성 advisory·registry/git 소스 정책 검사 (네트워크 필요)
+	cd src-tauri && cargo deny --config ../deny.toml check advisories sources
 
 fmt: ## rustfmt
 	cargo fmt --manifest-path $(CARGO_MANIFEST)
