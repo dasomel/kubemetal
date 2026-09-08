@@ -1,4 +1,8 @@
 pub mod access;
+// Contract-only boundary for a future agent-driven L3 executor. It is deliberately not wired
+// into today's human-triggered Tauri mutations; keep it compiled/tested without exposing a fake
+// runtime path. The resolver arguments intentionally mirror the canonical invocation artifact.
+#[allow(dead_code, clippy::too_many_arguments)]
 pub mod agent_execution_security;
 pub mod colima;
 pub mod data_ingest;
