@@ -180,8 +180,9 @@ attribution splits across three files:
 | `THIRD-PARTY-NOTICES.md` | Rust crates + npm packages compiled/bundled into the app | Release time, from `Cargo.lock`/`pnpm-lock.yaml` (`scripts/release/gen_third_party_notices.sh`) |
 | `sbom-cyclonedx.json` / `sbom-spdx.json` | Machine-readable inventory of the same bundled dependency graph | Release time, via Trivy (`scripts/release/gen_sbom.sh`) |
 
-The generated files ship as GitHub Release assets alongside the app zip —
-they are not committed, since a committed copy drifts from the lockfile.
+The generated files ship inside the app zip; `--verify` is a CI staging gate, and only the
+zip and manifest are GitHub Release assets. They are not committed, since a committed copy
+drifts from the lockfile.
 
 ## Project Structure
 
