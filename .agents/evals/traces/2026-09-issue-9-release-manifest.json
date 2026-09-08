@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-9-release-manifest",
+  "task": "Bind the release archive to its SBOMs and license notices with a fail-closed release-manifest.json (#9)",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/**",
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped to a new scripts/release/gen_release_manifest.sh, the release workflow staging step, a README note and a mistakes-log row; SBOM and license gate scripts unchanged"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "release.yml published the zip with SBOMs and notices inside but nothing bound the archive digest to those files; the first implementation also left the .app in the stage dir, interpolated github.ref_name directly, and duplicated the required-file list — caught by the independent review lane",
+      "evidence": [
+        "policy:review-round-1-fail"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Manifest generator with a single required_paths() source, --verify that fails on missing, empty, tampered or unlisted files, --self-test covering those cases; workflow removes the .app after zipping, passes the tag via env, generates and verifies the manifest, and uploads it with the zip"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "gen_release_manifest.sh --self-test passes: JSON validity, tamper detection, 0-byte required file, unlisted stage file",
+      "scope": "release manifest generation and verification script",
+      "evidence": [
+        "test:gen-release-manifest-self-test"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "bash -n and actionlint clean; second independent review round passed and confirmed the published asset name and archive layout are unchanged",
+      "scope": "release workflow syntax and staging step",
+      "evidence": [
+        "ci:actionlint-release-workflow",
+        "policy:review-round-2-pass"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Release manifest slice complete; a real tagged release run on GitHub Actions was not executed in this change",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified by self-test, actionlint and two review rounds; the next tagged release exercises the workflow end to end"
+    }
+  ]
+}
