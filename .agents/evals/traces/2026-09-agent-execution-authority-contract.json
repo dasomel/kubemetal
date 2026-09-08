@@ -51,9 +51,18 @@
     },
     {
       "id": "e6",
+      "type": "completion_claim",
+      "summary": "The agent execution authority contract implementation is complete within this PR scope and is backed by Rust type-check and security regression evidence",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
       "type": "task_outcome",
-      "state": "B",
-      "summary": "Security contract is verified; repository-wide PR gates remain the final merge criterion"
+      "state": "A",
+      "summary": "Complete and verified for the contract-only scope; no autonomous L3 executor is enabled and broader ChatOps/remediation delivery remains separate work"
     }
   ]
 }
