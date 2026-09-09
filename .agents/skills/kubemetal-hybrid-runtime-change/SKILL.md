@@ -6,7 +6,7 @@ compatibility: Requires the KubeMetal checkout, macOS Apple Silicon for real MLX
 metadata:
   openforge-scope: project
   openforge-owner: dasomel/kubemetal
-  openforge-maturity: verified
+  openforge-maturity: draft
   openforge-version: "1"
 ---
 
