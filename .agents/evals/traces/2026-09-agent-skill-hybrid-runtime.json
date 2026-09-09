@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "kubemetal-hybrid-runtime-skill-2026-09",
+  "task": "Add a project-scoped KubeMetal hybrid runtime skill while keeping repository contracts and Claude routing layered",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped the change to agent workflow knowledge and Claude routing without modifying Tauri, MLX, Colima, Kubernetes, or application runtime code"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Confirmed KubeMetal had a thin Claude adapter but no reusable project skill for changes that cross macOS MLX/Tauri host compute and Colima/K3s control-plane boundaries",
+      "evidence": [
+        "policy:openforge-agent-skill-layering",
+        "artifact:kubemetal-agent-instruction-audit"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added kubemetal-hybrid-runtime-change as a project-prefixed draft skill and routed Claude to it without making maintainer-global configuration a repository requirement"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Repository CI remained green after the instruction-only skill addition",
+      "scope": "KubeMetal build, lint, test, and existing repository verification behavior unaffected by agent workflow documentation changes",
+      "evidence": [
+        "ci:ci-run-34296408002"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "The skill preserves the control/compute split, deploy-target ownership, bridge and integration-tier rules, real-runtime evidence separation, and draft maturity until fresh-session replay",
+      "scope": "KubeMetal project agent workflow and evidence contract under .agents",
+      "evidence": [
+        "policy:openforge-agent-skills-standard",
+        "artifact:pr-72-hybrid-runtime-skill-review"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Project-skill addition is complete for the instruction layer; skill maturity remains draft pending fresh-session runtime workflow replay"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Instruction-layer integration is complete with passing CI evidence and no runtime behavior change"
+    }
+  ]
+}
