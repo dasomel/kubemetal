@@ -7,9 +7,7 @@
 pods in a Colima (`vz`+`virtiofs`) K3s VM; all ML computation runs as macOS host
 processes — Metal GPU cannot be passed through to Linux VMs.
 
-Read `README.md`, architecture/design docs (`docs/01-proposal.md`, `docs/02-requirements.md`,
-`docs/03-mvp-design.md`, `docs/04-architecture.md`), `Makefile`, Rust/Tauri configuration, and
-the relevant issue/spec before editing.
+Inspect repository guidance, architecture/design context, `Makefile`, Rust/Tauri configuration, project skills, and the issue/spec only when relevant to the current task. Use the Source Map below to load the owning document instead of preloading all project documentation.
 
 ## Source Map — read the file that owns the topic, don't duplicate it here
 
@@ -19,7 +17,7 @@ the relevant issue/spec before editing.
 | FR/NFR + IPC command table | `docs/02-requirements.md` (§4.1 = IPC names) |
 | MVP design + **decision registry (D1…)** | `docs/03-mvp-design.md` (§4 registry, §5 verified/unverified assumptions) |
 | Architecture overview | `docs/04-architecture.md` |
-| **Mistakes Log** | `docs/mistakes-log.md` — read the section matching your work area BEFORE touching it; add a row per new mistake |
+| **Mistakes Log** | `docs/mistakes-log.md` — read the section matching your work area before touching that path; add a row per new mistake |
 | UI tokens + design rules | root `DESIGN.md` (Google Labs design.md standard) |
 | Run instructions | `README.md` |
 | Superseded drafts | `docs/archive/` — never implement from these |
@@ -63,13 +61,13 @@ Changing a D-registry decision requires updating all affected docs in the same t
 
 ## Commands & Evidence
 
-`make help` is the entrypoint — recipes there are canonical, so read them rather than
+`make help` is the entrypoint — recipes there are canonical, so read the relevant recipe rather than
 reconstructing flags. The gates worth knowing by name: `make verify` (tests + clippy + tsc +
 design lint + web build), `make verify-airgap` (offline-startup probe, D25).
 
 Green gates say the code compiles, not that the feature works. Anything user-facing gets
 observed in the running app; anything cluster-facing gets checked against real colima as the
-user would see it. When reporting a URL as reachable, say which process owns the forward —
+user would see it when that path is affected. When reporting a URL as reachable, say which process owns the forward —
 forwards die with their parent.
 
 ## What bites here
@@ -106,6 +104,8 @@ forwards die with their parent.
 - Let formatter/linter rules own deterministic style. Comments explain why, invariants, hazards, or compatibility constraints.
 - For bugs, prefer: reproduce -> failing test/evidence -> minimal fix -> same test passes -> relevant regression suite.
 - Distinguish mocked/unit evidence from real macOS/Tauri/MLX/Kubernetes/runtime verification.
+- Choose verification proportional to task risk and user impact. Do not force full app/cluster verification for unrelated trivial edits, but use real user/runtime evidence when the changed path depends on it.
+- Safe local/disposable inspect-edit-build-test-fix-retest work may proceed within the requested scope. Shared/production/destructive/release/credential/permission/external mutations require explicit authorization unless already granted.
 - Do not claim completion without stating which checks actually ran and their scope.
 - End substantive work as A) complete/verified, B) meaningful verified progress with the next blocker isolated, or C) stop with evidence when further work requires unjustified scope, fragile patches, unsupported assumptions, or unacceptable risk.
 
@@ -118,4 +118,7 @@ and their lessons in `docs/mistakes-log.md`, and the full history in `git log`. 
 a mistakes-log row in the changelog — one is why the code is the way it is, the other is what
 a user gets.
 
-Reference: https://github.com/dasomel/openforge/blob/main/docs/agent-engineering.md
+References:
+- https://github.com/dasomel/openforge/blob/main/docs/agent-engineering.md
+- https://github.com/dasomel/openforge/blob/main/docs/model-agnostic-agent-instructions.md
+- https://github.com/dasomel/openforge/blob/main/docs/user-centric-validation.md
