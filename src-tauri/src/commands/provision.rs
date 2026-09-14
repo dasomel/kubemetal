@@ -152,6 +152,7 @@ mod tests {
                 "seaweedfs-deployment.yaml",
                 "mac-gpu-bridge.yaml",
                 "prefect-deployment.yaml",
+                "network-policies.yaml",
             ],
             "D13 order broken — Secret must come first for mlflow's secretKeyRef to resolve"
         );

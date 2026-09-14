@@ -1,0 +1,137 @@
+# D38 보안 베이스라인 — MLOps 스택(mlflow/seaweedfs/prefect) 전용 NetworkPolicy.
+#
+# k3s는 임베디드 kube-router netpol 컨트롤러로 NetworkPolicy를 실제로 강제한다 —
+# "flannel은 강제 안 한다"는 통념과 달리 실측으로 반박됐다(ADR-0003 참고, 2026-09-09
+# 실측: default-deny 적용 시 wget connection refused, allow 추가 시 200 OK).
+#
+# 네임스페이스 전체를 podSelector: {} 로 기본 차단하지 않는다 — `default` 네임스페이스는
+# kustomization.yaml이 의도적으로 제외한 다른 워크로드(e2e-remediated-nginx, remote-reader
+# 등)와 colima에서 공존한다(D26 comment 참고). 이 파일이 건드릴 수 없는 리소스까지 조용히
+# 끊는 것을 피하려고, 각 정책은 app 라벨로 자신의 파드만 선택한다 — 네임스페이스 범위가
+# 아니라 앱 범위의 기본 차단.
+#
+# 실측된 예외 두 가지(2026-09-09, colima):
+#   1. `kubectl port-forward`는 kube-router netpol 경로를 타지 않는다 — 파드에 ingress
+#      전체 차단을 걸어도 포트포워드는 그대로 200을 받는다(API 서버 → kubelet 직결 스트림
+#      경로라 CNI iptables 체인을 안 거친다). 그래서 "호스트 → mlflow/seaweedfs/prefect
+#      포트포워드"를 위한 별도 ingress allow가 필요 없다 — 이미 됨.
+#   2. kubelet의 readinessProbe도 같은 이유로 영향을 받지 않는다(prefect에 ingress 전체
+#      차단을 걸고 20초 관찰 — Ready 유지 확인).
+# 따라서 아래 세 정책 모두 ingress는 실제로 필요한 파드 간 트래픽만 허용하고, 그 밖의
+# 모든 것(포트포워드·프로브 제외)은 차단한다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mlflow-netpol
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: mlflow
+  policyTypes:
+    - Ingress
+    - Egress
+  # 클러스터 내부에서 mlflow를 호출하는 파드가 없다(트래킹 클라이언트는 Mac 호스트에서
+  # 포트포워드로 접근 — Control/Compute 분리, 위 주석의 예외 1). 그래서 ingress는 완전
+  # 차단한다.
+  ingress: []
+  egress:
+    # 서비스명(seaweedfs) 해석에 필요한 DNS.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # init 컨테이너의 버킷 보장(D13/FR-06)과 메인 컨테이너의 S3 아티팩트 스토어 — 둘 다
+    # SeaweedFS S3 API(8333)만 쓴다. Filer(8888)는 mlflow가 쓰지 않는다.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: seaweedfs
+      ports:
+        - protocol: TCP
+          port: 8333
+    # mlflow 컨테이너가 기동 시 `pip install boto3`를 PyPI/files.pythonhosted.org에서
+    # 내려받는다(이미지에 boto3 미포함, mlflow-deployment.yaml 주석 참고) — 이것이 이
+    # 스택의 유일한 외부 아웃바운드 의존성이다. PyPI/Fastly CDN은 고정 IP 대역이 아니라
+    # FQDN 기반 egress가 필요한데, k3s 내장 kube-router netpol은 L3/L4만 지원하고
+    # FQDN 인식 egress가 없다(Cilium/Calico 엔터프라이즈급 기능) — "가능한 선에서
+    # 통제"의 실제 한계다. 대신 클러스터 내부(파드 CIDR 10.42.0.0/16, 서비스 CIDR
+    # 10.43.0.0/16 — kubectl get pods/svc로 실측)로는 못 나가게 막아, 이 컨테이너가
+    # 감염돼도 클러스터 내 다른 워크로드로 옆으로 이동(lateral movement)하는 경로만은
+    # 차단한다. 443 외 포트는 필요 없다(PyPI는 HTTPS 전용).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.42.0.0/16
+              - 10.43.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: seaweedfs-netpol
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: seaweedfs
+  policyTypes:
+    - Ingress
+    - Egress
+  # mlflow(init 컨테이너 + 메인 컨테이너)만 S3 API(8333)를 호출한다. Filer UI(8888)는
+  # 클러스터 내부 호출자가 없다 — 호스트는 포트포워드로 접근하며 netpol 영향을 받지
+  # 않는다(위 예외 1).
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: mlflow
+      ports:
+        - protocol: TCP
+          port: 8333
+  # SeaweedFS는 이 스택 안에서 아무것도 호출하지 않는 종단 서버다 — 외부 의존성 없음.
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: prefect-netpol
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: prefect
+  policyTypes:
+    - Ingress
+    - Egress
+  # Prefect 서버를 클러스터 내부에서 호출하는 파드가 없다(플로우 실행은 Mac 호스트
+  # 프로세스가 담당 — Control/Compute 분리, D0). 호스트는 포트포워드로 대시보드/API에
+  # 접근하며 netpol 영향을 받지 않는다(위 예외 1, 2).
+  ingress: []
+  egress:
+    # 자기 자신/클러스터 내부 이름 해석 정도만 필요할 수 있어 DNS만 허용 — 그 외 아웃바
+    # 운드(원격 측정/텔레메트리 포함)는 의도적으로 전부 차단한다. 이 스택에 Prefect가
+    # 외부로 나가야 하는 알려진 요구사항이 없다.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

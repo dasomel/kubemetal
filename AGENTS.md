@@ -58,6 +58,12 @@ Changing a D-registry decision requires updating all affected docs in the same t
 - `DESIGN.md` frontmatter is the only token source, mapped 1:1 into `tailwind.config.js`.
   Components use tokens — a raw hex or a default-palette class is a defect the lint gate
   will not always catch for you.
+- **K8s security baseline (D38)**: mlflow/seaweedfs/prefect run non-root (UID/GID/fsGroup
+  65532), seccomp `RuntimeDefault`, no privilege escalation, all capabilities dropped,
+  read-only rootfs, and app-scoped default-deny NetworkPolicy (`scripts/k8s/network-policies.yaml`)
+  — k3s's embedded kube-router netpol is verified-enforced, but `kubectl port-forward` and
+  kubelet probes bypass it entirely, so treat that as a real gap in what NetworkPolicy can
+  cover here, not a false negative. Details/verdicts: `docs/adr/0003-k8s-security-baseline.md`.
 
 ## Commands & Evidence
 

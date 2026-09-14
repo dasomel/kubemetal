@@ -22,6 +22,15 @@ metadata:
     app: prefect
 spec:
   replicas: 1
+  # RollingUpdate(기본값)는 새 파드를 옛 파드가 RWO PVC를 놓기 전에 띄운다. 그 상태에서는
+  # kubelet이 fsGroup 65532로 볼륨을 재소유(chown)하지 않는다 — 이미 다른 파드가 마운트한
+  # 볼륨의 그룹 소유권을 바꾸지 않는 게 kubelet의 의도된 동작이다(D38 실측: "AlreadyMounted
+  # Volume ... GID 0" 경고 후 sqlite "attempt to write a readonly database"로 크래시루프).
+  # Recreate로 바꿔 옛 파드 종료 → PVC 반납 → 새 파드가 단독으로 마운트해 fsGroup이
+  # 실제로 적용되게 한다. 단일 레플리카 + 배타적 PVC 조합에서는 어차피 동시 실행이 불가능
+  # 했으므로 가용성 손실은 없다.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: prefect
@@ -33,6 +42,15 @@ spec:
         # 외부 클러스터의 Kyverno `require-labels`가 파드에 이 라벨을 요구한다(D26 실측).
         app.kubernetes.io/name: prefect
     spec:
+      # D38 보안 베이스라인: mlflow-deployment.yaml과 동일한 근거로 65532 고정.
+      # fsGroup이 PVC(prefect-data)도 65532 그룹 소유로 맞춰준다.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: prefect
           # 태그 3.7.8-python3.12는 2026-07-23 Docker Hub API(hub.docker.com/v2/repositories/
@@ -45,6 +63,15 @@ spec:
             # 파드 재시작 후에도 플로우/배포 메타데이터가 유지된다.
             - name: PREFECT_HOME
               value: /data
+            # readOnlyRootFilesystem 하에서 site-packages 안에 UI 정적 파일을 다시
+            # 빌드하려다 실패한다(root 소유 디렉터리에 65532가 못 씀 — Permission denied,
+            # 심지어 리드온리가 아니어도 마찬가지로 실측). PREFECT_UI_STATIC_DIRECTORY를
+            # 쓰기 가능한 /tmp로 돌리면 UI가 정상 렌더된다(HTTP 200, 실측). HOME=/data는
+            # 이미 마운트된 PVC를 재사용해 새 쓰기 경로를 늘리지 않는다.
+            - name: HOME
+              value: /data
+            - name: PREFECT_UI_STATIC_DIRECTORY
+              value: /tmp/prefect-ui
           ports:
             - containerPort: 4200
           resources:
@@ -52,6 +79,11 @@ spec:
               memory: 256Mi
             limits:
               memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
           readinessProbe:
             httpGet:
               path: /api/health
@@ -61,10 +93,14 @@ spec:
           volumeMounts:
             - name: prefect-data
               mountPath: /data
+            - name: prefect-tmp
+              mountPath: /tmp
       volumes:
         - name: prefect-data
           persistentVolumeClaim:
             claimName: prefect-data
+        - name: prefect-tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

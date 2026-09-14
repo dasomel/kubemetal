@@ -17,3 +17,6 @@ resources:
   - seaweedfs-deployment.yaml
   - mac-gpu-bridge.yaml
   - prefect-deployment.yaml
+  # D38: NetworkPolicy는 app 라벨로 파드를 선택하므로 apply 순서가 기능에 영향을 주지
+  # 않는다 — 목록 끝에 둔 것은 "먼저 뜨는 것들, 그 다음 그 위의 경계"라는 문서적 순서.
+  - network-policies.yaml

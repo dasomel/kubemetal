@@ -18,6 +18,14 @@ spec:
         # 외부 클러스터의 Kyverno `require-labels`가 파드에 이 라벨을 요구한다(D26 실측).
         app.kubernetes.io/name: seaweedfs
     spec:
+      # D38 보안 베이스라인: mlflow-deployment.yaml과 동일한 근거로 65532 고정.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: seaweedfs
           # 태그 4.40은 2026-07-21 Docker Hub API로 실존 확인(chrislusf/seaweedfs tags).
@@ -42,11 +50,23 @@ spec:
               memory: 128Mi
             limits:
               memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            # /data는 이미 쓰기 가능(emptyDir). 실측(docker run --read-only)해 보니
+            # gRPC 유닉스 소켓(/tmp/seaweedfs-*-grpc-*.sock)을 /tmp에도 쓴다 — 그래서
+            # /tmp용 emptyDir을 별도로 추가한다(D38).
+            readOnlyRootFilesystem: true
           volumeMounts:
             - name: seaweedfs-data
               mountPath: /data
+            - name: seaweedfs-tmp
+              mountPath: /tmp
       volumes:
         - name: seaweedfs-data
+          emptyDir: {}
+        - name: seaweedfs-tmp
           emptyDir: {}
 ---
 apiVersion: v1
