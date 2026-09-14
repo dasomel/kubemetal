@@ -34,10 +34,22 @@ def hash_text_content(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def normalize_source_path(source_type: str, source_path: str) -> str:
+    """
+    Normalize source path/URI based on source type.
+    Local/file source types are expanded and resolved to absolute canonical paths.
+    URL-type sources (web, rss, hf, huggingface) retain their URI identity without filesystem resolution.
+    """
+    stype = str(source_type).strip().lower()
+    if stype in ("local", "file"):
+        return str(Path(source_path).expanduser().resolve())
+    return str(source_path).strip()
+
+
 def compute_document_entries(raw_documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Extract deterministic per-document metadata and content hashes.
-    Sort by (source, filename) to eliminate filesystem traversal non-determinism.
+    Sort by (source, filename, sha256) to eliminate filesystem traversal non-determinism.
     """
     entries = []
     for doc in raw_documents:
@@ -52,7 +64,7 @@ def compute_document_entries(raw_documents: List[Dict[str, Any]]) -> List[Dict[s
             "byte_count": len(text.encode("utf-8")),
         })
     # Sort deterministically so identical document sets produce identical manifests
-    entries.sort(key=lambda d: (d["source"], d["filename"]))
+    entries.sort(key=lambda d: (d["source"], d["filename"], d["sha256"]))
     return entries
 
 
@@ -70,17 +82,27 @@ def compute_dataset_version(
     Any change in source content, chunk settings, embedding model, or schema version
     will produce a different hash.
     """
-    canonical_input = {
-        "source_type": str(source_type).strip().lower(),
-        "source_path": str(source_path).strip(),
-        "documents": [
+    norm_source_type = str(source_type).strip().lower()
+    norm_source_path = normalize_source_path(norm_source_type, source_path)
+
+    # Sort documents deterministically by (source, filename, sha256) so identical document sets
+    # produce identical hashes regardless of caller input ordering or traversal sequence.
+    sorted_documents = sorted(
+        [
             {
-                "source": d["source"],
-                "filename": d["filename"],
-                "sha256": d["sha256"],
+                "source": str(d.get("source", "")).strip(),
+                "filename": str(d.get("filename", "")).strip(),
+                "sha256": str(d.get("sha256", "")).strip(),
             }
             for d in doc_entries
         ],
+        key=lambda d: (d["source"], d["filename"], d["sha256"]),
+    )
+
+    canonical_input = {
+        "source_type": norm_source_type,
+        "source_path": norm_source_path,
+        "documents": sorted_documents,
         "chunking": {
             "chunk_size": int(chunk_size),
             "chunk_overlap": int(chunk_overlap),
@@ -124,13 +146,16 @@ def build_dataset_manifest(
     if created_at is None:
         created_at = datetime.now(timezone.utc).isoformat()
 
+    norm_source_type = str(source_type).strip().lower()
+    norm_source_path = normalize_source_path(norm_source_type, source_path)
+
     return {
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "dataset_version": dataset_version,
         "created_at": created_at,
         "source": {
-            "source_type": source_type,
-            "source_path": source_path,
+            "source_type": norm_source_type,
+            "source_path": norm_source_path,
             "total_documents": len(doc_entries),
             "documents": doc_entries,
         },

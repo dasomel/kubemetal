@@ -492,6 +492,7 @@ def main():
         chunk["dataset_version"] = dataset_version
 
     manifest_path = None
+    manifest_warning = None
 
     # Node 3: lancedb_index
     n3_start = time.time()
@@ -506,20 +507,17 @@ def main():
         # Serialize collection checks and writes so concurrent ingests cannot
         # both pass the guard and then overwrite one another.
         fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-        # Pre-check overwrite guard on disk before importing / computing embeddings
-        check_overwrite_guard(
-            db_path=db_path,
-            collection_name=args.collection,
-            incoming_version=dataset_version,
-            overwrite_existing=args.overwrite_existing,
-            lancedb_db=None,
-        )
 
-        import lancedb
-        from sentence_transformers import SentenceTransformer
-        
-        db = lancedb.connect(str(db_path))
-        # Re-check overwrite guard with active LanceDB connection (schema inspection)
+        # Single live-state check: connect to LanceDB first (if available) so
+        # get_existing_dataset_version can inspect live table schema if the manifest
+        # file is missing on disk, avoiding false legacy-unversioned rejections.
+        db = None
+        try:
+            import lancedb
+            db = lancedb.connect(str(db_path))
+        except ImportError:
+            pass
+
         check_overwrite_guard(
             db_path=db_path,
             collection_name=args.collection,
@@ -527,6 +525,11 @@ def main():
             overwrite_existing=args.overwrite_existing,
             lancedb_db=db,
         )
+
+        if db is None:
+            raise ImportError("lancedb package is not available in environment")
+
+        from sentence_transformers import SentenceTransformer
 
         model = SentenceTransformer(args.embedding_model)
         texts = [item["text"] for item in chunks_data]
@@ -545,26 +548,36 @@ def main():
         runtime_str = f"sentence_transformers_{st_ver}" if st_ver else "sentence_transformers"
         vector_dim = len(embeddings[0]) if len(embeddings) > 0 else None
 
-        manifest = build_dataset_manifest(
-            dataset_version=dataset_version,
-            source_type=args.source_type,
-            source_path=args.source_path,
-            doc_entries=doc_entries,
-            chunk_size=args.chunk_size,
-            chunk_overlap=args.chunk_overlap,
-            total_chunks=len(chunks_data),
-            embedding_model_id=args.embedding_model,
-            collection_name=args.collection,
-            index_schema_version=1,
-            vector_dimension=vector_dim,
-            embedding_model_version=None,
-            embedding_runtime=runtime_str,
-            embedding_device=device_str,
-            index_backend="lancedb",
-        )
-        primary_manifest, _ = write_dataset_manifest(db_path, args.collection, manifest)
-        manifest_path = primary_manifest
         n3_details = f"Indexed {len(chunks_data)} vectors into LanceDB collection '{args.collection}' at {db_path} (version: {dataset_version[:12]})"
+
+        # D37/D39: Manifest write failure must not turn successful indexing into failure.
+        # Demote to a warning in details and payload, matching the MLX fine-tune convention.
+        try:
+            manifest = build_dataset_manifest(
+                dataset_version=dataset_version,
+                source_type=args.source_type,
+                source_path=args.source_path,
+                doc_entries=doc_entries,
+                chunk_size=args.chunk_size,
+                chunk_overlap=args.chunk_overlap,
+                total_chunks=len(chunks_data),
+                embedding_model_id=args.embedding_model,
+                collection_name=args.collection,
+                index_schema_version=1,
+                vector_dimension=vector_dim,
+                embedding_model_version=None,
+                embedding_runtime=runtime_str,
+                embedding_device=device_str,
+                index_backend="lancedb",
+            )
+            primary_manifest, _ = write_dataset_manifest(db_path, args.collection, manifest)
+            manifest_path = primary_manifest
+        except Exception as e:
+            warning_msg = f"failed to write dataset manifest: {e}"
+            sys.stderr.write(f"Ingestion warning: {warning_msg}\n")
+            manifest_warning = warning_msg
+            n3_details = f"{n3_details} (warning: {warning_msg})"
+
     except CollectionOverwriteError as e:
         n3_status = "failed"
         n3_details = str(e)
@@ -572,26 +585,32 @@ def main():
         # Fallback if lancedb / sentence_transformers missing in python env
         fallback_json = db_path / f"{args.collection}_fallback.json"
         fallback_json.write_text(json.dumps(chunks_data, ensure_ascii=False, indent=2), encoding="utf-8")
-        manifest = build_dataset_manifest(
-            dataset_version=dataset_version,
-            source_type=args.source_type,
-            source_path=args.source_path,
-            doc_entries=doc_entries,
-            chunk_size=args.chunk_size,
-            chunk_overlap=args.chunk_overlap,
-            total_chunks=len(chunks_data),
-            embedding_model_id=args.embedding_model,
-            collection_name=args.collection,
-            index_schema_version=1,
-            vector_dimension=None,
-            embedding_model_version=None,
-            embedding_runtime=None,
-            embedding_device=None,
-            index_backend="json_fallback",
-        )
-        primary_manifest, _ = write_dataset_manifest(db_path, args.collection, manifest)
-        manifest_path = primary_manifest
         n3_details = f"LanceDB package not available in env. Saved {len(chunks_data)} chunks metadata to {fallback_json}"
+        try:
+            manifest = build_dataset_manifest(
+                dataset_version=dataset_version,
+                source_type=args.source_type,
+                source_path=args.source_path,
+                doc_entries=doc_entries,
+                chunk_size=args.chunk_size,
+                chunk_overlap=args.chunk_overlap,
+                total_chunks=len(chunks_data),
+                embedding_model_id=args.embedding_model,
+                collection_name=args.collection,
+                index_schema_version=1,
+                vector_dimension=None,
+                embedding_model_version=None,
+                embedding_runtime=None,
+                embedding_device=None,
+                index_backend="json_fallback",
+            )
+            primary_manifest, _ = write_dataset_manifest(db_path, args.collection, manifest)
+            manifest_path = primary_manifest
+        except Exception as e:
+            warning_msg = f"failed to write dataset manifest: {e}"
+            sys.stderr.write(f"Ingestion warning: {warning_msg}\n")
+            manifest_warning = warning_msg
+            n3_details = f"{n3_details} (warning: {warning_msg})"
     except Exception as e:
         n3_status = "failed"
         n3_details = f"LanceDB indexing error: {e}"
@@ -682,6 +701,7 @@ def main():
         "dag_nodes": dag_nodes,
         "dataset_version": dataset_version,
         "manifest_path": str(manifest_path) if manifest_path else None,
+        "warning": manifest_warning,
     }))
     if not is_ok:
         sys.exit(1)

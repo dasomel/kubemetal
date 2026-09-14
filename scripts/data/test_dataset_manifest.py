@@ -26,6 +26,7 @@ from dataset_manifest import (
     compute_document_entries,
     get_existing_dataset_version,
     hash_text_content,
+    normalize_source_path,
     write_dataset_manifest,
 )
 
@@ -274,6 +275,176 @@ class TestDatasetManifest(unittest.TestCase):
         )
         self.assertTrue(allowed)
         self.assertEqual(existing, v1)
+
+    def test_dataset_version_local_path_normalization(self):
+        """Relative, absolute, and trailing-slash paths to identical local content produce identical dataset_version."""
+        data_dir = self.tmp_dir / "corpus"
+        data_dir.mkdir(parents=True)
+        (data_dir / "sample.txt").write_text("Deterministic content for normalization test.", encoding="utf-8")
+
+        abs_path = str(data_dir.resolve())
+        trailing_slash_path = f"{abs_path}/"
+        rel_path = os.path.relpath(abs_path, start=os.getcwd())
+
+        v_abs = compute_dataset_version(
+            source_type="local",
+            source_path=abs_path,
+            doc_entries=self.doc_entries,
+            chunk_size=500,
+            chunk_overlap=50,
+            embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+        )
+        v_slash = compute_dataset_version(
+            source_type="local",
+            source_path=trailing_slash_path,
+            doc_entries=self.doc_entries,
+            chunk_size=500,
+            chunk_overlap=50,
+            embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+        )
+        v_rel = compute_dataset_version(
+            source_type="local",
+            source_path=rel_path,
+            doc_entries=self.doc_entries,
+            chunk_size=500,
+            chunk_overlap=50,
+            embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+        )
+
+        self.assertEqual(v_abs, v_slash)
+        self.assertEqual(v_abs, v_rel)
+
+    def test_dataset_version_url_not_resolved(self):
+        """URL-type sources (web, rss, hf, huggingface) must preserve their URI identity and not be path-resolved."""
+        web_url = "https://example.com/dataset/v1"
+        self.assertEqual(normalize_source_path("web", web_url), web_url)
+        self.assertEqual(normalize_source_path("rss", web_url), web_url)
+        self.assertEqual(normalize_source_path("hf", "wikitext"), "wikitext")
+        self.assertEqual(normalize_source_path("huggingface", "wikitext"), "wikitext")
+
+        v_web = compute_dataset_version(
+            source_type="web",
+            source_path=web_url,
+            doc_entries=self.doc_entries,
+            chunk_size=500,
+            chunk_overlap=50,
+            embedding_model="sentence-transformers/all-MiniLM-L6-v2",
+        )
+        self.assertIsInstance(v_web, str)
+        self.assertEqual(len(v_web), 64)
+
+    def test_compute_dataset_version_document_order_determinism(self):
+        """compute_dataset_version must produce identical hash even if doc_entries are provided in arbitrary order."""
+        v_forward = compute_dataset_version(**self.default_params)
+
+        reversed_entries = list(reversed(self.doc_entries))
+        params_reversed = dict(self.default_params)
+        params_reversed["doc_entries"] = reversed_entries
+        v_reversed = compute_dataset_version(**params_reversed)
+
+        self.assertEqual(v_forward, v_reversed)
+
+    def test_overwrite_guard_live_schema_inspection_rescue(self):
+        """When manifest file is missing but LanceDB table carries dataset_version, live schema inspection rescues version."""
+        version = compute_dataset_version(**self.default_params)
+
+        # Create a mock .lance directory without manifest files
+        table_dir = self.tmp_dir / "rescue_col.lance"
+        table_dir.mkdir(parents=True)
+
+        # Disk-only check without connection falls back to legacy-unversioned and rejects
+        with self.assertRaises(CollectionOverwriteError) as ctx:
+            check_overwrite_guard(
+                db_path=self.tmp_dir,
+                collection_name="rescue_col",
+                incoming_version=version,
+                overwrite_existing=False,
+                lancedb_db=None,
+            )
+        self.assertIn("legacy-unversioned", str(ctx.exception))
+
+        # Mock LanceDB connection that returns the live dataset_version from table schema
+        class MockColumn:
+            def to_pylist(self):
+                return [version, version]
+
+        class MockArrowTable:
+            def column(self, name):
+                return MockColumn()
+
+        class MockTable:
+            schema = type("Schema", (), {"names": ["dataset_version", "vector", "text"]})()
+
+            def to_arrow(self):
+                return MockArrowTable()
+
+        class MockDb:
+            def list_tables(self):
+                return ["rescue_col"]
+
+            def open_table(self, name):
+                return MockTable()
+
+        # With active connection, the live schema is inspected and the version matches
+        allowed, existing = check_overwrite_guard(
+            db_path=self.tmp_dir,
+            collection_name="rescue_col",
+            incoming_version=version,
+            overwrite_existing=False,
+            lancedb_db=MockDb(),
+        )
+        self.assertTrue(allowed)
+        self.assertEqual(existing, version)
+
+    def test_manifest_write_failure_demoted_to_warning(self):
+        """Failure to write manifest must not fail indexing; demoted to warning and exits 0 (D37/D39)."""
+        import contextlib
+        import io
+        from unittest.mock import patch
+        import ingest_host
+
+        data_dir = self.tmp_dir / "ingest_source"
+        data_dir.mkdir(parents=True)
+        (data_dir / "test.txt").write_text("Hello KubeMetal ingest test", encoding="utf-8")
+
+        target_db = self.tmp_dir / "lancedb_target"
+        target_db.mkdir(parents=True)
+
+        test_args = [
+            "ingest_host.py",
+            "--source-type", "local",
+            "--source-path", str(data_dir),
+            "--collection", "warning_test_col",
+            "--db-path", str(target_db),
+        ]
+
+        stdout_buf = io.StringIO()
+        stderr_buf = io.StringIO()
+
+        with patch("sys.argv", test_args), \
+             patch("ingest_host.write_dataset_manifest", side_effect=OSError("Disk quota exceeded")), \
+             contextlib.redirect_stdout(stdout_buf), \
+             contextlib.redirect_stderr(stderr_buf):
+            # ingest_host.main() will raise SystemExit(1) on failure, or return cleanly on ok
+            ingest_host.main()
+
+        output_str = stdout_buf.getvalue()
+        payload = json.loads(output_str)
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertIsNone(payload["error"])
+        self.assertIsNone(payload["manifest_path"])
+        self.assertIsNotNone(payload["warning"])
+        self.assertIn("Disk quota exceeded", payload["warning"])
+
+        # Check DAG node 3 (lancedb_index) status is completed with warning in details
+        lancedb_node = next(n for n in payload["dag_nodes"] if n["node_id"] == "lancedb_index")
+        self.assertEqual(lancedb_node["status"], "completed")
+        self.assertIn("warning", lancedb_node["details"])
+
+        # Check stderr logged the warning matching D37 MLX convention
+        stderr_str = stderr_buf.getvalue()
+        self.assertIn("Ingestion warning: failed to write dataset manifest", stderr_str)
 
 
 if __name__ == "__main__":
