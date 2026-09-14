@@ -12,6 +12,7 @@ Returns detailed DAG node execution states (status, duration, items processed).
 """
 
 import argparse
+import fcntl
 import html
 import ipaddress
 import json
@@ -27,6 +28,17 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Any, Tuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from dataset_manifest import (
+    compute_document_entries,
+    compute_dataset_version,
+    build_dataset_manifest,
+    check_overwrite_guard,
+    write_dataset_manifest,
+    CollectionOverwriteError,
+    get_lancedb_table_names,
+)
 
 
 def get_dvc_bin() -> str:
@@ -345,6 +357,7 @@ def main():
     parser.add_argument("--embedding-model", default="sentence-transformers/all-MiniLM-L6-v2", help="Embedding model name")
     parser.add_argument("--chunk-size", type=int, default=500, help="Chunk size in characters")
     parser.add_argument("--chunk-overlap", type=int, default=50, help="Chunk overlap in characters")
+    parser.add_argument("--overwrite-existing", action="store_true", help="Allow overwriting an existing collection produced by a different dataset version")
     parser.add_argument("--dvc-backup", action="store_true", help="Perform DVC backup & push to S3")
     parser.add_argument("--remote-url", default="http://127.0.0.1:8333", help="DVC S3 remote URL")
     parser.add_argument("--bucket", default="dvc-repo", help="DVC S3 bucket name")
@@ -407,7 +420,9 @@ def main():
             "lancedb_collection": args.collection,
             "db_path": str(Path(args.db_path).expanduser().resolve()),
             "dvc_backed_up": False,
-            "dag_nodes": dag_nodes
+            "dag_nodes": dag_nodes,
+            "dataset_version": None,
+            "manifest_path": None,
         }))
         sys.exit(1)
 
@@ -456,9 +471,27 @@ def main():
             "lancedb_collection": args.collection,
             "db_path": str(Path(args.db_path).expanduser().resolve()),
             "dvc_backed_up": False,
-            "dag_nodes": dag_nodes
+            "dag_nodes": dag_nodes,
+            "dataset_version": None,
+            "manifest_path": None,
         }))
         sys.exit(1)
+
+    # Derive deterministic dataset version from extracted documents & chunking/model config (D39)
+    doc_entries = compute_document_entries(extracted_docs)
+    dataset_version = compute_dataset_version(
+        source_type=args.source_type,
+        source_path=args.source_path,
+        doc_entries=doc_entries,
+        chunk_size=args.chunk_size,
+        chunk_overlap=args.chunk_overlap,
+        embedding_model=args.embedding_model,
+        index_schema_version=1,
+    )
+    for chunk in chunks_data:
+        chunk["dataset_version"] = dataset_version
+
+    manifest_path = None
 
     # Node 3: lancedb_index
     n3_start = time.time()
@@ -466,11 +499,35 @@ def main():
     n3_details = ""
     db_path = Path(args.db_path).expanduser().resolve()
     db_path.mkdir(parents=True, exist_ok=True)
+    lock_path = db_path / f".{args.collection}.ingest.lock"
+    lock_handle = lock_path.open("w", encoding="utf-8")
 
     try:
+        # Serialize collection checks and writes so concurrent ingests cannot
+        # both pass the guard and then overwrite one another.
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        # Pre-check overwrite guard on disk before importing / computing embeddings
+        check_overwrite_guard(
+            db_path=db_path,
+            collection_name=args.collection,
+            incoming_version=dataset_version,
+            overwrite_existing=args.overwrite_existing,
+            lancedb_db=None,
+        )
+
         import lancedb
         from sentence_transformers import SentenceTransformer
         
+        db = lancedb.connect(str(db_path))
+        # Re-check overwrite guard with active LanceDB connection (schema inspection)
+        check_overwrite_guard(
+            db_path=db_path,
+            collection_name=args.collection,
+            incoming_version=dataset_version,
+            overwrite_existing=args.overwrite_existing,
+            lancedb_db=db,
+        )
+
         model = SentenceTransformer(args.embedding_model)
         texts = [item["text"] for item in chunks_data]
         embeddings = model.encode(texts, show_progress_bar=False)
@@ -478,19 +535,69 @@ def main():
         for item, emb in zip(chunks_data, embeddings):
             item["vector"] = emb.tolist()
 
-        db = lancedb.connect(str(db_path))
-        existing_tables = db.list_tables()
+        existing_tables = get_lancedb_table_names(db)
         mode = "overwrite" if args.collection in existing_tables else "create"
         db.create_table(args.collection, data=chunks_data, mode=mode)
-        n3_details = f"Indexed {len(chunks_data)} vectors into LanceDB collection '{args.collection}' at {db_path}"
+
+        # Honest runtime measurements (D22)
+        device_str = str(getattr(model, "device", "unknown"))
+        st_ver = getattr(SentenceTransformer, "__version__", None)
+        runtime_str = f"sentence_transformers_{st_ver}" if st_ver else "sentence_transformers"
+        vector_dim = len(embeddings[0]) if len(embeddings) > 0 else None
+
+        manifest = build_dataset_manifest(
+            dataset_version=dataset_version,
+            source_type=args.source_type,
+            source_path=args.source_path,
+            doc_entries=doc_entries,
+            chunk_size=args.chunk_size,
+            chunk_overlap=args.chunk_overlap,
+            total_chunks=len(chunks_data),
+            embedding_model_id=args.embedding_model,
+            collection_name=args.collection,
+            index_schema_version=1,
+            vector_dimension=vector_dim,
+            embedding_model_version=None,
+            embedding_runtime=runtime_str,
+            embedding_device=device_str,
+            index_backend="lancedb",
+        )
+        primary_manifest, _ = write_dataset_manifest(db_path, args.collection, manifest)
+        manifest_path = primary_manifest
+        n3_details = f"Indexed {len(chunks_data)} vectors into LanceDB collection '{args.collection}' at {db_path} (version: {dataset_version[:12]})"
+    except CollectionOverwriteError as e:
+        n3_status = "failed"
+        n3_details = str(e)
     except ImportError:
         # Fallback if lancedb / sentence_transformers missing in python env
         fallback_json = db_path / f"{args.collection}_fallback.json"
         fallback_json.write_text(json.dumps(chunks_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        manifest = build_dataset_manifest(
+            dataset_version=dataset_version,
+            source_type=args.source_type,
+            source_path=args.source_path,
+            doc_entries=doc_entries,
+            chunk_size=args.chunk_size,
+            chunk_overlap=args.chunk_overlap,
+            total_chunks=len(chunks_data),
+            embedding_model_id=args.embedding_model,
+            collection_name=args.collection,
+            index_schema_version=1,
+            vector_dimension=None,
+            embedding_model_version=None,
+            embedding_runtime=None,
+            embedding_device=None,
+            index_backend="json_fallback",
+        )
+        primary_manifest, _ = write_dataset_manifest(db_path, args.collection, manifest)
+        manifest_path = primary_manifest
         n3_details = f"LanceDB package not available in env. Saved {len(chunks_data)} chunks metadata to {fallback_json}"
     except Exception as e:
         n3_status = "failed"
         n3_details = f"LanceDB indexing error: {e}"
+    finally:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        lock_handle.close()
 
     n3_duration = round(time.time() - n3_start, 3)
     dag_nodes.append({
@@ -558,9 +665,11 @@ def main():
     })
 
     total_duration = round(time.time() - overall_start, 3)
+    is_ok = (n3_status == "completed")
 
     print(json.dumps({
-        "status": "ok" if n3_status == "completed" else "error",
+        "status": "ok" if is_ok else "error",
+        "error": None if is_ok else (n3_details or "LanceDB indexing failed"),
         "dataset_name": args.collection,
         "source_type": args.source_type,
         "source_path": args.source_path,
@@ -570,8 +679,12 @@ def main():
         "lancedb_collection": args.collection,
         "db_path": str(db_path),
         "dvc_backed_up": dvc_backed_up,
-        "dag_nodes": dag_nodes
+        "dag_nodes": dag_nodes,
+        "dataset_version": dataset_version,
+        "manifest_path": str(manifest_path) if manifest_path else None,
     }))
+    if not is_ok:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

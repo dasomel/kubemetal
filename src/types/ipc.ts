@@ -326,6 +326,8 @@ export interface BackendIngestFlowResult {
   dvc_backed_up: boolean;
   dag_nodes: BackendDagNodeState[];
   error?: string;
+  dataset_version?: string;
+  manifest_path?: string;
 }
 
 export interface IngestedDatasetInfo {
@@ -333,6 +335,8 @@ export interface IngestedDatasetInfo {
   total_chunks: number;
   db_path: string;
   is_lance_table: boolean;
+  dataset_version?: string;
+  manifest_path?: string;
 }
 
 export interface IngestStatusResponse {
