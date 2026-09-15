@@ -132,11 +132,13 @@ default `RollingUpdate` briefly runs two pods against the same RWO claim
 (`AlreadyMountedVolume ... GID 0` kubelet warning, observed live). Fixed by:
 (a) switching the prefect Deployment to `strategy: {type: Recreate}` so the old pod
 fully releases the PVC before the new one mounts it (a single-replica, exclusive-PVC
-deployment loses no availability from this), and (b) a one-time `chown -R 65532:65532`
-of the PV's existing hostPath directory on the node — necessary because that content
-predates this baseline and no automated reconciliation retroactively fixes ownership on
-already-populated volumes. After both fixes, `kubectl rollout status` succeeded for all
-three deployments and all three UIs/APIs answered HTTP 200 via `kubectl port-forward`.
+deployment loses no availability from this), and (b) adding a declarative `volume-permissions`
+initContainer running as root (`runAsUser: 0`, dropped all capabilities except `CHOWN`/`FOWNER`/`DAC_OVERRIDE`,
+`readOnlyRootFilesystem: true`) that executes `chown -R 65532:65532 /data && chmod -R g+rwX /data`
+before the application starts. This makes volume ownership migration automated, declarative,
+and idempotent on existing installs without requiring manual node-side SSH access. After both fixes,
+`kubectl rollout status` succeeded for all three deployments and all three UIs/APIs answered HTTP 200
+via `kubectl port-forward`.
 `make verify` passes (119/119 Rust tests, clippy, tsc, design lint, web build) after
 updating `src-tauri/src/commands/provision.rs`'s `kustomization_keeps_d13_secret_first_order`
 test, which hardcoded the manifest list and did not yet know about the new
@@ -152,10 +154,11 @@ test, which hardcoded the manifest list and did not yet know about the new
   FQDN-based, because k3s's embedded netpol controller has no FQDN awareness — narrowing
   it further would require adopting Cilium or Calico, which is out of this task's scope
   and not something to silently pretend is already solved.
-- Retrofitting `fsGroup` onto a PVC with pre-existing root-owned content required a
-  manual one-time `chown` on the node; any *future* stateful workload added to this
-  kustomization under this baseline should mount its PVC for the first time under the
-  hardened `securityContext` from the start to avoid repeating this.
+- Retrofitting `fsGroup` onto a PVC with pre-existing root-owned content is handled
+  declaratively via the `volume-permissions` initContainer on the prefect Deployment;
+  any *future* stateful workload added to this kustomization under this baseline should
+  mount its PVC for the first time under the hardened `securityContext` from the start
+  to avoid repeating this.
 - L2 (opt-in full-stack external deploy) exposure/netpol behavior is explicitly
   unverified by this ADR and should not be assumed to match the colima findings above.
 

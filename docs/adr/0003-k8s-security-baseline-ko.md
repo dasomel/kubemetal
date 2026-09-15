@@ -127,10 +127,12 @@ Prefect)만 호스팅하고, 모든 MLX/Metal 워크로드는 Rust 백엔드가 
 파일의 소유권을 소급 재적용하지 않는다(실측된 kubelet 경고: `AlreadyMountedVolume ...
 GID 0`). 다음 두 가지로 해결했다: (a) prefect Deployment를
 `strategy: {type: Recreate}`로 바꿔 옛 파드가 PVC를 완전히 반납한 뒤 새 파드가
-마운트하게 함(단일 레플리카·배타적 PVC 조합이라 가용성 손실 없음), (b) 노드의 PV
-hostPath 디렉터리 기존 내용을 `chown -R 65532:65532`로 일회성 조정 — 이 내용이 이
-베이스라인 이전부터 있었고, 이미 채워진 볼륨의 소유권을 소급 정정해 주는 자동
-리컨실리에이션은 없기 때문에 필요했다. 두 조치 후 `kubectl rollout status`가 세
+마운트하게 함(단일 레플리카·배타적 PVC 조합이라 가용성 손실 없음), (b) prefect Deployment에
+선언적 `volume-permissions` initContainer(root `runAsUser: 0`, `CHOWN`/`FOWNER`/`DAC_OVERRIDE`
+외 cap 드롭, `readOnlyRootFilesystem: true`)를 추가해 애플리케이션 시작 전
+`chown -R 65532:65532 /data && chmod -R g+rwX /data`를 자동 실행하도록 조치 —
+노드에 직접 SSH할 필요 없이 기존 설치 환경에서도 볼륨 소유권 마이그레이션이
+선언적이고 멱등하게 자동 수행된다. 두 조치 후 `kubectl rollout status`가 세
 배포 모두 성공했고, 세 UI/API 모두 `kubectl port-forward`로 HTTP 200을 반환했다.
 `make verify`도 통과한다(Rust 테스트 119/119, clippy, tsc, design lint, web build) —
 매니페스트 목록을 하드코딩하고 있던
@@ -148,10 +150,10 @@ hostPath 디렉터리 기존 내용을 `chown -R 65532:65532`로 일회성 조�
   점이다 — k3s의 임베디드 netpol 컨트롤러에 FQDN 인식이 없기 때문이다. 더 좁히려면
   Cilium이나 Calico 도입이 필요한데, 이는 이 작업 범위 밖이며 이미 해결된 것처럼
   조용히 넘길 사안이 아니다.
-- 기존 root 소유 내용이 있는 PVC에 `fsGroup`을 소급 적용하려면 노드에서 수동 일회성
-  `chown`이 필요했다 — 앞으로 이 베이스라인 하에 kustomization에 추가되는 상태 저장
-  워크로드는 PVC를 처음 마운트할 때부터 하드닝된 `securityContext`로 시작해 이 반복을
-  피해야 한다.
+- 기존 root 소유 내용이 있는 PVC에 `fsGroup`을 소급 적용하는 문제는 prefect Deployment의
+  `volume-permissions` initContainer를 통해 선언적으로 해결했다 — 앞으로 이 베이스라인
+  하에 kustomization에 추가되는 상태 저장 워크로드는 PVC를 처음 마운트할 때부터 하드닝된
+  `securityContext`로 시작해 이 반복을 피해야 한다.
 - L2(옵트인 풀스택 외부 배포)의 노출/netpol 동작은 이 ADR이 명시적으로 검증하지
   않았으며, 위 colima 결과와 같다고 가정해서는 안 된다.
 

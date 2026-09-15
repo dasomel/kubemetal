@@ -51,6 +51,34 @@ spec:
         fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        # 기존 클러스터에서 root(0:0)로 생성된 PVC(/data) 소유권을 65532로 1회 마이그레이션한다.
+        # kubelet fsGroup은 이미 존재하는 파일들의 소유권을 소급 변경하지 못해 sqlite3
+        # readonly 에러가 발생하므로, root 권한으로 실행되는 유일한 예외 컨테이너로 선언한다.
+        # 앱 컨테이너는 non-root(65532)를 엄격히 유지하며, 이 작업은 멱등(idempotent)하다.
+        - name: volume-permissions
+          image: docker.io/prefecthq/prefect:3.7.8-python3.12
+          command:
+            - sh
+            - -c
+            - "chown -R 65532:65532 /data && chmod -R g+rwX /data"
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - CHOWN
+                - FOWNER
+                - DAC_OVERRIDE
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: prefect-data
+              mountPath: /data
       containers:
         - name: prefect
           # 태그 3.7.8-python3.12는 2026-07-23 Docker Hub API(hub.docker.com/v2/repositories/
