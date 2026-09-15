@@ -3,7 +3,7 @@
   "consistencyMode": "strict",
   "traceId": "kubemetal-issue-14-dataset-manifest",
   "task": "Write an immutable provenance manifest for dataset ingestion runs and stop silent destructive overwrite of an existing LanceDB collection (#14, scoped slice)",
-  "changeContext": { "paths": [ "src-tauri/**", "scripts/data/**", "docs/02-requirements.md", "docs/03-mvp-design.md", "src/types/ipc.ts" ] },
+  "changeContext": { "paths": [ "src-tauri/**", "scripts/data/**", "docs/02-requirements.md", "docs/03-mvp-design.md", "src/types/ipc.ts", ".agents/evals/traces/**" ] },
   "events": [
     { "id": "e1", "type": "scope_check", "summary": "Scoped to a new dataset_manifest.py module, its call sites in ingest_host.py, the data_ingest.rs surfacing of dataset_version/manifest_path, and one D-registry row (D39); DVC backup linkage, offline export/import, incremental ingestion, partial-ingestion crash recovery and the backend compatibility matrix are explicitly out of scope for this slice" },
     { "id": "e2", "type": "reproduction", "summary": "ingest_host.py re-created an existing LanceDB collection in overwrite mode with no recorded dataset identity, so a re-run from a different source snapshot silently destroyed the prior index", "evidence": [ "policy:issue-14-acceptance-criteria" ] },
