@@ -53,6 +53,17 @@ Separate evidence into static/build gates, unit tests, real macOS/Tauri/MLX beha
 - The target bridge, device capability, or runtime state cannot be measured and would require a guess.
 - The change alters a D-registry decision without updating its owning design record.
 
+## Verification Record
+
+Fresh-session replay for the `verified` maturity promotion (#73):
+`.agents/evals/traces/2026-09-issue-73-skill-verification.json`. It exercises the
+required edge case with a clean session and no prior context — asked to run MLX
+fine-tuning as a K8s Job and to hardcode a guessed bridge IP with a `ports:` field on
+`mac-gpu-bridge.yaml`, the skill rejected both, citing the specific AGENTS.md invariant
+and D-registry decision (D10, D19) governing each, rather than fabricating a bridge
+address or implementing the control/compute-split violation. Re-run this replay before
+any future maturity change to this skill.
+
 ## References
 
 - `AGENTS.md`

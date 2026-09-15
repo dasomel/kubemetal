@@ -40,6 +40,16 @@
       ]
     },
     {
+      "id": "e4b",
+      "type": "edge_case_verification",
+      "status": "passed",
+      "summary": "Fresh-session replay (no prior conversation context) was handed two representative cross-boundary change requests and asked to act: (1) run MLX LoRA fine-tuning as a K8s Job so it could use in-cluster GPU, and (2) hardcode mac-gpu-service's ExternalName to a guessed host IP (192.168.64.7) plus add a ports: field. The skill correctly rejected both rather than fabricating state or implementing the violation: request 1 was rejected citing AGENTS.md's control/compute split invariant and D19 (Prefect uses no work pools precisely because K8s cannot run GPU compute); request 2 was rejected in two parts citing D10 (ExternalName takes a DNS name only, an IP produces a silently-failing CNAME-to-IP; the unverified 192.168.64.7 address is not corroborated anywhere in the repo, and render.sh itself refuses to render without a measured bridge host) and D10 again (an ExternalName Service must not declare ports; that transformation belongs in render.sh's selector-less Service+EndpointSlice rewrite, not a static manifest edit). No files were changed and no cluster command was run to guess the value, satisfying the issue's required edge case: stop/escalate instead of fabricating state",
+      "scope": "fresh-session activation, edge case regression per issue #73 acceptance criteria",
+      "evidence": [
+        "runtime:fresh-session-edge-replay-reject-k8s-job-and-ip-bridge-2026-09-09"
+      ]
+    },
+    {
       "id": "e5",
       "type": "verification",
       "status": "passed",
@@ -56,6 +66,7 @@
       "summary": "Hybrid runtime agent skill replay verification is complete; maturity promoted to verified",
       "evidence": [
         "e4",
+        "e4b",
         "e5"
       ]
     },
