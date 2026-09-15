@@ -18,12 +18,30 @@ spec:
         # 외부 클러스터의 Kyverno `require-labels`가 파드에 이 라벨을 요구한다(D26 실측).
         app.kubernetes.io/name: mlflow
     spec:
+      # D38 보안 베이스라인: 파드 전체를 비루트 고정 UID로 강제한다. mlflow/curl 이미지는
+      # 둘 다 기본 root(seaweedfs·prefect도 마찬가지)지만 65532(distroless nonroot 관례
+      # UID)로 기동됨을 실측 확인했다(docker run --user 65532:65532). fsGroup은 emptyDir
+      # 마운트(/tmp)의 그룹 소유권을 65532에 맞춰 준다.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       # SeaweedFS S3(무인증)가 뜰 때까지 대기 후 아티팩트 버킷(mlflow)을 보장 생성 (D13/FR-06).
       initContainers:
         - name: ensure-artifact-bucket
           # 레지스트리를 명시한다 — 외부 클러스터의 Kyverno `restrict-image-registries`가
           # `docker.io/*` 같은 정규화된 접두사만 승인한다(D26 실측). 짧은 이름은 위반.
           image: docker.io/curlimages/curl:8.21.0
+          # curl은 파일을 쓰지 않는다 — readOnlyRootFilesystem 실측 확인(docker run
+          # --read-only --user 65532:65532, curl --version 정상).
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
           command:
             - sh
             - -c
@@ -44,17 +62,28 @@ spec:
         - name: mlflow
           # 태그 v3.14.0은 2026-07-21 ghcr.io/v2/mlflow/mlflow/tags/list로 실존 확인.
           image: ghcr.io/mlflow/mlflow:v3.14.0
-          # 이미지에 boto3 미포함 → 기동 시 설치 후 서버 실행 (S3 아티팩트 스토어용).
+          # readOnlyRootFilesystem 하에서 비루트로 pip install하려면 HOME이 쓰기 가능해야
+          # 한다. HOME=/tmp + PYTHONUSERBASE=/tmp/pylibs 조합으로 --user 설치가 성공하고
+          # (PYTHONPATH 없이도) import가 자동 해석됨을 실측 확인(D38). /tmp는 이미 emptyDir
+          # (mlflow-data)로 마운트돼 있어 새 볼륨이 필요 없다.
           command:
             - sh
             - -c
             - |
-              pip install --quiet boto3 && \
+              HOME=/tmp PYTHONUSERBASE=/tmp/pylibs pip install --user --quiet boto3 && \
               exec mlflow server \
                 --backend-store-uri sqlite:////tmp/mlflow.db \
                 --default-artifact-root s3://mlflow/ \
                 --host 0.0.0.0 \
                 --port 5000
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            # /tmp(mlflow-data emptyDir)만 쓰기 필요 — sqlite DB, pip --user 설치,
+            # boto3 캐시가 모두 거기 산다. readOnlyRootFilesystem 하 실제 서버 기동까지
+            # 실측 확인(Application startup complete, UI HTTP 200).
+            readOnlyRootFilesystem: true
           env:
             - name: MLFLOW_S3_ENDPOINT_URL
               value: http://seaweedfs:8333

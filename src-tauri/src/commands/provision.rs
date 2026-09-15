@@ -140,19 +140,15 @@ mod tests {
     }
 
     /// D13: Secret이 먼저 적용돼야 mlflow의 secretKeyRef가 기동 시점에 즉시 해석된다.
-    /// 이 목록은 예전에 `provision.rs::MANIFESTS`와 Makefile에 이중으로 있었고, 실제로
-    /// 어긋난 적이 있다. 이제 kustomization.yaml이 단일 출처이므로 순서만 지킨다.
+    /// kustomization.yaml이 단일 출처(D23/D26)이므로 전체 목록을 중복 하드코딩하지 않고,
+    /// D13 요구사항(Secret이 맨 앞에 위치)만 검증한다.
     #[test]
     fn kustomization_keeps_d13_secret_first_order() {
+        let res = kustomization_resources();
+        assert!(!res.is_empty(), "kustomization resources must not be empty");
         assert_eq!(
-            kustomization_resources(),
-            vec![
-                "seaweedfs-s3-credentials.yaml",
-                "mlflow-deployment.yaml",
-                "seaweedfs-deployment.yaml",
-                "mac-gpu-bridge.yaml",
-                "prefect-deployment.yaml",
-            ],
+            res.first().map(|s| s.as_str()),
+            Some("seaweedfs-s3-credentials.yaml"),
             "D13 order broken — Secret must come first for mlflow's secretKeyRef to resolve"
         );
     }
