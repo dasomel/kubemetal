@@ -26,6 +26,8 @@ pub struct IngestConfig {
     pub enable_dvc_backup: Option<bool>,
     pub dvc_remote_url: Option<String>,
     pub dvc_bucket: Option<String>,
+    #[serde(default)]
+    pub overwrite_existing: Option<bool>,
 }
 
 /// D21 SSRF 가드: scheme allowlist(http/https) + 사설/루프백 호스트 거부. `scripts/data/ingest_host.py`
@@ -127,6 +129,10 @@ pub struct IngestFlowResult {
     pub dvc_backed_up: bool,
     pub dag_nodes: Vec<DagNodeState>,
     pub error: Option<String>,
+    #[serde(default)]
+    pub dataset_version: Option<String>,
+    #[serde(default)]
+    pub manifest_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,6 +141,10 @@ pub struct IngestedDatasetInfo {
     pub total_chunks: u64,
     pub db_path: String,
     pub is_lance_table: bool,
+    #[serde(default)]
+    pub dataset_version: Option<String>,
+    #[serde(default)]
+    pub manifest_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -157,6 +167,33 @@ async fn check_python_env_available() -> bool {
     venv_py.is_file()
 }
 
+fn read_manifest_info(
+    entry_path: &std::path::Path,
+    db_dir: &std::path::Path,
+    collection_name: &str,
+) -> (Option<String>, Option<String>) {
+    let manifest_candidates = [
+        entry_path.join("dataset-manifest.json"),
+        db_dir.join(format!("{collection_name}.manifest.json")),
+        db_dir.join(format!("{collection_name}.dataset-manifest.json")),
+    ];
+    for candidate in manifest_candidates {
+        if candidate.is_file() {
+            if let Ok(content) = std::fs::read_to_string(&candidate) {
+                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+                    if let Some(v) = val.get("dataset_version").and_then(|v| v.as_str()) {
+                        return (
+                            Some(v.to_string()),
+                            Some(candidate.to_string_lossy().to_string()),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    (None, None)
+}
+
 pub fn list_datasets_in_db() -> Vec<IngestedDatasetInfo> {
     let Ok(db_dir) = default_lancedb_dir() else {
         return Vec::new();
@@ -175,11 +212,16 @@ pub fn list_datasets_in_db() -> Vec<IngestedDatasetInfo> {
             if let Some(ext) = path.extension() {
                 if ext == "lance" {
                     if let Some(name) = path.file_stem() {
+                        let coll_name = name.to_string_lossy().to_string();
+                        let (dataset_version, manifest_path) =
+                            read_manifest_info(&path, &db_dir, &coll_name);
                         datasets.push(IngestedDatasetInfo {
-                            collection_name: name.to_string_lossy().to_string(),
+                            collection_name: coll_name,
                             total_chunks: 0, // dynamic count if queried
                             db_path: path.to_string_lossy().to_string(),
                             is_lance_table: true,
+                            dataset_version,
+                            manifest_path,
                         });
                     }
                 }
@@ -188,11 +230,15 @@ pub fn list_datasets_in_db() -> Vec<IngestedDatasetInfo> {
             let name_str = path.file_name().unwrap_or_default().to_string_lossy();
             if name_str.ends_with("_fallback.json") {
                 let collection = name_str.trim_end_matches("_fallback.json").to_string();
+                let (dataset_version, manifest_path) =
+                    read_manifest_info(&path, &db_dir, &collection);
                 datasets.push(IngestedDatasetInfo {
                     collection_name: collection,
                     total_chunks: 0,
                     db_path: path.to_string_lossy().to_string(),
                     is_lance_table: false,
+                    dataset_version,
+                    manifest_path,
                 });
             }
         }
@@ -216,6 +262,7 @@ pub async fn run_data_ingest(
         enable_dvc_backup,
         dvc_remote_url,
         dvc_bucket,
+        overwrite_existing,
     } = config;
 
     if source_path.trim().is_empty() {
@@ -275,6 +322,10 @@ pub async fn run_data_ingest(
         .arg("--chunk-overlap")
         .arg(c_overlap.to_string())
         .env("PATH", augmented_path());
+
+    if overwrite_existing.unwrap_or(false) {
+        cmd.arg("--overwrite-existing");
+    }
 
     if enable_dvc_backup.unwrap_or(false) {
         cmd.arg("--dvc-backup");
@@ -384,5 +435,65 @@ mod tests {
     #[test]
     fn validate_ingest_url_rejects_malformed_url() {
         assert!(validate_ingest_url("not-a-url").is_err());
+    }
+
+    #[test]
+    fn ingest_config_deserializes_with_and_without_overwrite_existing() {
+        let json_without = r#"{"sourceType":"local","sourcePath":"/tmp/data"}"#;
+        let config: IngestConfig = serde_json::from_str(json_without).unwrap();
+        assert_eq!(config.overwrite_existing, None);
+
+        let json_with_true =
+            r#"{"sourceType":"local","sourcePath":"/tmp/data","overwriteExisting":true}"#;
+        let config2: IngestConfig = serde_json::from_str(json_with_true).unwrap();
+        assert_eq!(config2.overwrite_existing, Some(true));
+    }
+
+    #[test]
+    fn ingest_flow_result_serializes_and_deserializes_manifest_fields() {
+        let raw = r#"{
+            "status": "ok",
+            "dataset_name": "test_ds",
+            "source_type": "local",
+            "source_path": "/tmp/data",
+            "total_duration_sec": 1.23,
+            "total_items_extracted": 1,
+            "total_chunks_created": 2,
+            "lancedb_collection": "test_ds",
+            "db_path": "/tmp/db",
+            "dvc_backed_up": false,
+            "dag_nodes": [],
+            "dataset_version": "sha256:abc123def456",
+            "manifest_path": "/tmp/db/test_ds.lance/dataset-manifest.json"
+        }"#;
+
+        let result: IngestFlowResult = serde_json::from_str(raw).unwrap();
+        assert_eq!(
+            result.dataset_version.as_deref(),
+            Some("sha256:abc123def456")
+        );
+        assert_eq!(
+            result.manifest_path.as_deref(),
+            Some("/tmp/db/test_ds.lance/dataset-manifest.json")
+        );
+    }
+
+    #[test]
+    fn read_manifest_info_extracts_dataset_version() {
+        let tmp =
+            std::env::temp_dir().join(format!("kubemetal-test-manifest-{}", std::process::id()));
+        let col_dir = tmp.join("my_col.lance");
+        std::fs::create_dir_all(&col_dir).unwrap();
+        let manifest_file = col_dir.join("dataset-manifest.json");
+        std::fs::write(&manifest_file, r#"{"dataset_version":"version_xyz"}"#).unwrap();
+
+        let (version, path) = read_manifest_info(&col_dir, &tmp, "my_col");
+        assert_eq!(version.as_deref(), Some("version_xyz"));
+        assert_eq!(
+            path.as_deref(),
+            Some(manifest_file.to_string_lossy().as_ref())
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
