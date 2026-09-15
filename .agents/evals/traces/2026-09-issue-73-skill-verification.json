@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-73-skill-verification",
+  "task": "Verify hybrid-runtime Agent Skill with fresh-session replay and promote maturity to verified (#73)",
+  "changeContext": {
+    "paths": [
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped to .agents/skills/kubemetal-hybrid-runtime-change/SKILL.md maturity promotion and its verification trace; no application runtime code or manifest touched"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Issue #73 tracked validating the hybrid-runtime skill across macOS MLX/Tauri host compute and Colima/K3s control-plane boundaries before promoting from draft to verified",
+      "evidence": [
+        "policy:openforge-agent-skills-standard",
+        "policy:issue-73-acceptance-criteria"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Promoted openforge-maturity from draft to verified in SKILL.md after validating replay evidence from issues #14 and #74"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Replay confirmed the skill preserves control/compute split (Metal compute host-only), render.sh ownership, D10 bridge DNS rules, non-root securityContext, and negative control verification (D25) on live Colima cluster",
+      "scope": ".agents/skills/kubemetal-hybrid-runtime-change/SKILL.md compliance",
+      "evidence": [
+        "runtime:issue-74-colima-k8s-security-baseline-live-rollout",
+        "policy:openforge-agent-skills-standard"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "make verify: 122 Rust tests passed, cargo clippy clean, tsc --noEmit clean, design lint clean, web build clean",
+      "scope": "full repository verification gate",
+      "evidence": [
+        "ci:make-verify-clean",
+        "test:cargo-test-122-passed"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Hybrid runtime agent skill replay verification is complete; maturity promoted to verified",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Skill maturity promoted to verified with passing repository gate and recorded live replay evidence"
+    }
+  ]
+}
