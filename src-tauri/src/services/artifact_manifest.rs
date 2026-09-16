@@ -176,7 +176,16 @@ fn sha256_file(path: &Path) -> Result<String, String> {
         }
         hasher.update(&buffer[..count]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    // sha2 0.11's digest output no longer implements LowerHex directly (format!("{:x}", ..)
+    // stopped compiling on the bump); hex-encode the bytes by hand, matching the pattern
+    // already used in agent_execution_security.rs::sha256_hex rather than adding a hex crate.
+    let digest = hasher.finalize();
+    let mut hex = String::with_capacity(64);
+    for byte in digest {
+        use std::fmt::Write as _;
+        write!(&mut hex, "{byte:02x}").expect("hex formatting");
+    }
+    Ok(hex)
 }
 
 #[allow(dead_code)]
