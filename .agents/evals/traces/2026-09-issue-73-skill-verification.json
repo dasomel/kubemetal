@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-73-skill-verification",
+  "task": "Verify hybrid-runtime Agent Skill with fresh-session replay and promote maturity to verified (#73)",
+  "changeContext": {
+    "paths": [
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped to .agents/skills/kubemetal-hybrid-runtime-change/SKILL.md maturity promotion and its verification trace; no application runtime code or manifest touched"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Issue #73 tracked validating the hybrid-runtime skill across macOS MLX/Tauri host compute and Colima/K3s control-plane boundaries before promoting from draft to verified",
+      "evidence": [
+        "policy:openforge-agent-skills-standard",
+        "policy:issue-73-acceptance-criteria"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Promoted openforge-maturity from draft to verified in SKILL.md after validating replay evidence from issues #14 and #74"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Replay confirmed the skill preserves control/compute split (Metal compute host-only), render.sh ownership, D10 bridge DNS rules, non-root securityContext, and negative control verification (D25) on live Colima cluster",
+      "scope": ".agents/skills/kubemetal-hybrid-runtime-change/SKILL.md compliance",
+      "evidence": [
+        "runtime:issue-74-colima-k8s-security-baseline-live-rollout",
+        "policy:openforge-agent-skills-standard"
+      ]
+    },
+    {
+      "id": "e4b",
+      "type": "edge_case_verification",
+      "status": "passed",
+      "summary": "Fresh-session replay (no prior conversation context) was handed two representative cross-boundary change requests and asked to act: (1) run MLX LoRA fine-tuning as a K8s Job so it could use in-cluster GPU, and (2) hardcode mac-gpu-service's ExternalName to a guessed host IP (192.168.64.7) plus add a ports: field. The skill correctly rejected both rather than fabricating state or implementing the violation: request 1 was rejected citing AGENTS.md's control/compute split invariant and D19 (Prefect uses no work pools precisely because K8s cannot run GPU compute); request 2 was rejected in two parts citing D10 (ExternalName takes a DNS name only, an IP produces a silently-failing CNAME-to-IP; the unverified 192.168.64.7 address is not corroborated anywhere in the repo, and render.sh itself refuses to render without a measured bridge host) and D10 again (an ExternalName Service must not declare ports; that transformation belongs in render.sh's selector-less Service+EndpointSlice rewrite, not a static manifest edit). No files were changed and no cluster command was run to guess the value, satisfying the issue's required edge case: stop/escalate instead of fabricating state",
+      "scope": "fresh-session activation, edge case regression per issue #73 acceptance criteria",
+      "evidence": [
+        "runtime:fresh-session-edge-replay-reject-k8s-job-and-ip-bridge-2026-09-09"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "make verify: 122 Rust tests passed, cargo clippy clean, tsc --noEmit clean, design lint clean, web build clean",
+      "scope": "full repository verification gate",
+      "evidence": [
+        "ci:make-verify-clean",
+        "test:cargo-test-122-passed"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Hybrid runtime agent skill replay verification is complete; maturity promoted to verified",
+      "evidence": [
+        "e4",
+        "e4b",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Skill maturity promoted to verified with passing repository gate and recorded live replay evidence"
+    }
+  ]
+}
