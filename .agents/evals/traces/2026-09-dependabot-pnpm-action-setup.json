@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-dependabot-pnpm-action-setup-6.1.0",
+  "task": "Add the operational trace required by Agent Behavior CI for a dependabot version-pin bump touching .github/workflows/**",
+  "changeContext": { "paths": [ ".github/workflows/**", ".agents/evals/traces/**" ] },
+  "events": [
+    { "id": "e1", "type": "scope_check", "summary": "The change itself is dependabot's own two-line SHA bump of pnpm/action-setup from 6.0.10 to 6.1.0 in ci.yml and release.yml; only the missing operational trace was added, no other line touched" },
+    { "id": "e2", "type": "reproduction", "summary": "behavior-contract failed on the dependabot PR: it touches .github/workflows/** (high risk per risk-policy.json) and dependabot's own commit does not add a trace file, so the risk gate had no evidence to correlate against and blocked the merge", "evidence": [ "ci:dependabot-pr-76-behavior-contract-fail-no-trace" ] },
+    { "id": "e3", "type": "bug_fix", "summary": "The bug is in the PR's evidence, not its code: a routine action-version bump with no logic change was blocked because no trace covered the high-risk path it touches. Fixed by adding this trace file itself, scoped to exactly the paths the bump changed" },
+    { "id": "e4", "type": "regression_verification", "status": "passed", "summary": "pnpm/action-setup 6.1.0 is a pinned-action version bump only, no workflow logic changed; CI's own verify and supply-chain jobs already ran green on the unmodified bump before this trace was added, confirming the workflow behaves identically under the new pin", "scope": ".github/workflows/ci.yml, .github/workflows/release.yml", "evidence": [ "ci:dependabot-pr-76-verify-job-pass", "ci:dependabot-pr-76-supply-chain-job-pass" ] },
+    { "id": "e5", "type": "completion_claim", "summary": "Trace added so the risk gate has evidence to correlate against; no code or workflow logic change beyond dependabot's own bump", "evidence": [ "e4" ] },
+    { "id": "e6", "type": "task_outcome", "state": "A", "summary": "Complete: routine pinned-action version bump, already green on its own merits, now carries the required trace" }
+  ]
+}
