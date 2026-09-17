@@ -21,6 +21,7 @@ Inspect repository guidance, architecture/design context, `Makefile`, Rust/Tauri
 | UI tokens + design rules | root `DESIGN.md` (Google Labs design.md standard) |
 | Run instructions | `README.md` |
 | Research evidence collection (issue #83) | `research/README.md` |
+| Make ↔ Cargo/pnpm/CI target mapping (issue #35) | `docs/build-target-map.md` |
 | Superseded drafts | `docs/archive/` — never implement from these |
 
 Changing a D-registry decision requires updating all affected docs in the same task.
