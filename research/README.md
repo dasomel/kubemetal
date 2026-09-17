@@ -29,7 +29,16 @@ relevant rather than re-measuring.
   this standard is for records worth keeping *outside* CI's own retention window.
 
 Registering any of the above in OpenForge's portfolio-level
-`portfolio/legacy-evidence-catalog.json` happens in the `openforge` repo, not here.
+`portfolio/legacy-evidence-catalog.json` happens in the `openforge` repo, not here —
+use `dasomel/openforge#89` as that portfolio-level legacy catalog source of truth.
+
+## Public-data rule
+
+This is a personal OSS/test project. Local macOS/K3s/MLX identifiers, RFC1918
+addresses, `*.local.*` domains, pod/node/service names, hardware model/specification
+and reproducibility-relevant runtime/thermal details may remain when intentionally
+part of public experiments. Never publish actual credentials/tokens/private keys,
+secret-bearing kubeconfig, private model/user content, or accidental personal data.
 
 ## New prospective records
 
