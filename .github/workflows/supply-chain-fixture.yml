@@ -1,5 +1,9 @@
-# 이슈 #36 네거티브 픽스처 — workflow_dispatch로 수동 실행해야 하며, 이 리포는
-# 아직 push된 적이 없어 실행 검증은 안 된 상태다(D39). 실행 후 green이면
+# 이슈 #36 네거티브 픽스처. workflow_dispatch로 수동 실행해야 한다. 첫 실행
+# (run 35191348120, 2026-09-17)은 red였지만 원인이 example.com 프로브가 아니라
+# harden-runner 차단 전에 checkout이 없어 루트 rust-toolchain.toml(channel
+# 1.98.0)을 못 읽었고, cargo build가 그 채널을 rustup으로 동기화하려다
+# static.rust-lang.org가 막혀 죽은 것이었다(이슈 #36 코멘트 참고). checkout +
+# 툴체인 설치를 harden-runner 차단 이전으로 옮겨 해결한다. 이제 실행 후 green이면
 # fixture crate의 build.rs가 example.com 연결 실패를 감지했다는 뜻이고, red면
 # 차단이 작동하지 않는다는 뜻이다.
 name: Supply Chain Egress Fixture
@@ -11,19 +15,25 @@ jobs:
   probe:
     runs-on: macos-14
     steps:
-      # actions/checkout에 필요한 최소 엔드포인트만 허용한다 — 정확한 목록은
-      # step-security/harden-runner 리포 자체의 도그푸딩 CI(build-check job,
-      # actions/checkout만 사용)에서 실측된 값이다(github.com:443 하나로
-      # 충분함을 그 워크플로가 실증한다). example.com은 절대 포함하지 않는다 —
-      # 이 픽스처의 핵심은 example.com이 반드시 도달 불가능해야 한다는 것이다.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # 루트 rust-toolchain.toml이 고정한 채널(1.98.0)을 harden-runner가 네트워크를
+      # 차단하기 전에 미리 내려받아 둔다 — cargo가 나중에 이 채널을 다시 동기화하려고
+      # static.rust-lang.org에 나가는 일이 없도록 한다.
+      - name: Pre-install pinned Rust toolchain
+        run: rustup show
+      # actions/checkout·rustup 설치가 끝난 뒤부터 harden-runner로 차단한다.
+      # 필요한 최소 엔드포인트만 허용한다 — 정확한 목록은 step-security/harden-runner
+      # 리포 자체의 도그푸딩 CI(build-check job, actions/checkout만 사용)에서
+      # 실측된 값이다(github.com:443 하나로 충분함을 그 워크플로가 실증한다).
+      # example.com은 절대 포함하지 않는다 — 이 픽스처의 핵심은 example.com이
+      # 반드시 도달 불가능해야 한다는 것이다.
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
             github.com:443
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
       # 허용한 github.com:443 자체가 닿는지 먼저 확인한다. 이 단계가 없으면 전체
       # 네트워크 장애도 build.rs의 example.com 실패와 같은 green으로 오인할 수 있다.
       - name: Verify permitted GitHub egress
