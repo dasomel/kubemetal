@@ -22,7 +22,9 @@ jobs:
       # 차단하기 전에 미리 내려받아 둔다 — cargo가 나중에 이 채널을 다시 동기화하려고
       # static.rust-lang.org에 나가는 일이 없도록 한다.
       - name: Pre-install pinned Rust toolchain
-        run: rustup show
+        run: |
+          rustup toolchain install 1.98.0 --profile minimal
+          rustup toolchain list
       # actions/checkout·rustup 설치가 끝난 뒤부터 harden-runner로 차단한다.
       # 필요한 최소 엔드포인트만 허용한다 — 정확한 목록은 step-security/harden-runner
       # 리포 자체의 도그푸딩 CI(build-check job, actions/checkout만 사용)에서
