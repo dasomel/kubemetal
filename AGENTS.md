@@ -20,6 +20,7 @@ Inspect repository guidance, architecture/design context, `Makefile`, Rust/Tauri
 | **Mistakes Log** | `docs/mistakes-log.md` — read the section matching your work area before touching that path; add a row per new mistake |
 | UI tokens + design rules | root `DESIGN.md` (Google Labs design.md standard) |
 | Run instructions | `README.md` |
+| Research evidence collection (issue #83) | `research/README.md` |
 | Superseded drafts | `docs/archive/` — never implement from these |
 
 Changing a D-registry decision requires updating all affected docs in the same task.

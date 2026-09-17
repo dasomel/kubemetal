@@ -1,18 +1,50 @@
-# Research Evidence
+# Research evidence (issue #83)
 
-KubeMetal follows the OpenForge Research Evidence Collection Standard:
-https://github.com/dasomel/openforge/blob/main/docs/research-evidence.md
+This project follows OpenForge's
+[Research Evidence Collection Standard](https://github.com/dasomel/openforge/blob/main/docs/research-evidence.md)
+verbatim — schema, recording rules, and the public-data safety gate live there, not here.
+This file only adds what's specific to KubeMetal.
 
-Collect machine-readable evidence during normal development when practical. Useful evidence includes verify/build/app/cluster/MLX experiment duration/results, startup/install latency, CPU/RAM/GPU/thermal/runtime measurements, failures/recovery/retries, and agent-assisted attempts/interventions/review corrections/CI retries/final verification. Preserve negative/partial runs and distinguish unit/static evidence from real macOS/Tauri/MLX/Kubernetes runtime evidence.
+## Environment labels
 
-## Legacy evidence on discovery
+Use one of these for the `environment` field (extend, don't rename existing ones once used):
 
-During implementation, fixes, verification, MLX/Kubernetes experiments, releases, or documentation, catalog historical experiment outputs, runtime measurements, verification/CI results, failure/recovery records, compatibility evidence, and dated design/implementation observations encountered from earlier work. Preserve originals; do not convert contextual design notes into measured benchmarks unless an actual measurement exists.
+- `macos-14-github-actions` — CI runners (`.github/workflows/*.yml`).
+- `apple-silicon-dev-host-<ram-tier>` — a maintainer's Mac, `<ram-tier>` from D4
+  (`16gb`, `32-48gb`, `64gb-plus`) since VM/host resource ceilings depend on it.
+- `colima-vz-k3s` — inside the Colima control-plane VM, when a record originates from a
+  pod rather than the host.
 
-Use `dasomel/openforge#89` as the portfolio-level legacy catalog source of truth. Record source/path, known date, evidence class/strength, environment scope, metrics/facts, limitations, and likely paper use. Do not infer missing historical duration/resource/agent values. Preserve failed, partial, and older-version evidence for longitudinal analysis.
+## What already qualifies as legacy evidence here
 
-## Public-data rule
+Per the standard's "legacy evidence on discovery" rule: don't rewrite these to fit the
+schema, just be aware they exist and reference them from a new record's `metadata` when
+relevant rather than re-measuring.
 
-This is a personal OSS/test project. Local macOS/K3s/MLX identifiers, RFC1918 addresses, `*.local.*` domains, pod/node/service names, hardware model/specification and reproducibility-relevant runtime/thermal details may remain when intentionally part of public experiments.
+- `docs/mistakes-log.md` — dated defect/lesson records.
+- `.agents/evals/traces/*.json` — agent-behavior compliance traces
+  (`openforge-agent-trace/v1` schema; a different, narrower schema than this standard's
+  canonical one — don't conflate the two).
+- CI run history (`gh run list`) — durations, retries, and pass/fail already exist there;
+  this standard is for records worth keeping *outside* CI's own retention window.
 
-Never publish actual credentials/tokens/private keys, secret-bearing kubeconfig, private model/user content, or accidental personal data. Review future third-party/non-public artifacts separately. Validate structured evidence against the OpenForge schema and run secret/pattern checks before publication.
+Registering any of the above in OpenForge's portfolio-level
+`portfolio/legacy-evidence-catalog.json` happens in the `openforge` repo, not here.
+
+## New prospective records
+
+Layout, once a task actually produces a record worth keeping longitudinally:
+
+```
+research/
+  README.md
+  evidence/
+    YYYY-MM.jsonl
+  experiments/
+    <experiment-id>/
+```
+
+Nothing is pre-created under `evidence/` or `experiments/` — per the standard's rule 6
+("avoid measurement work that materially slows normal development unless the task
+explicitly requires a benchmark/experiment"), a `YYYY-MM.jsonl` file gets created the
+first time a task actually has a measured record to append, not proactively.
