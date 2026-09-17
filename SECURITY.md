@@ -16,6 +16,10 @@ KubeMetal interacts with local Kubernetes configurations (`kubeconfig`), Metal G
 - Secrets must be stored in macOS Keychain or protected credential stores.
 - Tauri IPC commands validate all arguments before spawning OS processes.
 
+## Rust Dependency Supply Chain
+
+Reference: [Rust Dependency Supply-Chain Policy](docs/adr/0004-rust-dependency-supply-chain-policy.md)
+
 ## Reporting a Vulnerability
 
 Please report vulnerabilities privately via GitHub Private Vulnerability Reporting or by contacting maintainers directly. Do not open public issues for sensitive security defects. Acknowledgements will be provided within 48 hours.
