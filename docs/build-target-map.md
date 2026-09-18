@@ -47,6 +47,38 @@ an owner scope decision before further work, not documentation:
 
 - Container/Helm artifact SBOM (separate from the binary SBOM `gen_sbom.sh` produces).
 - Model/runtime artifact provenance graph.
-- Multi-arch (arm64 + remote Linux/amd64) build matrix — conflicts with this repo's
-  Apple-Silicon-only invariant (`AGENTS.md`) unless narrowed to remote-cluster-only
-  targets, which is exactly the scope question still open on the issue.
+
+### Multi-arch build matrix — scope resolved (issue #35), not yet implemented
+
+Owner decision: multi-arch applies to **containers only**. The desktop binary
+(`src-tauri/**`, `pnpm tauri build`) stays arm64/macOS-only — that's the Apple-Silicon-only
+invariant (`AGENTS.md`) and doesn't change. The K8s pod images this repo deploys
+(MLflow/SeaweedFS/Prefect — plain Linux containers, no Metal/MLX dependency) may build/SBOM
+for amd64 in addition to arm64 without conflicting with the invariant, since those
+containers never touch Metal or MLX.
+
+Current state, verified: there is no container image build step anywhere in
+`.github/workflows/*.yml` and no `Dockerfile` in this repo — MLflow/SeaweedFS/Prefect run
+from upstream images (see `docs/04-architecture.md`), not images this repo builds. So this
+is a scope decision only; implementing an actual amd64 build/SBOM step for those images
+remains open, unstarted work.
+
+## Model/runtime license inventory scope (issue #9) — resolved
+
+Owner decision: scope is **bundled defaults only**. Verified via grep across
+`src-tauri/`, `scripts/`, `docs/`: KubeMetal bundles no default model. `model_path`/
+`data_path` (`FineTuneConfig`, `start_model_serving`, IPC in `docs/02-requirements.md`)
+are user-supplied, validated as existing paths under the user's home
+(`validate_home_subpath`); the Model Hub (`src-tauri/src/commands/modelhub.rs`) downloads
+whatever model the user picks to `~/.kubemetal/models` on demand — none are shipped with
+the app.
+
+Given no bundled model exists, license tracking in scope for #9 covers only the mlx-lm /
+mlx-vlm runtime libraries themselves (their own PyPI package licenses) — arbitrary
+user-downloaded model weights stay the user's own compliance responsibility, not this
+repo's.
+
+That runtime-library coverage is **not yet closed**: `scripts/release/gen_dependency_diff.sh`
+extracts dependency name/version/license only via `cargo metadata` and `pnpm licenses`
+(see its header comment) — it has no step that inspects the Python venv `mlx-lm`/`mlx-vlm`
+are installed into. That gap remains open.
