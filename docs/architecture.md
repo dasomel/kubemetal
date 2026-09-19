@@ -2,11 +2,41 @@
 
 English | [한국어](architecture-ko.md)
 
-KubeMetal splits control plane and ML compute. A Colima-managed K3s VM (`vz` + `virtiofs`)
-runs the control plane — MLflow, SeaweedFS, Prefect — as pods, while all MLX/Metal
-compute runs as macOS host processes spawned by the Tauri/Rust backend. Apple Metal GPU
-access cannot pass through to a Linux VM, so no ML computation ever runs inside the
-cluster; the VM only orchestrates and stores.
+KubeMetal separates the **MLOps control plane** from **AI compute**.
+
+The current verified/default path is:
+
+```text
+Colima (vz) + K3s
+  -> MLflow / SeaweedFS / platform control plane
+
+macOS host
+  -> MLX / Metal fine-tuning and serving
+```
+
+MLX remains a native macOS/Apple Silicon workload and is not assumed to run inside the
+Linux guest or a K8s Pod.
+
+KubeMetal is also evaluating additional compute backends. Colima 0.10+ documents a
+`krunkit` VM path for GPU-accelerated containers on Apple Silicon, but KubeMetal treats
+this as an **experimental capability**. GPU access inside a VM/container does not by itself
+prove K3s Pod GPU access, Kubernetes resource discovery/allocation, scheduling, isolation,
+or accounting. Those boundaries are tracked by
+[#94](https://github.com/dasomel/kubemetal/issues/94).
+
+The target compute abstraction is:
+
+```text
+ComputeBackend
+  +-- host-mlx             [default / verified]
+  +-- host-cumetal         [experimental]
+  +-- krunkit-container    [experimental]
+  +-- remote-kubernetes    [extension]
+```
+
+Policy-aware backend selection is tracked by #24. CuMetal validation is tracked by #84.
+Kubernetes DRA/Kueue integration is intentionally deferred until #94 demonstrates a real
+Kubernetes-manageable accelerator resource.
 
 This file is a short entrypoint. The canonical architecture material lives in:
 
