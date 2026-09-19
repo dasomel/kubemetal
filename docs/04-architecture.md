@@ -42,11 +42,68 @@ flowchart TB
   매니페스트 프로비저닝, 포트포워딩, 모델 허브, MLX 파인튜닝/서빙, 하드웨어 가드레일,
   서비스 접근 콘솔을 담당(24개 커맨드, §2 참고).
 - **K8s Control Plane**: Colima(`vz` + `virtiofs`) 위 K3s. MLflow/SeaweedFS 파드,
-  SeaweedFS S3 크리덴셜 Secret, `mac-gpu-service` ExternalName이 존재 — 연산 워크로드는
-  여기서 실행되지 않음.
-- **Compute Engine**: macOS 호스트에서 직접 실행되는 MLX 프로세스. 파인튜닝 래퍼는
-  `process_group(0)`으로 기동되어 가드레일 루프가 SIGSTOP/SIGCONT를 그룹 전체로 보내도
-  자식 학습 프로세스까지 함께 멈춘다(D17).
+  SeaweedFS S3 크리덴셜 Secret, `mac-gpu-service` ExternalName이 존재한다. **현재 검증된
+  기본 경로에서는** GPU 연산 워크로드를 K3s 내부에서 실행하지 않고 컨트롤 플레인 역할에
+  집중한다.
+- **Compute Engine**: 현재 기본 구현은 macOS 호스트에서 직접 실행되는 MLX 프로세스다.
+  파인튜닝 래퍼는 `process_group(0)`으로 기동되어 가드레일 루프가 SIGSTOP/SIGCONT를
+  그룹 전체로 보내도 자식 학습 프로세스까지 함께 멈춘다(D17). 추가 backend는 기존 경로를
+  대체하지 않고 별도 capability/evidence gate를 통과한 뒤 확장한다.
+
+
+### 1.1 ComputeBackend 확장 모델
+
+KubeMetal의 장기 방향은 특정 런타임 하나를 모든 AI workload의 실행 환경으로 고정하지 않고
+명시적인 `ComputeBackend` 계약으로 분리하는 것이다.
+
+```mermaid
+flowchart TB
+    REQ["User / Agent Request"] --> POLICY["Policy + Routing<br/>#24"]
+    POLICY --> BACKEND{"ComputeBackend"}
+    BACKEND --> MLX["host-mlx<br/>Default / Verified"]
+    BACKEND --> CUMETAL["host-cumetal<br/>Experimental / #84"]
+    BACKEND --> KRUNKIT["krunkit-container<br/>Experimental / #94"]
+    BACKEND --> REMOTE["remote-kubernetes<br/>Extension"]
+    MLX --> EVIDENCE["Execution Evidence / Observability"]
+    CUMETAL --> EVIDENCE
+    KRUNKIT --> EVIDENCE
+    REMOTE --> EVIDENCE
+```
+
+| Backend | 실행 경계 | 현재 상태 | 핵심 검증 |
+|---|---|---|---|
+| `host-mlx` | macOS host native | **기본 / 실측 검증** | MLX 학습·서빙, 메모리/thermal guardrail |
+| `host-cumetal` | macOS host compatibility layer | **Experimental** | CUDA API/workload correctness·성능 (#84) |
+| `krunkit-container` | Colima guest/container | **Experimental** | GPU container → K3s Pod → scheduling boundary (#94) |
+| `remote-kubernetes` | 외부 K8s accelerator cluster | **확장 경로** | capability/data-boundary/routing (#24) |
+
+#### krunkit 검증 경계
+
+Colima 0.10+의 `krunkit` GPU-accelerated container 경로는 새로운 가능성이지만 다음을
+서로 다른 capability로 취급한다.
+
+```text
+GPU container 실행 가능
+        !=
+K3s Pod에서 GPU 사용 가능
+        !=
+Kubernetes가 GPU를 allocatable resource로 관리 가능
+        !=
+DRA / Kueue 적용 가능
+```
+
+따라서 #94에서 아래를 실측하기 전에는 README/UI/API에서 "Kubernetes GPU 지원"으로
+표현하지 않는다.
+
+1. K3s Pod 내부 실제 GPU 실행 provenance
+2. accelerator discovery / allocation semantics
+3. multi-Pod isolation / accounting
+4. restart/recreate 안정성
+5. host MLX 대비 성능·메모리·thermal 특성
+
+DRA/Kueue는 위 조건을 만족하는 **실제 Kubernetes 관리 가능 resource**가 존재함이 확인된
+이후 별도 integration issue로 분리한다. 단순히 VM 또는 container에서 GPU API 호출이
+성공했다는 이유로 가상의 `gpu=1` resource abstraction을 만들지 않는다.
 
 ## 2. IPC 커맨드 흐름
 
@@ -122,6 +179,9 @@ sequenceDiagram
   `Contents/Resources`를 가리키지만, `tauri.conf.json`의 `../scripts/...` 리소스는
   `Contents/Resources/_up_/scripts/...`로 평탄화되어 담긴다(D18). 번들 앱 기동 후 5초간
   프로세스 생존을 확인했다(패닉 없음).
+- (2026-09-19) Colima `krunkit` 경로는 **연구/검증 대상으로만 등록**했다(#94).
+  현재 KubeMetal repository에는 krunkit 기반 K3s Pod GPU 사용, Kubernetes allocatable
+  accelerator, DRA/Kueue 동작을 실측한 evidence가 없으므로 지원 기능으로 표기하지 않는다.
 
 세부 내용은 [docs/03-mvp-design.md §5](03-mvp-design.md#5-미검증-전제-실기기-검증-필요) 참고.
 
@@ -141,3 +201,7 @@ sequenceDiagram
 
 D1~D18 전체 목록과 근거는 [docs/03-mvp-design.md §4](03-mvp-design.md#4-설계-결정-및-주의사항)를
 canonical 출처로 참고할 것 — 본 문서에서 중복 서술하지 않는다.
+
+현재 구현 이후의 compute/runtime 확장 검토는 기존 D1~D18을 소급 변경하지 않고 GitHub
+issue/evidence gate로 관리한다. 주요 추적 이슈는 #24(Model/Compute Routing),
+#84(CuMetal), #94(krunkit/K3s GPU feasibility)다.

@@ -1,6 +1,6 @@
 # KubeMetal
 
-**English** | [한국어](README_ko.md)
+**English** | [한국어](README-ko.md)
 
 ![KubeMetal Dashboard — deployment target (external cluster preflight check) and host metrics](docs/images/dashboard-en.png)
 
@@ -9,27 +9,67 @@ plane and native macOS host MLX compute into a single Tauri v2 (Rust) + React/Ty
 
 ## Core Concept: Control/Compute Separation
 
-KubeMetal **physically separates Control and Compute**. The MLOps stack — MLflow,
-SeaweedFS — runs as pods, managed with standard K8s manifests, inside a lightweight K3s
-cluster running on Colima (`vz` + `virtiofs`). Actual compute, such as MLX-based
-fine-tuning and serving, is instead executed directly as a **macOS host process**, never
-inside a K8s pod.
+KubeMetal **physically separates Control and Compute**. The current verified/default path
+runs the MLOps control plane — MLflow, SeaweedFS — as pods inside a lightweight K3s cluster
+on Colima (`vz` + `virtiofs`), while MLX fine-tuning and serving run directly as
+**macOS host processes** spawned by the Tauri/Rust backend.
 
-This split is not a preference but a hardware constraint. Apple Silicon's Metal GPU cannot
-be passed through to a Linux VM, so there is no way to run MLX compute inside a K8s pod.
-K8s is therefore limited to the standard MLOps control-plane role — experiment tracking
-(MLflow), artifact storage (SeaweedFS) — while every GPU-bound task is delegated to a host
-process spawned by the Rust backend.
+This separation remains the production/default architecture because MLX is a native
+Apple Silicon/macOS runtime and KubeMetal does not assume that an MLX workload can run
+inside a Linux guest or K8s pod.
 
-This hybrid structure lets you start on a local desktop without cloud GPU cost, while
-leaving a natural path to scale out to a remote GPU server or a multi-node K3s cluster
-later on.
+Colima 0.10+ also provides a `krunkit` VM path for GPU-accelerated containers on Apple
+Silicon. KubeMetal treats that path as an **experimental compute backend candidate**, not
+as proof of Kubernetes accelerator support. GPU access from a VM/container does not by
+itself prove that K3s can discover, allocate, schedule, isolate, or account for the GPU as
+a Kubernetes resource. That boundary is tracked by
+[#94 — Colima krunkit GPU Container / K3s Scheduling Feasibility](https://github.com/dasomel/kubemetal/issues/94).
+
+This hybrid structure lets KubeMetal keep a reliable local-first MLX path while leaving a
+measured path toward additional local container runtimes and remote GPU/NPU Kubernetes
+backends.
+
+## Compute Backend Direction
+
+KubeMetal is evolving toward an explicit `ComputeBackend` contract rather than assuming
+that every AI workload must execute through one runtime.
+
+| Backend | Role | Status |
+|---|---|---|
+| `host-mlx` | Native macOS MLX fine-tuning / serving | **Default / verified** |
+| `host-cumetal` | CUDA-compatibility experiments on Apple Silicon | **Experimental** — see #84 |
+| `krunkit-container` | Colima/krunkit GPU-container path | **Experimental / unverified for K3s scheduling** — see #94 |
+| `remote-kubernetes` | Remote NVIDIA/NPU/accelerator cluster | **Extension path** |
+
+The intended separation is:
+
+```text
+Request / Agent
+      |
+      v
+Policy + Routing
+      |
+      v
+ComputeBackend
+  +-- host-mlx             [default]
+  +-- host-cumetal         [experimental]
+  +-- krunkit-container    [experimental]
+  +-- remote-kubernetes    [extension]
+      |
+      v
+Execution Evidence / Observability
+```
+
+Backend selection must remain policy- and capability-aware. In particular, DRA/Kueue are
+not assumed for the local Apple GPU path; they only become relevant after a real
+Kubernetes-manageable accelerator resource has been demonstrated.
 
 ## Requirements
 
 - macOS 14+ (Apple Silicon)
 - Homebrew
 - colima, kubectl — `brew install colima kubectl`
+- optional experimental runtime dependencies are documented and gated per backend; `krunkit` is not required for the default `vz` + host MLX path
 - Node 22+ / pnpm
 - Rust (rustup)
 
@@ -229,6 +269,10 @@ model, prompt, and hardware.
   sudo-free `ioreg -c IOAccelerator` parse rather than `powermetrics` (D2), and high
   temperature **pauses training** at `NSProcessInfo.thermalState` `serious` rather than
   shrinking the batch size (D28)
+- **Compute backend research (active)**: keep `host-mlx` as the verified default while
+  validating `host-cumetal` (#84), Colima `krunkit-container` / K3s GPU feasibility
+  (#94), and policy-aware backend routing (#24). Kubernetes DRA/Kueue integration is
+  explicitly gated on evidence that a real schedulable accelerator resource exists.
 
 See [docs/01-proposal.md §7](docs/01-proposal.md#7-단계별-개발-로드맵-roadmap) (Korean)
 for the detailed roadmap.
