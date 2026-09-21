@@ -1,6 +1,6 @@
 # KubeMetal
 
-**English** | [한국어](README_ko.md)
+**English** | [한국어](README-ko.md)
 
 ![KubeMetal Dashboard — deployment target (external cluster preflight check) and host metrics](docs/images/dashboard-en.png)
 
