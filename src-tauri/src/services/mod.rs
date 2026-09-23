@@ -8,3 +8,4 @@ pub mod mlx_serving_recovery;
 pub mod ports;
 pub mod process;
 pub mod runtime_adapter;
+pub mod spawn_admission;

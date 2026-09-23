@@ -646,6 +646,25 @@ async fn run_training_reader(
     }
 }
 
+/// 현재 메모리 압력, 발열 상태, 발열 일시정지 설정을 조회하여 프로세스 스폰 허용 여부를 검사한다(D40).
+async fn check_current_spawn_admission(app: &tauri::AppHandle) -> Result<(), String> {
+    let memory_pressure_level = crate::commands::guardrails::measure_memory_pressure_level().await;
+    let thermal_state = crate::commands::metrics::read_thermal_state();
+    let thermal_pause_enabled = match app
+        .state::<crate::commands::guardrails::GuardrailState>()
+        .thermal_pause_enabled
+        .lock()
+    {
+        Ok(g) => *g,
+        Err(_) => false,
+    };
+    crate::commands::guardrails::check_spawn_admission(
+        &memory_pressure_level,
+        thermal_state.as_deref(),
+        thermal_pause_enabled,
+    )
+}
+
 #[tauri::command]
 pub async fn run_mlx_finetune(
     app: tauri::AppHandle,
@@ -673,6 +692,18 @@ pub async fn run_mlx_finetune(
         });
         prev
     };
+
+    // 스폰 전 admission 게이트(이슈 #31/#32 통합 축소 스코프) — 이미 메모리 압력이
+    // critical이거나(D16) 발열 일시정지가 켜진 채 serious 이상이면(D28) 학습 자체를
+    // 시작하지 않는다. 학습 vs 서빙 우선순위는 별도 구현하지 않는다: `spawn_guardrail_loop`가
+    // 학습에만 붙어 자동 SIGSTOP하는 기존 구조가 이미 그 정책이다.
+    let admission = check_current_spawn_admission(&app).await;
+    if let Err(e) = admission {
+        if let Ok(mut guard) = state.training.lock() {
+            crate::services::spawn_admission::rollback_admission_slot(&mut *guard, prev_training);
+        }
+        return Err(e);
+    }
 
     let res = (|| -> Result<(u32, tokio::process::Child, PathBuf), String> {
         if config.iters == 0 {
@@ -952,6 +983,17 @@ pub async fn start_model_serving(
             adapter_path: adapter_path.clone(),
             runtime,
         });
+    }
+
+    // 스폰 전 admission 게이트(이슈 #31/#32 통합 축소 스코프) — 학습과 동일한 기준.
+    // 서빙에는 `spawn_guardrail_loop`가 붙지 않아(학습 전용) 스폰 후 자동 정지가 없으므로,
+    // 나쁜 자원 상태에서 서빙을 막는 유일한 지점이 여기다.
+    let admission = check_current_spawn_admission(&app).await;
+    if let Err(e) = admission {
+        if let Ok(mut guard) = state.serving.lock() {
+            crate::services::spawn_admission::rollback_admission_slot(&mut *guard, None);
+        }
+        return Err(e);
     }
 
     let res = (|| -> Result<(u32, tokio::process::Child, String, Option<String>, u16), String> {
@@ -1724,5 +1766,81 @@ mod tests {
 
         assert!(!is_adapter_safe_to_delete(&dir, &state));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn admission_rejection_restores_training_state_in_mlx_state() {
+        let state = MlxState::default();
+        let prev_training = Some(TrainingStatus {
+            pid: 100,
+            status: "done".into(),
+            current_iter: 10,
+            total_iters: 10,
+            last_loss: Some(0.123),
+            adapter_path: Some("/test/adapter".into()),
+            error: None,
+            adapter_name: "test-adapter".into(),
+        });
+        *state.training.lock().unwrap() = prev_training.clone();
+
+        // run_mlx_finetune 진입 시 새 러닝 상태로 변경
+        let prev = {
+            let mut guard = state.training.lock().unwrap();
+            let prev = guard.clone();
+            *guard = Some(TrainingStatus {
+                pid: 0,
+                status: "running".into(),
+                current_iter: 0,
+                total_iters: 100,
+                last_loss: None,
+                adapter_path: None,
+                error: None,
+                adapter_name: "new-adapter".into(),
+            });
+            prev
+        };
+
+        // admission 거부 발생 모사
+        let admission_err: Result<(), String> =
+            Err("Cannot start — memory pressure is critical".into());
+        if let Err(_e) = admission_err {
+            let mut guard = state.training.lock().unwrap();
+            services::spawn_admission::rollback_admission_slot(&mut *guard, prev);
+        }
+
+        let guard = state.training.lock().unwrap();
+        assert!(guard.is_some());
+        let t = guard.as_ref().unwrap();
+        assert_eq!(t.pid, 100);
+        assert_eq!(t.status, "done");
+        assert_eq!(t.adapter_name, "test-adapter");
+    }
+
+    #[test]
+    fn admission_rejection_clears_serving_state_in_mlx_state() {
+        let state = MlxState::default();
+        assert!(state.serving.lock().unwrap().is_none());
+
+        // start_model_serving 진입 시 새 서빙 상태 등록
+        {
+            let mut guard = state.serving.lock().unwrap();
+            *guard = Some(ServingStatus {
+                pid: 0,
+                port: 8080,
+                model_path: "test/model".into(),
+                adapter_path: None,
+                runtime: MlxRuntime::MlxLm,
+            });
+        }
+
+        // admission 거부 발생 모사
+        let admission_err: Result<(), String> =
+            Err("Cannot start — thermal state is serious".into());
+        if let Err(_e) = admission_err {
+            let mut guard = state.serving.lock().unwrap();
+            services::spawn_admission::rollback_admission_slot(&mut *guard, None);
+        }
+
+        assert!(state.serving.lock().unwrap().is_none());
     }
 }
