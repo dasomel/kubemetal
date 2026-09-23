@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Mutex;
 
@@ -68,6 +68,13 @@ pub struct TrainingStatus {
     pub last_loss: Option<f64>,
     pub adapter_path: Option<String>,
     pub error: Option<String>,
+    /// 학습 요청에 실린 어댑터 이름(finetune_wrapper.py가 `~/.kubemetal/adapters/<이
+    /// 이름>`에 쓴다) — `adapter_path`와 달리 스폰 시점부터 항상 알려져 있다.
+    /// `is_adapter_safe_to_delete`(#33)의 in-progress 보호가 학습이 아직 "done"에
+    /// 도달하지 않아 `adapter_path`가 비어 있는 동안에도 출력 디렉터리를 판별할 수
+    /// 있도록 추가했다(2026-09-23 리뷰) — `adapter_path`의 기존 의미(완료 시에만
+    /// 채워짐)는 바꾸지 않는다.
+    pub adapter_name: String,
 }
 
 /// 서빙 런타임(D29). 둘 다 OpenAI 호환 HTTP 서버라 D10 브리지·kagent·평가(D20) 소비자는
@@ -208,43 +215,80 @@ pub(crate) fn manifest_verification_status(adapter_dir: &std::path::Path) -> &'s
     }
 }
 
+/// mlx 파인튜닝 래퍼(`scripts/mlx/finetune_wrapper.py`)가 어댑터를 쓰는 출력 디렉터리.
+/// `Path.home() / ".kubemetal" / "adapters" / <adapter_name>` — 래퍼 쪽 상수와 같은
+/// 사실이므로 여기서 새로 지어내지 않고 그 파일의 실제 동작을 그대로 옮긴다.
+fn adapter_output_dir(home: &Path, adapter_name: &str) -> PathBuf {
+    home.join(".kubemetal").join("adapters").join(adapter_name)
+}
+
+/// 심볼릭 링크·`.`/`..` 컴포넌트가 섞인 별칭 경로가 canonical 비교를 피해가지 못하게
+/// 정규화한다. canonicalize가 실패하면(경로가 아직 없는 경우 등) 원본을 그대로 쓴다 —
+/// 존재하지 않는 경로를 있는 그대로 보고하는 건 괜찮지만, 존재하는 서빙 중 어댑터의
+/// 별칭이 정규화를 피해 통과해서는 안 된다(2026-09-23 리뷰).
+fn canonicalize_or_self(p: &Path) -> PathBuf {
+    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+}
+
 /// 어댑터가 삭제해도 안전한지 판정하는 GC 가드(이슈 #33 축소 스코프) — 실제 삭제(파일
 /// 시스템 rm) 기능은 이 스코프에 포함하지 않는다, 삭제 UI/커맨드는 별도 결정 사항이다.
-/// 현재 서빙 중인 adapter, 또는 `last_known_good_serving`에 기록된 adapter와 경로가
-/// 같으면 삭제를 금지한다.
+/// 세 경우 중 하나라도 해당하면 삭제를 금지한다: (1) 현재 서빙 중인 adapter,
+/// (2) `last_known_good_serving`에 기록된 adapter, (3) 아직 "done"에 이르지 못해
+/// `TrainingStatus.adapter_path`가 비어 있는 **진행 중인 학습**의 출력 디렉터리 —
+/// `adapter_name`으로 `adapter_output_dir`을 역산해 판별한다(2026-09-23 리뷰 전에는
+/// 이 세 번째 경우가 아예 없어 진행 중인 학습의 산출물이 삭제 가능하다고 오판했다).
+/// 경로 비교는 canonicalize를 거친다 — 심볼릭 링크나 `./`/`../` 별칭이 문자열 비교를
+/// 피해 "안전"으로 오판되지 않게 한다.
+///
+/// **잠금이 poison되면(다른 스레드가 그 락을 쥔 채 panic) 즉시 false(삭제 불가)를
+/// 반환한다** — 예전 구현은 `.lock().ok().unwrap_or(false)`로 "잠금 실패 = 보호 없음"을
+/// 거쳐 최종적으로 "안전"을 반환했다. 셋 중 어느 것도 모른다는 사실을 "안전하다"로
+/// 지어내지 않는다(D22, fail-closed).
 ///
 /// 프런트 소비자가 아직 없어 IPC로는 노출하지 않는다(위 `manifest_verification_status`와
 /// 같은 이유).
 #[allow(dead_code)]
-pub(crate) fn is_adapter_safe_to_delete(
-    adapter_dir: &std::path::Path,
-    mlx_state: &MlxState,
-) -> bool {
+pub(crate) fn is_adapter_safe_to_delete(adapter_dir: &Path, mlx_state: &MlxState) -> bool {
+    let target = canonicalize_or_self(adapter_dir);
     let matches_adapter_path = |status: &Option<ServingStatus>| -> bool {
         status
             .as_ref()
             .and_then(|s| s.adapter_path.as_deref())
-            .map(|p| std::path::Path::new(p) == adapter_dir)
+            .map(|p| canonicalize_or_self(Path::new(p)) == target)
             .unwrap_or(false)
     };
 
-    let is_serving = mlx_state
-        .serving
-        .lock()
-        .ok()
-        .map(|g| matches_adapter_path(&g))
-        .unwrap_or(false);
+    let is_serving = match mlx_state.serving.lock() {
+        Ok(g) => matches_adapter_path(&g),
+        Err(_) => return false,
+    };
     if is_serving {
         return false;
     }
 
-    let is_last_known_good = mlx_state
-        .last_known_good_serving
-        .lock()
-        .ok()
-        .map(|g| matches_adapter_path(&g))
-        .unwrap_or(false);
-    !is_last_known_good
+    let is_last_known_good = match mlx_state.last_known_good_serving.lock() {
+        Ok(g) => matches_adapter_path(&g),
+        Err(_) => return false,
+    };
+    if is_last_known_good {
+        return false;
+    }
+
+    let is_in_progress_training = match mlx_state.training.lock() {
+        Ok(g) => g
+            .as_ref()
+            .filter(|t| should_record_exit(&t.status))
+            .and_then(|t| {
+                home_dir()
+                    .ok()
+                    .map(|home| adapter_output_dir(&home, &t.adapter_name))
+            })
+            .map(|dir| canonicalize_or_self(&dir) == target)
+            .unwrap_or(false),
+        Err(_) => return false,
+    };
+
+    !is_in_progress_training
 }
 
 #[derive(Debug, Deserialize)]
@@ -642,6 +686,7 @@ pub async fn run_mlx_finetune(
             last_loss: None,
             adapter_path: None,
             error: None,
+            adapter_name: config.adapter_name.clone(),
         });
         prev
     };
@@ -729,6 +774,7 @@ pub async fn run_mlx_finetune(
                     last_loss: None,
                     adapter_path: None,
                     error: None,
+                    adapter_name: config.adapter_name.clone(),
                 });
             }
 
@@ -1591,5 +1637,82 @@ mod tests {
         assert!(is_adapter_safe_to_delete(&dir, &state));
         std::fs::remove_dir_all(&dir).ok();
         std::fs::remove_dir_all(&other_dir).ok();
+    }
+
+    #[test]
+    fn is_adapter_safe_to_delete_forbids_non_canonical_alias_of_serving_adapter() {
+        // 서빙 중인 adapter_path가 `.`/`..`이 섞인 비-canonical 별칭으로 기록돼 있어도
+        // (예: 다른 코드 경로가 join 결과를 canonicalize하지 않고 저장) 실제로는 같은
+        // 디렉터리를 가리킨다 — canonicalize를 거치지 않는 문자열 비교라면 이 케이스를
+        // "다른 경로"로 오판해 삭제를 허용했을 것이다(2026-09-23 리뷰).
+        let dir = make_temp_model_dir("safe-delete-alias");
+        let alias = dir.join("."); // canonicalize하면 dir와 완전히 같은 경로가 된다.
+        let state = MlxState::default();
+        *state.serving.lock().unwrap() = Some(ServingStatus {
+            pid: 9,
+            port: 8080,
+            model_path: "/models/base".into(),
+            adapter_path: Some(alias.to_string_lossy().to_string()),
+            runtime: MlxRuntime::MlxLm,
+        });
+        assert!(!is_adapter_safe_to_delete(&dir, &state));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn is_adapter_safe_to_delete_forbids_in_progress_training_output_dir() {
+        // TrainingStatus.adapter_path는 "done"에서만 채워진다(mlx.rs:459 인근) — 진행
+        // 중인 학습은 그 필드가 비어 있으므로, adapter_name으로 출력 디렉터리를 역산해서
+        // 판별해야 한다. 실제 디렉터리를 만들지 않아도 canonicalize_or_self가 양쪽 모두
+        // 같은 방식(존재하지 않으면 원본 그대로)으로 폴백하므로 비교는 여전히 유효하다.
+        let home = home_dir().expect("HOME must be set for this test");
+        let adapter_name = format!(
+            "reland-review-test-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let in_progress_dir = adapter_output_dir(&home, &adapter_name);
+
+        let state = MlxState::default();
+        *state.training.lock().unwrap() = Some(TrainingStatus {
+            pid: 123,
+            status: "running".into(),
+            current_iter: 1,
+            total_iters: 10,
+            last_loss: None,
+            adapter_path: None, // 아직 done이 아니다 — 이 테스트의 전제.
+            error: None,
+            adapter_name,
+        });
+
+        assert!(!is_adapter_safe_to_delete(&in_progress_dir, &state));
+
+        // done 이후(또는 애초에 학습이 없던) 상태에서는 같은 경로가 다시 허용돼야 한다 —
+        // 보호가 "그 학습이 아직 진행 중"이라는 사실에만 걸려 있는지 확인한다.
+        *state.training.lock().unwrap() = None;
+        assert!(is_adapter_safe_to_delete(&in_progress_dir, &state));
+    }
+
+    #[test]
+    fn is_adapter_safe_to_delete_fails_closed_when_serving_lock_is_poisoned() {
+        // 예전 구현은 `.lock().ok().unwrap_or(false)`를 거쳐 poison된 잠금을 "보호 없음"
+        // 으로 읽고 최종적으로 "안전"을 반환했다 — 무엇을 보호해야 하는지 모르는 상태를
+        // "안전하다"로 지어내면 안 된다(D22, fail-closed). std::panic::catch_unwind로
+        // 잠금을 쥔 채 panic시켜 poison을 재현한다(스레드를 새로 띄울 필요는 없다 —
+        // poison은 "그 락을 쥔 채 unwind"로 발생하고, catch_unwind는 그 unwind를 같은
+        // 스레드 안에서 안전하게 가둔다).
+        let dir = make_temp_model_dir("safe-delete-poisoned");
+        let state = MlxState::default();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = state.serving.lock().unwrap();
+            panic!("intentionally poison the serving lock for this test");
+        }));
+        assert!(state.serving.is_poisoned());
+
+        assert!(!is_adapter_safe_to_delete(&dir, &state));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
