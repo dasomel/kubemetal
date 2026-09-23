@@ -1,5 +1,6 @@
 pub mod artifact_manifest;
 pub mod deploy_target;
+pub(crate) mod home_path;
 pub mod lifecycle_guard;
 pub mod local_inference;
 pub mod mlx_artifacts;
