@@ -140,16 +140,22 @@ pub fn classify_mlx_cmdline(raw_cmdline: Option<&str>) -> CmdlineVerification {
 
 /// marker 디렉터리를 비동기로 순회해 고아 MLX 프로세스 및 읽을 수 없는 marker를 탐지한다.
 pub async fn scan_orphaned_mlx_processes(dir: &Path) -> Result<OrphanScan, String> {
-    if !dir.exists() {
-        return Ok(OrphanScan {
-            orphans: Vec::new(),
-            unreadable: Vec::new(),
-        });
-    }
-
-    let mut read_dir = tokio::fs::read_dir(dir)
-        .await
-        .map_err(|e| format!("Failed to read marker directory {}: {e}", dir.display()))?;
+    // `exists()`는 권한 오류도 false로 삼켜 "고아 없음"으로 위장한다 — NotFound만 빈 결과다(D22).
+    let mut read_dir = match tokio::fs::read_dir(dir).await {
+        Ok(rd) => rd,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(OrphanScan {
+                orphans: Vec::new(),
+                unreadable: Vec::new(),
+            });
+        }
+        Err(e) => {
+            return Err(format!(
+                "Failed to read marker directory {}: {e}",
+                dir.display()
+            ))
+        }
+    };
 
     let mut orphans = Vec::new();
     let mut unreadable = Vec::new();
