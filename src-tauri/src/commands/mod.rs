@@ -8,6 +8,7 @@ pub mod colima;
 pub mod data_ingest;
 pub mod deploy_target;
 pub mod guardrails;
+pub mod health;
 pub mod kagent;
 pub mod local_inference;
 pub mod local_inference_bridge;
