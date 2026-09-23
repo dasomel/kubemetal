@@ -12,6 +12,9 @@ export interface SystemMetrics {
   gpu_memory_used_gb?: number;
   /** null이면 조회 실패 — "정상"으로 폴백하지 않는다(D22). */
   thermal_state?: 'nominal' | 'fair' | 'serious' | 'critical' | null;
+  /** GPU 지표를 낸 백엔드. 현재는 Apple Silicon 전용이라 항상 "apple_metal"이다 —
+   * 원격 클러스터의 NVIDIA 텔레메트리가 붙을 때 다른 값을 구분할 자리다. */
+  gpu_backend?: string;
 }
 
 export interface HardwareSpec {

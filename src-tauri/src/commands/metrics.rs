@@ -101,6 +101,10 @@ pub struct SystemMetrics {
     /// `nominal` | `fair` | `serious` | `critical`. 값을 못 읽으면 None —
     /// "정상"으로 폴백하지 않는다(D22, 발열은 가드레일 판정에 쓰인다).
     pub thermal_state: Option<String>,
+    /// GPU 지표를 낸 백엔드. 이 저장소는 Apple Silicon 전용이므로 현재는 항상
+    /// `"apple_metal"` 고정값이다 — 원격 클러스터의 NVIDIA 텔레메트리가 붙을 때
+    /// `"nvidia"` 등 다른 값을 구분할 자리를 미리 만들어 둔 것뿐, 지금은 지어내지 않는다.
+    pub gpu_backend: String,
 }
 
 /// macOS의 발열 압력 단계.
@@ -212,6 +216,31 @@ fn parse_ioreg_accelerator(text: &str) -> (Option<f32>, Option<f64>) {
     (pct, mem)
 }
 
+/// GPU 텔레메트리 백엔드 공통 인터페이스 (이슈 #1 — GPU Telemetry Interoperability).
+///
+/// 현재 구현체는 [`AppleMetalBackend`] 하나뿐이다. NVIDIA(원격 클러스터의 GPU, Narwhal이
+/// source-of-truth)는 **실기기가 없어 구현을 보류**한다 — 장비를 확보하면 이 trait을
+/// 구현하는 `NvidiaBackend`(예: DCGM/nvidia-smi 어댑터)를 추가하면 된다. 없는 백엔드를
+/// 지어내지 않는다(D22) — 그래서 지금은 인터페이스만 남기고 구현체를 만들지 않았다.
+trait GpuTelemetryBackend {
+    /// [`SystemMetrics::gpu_backend`]에 그대로 실리는 식별자.
+    fn name(&self) -> &'static str;
+    /// (GPU 사용률 %, 사용 중 GPU 메모리 GB).
+    async fn read(&self) -> (f32, f64);
+}
+
+struct AppleMetalBackend;
+
+impl GpuTelemetryBackend for AppleMetalBackend {
+    fn name(&self) -> &'static str {
+        "apple_metal"
+    }
+
+    async fn read(&self) -> (f32, f64) {
+        get_metal_gpu_metrics().await
+    }
+}
+
 #[tauri::command]
 pub async fn get_system_metrics(state: State<'_, Mutex<System>>) -> Result<SystemMetrics, String> {
     let (total, used, cpu_usage_percentage) = {
@@ -224,7 +253,8 @@ pub async fn get_system_metrics(state: State<'_, Mutex<System>>) -> Result<Syste
         (total, used, cpu_usage_percentage)
     };
 
-    let (gpu_usage_percentage, gpu_memory_used_gb) = get_metal_gpu_metrics().await;
+    let gpu_backend = AppleMetalBackend;
+    let (gpu_usage_percentage, gpu_memory_used_gb) = gpu_backend.read().await;
 
     Ok(SystemMetrics {
         total_memory_gb: (total * 100.0).round() / 100.0,
@@ -234,6 +264,7 @@ pub async fn get_system_metrics(state: State<'_, Mutex<System>>) -> Result<Syste
         gpu_usage_percentage,
         gpu_memory_used_gb,
         thermal_state: read_thermal_state(),
+        gpu_backend: gpu_backend.name().to_string(),
     })
 }
 
