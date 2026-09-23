@@ -136,6 +136,9 @@ export interface MlxTrainingState {
   last_loss?: number;
   adapter_path?: string;
   error?: string;
+  /** 스폰 시점부터 항상 채워진다 — adapter_path와 달리 학습이 "done"에 이를 때까지
+   * 기다리지 않는다 (src-tauri/src/commands/mlx.rs::TrainingStatus.adapter_name). */
+  adapter_name: string;
 }
 
 export interface MlxServingState {
