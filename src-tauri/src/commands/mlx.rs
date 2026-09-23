@@ -652,6 +652,8 @@ async fn run_training_reader(
 }
 
 /// 현재 메모리 압력, 발열 상태, 발열 일시정지 설정을 조회하여 프로세스 스폰 허용 여부를 검사한다(D40).
+/// 슬롯 선점 및 동기 준비(경로 검증, config 읽기, 포트 탐색) 전에 1회 검사하며,
+/// 검사 시점과 실제 스폰 사이의 상태 변화는 막지 못한다.
 async fn check_current_spawn_admission(app: &tauri::AppHandle) -> Result<(), String> {
     let memory_pressure_level = crate::commands::guardrails::measure_memory_pressure_level().await;
     let thermal_state = crate::commands::metrics::read_thermal_state();
@@ -677,6 +679,13 @@ pub async fn run_mlx_finetune(
     config: FineTuneConfig,
 ) -> Result<u32, String> {
     let training_runtime = config.runtime.unwrap_or(MlxRuntime::MlxLm);
+
+    // 스폰 전 admission 게이트(D40, GitHub #32) — 슬롯 선점 및 동기 준비 전 1회 검사.
+    // 이미 메모리 압력이 critical이거나(D16) 발열 일시정지가 켜진 채 serious 이상이면(D28)
+    // 슬롯을 점유하지 않고 거부한다. 검사~스폰 사이 상태 변화는 막지 못하며, 학습은 스폰 후
+    // spawn_guardrail_loop가 사후 방어한다.
+    check_current_spawn_admission(&app).await?;
+
     let prev_training = {
         let mut guard = state.training.lock().map_err(|e| e.to_string())?;
         if let Some(t) = guard.as_ref() {
@@ -697,18 +706,6 @@ pub async fn run_mlx_finetune(
         });
         prev
     };
-
-    // 스폰 전 admission 게이트(이슈 #31/#32 통합 축소 스코프) — 이미 메모리 압력이
-    // critical이거나(D16) 발열 일시정지가 켜진 채 serious 이상이면(D28) 학습 자체를
-    // 시작하지 않는다. 학습 vs 서빙 우선순위는 별도 구현하지 않는다: `spawn_guardrail_loop`가
-    // 학습에만 붙어 자동 SIGSTOP하는 기존 구조가 이미 그 정책이다.
-    let admission = check_current_spawn_admission(&app).await;
-    if let Err(e) = admission {
-        if let Ok(mut guard) = state.training.lock() {
-            crate::services::spawn_admission::rollback_admission_slot(&mut *guard, prev_training);
-        }
-        return Err(e);
-    }
 
     let res = (|| -> Result<(u32, tokio::process::Child, PathBuf), String> {
         if config.iters == 0 {
@@ -841,16 +838,31 @@ pub async fn get_mlx_status(state: State<'_, MlxState>) -> Result<MlxStatus, Str
     })
 }
 
+/// terminate_pid가 시그널을 보낼 대상 PID/PGID를 결정한다.
+/// PID가 0인 경우(시작 중인 플레이스홀더 등) 앱 자신의 프로세스(그룹)에 시그널이 가는 것을
+/// 방지하기 위해 `None`을 반환한다.
+pub(crate) fn resolve_signal_target(pid: u32, use_process_group: bool) -> Option<i32> {
+    if pid == 0 {
+        return None;
+    }
+    if use_process_group {
+        Some(-(pid as i32))
+    } else {
+        Some(pid as i32)
+    }
+}
+
 /// SIGTERM 전송 후 1초 대기, 여전히 살아있으면 SIGKILL. `libc::kill(pid, 0)`으로 생존 여부를 확인한다.
 /// `use_process_group`이면 시그널을 `-pid`(프로세스 그룹)로 보낸다 — 학습 래퍼는
 /// `.process_group(0)`으로 기동되어 자신이 그룹 리더이므로, 그룹으로 보내야 내부에서
 /// `subprocess.Popen`으로 띄운 `mlx_lm` 학습 자식까지 함께 종료된다(D17). 서빙 프로세스는
 /// 새 그룹 없이 앱과 그룹을 공유하므로 단일 pid로 보낸다.
+///
+/// PID가 0이면 앱 자신의 프로세스 그룹에 시그널이 전송되는 것을 방지하기 위해 아무것도 하지 않고 즉시 반환한다.
 fn terminate_pid(pid: u32, use_process_group: bool) {
-    let target: i32 = if use_process_group {
-        -(pid as i32)
-    } else {
-        pid as i32
+    let target = match resolve_signal_target(pid, use_process_group) {
+        Some(t) => t,
+        None => return,
     };
     unsafe {
         libc::kill(target, libc::SIGTERM);
@@ -866,6 +878,10 @@ fn terminate_pid(pid: u32, use_process_group: bool) {
 
 #[tauri::command]
 pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bool, String> {
+    if pid == 0 {
+        return Err("Process is still starting; nothing to stop yet.".into());
+    }
+
     let is_training = {
         let guard = state.training.lock().map_err(|e| e.to_string())?;
         guard.as_ref().map(|t| t.pid == pid).unwrap_or(false)
@@ -976,6 +992,12 @@ pub async fn start_model_serving(
 ) -> Result<String, String> {
     // 지정이 없으면 mlx-lm — 기존 사용자·기존 프런트 호출의 동작이 바뀌지 않는다(D29).
     let runtime = runtime.unwrap_or(MlxRuntime::MlxLm);
+
+    // 스폰 전 admission 게이트(D40, GitHub #32) — 슬롯 선점 및 동기 준비 전 1회 검사.
+    // 학습과 동일한 기준이나, 서빙에는 `spawn_guardrail_loop`가 붙지 않아(학습 전용)
+    // 검사~스폰 사이나 스폰 후의 상태 악화를 사후 방어하지 못하는 한계가 있다.
+    check_current_spawn_admission(&app).await?;
+
     {
         let mut guard = state.serving.lock().map_err(|e| e.to_string())?;
         if guard.is_some() {
@@ -988,17 +1010,6 @@ pub async fn start_model_serving(
             adapter_path: adapter_path.clone(),
             runtime,
         });
-    }
-
-    // 스폰 전 admission 게이트(이슈 #31/#32 통합 축소 스코프) — 학습과 동일한 기준.
-    // 서빙에는 `spawn_guardrail_loop`가 붙지 않아(학습 전용) 스폰 후 자동 정지가 없으므로,
-    // 나쁜 자원 상태에서 서빙을 막는 유일한 지점이 여기다.
-    let admission = check_current_spawn_admission(&app).await;
-    if let Err(e) = admission {
-        if let Ok(mut guard) = state.serving.lock() {
-            crate::services::spawn_admission::rollback_admission_slot(&mut *guard, None);
-        }
-        return Err(e);
     }
 
     let res = (|| -> Result<(u32, tokio::process::Child, String, Option<String>, u16), String> {
@@ -1145,6 +1156,9 @@ pub async fn stop_model_serving(state: State<'_, MlxState>) -> Result<String, St
             None => return Err("No model serving in progress.".into()),
         }
     };
+    if pid == 0 {
+        return Err("Serving process is still starting; nothing to stop yet.".into());
+    }
 
     tokio::task::spawn_blocking(move || terminate_pid(pid, false))
         .await
@@ -1795,78 +1809,21 @@ mod tests {
     }
 
     #[test]
-    fn admission_rejection_restores_training_state_in_mlx_state() {
-        let state = MlxState::default();
-        let prev_training = Some(TrainingStatus {
-            pid: 100,
-            status: "done".into(),
-            current_iter: 10,
-            total_iters: 10,
-            last_loss: Some(0.123),
-            adapter_path: Some("/test/adapter".into()),
-            error: None,
-            adapter_name: "test-adapter".into(),
-        });
-        *state.training.lock().unwrap() = prev_training.clone();
-
-        // run_mlx_finetune 진입 시 새 러닝 상태로 변경
-        let prev = {
-            let mut guard = state.training.lock().unwrap();
-            let prev = guard.clone();
-            *guard = Some(TrainingStatus {
-                pid: 0,
-                status: "running".into(),
-                current_iter: 0,
-                total_iters: 100,
-                last_loss: None,
-                adapter_path: None,
-                error: None,
-                adapter_name: "new-adapter".into(),
-            });
-            prev
-        };
-
-        // admission 거부 발생 모사
-        let admission_err: Result<(), String> =
-            Err("Cannot start — memory pressure is critical".into());
-        if let Err(_e) = admission_err {
-            let mut guard = state.training.lock().unwrap();
-            services::spawn_admission::rollback_admission_slot(&mut *guard, prev);
-        }
-
-        let guard = state.training.lock().unwrap();
-        assert!(guard.is_some());
-        let t = guard.as_ref().unwrap();
-        assert_eq!(t.pid, 100);
-        assert_eq!(t.status, "done");
-        assert_eq!(t.adapter_name, "test-adapter");
+    fn resolve_signal_target_never_signals_pid_zero() {
+        assert_eq!(resolve_signal_target(0, false), None);
+        assert_eq!(resolve_signal_target(0, true), None);
     }
 
     #[test]
-    fn admission_rejection_clears_serving_state_in_mlx_state() {
-        let state = MlxState::default();
-        assert!(state.serving.lock().unwrap().is_none());
+    fn resolve_signal_target_handles_single_process_and_process_group() {
+        assert_eq!(resolve_signal_target(1234, false), Some(1234));
+        assert_eq!(resolve_signal_target(1234, true), Some(-1234));
+    }
 
-        // start_model_serving 진입 시 새 서빙 상태 등록
-        {
-            let mut guard = state.serving.lock().unwrap();
-            *guard = Some(ServingStatus {
-                pid: 0,
-                port: 8080,
-                model_path: "test/model".into(),
-                adapter_path: None,
-                runtime: MlxRuntime::MlxLm,
-            });
-        }
-
-        // admission 거부 발생 모사
-        let admission_err: Result<(), String> =
-            Err("Cannot start — thermal state is serious".into());
-        if let Err(_e) = admission_err {
-            let mut guard = state.serving.lock().unwrap();
-            services::spawn_admission::rollback_admission_slot(&mut *guard, None);
-        }
-
-        assert!(state.serving.lock().unwrap().is_none());
+    #[test]
+    fn terminate_pid_noop_on_zero() {
+        // PID 0은 시그널 전송이나 sleep 대기 없이 즉시 no-op으로 반환되어야 한다.
+        terminate_pid(0, false);
+        terminate_pid(0, true);
     }
 }
