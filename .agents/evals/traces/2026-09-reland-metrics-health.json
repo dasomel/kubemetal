@@ -27,13 +27,13 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Cherry-picked 811b084+f079775 (gpu_backend field + GpuTelemetryBackend trait, re-registered as D41 in docs/03-mvp-design.md since main had since taken D35-D39), 28d52b6 (ioreg/thermal fixtures, clean), 3ada561 (GPU matmul benchmark command, resolved a lib.rs import conflict against local_inference* imports main grew since the rescue branch diverged, registered run_gpu_benchmark in docs/02-requirements.md), and ff09e75 (get_system_health_summary, clean, registered in docs/02-requirements.md) as 4 commits"
+      "summary": "Cherry-picked 811b084+f079775 (gpu_backend field + GpuTelemetryBackend trait, re-registered as D41 in docs/03-mvp-design.md since main had since taken D35-D39), 28d52b6 (ioreg/thermal fixtures, clean), 3ada561 (GPU matmul benchmark command, resolved a lib.rs import conflict against local_inference* imports main grew since the rescue branch diverged, registered run_gpu_benchmark in docs/02-requirements.md), and ff09e75 (get_system_health_summary, clean, registered in docs/02-requirements.md) as 4 commits, plus a 5th cargo-fmt fixup commit for pre-existing rustfmt drift in the rescue diffs"
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "summary": "cargo test run after each cherry-picked commit and once more at the end; all metrics/health unit tests pass, including new fixture and derive_overall_status cases",
+      "summary": "cargo test run after each cherry-picked commit and again after each review-driven fix commit; all metrics/health unit tests pass, including new fixture, derive_overall_status, and benchmark-timeout-kill cases",
       "scope": "src-tauri metrics.rs and health.rs unit tests",
       "evidence": [
         "test:cargo-test-manifest-path-src-tauri-Cargo.toml"
@@ -43,28 +43,39 @@
       "id": "e5",
       "type": "verification",
       "status": "passed",
-      "summary": "cargo check, cargo clippy --all-targets -D warnings, and scripts/ci/check_ipc_types.py all run clean after the final commit; new run_gpu_benchmark and get_system_health_summary commands registered in lib.rs invoke_handler and docs/02-requirements.md IPC table",
-      "scope": "src-tauri compile, lint, and IPC type/doc sync",
+      "summary": "cargo check, cargo fmt --check, cargo clippy --all-targets -D warnings, and scripts/ci/check_ipc_types.py all run clean after the final commit; new run_gpu_benchmark and get_system_health_summary commands registered in lib.rs invoke_handler and docs/02-requirements.md IPC table",
+      "scope": "src-tauri compile, format, lint, and IPC type/doc sync",
       "evidence": [
         "ci:cargo-check-manifest-path-src-tauri-Cargo.toml",
+        "ci:cargo-fmt-check",
         "ci:cargo-clippy-all-targets-D-warnings",
         "ci:check_ipc_types-py"
       ]
     },
     {
+      "id": "e8",
+      "type": "bug_fix",
+      "summary": "An independent opus approval review (REQUEST_CHANGES) on the 6-commit reland found real D22 gaps and a resource leak, fixed in 3 follow-up commits: health.rs derive_overall_status no longer reports healthy when guardrails.memory_pressure_level is \"unknown\" or thermal_state is None, and now requires kubernetes_active/mlflow_ready/seaweedfs_ready when colima is running (kagent_installed stays optional, documented as intentional); metrics.rs run_gpu_benchmark_inner now sets kill_on_drop(true) so a timed-out benchmark process is actually killed rather than left as a zombie, plus a fix to a test that was passing for the wrong reason in CI (venv-missing branch, not the script-missing branch it claimed to cover); docs/03-mvp-design.md D41 row reordered to sort after D39",
+      "evidence": [
+        "test:cargo-test-manifest-path-src-tauri-Cargo.toml",
+        "test:hung_benchmark_process_is_killed_on_timeout-kill-dash-0-confirms-pid-dead"
+      ]
+    },
+    {
       "id": "e6",
       "type": "completion_claim",
-      "summary": "All 5 rescue commits are re-landed on reland/metrics-health, adapted where current main had drifted, with D-registry and IPC docs kept in sync and no invariant violations introduced",
+      "summary": "All 5 rescue commits are re-landed on reland/metrics-health (9 commits total: 4 cherry-picks + fmt fixup + trace + 3 review-driven fixes), adapted where current main had drifted, with D-registry and IPC docs kept in sync, the independent review's findings addressed, and no invariant violations introduced",
       "evidence": [
         "e4",
-        "e5"
+        "e5",
+        "e8"
       ]
     },
     {
       "id": "e7",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete and verified for the 5-commit backend-only reland scope; frontend wiring, mlx.rs/guardrails.rs/artifact_manifest.rs, and pushing/PR creation are explicitly out of scope and untouched"
+      "summary": "Complete and verified for the backend-only reland scope, including the independent review's follow-up fixes; frontend wiring, mlx.rs/guardrails.rs/artifact_manifest.rs, benchmark admission gating (deferred until D40 lands), and pushing/PR creation are explicitly out of scope and untouched"
     }
   ]
 }
