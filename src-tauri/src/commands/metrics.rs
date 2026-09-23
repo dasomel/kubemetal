@@ -478,22 +478,20 @@ mod tests {
         std::fs::write(
             &script_path,
             format!(
-                "#!/bin/sh\necho $$ > {}\nexec sleep 5\n",
+                "#!/bin/sh\necho $$ > {}\nexec sleep 30\n",
                 marker_path.display()
             ),
         )
         .expect("write sleepy.sh");
 
         let venv_py = PathBuf::from("/bin/sh");
-        let short_timeout = Duration::from_millis(300);
+        // 부하가 걸린 CI에서도 sh가 pid를 기록할 시간이 충분하도록 2초를 준다(sleep 30보다 훨씬 짧게 — 자연 종료가 킬로 오인되지 않도록).
+        let short_timeout = Duration::from_secs(2);
 
         let result =
             run_gpu_benchmark_inner_with_timeout(&venv_py, &script_path, short_timeout).await;
         let err = result.expect_err("a short timeout on a sleeping process must error");
         assert!(err.contains("timed out"), "unexpected error: {err}");
-
-        // 커널이 킬한 프로세스를 회수할 약간의 여유를 준다.
-        tokio::time::sleep(Duration::from_millis(500)).await;
 
         let pid_str = std::fs::read_to_string(&marker_path)
             .expect("sleepy.sh must have written its pid before sleeping");
@@ -501,13 +499,21 @@ mod tests {
             .trim()
             .parse()
             .expect("marker file must contain a pid");
-        let still_alive = std::process::Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .expect("kill -0 should run")
-            .success();
+        // 킬 직후엔 좀비로 남아 kill -0이 성공할 수 있으므로, 한 번이 아니라 최대 3초간 재확인한다.
+        let mut still_alive = true;
+        for _ in 0..30 {
+            still_alive = std::process::Command::new("kill")
+                .args(["-0", &pid.to_string()])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .expect("kill -0 should run")
+                .success();
+            if !still_alive {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
         assert!(
             !still_alive,
             "benchmark process (pid {pid}) survived the timeout — kill_on_drop missing?"
