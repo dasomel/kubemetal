@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::services::artifact_manifest::{write_manifest, ManifestContext};
+use crate::services::artifact_manifest::{verify_manifest, write_manifest, ManifestContext};
 use crate::services::ports;
 use crate::services::process::{
     augmented_path, external_command, resolve_bundled_resource, resolve_cli_path,
@@ -180,6 +180,71 @@ fn read_adapter_base_model(adapter_dir: &std::path::Path) -> Option<String> {
     let content = std::fs::read_to_string(adapter_dir.join("adapter_config.json")).ok()?;
     let parsed: AdapterConfigFile = serde_json::from_str(&content).ok()?;
     parsed.model
+}
+
+/// 어댑터 디렉터리의 매니페스트 검증 상태(이슈 #33 축소 스코프 — 체크포인트 상태
+/// 판정). 재랜드 시점의 main은 매니페스트 기록을 이미 `services/artifact_manifest.rs`로
+/// 통합했다(`write_training_manifest`/`TrainingManifest`/`ManifestFileEntry`는 더 이상
+/// 존재하지 않는다) — 원본 커밋처럼 여기서 로컬 파서/sha256 재계산을 다시 두면 같은
+/// 사실이 두 곳에 생긴다(AGENTS.md "같은 사실 두 곳 금지"). 대신 그 모듈의
+/// `verify_manifest`를 그대로 재사용해 판정만 셋으로 좁힌다.
+///
+/// - manifest.json이 없으면 `"missing"`(#22 이전 산출물이거나 실패한 학습).
+/// - 있고 `verify_manifest`가 missing/changed/extra 없이 유효하다고 판정하면 `"verified"`.
+/// - 있는데 파싱/스키마 실패, 또는 하나라도 missing/changed/extra면 `"corrupt"`.
+///
+/// 프런트 소비자가 아직 없어 IPC로는 노출하지 않는다 — `commands` 모듈이 `lib.rs`에서
+/// `pub`이 아니므로 이 함수는 어차피 크레이트 외부에 도달 불가능하다. dead_code는
+/// "미등록 상태에서는 호출부가 없다"는 사실 그대로이므로 지어내지 않고 `allow`로
+/// 명시한다(IPC 등록 시 이 allow를 제거한다).
+#[allow(dead_code)]
+pub(crate) fn manifest_verification_status(adapter_dir: &std::path::Path) -> &'static str {
+    if !adapter_dir.join("manifest.json").is_file() {
+        return "missing";
+    }
+    match verify_manifest(adapter_dir) {
+        Ok(report) if report.is_valid() => "verified",
+        _ => "corrupt",
+    }
+}
+
+/// 어댑터가 삭제해도 안전한지 판정하는 GC 가드(이슈 #33 축소 스코프) — 실제 삭제(파일
+/// 시스템 rm) 기능은 이 스코프에 포함하지 않는다, 삭제 UI/커맨드는 별도 결정 사항이다.
+/// 현재 서빙 중인 adapter, 또는 `last_known_good_serving`에 기록된 adapter와 경로가
+/// 같으면 삭제를 금지한다.
+///
+/// 프런트 소비자가 아직 없어 IPC로는 노출하지 않는다(위 `manifest_verification_status`와
+/// 같은 이유).
+#[allow(dead_code)]
+pub(crate) fn is_adapter_safe_to_delete(
+    adapter_dir: &std::path::Path,
+    mlx_state: &MlxState,
+) -> bool {
+    let matches_adapter_path = |status: &Option<ServingStatus>| -> bool {
+        status
+            .as_ref()
+            .and_then(|s| s.adapter_path.as_deref())
+            .map(|p| std::path::Path::new(p) == adapter_dir)
+            .unwrap_or(false)
+    };
+
+    let is_serving = mlx_state
+        .serving
+        .lock()
+        .ok()
+        .map(|g| matches_adapter_path(&g))
+        .unwrap_or(false);
+    if is_serving {
+        return false;
+    }
+
+    let is_last_known_good = mlx_state
+        .last_known_good_serving
+        .lock()
+        .ok()
+        .map(|g| matches_adapter_path(&g))
+        .unwrap_or(false);
+    !is_last_known_good
 }
 
 #[derive(Debug, Deserialize)]
@@ -1032,7 +1097,16 @@ async fn is_serving_healthy(base_url: &str) -> bool {
     };
     let url = format!("{base_url}/models");
     let output = cmd
-        .args(["-s", "-o", "/dev/null", "-m", "2", "-w", "%{http_code}", &url])
+        .args([
+            "-s",
+            "-o",
+            "/dev/null",
+            "-m",
+            "2",
+            "-w",
+            "%{http_code}",
+            &url,
+        ])
         .output()
         .await;
     matches!(output, Ok(out) if String::from_utf8_lossy(&out.stdout) == "200")
@@ -1447,5 +1521,92 @@ mod tests {
         let got = revert_config_or_error(&state).expect("saved config should be returned");
 
         assert_eq!(got.pid, 42);
+    }
+
+    // write_training_manifest_records_matching_sha256(원본 rescue 테스트)는 포트하지 않는다:
+    // 재랜드 시점의 main은 매니페스트 기록을 이미 `write_manifest`/`ManifestContext`로
+    // 통합했고, 그 계약(정렬·sha256·자기 제외)은 artifact_manifest.rs의 자체 테스트
+    // (`writes_sorted_manifest_with_sha256_and_excludes_itself`)가 이미 고정하고 있다 —
+    // 같은 사실을 이 파일에서 다시 고정하지 않는다.
+
+    fn manifest_context() -> ManifestContext {
+        ManifestContext {
+            runtime: "mlx-lm".into(),
+            base_model: "/base".into(),
+        }
+    }
+
+    #[test]
+    fn manifest_verification_status_returns_missing_without_manifest() {
+        let dir = make_temp_model_dir("manifest-missing");
+        assert_eq!(manifest_verification_status(&dir), "missing");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn manifest_verification_status_returns_verified_when_hashes_match() {
+        let dir = make_temp_model_dir("manifest-verified");
+        std::fs::write(dir.join("adapters.safetensors"), b"weights").unwrap();
+        write_manifest(&dir, manifest_context()).expect("manifest write should succeed");
+        assert_eq!(manifest_verification_status(&dir), "verified");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn manifest_verification_status_returns_corrupt_when_hash_mismatches() {
+        let dir = make_temp_model_dir("manifest-corrupt");
+        std::fs::write(dir.join("adapters.safetensors"), b"weights").unwrap();
+        write_manifest(&dir, manifest_context()).expect("manifest write should succeed");
+        // 학습 산출물이 매니페스트 작성 이후 손상된 상황을 재현한다.
+        std::fs::write(dir.join("adapters.safetensors"), b"tampered").unwrap();
+        assert_eq!(manifest_verification_status(&dir), "corrupt");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn is_adapter_safe_to_delete_forbids_currently_serving_adapter() {
+        let dir = make_temp_model_dir("safe-delete-serving");
+        let state = MlxState::default();
+        *state.serving.lock().unwrap() = Some(ServingStatus {
+            pid: 1,
+            port: 8080,
+            model_path: "/models/base".into(),
+            adapter_path: Some(dir.to_string_lossy().to_string()),
+            runtime: MlxRuntime::MlxLm,
+        });
+        assert!(!is_adapter_safe_to_delete(&dir, &state));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn is_adapter_safe_to_delete_forbids_last_known_good_adapter() {
+        let dir = make_temp_model_dir("safe-delete-lkg");
+        let state = MlxState::default();
+        *state.last_known_good_serving.lock().unwrap() = Some(ServingStatus {
+            pid: 2,
+            port: 8080,
+            model_path: "/models/base".into(),
+            adapter_path: Some(dir.to_string_lossy().to_string()),
+            runtime: MlxRuntime::MlxLm,
+        });
+        assert!(!is_adapter_safe_to_delete(&dir, &state));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn is_adapter_safe_to_delete_allows_unrelated_adapter() {
+        let dir = make_temp_model_dir("safe-delete-unrelated");
+        let other_dir = make_temp_model_dir("safe-delete-other");
+        let state = MlxState::default();
+        *state.serving.lock().unwrap() = Some(ServingStatus {
+            pid: 3,
+            port: 8080,
+            model_path: "/models/base".into(),
+            adapter_path: Some(other_dir.to_string_lossy().to_string()),
+            runtime: MlxRuntime::MlxLm,
+        });
+        assert!(is_adapter_safe_to_delete(&dir, &state));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_dir_all(&other_dir).ok();
     }
 }
