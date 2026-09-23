@@ -157,13 +157,7 @@ pub(crate) fn validate_home_subpath(p: &str) -> Result<PathBuf, String> {
     let home = home_dir()?
         .canonicalize()
         .map_err(|e| format!("Failed to resolve HOME path: {e}"))?;
-    let expanded: PathBuf = if p == "~" {
-        home.clone()
-    } else if let Some(rest) = p.strip_prefix("~/") {
-        home.join(rest)
-    } else {
-        PathBuf::from(p)
-    };
+    let expanded = services::home_path::expand_home_path(Path::new(p), &home);
     let canonical = expanded
         .canonicalize()
         .map_err(|e| format!("Path not found: {p} ({e})"))?;
@@ -208,20 +202,20 @@ pub(crate) fn manifest_verification_status(adapter_dir: &Path) -> &'static str {
 /// 시스템 rm) 기능은 이 스코프에 포함하지 않는다, 삭제 UI/커맨드는 별도 결정 사항이다.
 ///
 /// 순수 판정 로직(canonical 경로 비교로 서빙 중/last-known-good/진행 중인 학습
-/// 세 슬롯 중 하나라도 일치하는지)은 `services::mlx_artifacts::is_adapter_protected`에
+/// 세 슬롯 중 하나라도 일치하는지)은 `services::mlx_artifacts::is_adapter_safe_to_delete`에
 /// 있다(2026-09-23 리뷰로 이동). 이 함수가 맡는 건 `MlxState`의 세 Mutex를 잠그고
 /// 값을 뽑아 그 순수 함수에 넘기는 얇은 호출부뿐이다.
 ///
 /// **잠금이 poison되면(다른 스레드가 그 락을 쥔 채 panic) 즉시 false(삭제 불가)를
 /// 반환한다** — 예전 구현은 `.lock().ok().unwrap_or(false)`로 "잠금 실패 = 보호 없음"을
 /// 거쳐 최종적으로 "안전"을 반환했다. 셋 중 어느 것도 모른다는 사실을 "안전하다"로
-/// 지어내지 않는다(D22, fail-closed) — `is_adapter_protected`의 계약대로, poison된
+/// 지어내지 않는다(D22, fail-closed) — 서비스 함수의 계약대로, poison된
 /// 슬롯은 `None`으로 뭉개 넘기지 않고 그 자리에서 함수를 빠져나온다.
 ///
 /// 진행 중인 학습의 출력 디렉터리는 `TrainingStatus.adapter_name`(스폰 시점부터
 /// 항상 채워짐, `adapter_path`와 달리 "done"을 기다리지 않는다)으로 역산한다 —
 /// 2026-09-23 리뷰 전에는 이 세 번째 경우가 아예 없어 진행 중인 학습의 산출물이
-/// 삭제 가능하다고 오판했다.
+/// 삭제 가능하다고 오판했다. HOME 조회 실패도 서비스에 전달해 삭제를 거부한다.
 ///
 /// 프런트 소비자가 아직 없어 IPC로는 노출하지 않는다(위 `manifest_verification_status`와
 /// 같은 이유).
@@ -235,23 +229,20 @@ pub(crate) fn is_adapter_safe_to_delete(adapter_dir: &Path, mlx_state: &MlxState
         Ok(g) => g.as_ref().and_then(|s| s.adapter_path.clone()),
         Err(_) => return false,
     };
-    let in_progress_adapter_dir = match mlx_state.training.lock() {
+    let in_progress_adapter_name = match mlx_state.training.lock() {
         Ok(g) => g
             .as_ref()
             .filter(|t| should_record_exit(&t.status))
-            .and_then(|t| {
-                home_dir()
-                    .ok()
-                    .map(|home| services::mlx_artifacts::adapter_output_dir(&home, &t.adapter_name))
-            }),
+            .map(|t| t.adapter_name.clone()),
         Err(_) => return false,
     };
 
-    !services::mlx_artifacts::is_adapter_protected(
+    services::mlx_artifacts::is_adapter_safe_to_delete(
         adapter_dir,
+        home_dir().ok().as_deref(),
         serving_adapter_path.as_deref(),
         last_known_good_adapter_path.as_deref(),
-        in_progress_adapter_dir.as_deref(),
+        in_progress_adapter_name.as_deref(),
     )
 }
 
@@ -1660,13 +1651,12 @@ mod tests {
     }
 
     #[test]
-    fn is_adapter_safe_to_delete_forbids_non_canonical_alias_of_serving_adapter() {
-        // 서빙 중인 adapter_path가 `.`/`..`이 섞인 비-canonical 별칭으로 기록돼 있어도
-        // (예: 다른 코드 경로가 join 결과를 canonicalize하지 않고 저장) 실제로는 같은
-        // 디렉터리를 가리킨다 — canonicalize를 거치지 않는 문자열 비교라면 이 케이스를
-        // "다른 경로"로 오판해 삭제를 허용했을 것이다(2026-09-23 리뷰).
-        let dir = make_temp_model_dir("safe-delete-alias");
-        let alias = dir.join("."); // canonicalize하면 dir와 완전히 같은 경로가 된다.
+    fn is_adapter_safe_to_delete_forbids_symlink_of_serving_adapter() {
+        let root = make_temp_model_dir("safe-delete-symlink");
+        let dir = root.join("adapter");
+        let alias = root.join("alias");
+        std::fs::create_dir(&dir).unwrap();
+        std::os::unix::fs::symlink(&dir, &alias).unwrap();
         let state = MlxState::default();
         *state.serving.lock().unwrap() = Some(ServingStatus {
             pid: 9,
@@ -1676,7 +1666,7 @@ mod tests {
             runtime: MlxRuntime::MlxLm,
         });
         assert!(!is_adapter_safe_to_delete(&dir, &state));
-        std::fs::remove_dir_all(&dir).ok();
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

@@ -4,14 +4,13 @@
 //! 맡고, 여기서는 `MlxState`/`tauri` 의존 없이 값만으로 판정한다(2026-09-23 리뷰
 //! LOW 파인딩 — mlx.rs가 1128→1612줄로 불어난 것 중 일부를 여기로 옮긴다).
 //!
-//! 이동하면서 동작은 바꾸지 않았다 — `commands::mlx::tests`의 기존
-//! `is_adapter_safe_to_delete_*`/`manifest_verification_status_*` 통합 테스트가
-//! `MlxState`를 통해 그대로 남아 있고, 이 파일의 테스트는 그 아래 순수 로직만
-//! 추가로 좁혀서 검증한다.
+//! HOME 조회 실패 시 삭제를 거부하고, 경로 비교 전에 홈 확장과 canonicalize를
+//! 수행한다. `tests`는 전역 환경 변경 없이 HOME 실패와 실제 symlink를 검증한다.
 
 use std::path::{Path, PathBuf};
 
 use crate::services::artifact_manifest::verify_manifest;
+use crate::services::home_path::expand_home_path;
 
 /// 어댑터 디렉터리의 매니페스트 검증 상태(이슈 #33). `services::artifact_manifest`의
 /// `verify_manifest`를 그대로 재사용해 판정만 셋으로 좁힌다 — 별도 파서/sha256
@@ -37,6 +36,33 @@ pub(crate) fn adapter_output_dir(home: &Path, adapter_name: &str) -> PathBuf {
     home.join(".kubemetal").join("adapters").join(adapter_name)
 }
 
+/// 호출부가 조회한 HOME과 활성 슬롯으로 삭제 가능 여부를 판정한다.
+/// HOME 조회 결과를 값으로 받아 전역 환경 변경 없이 실패 경로도 검증한다.
+/// 슬롯의 `None`은 비어 있다는 뜻이다. Mutex poison처럼 상태를 모르는 경우
+/// 호출부는 이 함수를 호출하지 않고 즉시 false를 반환해야 한다(D22).
+pub(crate) fn is_adapter_safe_to_delete(
+    adapter_dir: &Path,
+    home: Option<&Path>,
+    serving_adapter_path: Option<&str>,
+    last_known_good_adapter_path: Option<&str>,
+    in_progress_adapter_name: Option<&str>,
+) -> bool {
+    // D22: HOME을 모르면 학습 경로도 확인 불가다. 조회가 회복될 때까지
+    // 관련 없는 경로도 보수적으로 거부하며, 보호 없음으로 대체하지 않는다.
+    let Some(home) = home else {
+        return false;
+    };
+    let in_progress_adapter_dir =
+        in_progress_adapter_name.map(|name| adapter_output_dir(home, name));
+    !is_adapter_protected(
+        adapter_dir,
+        home,
+        serving_adapter_path,
+        last_known_good_adapter_path,
+        in_progress_adapter_dir.as_deref(),
+    )
+}
+
 /// 심볼릭 링크·`.`/`..` 컴포넌트가 섞인 별칭 경로가 canonical 비교를 피해가지 못하게
 /// 정규화한다. canonicalize가 실패하면(경로가 아직 없는 경우 등) 원본을 그대로 쓴다 —
 /// 존재하지 않는 경로를 있는 그대로 보고하는 건 괜찮지만, 존재하는 서빙 중 어댑터의
@@ -50,20 +76,16 @@ fn canonicalize_or_self(p: &Path) -> PathBuf {
 /// 헬스체크를 통과해 last-known-good으로 기록된 adapter, 아직 "done"에 이르지 못해
 /// `TrainingStatus.adapter_path`가 비어 있는 **진행 중인 학습**의 출력 디렉터리.
 ///
-/// **호출부(mlx.rs)가 반드시 지켜야 할 계약**: 세 슬롯 중 어느 것을 뒷받침하는
-/// Mutex가 poison됐다면(다른 스레드가 그 락을 쥔 채 panic) 그 슬롯 값을 `None`으로
-/// 여기 넘기지 말고 **호출 자체를 생략하고 즉시 false(=삭제 불가)를 반환**해야 한다
-/// — `None`은 "그 슬롯은 비어 있다"는 뜻이지 "모른다"는 뜻이 아니라서, poison을
-/// `None`으로 뭉개 넘기면 이 함수가 "보호 대상 아님"으로 오판한다(D22, fail-closed는
-/// 이 함수가 아니라 그 계약을 지키는 호출부의 책임이다).
-pub(crate) fn is_adapter_protected(
+fn is_adapter_protected(
     adapter_dir: &Path,
+    home: &Path,
     serving_adapter_path: Option<&str>,
     last_known_good_adapter_path: Option<&str>,
     in_progress_adapter_dir: Option<&Path>,
 ) -> bool {
-    let target = canonicalize_or_self(adapter_dir);
-    let matches_str = |p: &str| canonicalize_or_self(Path::new(p)) == target;
+    let normalize = |p: &Path| canonicalize_or_self(&expand_home_path(p, home));
+    let target = normalize(adapter_dir);
+    let matches_str = |p: &str| normalize(Path::new(p)) == target;
 
     if serving_adapter_path.map(matches_str).unwrap_or(false) {
         return true;
@@ -75,7 +97,7 @@ pub(crate) fn is_adapter_protected(
         return true;
     }
     if let Some(dir) = in_progress_adapter_dir {
-        if canonicalize_or_self(dir) == target {
+        if normalize(dir) == target {
             return true;
         }
     }
@@ -83,112 +105,4 @@ pub(crate) fn is_adapter_protected(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::services::artifact_manifest::ManifestContext;
-
-    fn make_temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "kubemetal-mlx-artifacts-test-{name}-{}-{:?}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        std::fs::create_dir_all(&dir).expect("failed to create temp dir");
-        dir
-    }
-
-    fn manifest_context() -> ManifestContext {
-        ManifestContext {
-            runtime: "mlx-lm".into(),
-            base_model: "/base".into(),
-        }
-    }
-
-    #[test]
-    fn manifest_verification_status_returns_missing_without_manifest() {
-        let dir = make_temp_dir("manifest-missing");
-        assert_eq!(manifest_verification_status(&dir), "missing");
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn manifest_verification_status_returns_verified_when_hashes_match() {
-        let dir = make_temp_dir("manifest-verified");
-        std::fs::write(dir.join("adapters.safetensors"), b"weights").unwrap();
-        crate::services::artifact_manifest::write_manifest(&dir, manifest_context())
-            .expect("manifest write should succeed");
-        assert_eq!(manifest_verification_status(&dir), "verified");
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn manifest_verification_status_returns_corrupt_when_hash_mismatches() {
-        let dir = make_temp_dir("manifest-corrupt");
-        std::fs::write(dir.join("adapters.safetensors"), b"weights").unwrap();
-        crate::services::artifact_manifest::write_manifest(&dir, manifest_context())
-            .expect("manifest write should succeed");
-        std::fs::write(dir.join("adapters.safetensors"), b"tampered").unwrap();
-        assert_eq!(manifest_verification_status(&dir), "corrupt");
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn adapter_output_dir_joins_home_dotkubemetal_adapters_and_name() {
-        let home = Path::new("/Users/example");
-        assert_eq!(
-            adapter_output_dir(home, "my-adapter"),
-            Path::new("/Users/example/.kubemetal/adapters/my-adapter")
-        );
-    }
-
-    #[test]
-    fn is_adapter_protected_matches_serving_path_exactly() {
-        let dir = make_temp_dir("protected-serving");
-        let path_str = dir.to_string_lossy().to_string();
-        assert!(is_adapter_protected(&dir, Some(&path_str), None, None));
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn is_adapter_protected_matches_last_known_good_path() {
-        let dir = make_temp_dir("protected-lkg");
-        let path_str = dir.to_string_lossy().to_string();
-        assert!(is_adapter_protected(&dir, None, Some(&path_str), None));
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn is_adapter_protected_matches_non_canonical_alias_of_serving_path() {
-        // `<dir>/.`은 canonicalize하면 dir 자신과 완전히 같은 경로가 된다 — 문자열
-        // 비교였다면 놓쳤을 별칭이다(2026-09-23 리뷰).
-        let dir = make_temp_dir("protected-alias");
-        let alias = dir.join(".").to_string_lossy().to_string();
-        assert!(is_adapter_protected(&dir, Some(&alias), None, None));
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn is_adapter_protected_matches_in_progress_training_dir() {
-        let dir = make_temp_dir("protected-in-progress");
-        assert!(is_adapter_protected(&dir, None, None, Some(&dir)));
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn is_adapter_protected_allows_unrelated_path() {
-        let dir = make_temp_dir("unprotected");
-        let other = make_temp_dir("unprotected-other");
-        let other_str = other.to_string_lossy().to_string();
-        assert!(!is_adapter_protected(
-            &dir,
-            Some(&other_str),
-            Some(&other_str),
-            Some(&other)
-        ));
-        std::fs::remove_dir_all(&dir).ok();
-        std::fs::remove_dir_all(&other).ok();
-    }
-}
+mod tests;
