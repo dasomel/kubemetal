@@ -130,8 +130,24 @@ application only.
 
 Third-party Python packages (mlx-lm, mlx-vlm, lancedb, sentence-transformers,
 dvc, prefect, lm-eval and their dependencies) are installed by the app into a
-host venv from PyPI at the user's request; they are not redistributed here.
-All of them are MIT or Apache-2.0 as of this writing.
+host venv from PyPI at the user's request; KubeMetal does not redistribute
+them. That dependency set is mostly, but NOT entirely, MIT/Apache-2.0. A
+measured inventory of one such venv (238 packages: mlx-lm 0.31.3, mlx-vlm
+0.6.7, lancedb 0.34.0, sentence-transformers 5.6.0, dvc 3.67.1, prefect
+3.7.8, lm-eval 0.4.12) found copyleft and weak-copyleft components, among
+them grandalf (GPL-2.0, via dvc), pygit2 (GPL-2.0 with linking exception,
+via fsspec), chardet (LGPL-2.1+, via lm-eval), text-unidecode (Artistic or
+GPL, via prefect) and several MPL-2.0 packages (certifi, pathspec, shtab,
+orjson, tqdm). mlx-lm and mlx-vlm themselves are MIT.
+
+`mlx.rs` installs these unpinned (`pip install -U`), so the exact set
+resolved differs per machine and per install date and cannot be fixed in
+this file. Run `make runtime-license-inventory` to generate
+`runtime-license-inventory.json` for the venv actually present on a given
+machine; it fails closed on any package whose license cannot be identified.
+KubeMetal shipping these packages is not a distribution, but handing that
+venv — or a machine image containing it — to a third party is one the user
+performs, and the obligations above then fall to the user.
 
 ================================================================================
 Weak-copyleft components (MPL-2.0) — source availability

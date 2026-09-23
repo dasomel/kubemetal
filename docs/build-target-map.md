@@ -78,7 +78,27 @@ mlx-vlm runtime libraries themselves (their own PyPI package licenses) — arbit
 user-downloaded model weights stay the user's own compliance responsibility, not this
 repo's.
 
-That runtime-library coverage is **not yet closed**: `scripts/release/gen_dependency_diff.sh`
-extracts dependency name/version/license only via `cargo metadata` and `pnpm licenses`
-(see its header comment) — it has no step that inspects the Python venv `mlx-lm`/`mlx-vlm`
-are installed into. That gap remains open.
+That runtime-library coverage is now closed by
+`scripts/release/gen_runtime_license_inventory.sh` (`make runtime-license-inventory`).
+`gen_dependency_diff.sh` still only covers `cargo metadata` and `pnpm licenses`; the new
+script is the Python side, reading `importlib.metadata` out of the venv `mlx.rs` installs
+into and writing `runtime-license-inventory.json`. It fails closed on any package whose
+license cannot be identified.
+
+It is deliberately **not** a release gate and not part of `make verify`, for the same
+reason `dependency-diff` isn't: the venv is created on demand at `~/.kubemetal/venv` by
+`src-tauri/src/commands/mlx.rs:260-282` with an unpinned `pip install -U`, so it does not
+exist on a CI runner and does not resolve to the same set twice. An inventory generated in
+CI would describe a venv no user has. Evidence therefore comes from running it on the
+machine whose venv is being documented.
+
+Measured on the maintainer's machine 2026-09-23: 238 packages, 11 copyleft/weak-copyleft
+(including `grandalf` GPL-2.0 via dvc and `pygit2` GPL-2.0-with-linking-exception via
+fsspec), 2 licenses identifiable only from embedded full text and therefore recorded in
+`scripts/release/runtime-license-overrides.json` with a human-audited source URL. This
+disproved `NOTICE`'s previous claim that the venv set was entirely MIT/Apache-2.0, which
+has been corrected.
+
+Model **weights** remain out of scope per the owner decision above, and there is no
+in-repo model catalog to inventory: `modelhub.rs:266-296` searches the Hugging Face API
+live and downloads whatever `repo_id` the user supplies.
