@@ -85,10 +85,10 @@ pub fn resolve_bundled_resource(resource_dir: &std::path::Path, relative: &str) 
 }
 
 /// pid 생존 확인 — 시그널 0은 실제로 프로세스를 죽이지 않고 생존 및 권한만 확인한다(kill(2) 관례).
-/// pid 0은 거부한다: `kill(0, ...)`은 호출자 자신의 프로세스 그룹으로 가므로, 0을 살아있는
-/// 것으로 오판해 이 앱 자신을 고아라고 보고하는 사고를 막는다(guardrails::signal_pid 가드와 동일).
+/// pid 0 및 i32::MAX 초과는 거부한다: `kill(0, ...)`은 프로세스 그룹, 음수는 전체 프로세스 권한을
+/// 검사하므로 살아있는 것으로 오판하는 사고를 막는다(D22, GitHub #13).
 pub fn pid_is_alive(pid: u32) -> bool {
-    if pid == 0 {
+    if pid == 0 || pid > i32::MAX as u32 {
         return false;
     }
     let result = unsafe { libc::kill(pid as i32, 0) };
@@ -98,8 +98,8 @@ pub fn pid_is_alive(pid: u32) -> bool {
 /// pid에 대한 프로세스 전체 명령줄(args)을 조회한다.
 /// macOS `ps -p <pid> -o command=`를 `external_command`로 호출하여 비동기로 조회한다(D5/D22).
 pub async fn get_process_cmdline(pid: u32) -> Result<String, String> {
-    if pid == 0 {
-        return Err("invalid pid 0".to_string());
+    if pid == 0 || pid > i32::MAX as u32 {
+        return Err(format!("invalid pid {pid}"));
     }
     let mut cmd = external_command("ps")?;
     cmd.args(["-p", &pid.to_string(), "-o", "command="]);
@@ -156,6 +156,12 @@ mod tests {
     #[test]
     fn pid_is_alive_rejects_pid_zero() {
         assert!(!pid_is_alive(0));
+    }
+
+    #[test]
+    fn pid_is_alive_rejects_out_of_range_pid() {
+        assert!(!pid_is_alive(u32::MAX));
+        assert!(!pid_is_alive(i32::MAX as u32 + 1));
     }
 
     #[test]
