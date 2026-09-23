@@ -43,11 +43,24 @@
 # 승격하지 않는다 — 어떤 BSD 변종인지 classifier가 말하지 않는데 추측하면
 # 그게 바로 D22가 금지하는 "상태 지어내기"다. 원문 그대로 보존한다.
 #
+# dual-license 병기 (리뷰 후속, grandalf 0.8 사례): classifier는 옵션 하나만
+# 표현할 수 있어(예: grandalf의 실제 License 필드는 "GPLv2 | EPLv1"인데
+# classifier는 GPLv2 하나만 선언) rule 2(Classifier)가 rule 3(License 필드)를
+# 이기면 대안 라이선스가 조용히 사라진다. license_source가 "Classifier"이고
+# License 필드가 비어있지 않으며 rule 3와 같은 60자 미만 기준을 만족하고
+# classifier 추출값과 다르면, 그 원문을 license_field 키에 그대로 병기한다 —
+# 병합/재해석하지 않고 두 값을 다 남겨 독자가 불일치를 직접 보게 한다. license
+# 필드가 존재하면 카피레프트 감지(COPYLEFT_RE)도 그 값까지 함께 스캔한다.
+#
 # 어긋남 가드: venv 기본 경로($HOME/.kubemetal/venv)가 이 스크립트와
 # src-tauri/src/commands/mlx.rs::venv_dir()에 이중으로 있다. 한쪽만 바뀌면
 # 조용히 어긋나므로(AGENTS.md: "같은 사실이 두 곳에 있으면 이미 틀린 것") mlx.rs가
-# 여전히 ".kubemetal"과 "venv"를 함께 포함하는지 매 실행마다 검사하고, self-test
-# 에도 포함한다.
+# 여전히 ".kubemetal"과 "venv"를 함께 포함하는지 매 실행마다 검사한다. 검사
+# 대상은 venv_dir() 함수의 시그니처가 아니라 그 "본문"(중괄호 사이)만이다 —
+# 함수 이름 자체가 "venv_dir"라 "venv"를 포함하고, mlx.rs 다른 곳의 문서
+# 주석에도 "~/.kubemetal/venv"가 등장하므로, 파일 전체나 시그니처까지 검사
+# 범위에 넣으면 본문(실제 반환 경로)이 다른 곳으로 바뀌어도 가드가 조용히
+# 통과해버린다(리뷰에서 발견). self-test에도 포함한다.
 # ==============================================================================
 set -euo pipefail
 
@@ -71,11 +84,43 @@ usage() {
   exit 2
 }
 
-# mlx.rs venv_dir()의 정의 텍스트가 여전히 ".kubemetal"과 "venv"를 함께 쓰는지
-# 검사하는 순수 함수 — self-test가 합성 입력으로도 검증할 수 있게 분리한다.
+# mlx.rs 소스 텍스트에서 venv_dir() 함수의 "본문"(시그니처를 뺀, 중괄호 사이
+# 텍스트)만 추출한다. 함수를 못 찾으면 빈 문자열을 낸다 — 그러면 호출자가
+# fail-closed로 처리한다. 시그니처를 포함시키면 "venv_dir"라는 함수 이름
+# 자체에 "venv"가 들어 있어 본문이 완전히 다른 경로로 바뀌어도 가드가
+# 통과해버리므로 반드시 본문만 봐야 한다.
+extract_venv_dir_body() {
+  local content="$1"
+  printf '%s' "$content" | python3 -c '
+import re
+import sys
+
+content = sys.stdin.read()
+m = re.search(r"fn\s+venv_dir\s*\([^)]*\)[^{]*\{", content)
+if not m:
+    sys.exit(0)
+depth = 1
+i = m.end()
+while i < len(content) and depth > 0:
+    if content[i] == "{":
+        depth += 1
+    elif content[i] == "}":
+        depth -= 1
+    i += 1
+sys.stdout.write(content[m.end():i - 1])
+'
+}
+
+# venv_dir() 본문이 여전히 ".kubemetal"과 "venv"를 함께 쓰는지 검사하는 순수
+# 함수 — self-test가 합성 입력으로도 검증할 수 있게 분리한다. 시그니처가 아닌
+# 본문만 검사하므로, 함수 이름이나 파일 다른 곳의 문서 주석에 등장하는
+# "~/.kubemetal/venv" 문자열로는 어긋남을 숨길 수 없다.
 check_mlx_divergence_content() {
   local content="$1"
-  echo "$content" | grep -q "\.kubemetal" && echo "$content" | grep -q "venv"
+  local body
+  body="$(extract_venv_dir_body "$content")"
+  [ -n "$body" ] || return 1
+  echo "$body" | grep -q "\.kubemetal" && echo "$body" | grep -q "venv"
 }
 
 check_mlx_divergence_file() {
@@ -228,6 +273,20 @@ def main():
 
         record = {"name": name, "version": version, "license": lic, "license_source": source}
 
+        # dual-license 병기: classifier가 이겼는데(license_source == "Classifier")
+        # License 필드가 rule 3와 같은 60자 미만 식별자 기준을 만족하고 classifier
+        # 추출값과 다르면, 원문 그대로 license_field에 병기한다. license를 바꾸거나
+        # 두 값을 합치지 않는다 — 독자가 불일치를 직접 보게 하는 것이 목적이다.
+        raw_license_field = p.get("license_field")
+        if (
+            source == "Classifier"
+            and raw_license_field
+            and raw_license_field.strip()
+            and len(raw_license_field.strip()) < 60
+            and raw_license_field.strip() != lic
+        ):
+            record["license_field"] = raw_license_field.strip()
+
         # 가드: 오버라이드는 규칙 1-3이 전부 UNKNOWN(license_source == "NONE")을
         # 낸 패키지에만 적용한다 — 메타데이터가 이미 선언한 라이선스는 절대
         # 덮어쓰지 않는다.
@@ -245,7 +304,9 @@ def main():
         inventory.append(record)
         if lic == "UNKNOWN":
             unknowns.append("{}=={}".format(name, version))
-        elif COPYLEFT_RE.search(lic):
+        elif COPYLEFT_RE.search(lic) or (
+            record.get("license_field") and COPYLEFT_RE.search(record["license_field"])
+        ):
             copyleft.append("{}=={} ({})".format(name, version, lic))
 
     inventory.sort(key=lambda x: x["name"].lower())
@@ -370,7 +431,18 @@ if [ "${1:-}" = "--self-test" ]; then
     {"name":"pkg-gpl","version":"1.0","license_expression":null,
      "classifiers":[],"license_field":"GPL-3.0-only"},
     {"name":"pkg-bsd","version":"1.0","license_expression":null,
-     "classifiers":["License :: OSI Approved :: BSD License"],"license_field":null}
+     "classifiers":["License :: OSI Approved :: BSD License"],"license_field":null},
+    {"name":"pkg-dual","version":"1.0","license_expression":null,
+     "classifiers":["License :: OSI Approved :: GNU General Public License v2 (GPLv2)"],
+     "license_field":"GPLv2 | EPLv1"},
+    {"name":"pkg-cls-same","version":"1.0","license_expression":null,
+     "classifiers":["License :: OSI Approved :: MIT License"],"license_field":"MIT License"},
+    {"name":"pkg-cls-longfield","version":"1.0","license_expression":null,
+     "classifiers":["License :: OSI Approved :: Apache Software License"],
+     "license_field":"This is a very long embedded license text that goes on and on well past sixty chars"},
+    {"name":"pkg-copyleft-via-field","version":"1.0","license_expression":null,
+     "classifiers":["License :: OSI Approved :: Zope Public License"],
+     "license_field":"MPL-2.0"}
   ]}'
 
   # 1: License-Expression 우선 / 4: License 필드 fallback / 10: 카피레프트는
@@ -452,6 +524,35 @@ check(
 check(
     "애매한 'BSD License' 원문 보존 (정밀 SPDX로 승격 금지)",
     by_name["pkg-bsd"]["license"] == "BSD License",
+)
+check(
+    "Fix B(a): classifier + 다른 짧은 License 필드 -> license_field 병기 (dual-license, grandalf 사례)",
+    by_name["pkg-dual"]["license"] == "GNU General Public License v2 (GPLv2)"
+    and by_name["pkg-dual"]["license_source"] == "Classifier"
+    and by_name["pkg-dual"].get("license_field") == "GPLv2 | EPLv1",
+)
+check(
+    "Fix B(b): classifier + 동일한 License 필드 -> license_field 중복 기록 안 함",
+    by_name["pkg-cls-same"]["license"] == "MIT License"
+    and "license_field" not in by_name["pkg-cls-same"],
+)
+check(
+    "Fix B(c): classifier + 60자 이상 License 필드(전문) -> license_field 기록 안 함",
+    by_name["pkg-cls-longfield"]["license"] == "Apache Software License"
+    and "license_field" not in by_name["pkg-cls-longfield"],
+)
+check(
+    "Fix B(d): License-Expression 출처는 license_field 병기 대상 아님",
+    by_name["pkg-expr"]["license_source"] == "License-Expression"
+    and "license_field" not in by_name["pkg-expr"],
+)
+check(
+    "Fix B: classifier 값 자체는 카피레프트가 아니어도 license_field가 카피레프트면 summary.copyleft에 감지됨",
+    by_name["pkg-copyleft-via-field"]["license"] == "Zope Public License"
+    and by_name["pkg-copyleft-via-field"].get("license_field") == "MPL-2.0"
+    and any(
+        e.startswith("pkg-copyleft-via-field==") for e in data["summary"]["copyleft"]
+    ),
 )
 names = [p["name"].lower() for p in data["packages"]]
 check("packages가 소문자 이름 기준으로 정렬됨", names == sorted(names))
@@ -625,6 +726,26 @@ PYEOF
     fails=$((fails + 1))
   else
     echo "  ok   mlx.rs 어긋남 가드 음성 대조군 (drift 있는 합성 내용을 실패로 감지)"
+  fi
+
+  # 진짜 구멍이었던 경우: 문서 주석은 실제 파일 그대로("~/.kubemetal/venv"를
+  # 포함) 남아 있지만 venv_dir()의 본문만 다른 경로로 어긋난 합성 파일.
+  # 시그니처/파일 전체를 검사하던 예전 로직은 주석의 ".kubemetal"과 함수 이름
+  # "venv_dir"의 "venv" 부분 문자열만으로 이 케이스를 통과시켰다 — 본문만
+  # 추출해서 검사해야 실제로 잡힌다.
+  diverged_body_real_comment='
+/// prefect.rs 등 다른 커맨드 모듈도 동일한 앱 전용 venv(~/.kubemetal/venv)를 사용한다(D15) —
+/// venv 경로를 분산시키지 않도록 mlx.rs를 단일 출처로 두고 pub(crate)로 재사용한다.
+pub(crate) fn venv_dir() -> Result<PathBuf, String> {
+    Ok(home_dir()?.join("mlxdata").join("pyenv"))
+}
+'
+  total=$((total + 1))
+  if check_mlx_divergence_content "$diverged_body_real_comment"; then
+    echo "  BAD  mlx.rs 어긋남 가드 음성 대조군 (진짜 구멍: 주석은 그대로 두고 본문만 어긋난 경우를 통과시킴)"
+    fails=$((fails + 1))
+  else
+    echo "  ok   mlx.rs 어긋남 가드 음성 대조군 (주석 보존 + 본문만 어긋난 경우를 실패로 감지)"
   fi
 
   [ "$fails" -eq 0 ] || { echo "self-test 실패 ${fails}건"; exit 1; }

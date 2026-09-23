@@ -93,12 +93,14 @@ CI would describe a venv no user has. Evidence therefore comes from running it o
 machine whose venv is being documented.
 
 Measured on the maintainer's machine 2026-09-23: 238 packages, 11 copyleft/weak-copyleft
-(including `grandalf` GPL-2.0 via dvc and `pygit2` GPL-2.0-with-linking-exception via
-fsspec), 2 licenses identifiable only from embedded full text and therefore recorded in
+(including `grandalf`, dual-licensed GPLv2 or EPLv1, via dvc, and `pygit2`
+GPL-2.0-with-linking-exception via fsspec), 2 licenses identifiable only from embedded
+full text and therefore recorded in
 `scripts/release/runtime-license-overrides.json` with a human-audited source URL. This
 disproved `NOTICE`'s previous claim that the venv set was entirely MIT/Apache-2.0, which
 has been corrected.
 
 Model **weights** remain out of scope per the owner decision above, and there is no
-in-repo model catalog to inventory: `modelhub.rs:266-296` searches the Hugging Face API
-live and downloads whatever `repo_id` the user supplies.
+in-repo model catalog to inventory: `modelhub.rs:248-282` (`search_hf_models`) searches
+the Hugging Face API live, and `modelhub.rs:298-364` (`run_download_inner`) downloads
+whatever `repo_id` the user supplies.

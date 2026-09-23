@@ -135,7 +135,7 @@ them. That dependency set is mostly, but NOT entirely, MIT/Apache-2.0. A
 measured inventory of one such venv (238 packages: mlx-lm 0.31.3, mlx-vlm
 0.6.7, lancedb 0.34.0, sentence-transformers 5.6.0, dvc 3.67.1, prefect
 3.7.8, lm-eval 0.4.12) found copyleft and weak-copyleft components, among
-them grandalf (GPL-2.0, via dvc), pygit2 (GPL-2.0 with linking exception,
+them grandalf (dual-licensed GPLv2 or EPLv1, via dvc), pygit2 (GPL-2.0 with linking exception,
 via fsspec), chardet (LGPL-2.1+, via lm-eval), text-unidecode (Artistic or
 GPL, via prefect) and several MPL-2.0 packages (certifi, pathspec, shtab,
 orjson, tqdm). mlx-lm and mlx-vlm themselves are MIT.
