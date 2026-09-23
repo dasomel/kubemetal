@@ -294,23 +294,51 @@ pub(crate) fn is_adapter_safe_to_delete(adapter_dir: &Path, mlx_state: &MlxState
 #[derive(Debug, Deserialize)]
 struct ModelConfigFile {
     quantization: Option<serde_json::Value>,
+    /// transformers 계열(bitsandbytes/GPTQ/AWQ) 컨버전에서 흔한 표기 — mlx-community
+    /// 자체 quantize 산출물은 `quantization`을 쓰지만(위 필드), 다른 툴체인을 거친
+    /// config.json이 이 키를 대신 쓸 수 있다(2026-09-23 리뷰로 추가; 이 기기의
+    /// ~/.cache/huggingface에 실제 사례는 없었고 방어적으로 추가한다 — 아래
+    /// is_quantized_model 문서에 실측 결과를 남긴다).
+    quantization_config: Option<serde_json::Value>,
+    text_config: Option<TextConfigFile>,
 }
 
-/// 모델이 quantized인지 판별한다. mlx 커뮤니티 모델은 quantize 시 `config.json`에
-/// 최상위 `quantization` 필드(group_size/bits)가 추가된다 — 그 필드의 유무만 본다.
-/// `config.json`이 없거나 파싱에 실패하면 판별 불가로 `None`을 반환한다: 이슈 #23은
-/// "모르면 통과시켜라"(D22)를 요구한다 — false positive로 정상 학습을 막는 것이
-/// 크래시를 막는 것보다 나쁘다.
+#[derive(Debug, Deserialize)]
+struct TextConfigFile {
+    quantization_config: Option<serde_json::Value>,
+}
+
+/// 모델이 quantized인지 판별한다. 세 위치 중 하나라도 있으면 quantized로 본다:
+/// 최상위 `quantization`(mlx-community 자체 quantize 산출물, group_size/bits),
+/// 최상위 `quantization_config`, `text_config.quantization_config`(VLM에서 텍스트
+/// 백본만 양자화된 경우 — 위 `ModelConfigFile` 문서 참고). `config.json`이 없거나
+/// 파싱에 실패하면 판별 불가로 `None`을 반환한다: 이슈 #23은 "모르면 통과시켜라"(D22)를
+/// 요구한다 — false positive로 정상 학습을 막는 것이 크래시를 막는 것보다 나쁘다.
+///
+/// **실측(2026-09-23, 이 기기의 ~/.cache/huggingface)**: mlx-community의
+/// `Qwen2-VL-2B-Instruct-4bit`는 최상위 `quantization: {group_size: 64, bits: 4}`만
+/// 쓰고 `quantization_config`/`text_config`는 없다 — bf16 짝(`Qwen2-VL-2B-Instruct-bf16`)은
+/// 둘 다 없다. 로컬 캐시 전체(허깅페이스 hub 디렉터리)를 훑어도 `quantization_config`를
+/// 쓰는 config.json은 하나도 없었다 — 그 분기는 실사례가 아니라 리뷰 요청에 따른
+/// 방어적 추가다.
 fn is_quantized_model(model_dir: &std::path::Path) -> Option<bool> {
     let content = std::fs::read_to_string(model_dir.join("config.json")).ok()?;
     let parsed: ModelConfigFile = serde_json::from_str(&content).ok()?;
-    Some(parsed.quantization.is_some())
+    Some(
+        parsed.quantization.is_some()
+            || parsed.quantization_config.is_some()
+            || parsed
+                .text_config
+                .and_then(|t| t.quantization_config)
+                .is_some(),
+    )
 }
 
-/// D29 실측 비호환 조합을 spawn 전에 거부한다: 4bit quantized 모델에 `--train-vision`을
-/// 얹으면 양자화된 가중치에 대한 gradient를 요구해 `QuantizedMatmul::vjp`에서 죽는다
-/// (LoRA-only는 문제없다 — frozen quantized layer는 forward-only). 판별 불가(`None`)면
-/// 통과시킨다 — 알 수 없는 것을 지어내 정상 학습을 막지 않는다(D22).
+/// D29 실측 비호환 조합을 spawn 전에 거부한다: 양자화된(4-bit/8-bit 등) 모델에
+/// `--train-vision`을 얹으면 양자화된 가중치에 대한 gradient를 요구해
+/// `QuantizedMatmul::vjp`에서 죽는다(LoRA-only는 문제없다 — frozen quantized layer는
+/// forward-only). 판별 불가(`None`)면 통과시킨다 — 알 수 없는 것을 지어내 정상 학습을
+/// 막지 않는다(D22).
 fn reject_incompatible_runtime_combo(
     model_dir: &std::path::Path,
     train_vision: bool,
@@ -320,7 +348,7 @@ fn reject_incompatible_runtime_combo(
     }
     if is_quantized_model(model_dir) == Some(true) {
         return Err(
-            "4bit quantized 모델은 --train-vision을 지원하지 않습니다 — non-quantized(bf16) 모델을 사용하세요."
+            "양자화된(4-bit/8-bit 등) 모델은 --train-vision을 지원하지 않습니다 — non-quantized(bf16) 모델을 사용하세요."
                 .to_string(),
         );
     }
@@ -1421,6 +1449,34 @@ mod tests {
         // config.json이 아예 없는 디렉터리 — 판별 불가는 지어내지 않고 None이어야 한다(D22).
         let dir = make_temp_model_dir("no-config");
         assert_eq!(is_quantized_model(&dir), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn is_quantized_model_detects_top_level_quantization_config_field() {
+        // transformers 계열(bitsandbytes/GPTQ/AWQ) 표기 — 이 기기에서 실사례는 못
+        // 찾았지만(위 is_quantized_model 문서 참고) 2026-09-23 리뷰가 요구한 방어적
+        // 커버리지다.
+        let dir = make_temp_model_dir("quantization-config-top-level");
+        std::fs::write(
+            dir.join("config.json"),
+            r#"{"model_type":"llama","quantization_config":{"quant_method":"bitsandbytes"}}"#,
+        )
+        .unwrap();
+        assert_eq!(is_quantized_model(&dir), Some(true));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn is_quantized_model_detects_text_config_quantization_config_field() {
+        // VLM에서 vision 스택은 그대로 두고 텍스트 백본만 양자화된 구성을 흉내낸다.
+        let dir = make_temp_model_dir("quantization-config-text-config");
+        std::fs::write(
+            dir.join("config.json"),
+            r#"{"model_type":"qwen2_vl","text_config":{"quantization_config":{"quant_method":"gptq"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(is_quantized_model(&dir), Some(true));
         std::fs::remove_dir_all(&dir).ok();
     }
 
