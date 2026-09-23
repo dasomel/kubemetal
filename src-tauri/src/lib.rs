@@ -41,7 +41,7 @@ use commands::local_inference_ops::{
     list_local_inference_adapters, preflight_local_inference_model_load,
     probe_local_inference_api_capabilities,
 };
-use commands::metrics::{get_hardware_spec, get_system_metrics};
+use commands::metrics::{get_hardware_spec, get_system_metrics, run_gpu_benchmark};
 use commands::mlx::{
     check_mlx_env, get_mlx_status, kill_mlx_process, run_mlx_finetune, setup_mlx_env,
     start_model_serving, stop_model_serving, suggest_serving_port, MlxState,
@@ -82,6 +82,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_system_metrics,
             get_hardware_spec,
+            run_gpu_benchmark,
             get_cluster_status,
             start_cluster,
             stop_cluster,
