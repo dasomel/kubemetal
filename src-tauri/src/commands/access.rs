@@ -62,7 +62,11 @@ async fn check_health(url: &str) -> String {
 
 /// 모델 서빙 전용 헬스: 8080은 무관한 로컬 프로세스가 선점할 수 있어(실측: Tomcat 404)
 /// "TCP 응답 = ok" 판정이 오탐을 낸다. OpenAI 호환 `/v1/models`가 HTTP 200일 때만 ok.
-async fn check_serving_health(base_url: &str) -> String {
+///
+/// `mlx.rs`의 last-known-good 헬스체크 폴링(#12)도 같은 기준으로 같은 엔드포인트를
+/// 두드려야 해서 재사용한다 — 별도 사본을 두면 판정 기준이 갈라질 때 한쪽만 고쳐지는
+/// 사고가 난다(AGENTS.md "같은 사실 두 곳 금지"; 2026-09-23 리뷰로 통합).
+pub(crate) async fn check_serving_health(base_url: &str) -> String {
     let mut cmd = match external_command("curl") {
         Ok(c) => c,
         Err(_) => return "unreachable".into(),
