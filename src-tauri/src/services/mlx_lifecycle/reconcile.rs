@@ -80,8 +80,9 @@ pub fn evaluate_reconciliation_result(
     if (200..=299).contains(&code) {
         Ok(())
     } else {
-        let snippet = if body.len() > 200 {
-            format!("{}...", &body[..200])
+        // 바이트 슬라이스는 비ASCII 본문(프록시 HTML 등)에서 문자 중간을 잘라 panic한다.
+        let snippet = if body.chars().count() > 200 {
+            format!("{}...", body.chars().take(200).collect::<String>())
         } else {
             body
         };

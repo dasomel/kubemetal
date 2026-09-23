@@ -297,3 +297,25 @@ fn evaluate_reconciliation_result_distinguishes_status_codes() {
         evaluate_reconciliation_result(false, "", "curl: (28) Connection timed out").unwrap_err();
     assert!(err_curl.contains("curl process failed") && err_curl.contains("Connection timed out"));
 }
+
+#[test]
+fn evaluate_reconciliation_result_truncates_non_ascii_body_without_panicking() {
+    // 3바이트 문자로 200바이트 경계가 문자 중간에 걸리게 한다.
+    let body = "가".repeat(250);
+    let err = evaluate_reconciliation_result(true, &format!("{body}\n502"), "").unwrap_err();
+    assert!(err.starts_with("HTTP 502: ") && err.ends_with("..."));
+}
+
+#[tokio::test]
+async fn scan_errors_instead_of_reporting_empty_when_parent_is_unreadable() {
+    // `exists()`는 부모 디렉터리 권한 오류(EACCES)에서도 false를 돌려줘 "고아 없음"이 됐다.
+    use std::os::unix::fs::PermissionsExt;
+    let parent = make_temp_dir("unreadable-parent");
+    let dir = parent.join("mlx-markers");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let result = scan_orphaned_mlx_processes(&dir).await;
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::remove_dir_all(&parent).unwrap();
+    assert!(result.is_err());
+}
