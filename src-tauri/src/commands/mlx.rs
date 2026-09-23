@@ -198,6 +198,11 @@ pub(crate) fn manifest_verification_status(adapter_dir: &Path) -> &'static str {
     services::mlx_artifacts::manifest_verification_status(adapter_dir)
 }
 
+fn adapter_deletion_home(home: Result<PathBuf, String>) -> Option<PathBuf> {
+    // D-c (#33): 검증 경로와 HOME 별칭을 맞춘다. 정규화 실패만 원본을 유지하고 조회 실패는 거부한다.
+    home.ok().map(|home| home.canonicalize().unwrap_or(home))
+}
+
 /// 어댑터가 삭제해도 안전한지 판정하는 GC 가드(이슈 #33 축소 스코프) — 실제 삭제(파일
 /// 시스템 rm) 기능은 이 스코프에 포함하지 않는다, 삭제 UI/커맨드는 별도 결정 사항이다.
 ///
@@ -239,7 +244,7 @@ pub(crate) fn is_adapter_safe_to_delete(adapter_dir: &Path, mlx_state: &MlxState
 
     services::mlx_artifacts::is_adapter_safe_to_delete(
         adapter_dir,
-        home_dir().ok().as_deref(),
+        adapter_deletion_home(home_dir()).as_deref(),
         serving_adapter_path.as_deref(),
         last_known_good_adapter_path.as_deref(),
         in_progress_adapter_name.as_deref(),
@@ -1646,6 +1651,29 @@ mod tests {
     }
 
     #[test]
+    fn adapter_deletion_home_canonicalizes_symlink() {
+        let root = make_temp_model_dir("deletion-home-alias");
+        let real_home = root.join("home");
+        let alias = root.join("alias");
+        std::fs::create_dir(&real_home).unwrap();
+        std::os::unix::fs::symlink(&real_home, &alias).unwrap();
+        let expected = real_home.canonicalize().unwrap();
+        let actual = adapter_deletion_home(Ok(alias));
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(actual, Some(expected));
+    }
+
+    #[test]
+    fn adapter_deletion_home_preserves_unresolved_path_and_lookup_failure() {
+        let root = make_temp_model_dir("deletion-home-missing");
+        let missing = root.join("missing");
+        let actual = adapter_deletion_home(Ok(missing.clone()));
+        std::fs::remove_dir_all(&root).unwrap();
+        assert_eq!(actual, Some(missing));
+        assert_eq!(adapter_deletion_home(Err("HOME unavailable".into())), None);
+    }
+
+    #[test]
     fn is_adapter_safe_to_delete_forbids_currently_serving_adapter() {
         let dir = make_temp_model_dir("safe-delete-serving");
         let state = MlxState::default();
@@ -1712,11 +1740,10 @@ mod tests {
     }
 
     #[test]
-    fn is_adapter_safe_to_delete_forbids_in_progress_training_output_dir() {
+    fn is_adapter_safe_to_delete_forbids_missing_training_output_even_after_training_ends() {
         // TrainingStatus.adapter_path는 "done"에서만 채워진다(mlx.rs:459 인근) — 진행
         // 중인 학습은 그 필드가 비어 있으므로, adapter_name으로 출력 디렉터리를 역산해서
-        // 판별해야 한다. 실제 디렉터리를 만들지 않아도 canonicalize_or_self가 양쪽 모두
-        // 같은 방식(존재하지 않으면 원본 그대로)으로 폴백하므로 비교는 여전히 유효하다.
+        // 판별해야 한다. 출력 생성 전에는 대상 canonicalize 실패로도 삭제를 거부한다.
         let home = home_dir().expect("HOME must be set for this test");
         let adapter_name = format!(
             "reland-review-test-{}-{:?}",
@@ -1742,10 +1769,9 @@ mod tests {
 
         assert!(!is_adapter_safe_to_delete(&in_progress_dir, &state));
 
-        // done 이후(또는 애초에 학습이 없던) 상태에서는 같은 경로가 다시 허용돼야 한다 —
-        // 보호가 "그 학습이 아직 진행 중"이라는 사실에만 걸려 있는지 확인한다.
+        // D-b: 학습이 끝나도 없는 대상은 거부한다. 실제 출력의 보호 해제는 서비스 테스트가 검증한다.
         *state.training.lock().unwrap() = None;
-        assert!(is_adapter_safe_to_delete(&in_progress_dir, &state));
+        assert!(!is_adapter_safe_to_delete(&in_progress_dir, &state));
     }
 
     #[test]
