@@ -310,10 +310,20 @@ const GPU_BENCHMARK_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// 스폰·실행·파싱을 전담하는 AppHandle-비의존 내부 함수 — `check_mlx_env_inner`와 같은
 /// 분리 이유다: 유닛 테스트가 `tauri::AppHandle` 없이 실제 venv/스크립트로 이 경로를
-/// 직접 검증할 수 있게 한다.
+/// 직접 검증할 수 있게 한다. 프로덕션 타임아웃은 [`GPU_BENCHMARK_TIMEOUT`] 고정값이고,
+/// 이 함수는 그 값을 그대로 전달할 뿐이다 — 타임아웃 자체를 조절해 죽이기를 테스트하려면
+/// [`run_gpu_benchmark_inner_with_timeout`]을 쓴다.
 async fn run_gpu_benchmark_inner(
     venv_py: &std::path::Path,
     script: &std::path::Path,
+) -> Result<GpuBenchmarkResult, String> {
+    run_gpu_benchmark_inner_with_timeout(venv_py, script, GPU_BENCHMARK_TIMEOUT).await
+}
+
+async fn run_gpu_benchmark_inner_with_timeout(
+    venv_py: &std::path::Path,
+    script: &std::path::Path,
+    timeout: Duration,
 ) -> Result<GpuBenchmarkResult, String> {
     if !venv_py.is_file() {
         return Err("MLX venv does not exist. Run setup_mlx_env first.".into());
@@ -326,15 +336,20 @@ async fn run_gpu_benchmark_inner(
     }
 
     let mut cmd = tokio::process::Command::new(venv_py);
-    cmd.arg(script).env("PATH", augmented_path());
+    // `cmd.output()`이 소유한 `Child`는 기본적으로 drop해도 프로세스를 죽이지 않는다 —
+    // 아래 `tokio::time::timeout`이 타임아웃으로 이 future를 드롭하면 `kill_on_drop`
+    // 없이는 python(및 그 안의 MLX matmul)이 좀비로 남는다.
+    cmd.arg(script)
+        .env("PATH", augmented_path())
+        .kill_on_drop(true);
 
     let rust_start = Instant::now();
-    let output = tokio::time::timeout(GPU_BENCHMARK_TIMEOUT, cmd.output())
+    let output = tokio::time::timeout(timeout, cmd.output())
         .await
         .map_err(|_| {
             format!(
                 "GPU benchmark timed out after {}s — the environment may be broken (no fake result returned)",
-                GPU_BENCHMARK_TIMEOUT.as_secs()
+                timeout.as_secs_f64()
             )
         })?
         .map_err(|e| format!("Failed to launch GPU benchmark script: {e}"))?;
@@ -422,16 +437,83 @@ mod tests {
 
     /// 존재하지 않는 스크립트 경로는 스폰조차 시도하지 않고 즉시 Err여야 한다 — 가짜
     /// 결과로 폴백하면 안 된다(D22).
+    ///
+    /// `venv_py`는 반드시 실존하는 파일이어야 한다 — venv 존재 검사가 스크립트 검사보다
+    /// 먼저라, `crate::commands::mlx::venv_python()`을 그대로 쓰면 venv가 없는 CI
+    /// 러너에서는 "venv 없음" 분기로 통과해버려 이 테스트가 검증하려는 "스크립트 없음"
+    /// 분기를 실제로는 한 번도 거치지 않는다(틀린 이유로 통과). 임시 파일로 venv_py
+    /// 검사만 통과시키고 스크립트 경로만 없앤다.
     #[tokio::test]
     async fn run_gpu_benchmark_inner_errors_on_missing_script() {
-        let venv_py = crate::commands::mlx::venv_python().expect("HOME must resolve");
+        let fake_venv_py =
+            std::env::temp_dir().join(format!("kubemetal-fake-venv-py-{}", std::process::id()));
+        std::fs::write(&fake_venv_py, "").expect("write fake venv_py marker file");
         let missing = PathBuf::from("/nonexistent/gpu_benchmark.py");
 
-        let result = run_gpu_benchmark_inner(&venv_py, &missing).await;
+        let result = run_gpu_benchmark_inner(&fake_venv_py, &missing).await;
+        let err = result.expect_err("missing script must error, not fabricate a result");
         assert!(
-            result.is_err(),
-            "missing script must error, not fabricate a result"
+            err.contains("Could not find the GPU benchmark script"),
+            "expected the script-missing error, got: {err}"
         );
+
+        let _ = std::fs::remove_file(&fake_venv_py);
+    }
+
+    /// `tokio::time::timeout`이 타임아웃으로 `cmd.output()` future를 드롭해도, 스폰된
+    /// 자식 프로세스가 좀비로 남으면 안 된다 — `kill_on_drop(true)`가 실제로 죽이는지
+    /// 확인한다. `/bin/sh`로 짧은 셸 스크립트를 돌리며(파이썬/venv 불필요, CI에서도
+    /// 그대로 동작), 스크립트가 자기 PID를 마커 파일에 적은 뒤 `exec sleep`으로
+    /// 이어받아(같은 PID) 오래 잠들게 한다. 아주 짧은 타임아웃으로 강제 종료시킨 다음,
+    /// 그 PID가 실제로 죽었는지 `kill -0`으로 확인한다.
+    #[tokio::test]
+    async fn hung_benchmark_process_is_killed_on_timeout() {
+        let tmp_dir = std::env::temp_dir().join(format!(
+            "kubemetal-gpu-benchmark-timeout-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&tmp_dir).expect("create tmp dir");
+        let marker_path = tmp_dir.join("pid");
+        let script_path = tmp_dir.join("sleepy.sh");
+        std::fs::write(
+            &script_path,
+            format!(
+                "#!/bin/sh\necho $$ > {}\nexec sleep 5\n",
+                marker_path.display()
+            ),
+        )
+        .expect("write sleepy.sh");
+
+        let venv_py = PathBuf::from("/bin/sh");
+        let short_timeout = Duration::from_millis(300);
+
+        let result =
+            run_gpu_benchmark_inner_with_timeout(&venv_py, &script_path, short_timeout).await;
+        let err = result.expect_err("a short timeout on a sleeping process must error");
+        assert!(err.contains("timed out"), "unexpected error: {err}");
+
+        // 커널이 킬한 프로세스를 회수할 약간의 여유를 준다.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        let pid_str = std::fs::read_to_string(&marker_path)
+            .expect("sleepy.sh must have written its pid before sleeping");
+        let pid: u32 = pid_str
+            .trim()
+            .parse()
+            .expect("marker file must contain a pid");
+        let still_alive = std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .expect("kill -0 should run")
+            .success();
+        assert!(
+            !still_alive,
+            "benchmark process (pid {pid}) survived the timeout — kill_on_drop missing?"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 
     /// 이 테스트는 발열 값이 **실제로 읽히는지**를 확인한다. CLI 경로가 전부 비어 있는
