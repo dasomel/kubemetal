@@ -474,7 +474,7 @@ pub async fn setup_mlx_env(
     Ok("Started MLX venv installation.".into())
 }
 
-fn apply_training_event(app: &tauri::AppHandle, value: &serde_json::Value) {
+fn apply_training_event(app: &tauri::AppHandle, child_pid: u32, value: &serde_json::Value) {
     let state = app.state::<MlxState>();
     let mut guard = match state.training.lock() {
         Ok(g) => g,
@@ -484,6 +484,10 @@ fn apply_training_event(app: &tauri::AppHandle, value: &serde_json::Value) {
         Some(t) => t,
         None => return,
     };
+    // 이전 실행 A의 늦은 이벤트가 새 실행 B의 슬롯을 오염시키지 않도록 귀속 검증(GitHub #13).
+    if training.pid != child_pid {
+        return;
+    }
     match value.get("type").and_then(|v| v.as_str()) {
         Some("progress") => {
             if let Some(i) = value.get("iter").and_then(|v| v.as_u64()) {
@@ -525,6 +529,7 @@ fn apply_training_event(app: &tauri::AppHandle, value: &serde_json::Value) {
 
 async fn read_stdout_lines(
     app: tauri::AppHandle,
+    child_pid: u32,
     stdout: tokio::process::ChildStdout,
 ) -> Option<String> {
     let mut lines = BufReader::new(stdout).lines();
@@ -543,7 +548,7 @@ async fn read_stdout_lines(
                             .and_then(|value| value.as_str())
                             .map(str::to_owned);
                     }
-                    apply_training_event(&app, &value);
+                    apply_training_event(&app, child_pid, &value);
                 }
             }
             Ok(None) => break,
@@ -591,14 +596,6 @@ fn finalize_training(
     exit: std::io::Result<std::process::ExitStatus>,
     stderr_text: String,
 ) -> bool {
-    // child.wait()가 이미 완료됐다 — 프로세스는 실제로 종료됐으므로 기록된 상태와
-    // 무관하게 marker를 지운다(GitHub #13). 그래야 다음 실행이 이미 죽은 프로세스를
-    // 고아로 오탐하지 않는다.
-    if let Ok(home) = home_dir() {
-        let marker = crate::services::mlx_lifecycle::pid_marker_path(&home, "training");
-        crate::services::mlx_lifecycle::remove_pid_marker_if_matches(&marker, pid);
-    }
-
     let state = app.state::<MlxState>();
     let mut guard = match state.training.lock() {
         Ok(g) => g,
@@ -609,16 +606,28 @@ fn finalize_training(
         None => return false,
     };
 
-    // GitHub #13 — wrapper가 자기 end_run을 못 부르고 죽었으면 Rust가 대신 MLflow에
-    // 알린다. should_record_exit로 조기 반환하기 전에 계산해야 한다 — "killed"도 그
-    // 조기 반환 대상이지만 정확히 이 리컨실리에이션이 필요한 경우이기도 하다.
+    // GitHub #13 — run_id와 종료 결과를 같은 프로세스에 귀속시킨다.
+    // A 종료 전에 B가 슬롯을 차지했으면(training.pid != pid), A의 종료로 B를 KILLED로 만들거나
+    // B의 상태(status, error 등)를 덮어쓰지 않고 즉시 반환한다.
+    let is_same_process = training.pid == pid;
     let wrapper_reported_terminal = matches!(training.status.as_str(), "done" | "error");
     let reconciliation = crate::services::mlx_lifecycle::mlflow_reconciliation_decision(
         &training.status,
-        training.mlflow_run_id.as_deref(),
+        Some(training.pid),
+        pid,
+        if is_same_process {
+            training.mlflow_run_id.as_deref()
+        } else {
+            None
+        },
         wrapper_reported_terminal,
         exit.as_ref().ok(),
     );
+
+    if !is_same_process {
+        drop(guard);
+        return false;
+    }
 
     if !should_record_exit(&training.status) {
         let success = matches!(exit, Ok(status) if status.success()) && training.status == "done";
@@ -664,7 +673,7 @@ async fn run_training_reader(
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
 
-    let stdout_task = stdout.map(|out| tokio::spawn(read_stdout_lines(app.clone(), out)));
+    let stdout_task = stdout.map(|out| tokio::spawn(read_stdout_lines(app.clone(), pid, out)));
     let stderr_task = stderr.map(|err| tokio::spawn(collect_stderr(err)));
 
     let adapter_path = if let Some(t) = stdout_task {
@@ -679,6 +688,13 @@ async fn run_training_reader(
     };
 
     let exit = child.wait().await;
+    // child.wait()가 이미 완료됐다 — 프로세스는 실제로 종료됐으므로 기록된 상태와
+    // 무관하게 marker를 지운다(GitHub #13). 그래야 다음 실행이 이미 죽은 프로세스를
+    // 고아로 오탐하지 않는다.
+    if let Ok(home) = home_dir() {
+        crate::services::mlx_lifecycle::remove_pid_marker(&home, "training", pid).await;
+    }
+
     if !finalize_training(&app, pid, exit, stderr_text) {
         return;
     }
@@ -845,8 +861,9 @@ pub async fn run_mlx_finetune(
 
             // 앱 크래시 후에도 이 pid를 다음 실행이 고아로 탐지할 수 있게 남긴다(GitHub #13).
             if let Ok(home) = home_dir() {
-                let marker = crate::services::mlx_lifecycle::pid_marker_path(&home, "training");
-                if let Err(e) = crate::services::mlx_lifecycle::write_pid_marker(&marker, pid) {
+                if let Err(e) =
+                    crate::services::mlx_lifecycle::write_pid_marker(&home, "training", pid).await
+                {
                     eprintln!("[mlx] Failed to write training pid marker: {e}");
                 }
             }
@@ -997,8 +1014,7 @@ async fn run_serving_reader(app: tauri::AppHandle, mut child: tokio::process::Ch
     // 판정과 무관하게 marker를 지운다(GitHub #13). 그래야 다음 실행이 이미 죽은 프로세스를
     // 고아로 오탐하지 않는다.
     if let Ok(home) = home_dir() {
-        let marker = crate::services::mlx_lifecycle::pid_marker_path(&home, "serving");
-        crate::services::mlx_lifecycle::remove_pid_marker_if_matches(&marker, pid);
+        crate::services::mlx_lifecycle::remove_pid_marker(&home, "serving", pid).await;
     }
     let stderr_text = if let Some(t) = stderr_task {
         t.await.unwrap_or_default()
@@ -1147,8 +1163,9 @@ pub async fn start_model_serving(
             }
             // 앱 크래시 후에도 이 pid를 다음 실행이 고아로 탐지할 수 있게 남긴다(GitHub #13).
             if let Ok(home) = home_dir() {
-                let marker = crate::services::mlx_lifecycle::pid_marker_path(&home, "serving");
-                if let Err(e) = crate::services::mlx_lifecycle::write_pid_marker(&marker, pid) {
+                if let Err(e) =
+                    crate::services::mlx_lifecycle::write_pid_marker(&home, "serving", pid).await
+                {
                     eprintln!("[mlx] Failed to write serving pid marker: {e}");
                 }
             }

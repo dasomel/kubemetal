@@ -149,6 +149,16 @@ export interface OrphanedProcessInfo {
   cmdline: string;
 }
 
+export interface UnreadableMarker {
+  path: string;
+  error: string;
+}
+
+export interface OrphanScan {
+  orphans: OrphanedProcessInfo[];
+  unreadable: UnreadableMarker[];
+}
+
 export interface MlxServingState {
   pid: number;
   port: number;

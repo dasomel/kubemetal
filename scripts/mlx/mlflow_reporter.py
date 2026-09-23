@@ -76,7 +76,12 @@ class MlflowReporter:
             self.enabled = False
             return None
 
-    def start_run(self, experiment_id: Optional[str], params: dict) -> None:
+    def start_run(
+        self,
+        experiment_id: Optional[str],
+        params: dict,
+        on_run_started: Optional[Callable[[str], None]] = None,
+    ) -> None:
         if not self.enabled or experiment_id is None:
             return
         try:
@@ -86,6 +91,11 @@ class MlflowReporter:
                 {"experiment_id": experiment_id, "start_time": int(time.time() * 1000)},
             )
             self.run_id = resp["run"]["info"]["run_id"]
+            if on_run_started is not None:
+                try:
+                    on_run_started(self.run_id)
+                except Exception as e:  # noqa: BLE001
+                    self._warn(f"on_run_started 콜백 실패({e})")
             self._request(
                 "POST",
                 "/api/2.0/mlflow/runs/log-batch",

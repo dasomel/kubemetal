@@ -83,7 +83,10 @@ def main() -> int:
         EXPERIMENT_NAME,
         warn=lambda message: emit({"type": "warning", "message": message}),
     )
-    experiment_id = reporter.get_or_create_experiment()
+    # GitHub #13: run_id를 러스트에 즉시 보고한다 — start_run 내부에서 run 생성 응답을
+    # 받는 즉시 콜백으로 emit하여, 후속 log-batch(네트워크 지연/타임아웃 가능성) 도중
+    # 프로세스가 시그널로 종료되더라도 러스트가 run_id를 이미 알고 수렴할 수 있게 한다.
+    # MLflow가 꺼져 있거나 start_run이 실패하면 run_id가 없으므로 콜백이 불리지 않는다(D22).
     reporter.start_run(
         experiment_id,
         {
@@ -96,13 +99,8 @@ def main() -> int:
             "runtime": args.runtime,
             "train_vision": args.train_vision,
         },
+        on_run_started=lambda run_id: emit({"type": "mlflow_run_started", "run_id": run_id}),
     )
-    # GitHub #13: run_id를 러스트에 보고해 둔다 — 이 프로세스가 시그널로 죽어 아래
-    # end_run을 못 부르면, 러스트가 이 run_id로 대신 MLflow에 종료를 알린다.
-    # MLflow가 꺼져 있거나 start_run이 실패하면 run_id가 없으므로 이 이벤트 자체를
-    # 보내지 않는다 — 없는 run_id를 지어내지 않는다(D22).
-    if reporter.run_id is not None:
-        emit({"type": "mlflow_run_started", "run_id": reporter.run_id})
 
     if args.runtime == "mlx-vlm":
         cmd = [
