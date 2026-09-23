@@ -182,6 +182,42 @@ fn read_adapter_base_model(adapter_dir: &std::path::Path) -> Option<String> {
     parsed.model
 }
 
+#[derive(Debug, Deserialize)]
+struct ModelConfigFile {
+    quantization: Option<serde_json::Value>,
+}
+
+/// 모델이 quantized인지 판별한다. mlx 커뮤니티 모델은 quantize 시 `config.json`에
+/// 최상위 `quantization` 필드(group_size/bits)가 추가된다 — 그 필드의 유무만 본다.
+/// `config.json`이 없거나 파싱에 실패하면 판별 불가로 `None`을 반환한다: 이슈 #23은
+/// "모르면 통과시켜라"(D22)를 요구한다 — false positive로 정상 학습을 막는 것이
+/// 크래시를 막는 것보다 나쁘다.
+fn is_quantized_model(model_dir: &std::path::Path) -> Option<bool> {
+    let content = std::fs::read_to_string(model_dir.join("config.json")).ok()?;
+    let parsed: ModelConfigFile = serde_json::from_str(&content).ok()?;
+    Some(parsed.quantization.is_some())
+}
+
+/// D29 실측 비호환 조합을 spawn 전에 거부한다: 4bit quantized 모델에 `--train-vision`을
+/// 얹으면 양자화된 가중치에 대한 gradient를 요구해 `QuantizedMatmul::vjp`에서 죽는다
+/// (LoRA-only는 문제없다 — frozen quantized layer는 forward-only). 판별 불가(`None`)면
+/// 통과시킨다 — 알 수 없는 것을 지어내 정상 학습을 막지 않는다(D22).
+fn reject_incompatible_runtime_combo(
+    model_dir: &std::path::Path,
+    train_vision: bool,
+) -> Result<(), String> {
+    if !train_vision {
+        return Ok(());
+    }
+    if is_quantized_model(model_dir) == Some(true) {
+        return Err(
+            "4bit quantized 모델은 --train-vision을 지원하지 않습니다 — non-quantized(bf16) 모델을 사용하세요."
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
 pub(crate) fn validate_adapter_name(name: &str) -> Result<(), String> {
     let is_valid = !name.is_empty()
         && name
@@ -559,6 +595,7 @@ pub async fn run_mlx_finetune(
 
         let model_path = validate_home_subpath(&config.model_path)?;
         let data_path = validate_home_subpath(&config.data_path)?;
+        reject_incompatible_runtime_combo(&model_path, config.train_vision)?;
 
         let venv_py = venv_python()?;
         if !venv_py.is_file() {
@@ -1239,6 +1276,91 @@ mod tests {
             "probe snippet died with a python syntax error: {}",
             String::from_utf8_lossy(&out.stderr)
         );
+    }
+
+    /// 테스트 전용 임시 디렉터리를 만든다. tempfile 크레이트 없이 다른 모듈(kagent.rs)과
+    /// 같은 관례(`std::env::temp_dir()` + 고유 접미사)를 따른다.
+    fn make_temp_model_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "kubemetal-mlx-test-{name}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).expect("failed to create temp model dir");
+        dir
+    }
+
+    #[test]
+    fn is_quantized_model_detects_quantization_field() {
+        let dir = make_temp_model_dir("quantized");
+        std::fs::write(
+            dir.join("config.json"),
+            r#"{"model_type":"qwen2_vl","quantization":{"group_size":64,"bits":4}}"#,
+        )
+        .unwrap();
+        assert_eq!(is_quantized_model(&dir), Some(true));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn is_quantized_model_returns_false_without_quantization_field() {
+        let dir = make_temp_model_dir("bf16");
+        std::fs::write(dir.join("config.json"), r#"{"model_type":"qwen2_vl"}"#).unwrap();
+        assert_eq!(is_quantized_model(&dir), Some(false));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn is_quantized_model_returns_none_when_undeterminable() {
+        // config.json이 아예 없는 디렉터리 — 판별 불가는 지어내지 않고 None이어야 한다(D22).
+        let dir = make_temp_model_dir("no-config");
+        assert_eq!(is_quantized_model(&dir), None);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reject_incompatible_runtime_combo_rejects_quantized_with_train_vision() {
+        let dir = make_temp_model_dir("reject-quantized-vision");
+        std::fs::write(
+            dir.join("config.json"),
+            r#"{"quantization":{"group_size":64,"bits":4}}"#,
+        )
+        .unwrap();
+        assert!(reject_incompatible_runtime_combo(&dir, true).is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reject_incompatible_runtime_combo_allows_non_quantized_with_train_vision() {
+        let dir = make_temp_model_dir("allow-bf16-vision");
+        std::fs::write(dir.join("config.json"), r#"{"model_type":"qwen2_vl"}"#).unwrap();
+        assert!(reject_incompatible_runtime_combo(&dir, true).is_ok());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reject_incompatible_runtime_combo_allows_quantized_without_train_vision() {
+        // LoRA-only 학습은 quantized 모델에서도 문제없다(D29) — train_vision이 꺼져 있으면
+        // 통과해야 한다.
+        let dir = make_temp_model_dir("allow-quantized-no-vision");
+        std::fs::write(
+            dir.join("config.json"),
+            r#"{"quantization":{"group_size":64,"bits":4}}"#,
+        )
+        .unwrap();
+        assert!(reject_incompatible_runtime_combo(&dir, false).is_ok());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reject_incompatible_runtime_combo_allows_undeterminable_with_train_vision() {
+        // 판별 불가(config.json 없음)면 train_vision이 켜져 있어도 통과시켜야 한다(D22).
+        let dir = make_temp_model_dir("allow-undeterminable-vision");
+        assert!(reject_incompatible_runtime_combo(&dir, true).is_ok());
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
