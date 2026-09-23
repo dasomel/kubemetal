@@ -1086,30 +1086,13 @@ pub async fn stop_model_serving(state: State<'_, MlxState>) -> Result<String, St
     Ok("Stopped model serving.".into())
 }
 
-/// 서빙 헬스체크. `access.rs::check_serving_health`와 판정 기준(OpenAI 호환 `/v1/models`가
-/// HTTP 200일 때만 ok — TCP 응답만으로는 무관한 프로세스의 404를 정상으로 오판한다,
-/// 실측 2026-08-06)이 같다. 이 lane은 `mlx.rs` 단일 파일로 스코프가 고정돼 있어(harness.md)
-/// access.rs를 건드리지 않고 최소 구현으로 둔다 — 기준이 바뀌면 두 곳을 함께 고쳐야 한다.
+/// 서빙 헬스체크. `access.rs::check_serving_health`를 그대로 재사용한다 — 판정 기준
+/// (OpenAI 호환 `/v1/models`가 HTTP 200일 때만 ok, 실측 2026-08-06)이 완전히 같은데도
+/// 이전 재랜드는 harness.md의 lane 스코프(mlx.rs 단일 파일)를 이유로 curl 호출을
+/// 그대로 복제해뒀다 — 두 곳 중 한쪽만 고쳐지면 판정 기준이 갈라진다(2026-09-23
+/// 리뷰로 통합, AGENTS.md "같은 사실 두 곳 금지").
 async fn is_serving_healthy(base_url: &str) -> bool {
-    let mut cmd = match external_command("curl") {
-        Ok(c) => c,
-        Err(_) => return false,
-    };
-    let url = format!("{base_url}/models");
-    let output = cmd
-        .args([
-            "-s",
-            "-o",
-            "/dev/null",
-            "-m",
-            "2",
-            "-w",
-            "%{http_code}",
-            &url,
-        ])
-        .output()
-        .await;
-    matches!(output, Ok(out) if String::from_utf8_lossy(&out.stdout) == "200")
+    crate::commands::access::check_serving_health(base_url).await == "ok"
 }
 
 /// pid가 여전히 현재 서빙과 일치할 때만 `config`를 last_known_good으로 기록한다. 기록
