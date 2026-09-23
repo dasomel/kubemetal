@@ -139,6 +139,14 @@ export interface MlxTrainingState {
   /** 스폰 시점부터 항상 채워진다 — adapter_path와 달리 학습이 "done"에 이를 때까지
    * 기다리지 않는다 (src-tauri/src/commands/mlx.rs::TrainingStatus.adapter_name). */
   adapter_name: string;
+  /** wrapper가 start_run 직후 보고하는 실제 MLflow run id (GitHub #13). */
+  mlflow_run_id?: string;
+}
+
+export interface OrphanedProcessInfo {
+  pid: number;
+  kind: string;
+  cmdline: string;
 }
 
 export interface MlxServingState {

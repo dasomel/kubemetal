@@ -44,8 +44,9 @@ use commands::local_inference_ops::{
 };
 use commands::metrics::{get_hardware_spec, get_system_metrics, run_gpu_benchmark};
 use commands::mlx::{
-    check_mlx_env, get_mlx_status, kill_mlx_process, run_mlx_finetune, setup_mlx_env,
-    start_model_serving, stop_model_serving, suggest_serving_port, MlxState,
+    check_for_orphaned_mlx_processes, check_mlx_env, get_mlx_status, kill_mlx_process,
+    run_mlx_finetune, setup_mlx_env, start_model_serving, stop_model_serving, suggest_serving_port,
+    MlxState,
 };
 use commands::modelhub::{
     download_hf_model, get_model_downloads, list_local_models, list_registered_models,
@@ -120,6 +121,7 @@ pub fn run() {
             start_model_serving,
             stop_model_serving,
             suggest_serving_port,
+            check_for_orphaned_mlx_processes,
             get_local_inference_status,
             probe_local_inference_runtime,
             probe_local_inference_live,

@@ -756,11 +756,7 @@ pub async fn omlx_model_action(
 }
 
 pub fn pid_is_running(pid: u32) -> bool {
-    if pid == 0 {
-        return false;
-    }
-    let result = unsafe { libc::kill(pid as i32, 0) };
-    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    crate::services::process::pid_is_alive(pid)
 }
 
 pub fn terminate_pid(pid: u32) -> Result<(), String> {
