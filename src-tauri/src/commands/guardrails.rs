@@ -41,16 +41,13 @@ fn thermal_should_pause(state: Option<&str>) -> bool {
     matches!(state, Some("serious") | Some("critical"))
 }
 
-/// 스폰 시점 admission 게이트 **판정 로직**(이슈 #31/#32 통합 축소 스코프의 순수 함수).
+/// 스폰 시점 admission 게이트 **판정 로직**(D40, GitHub #31/#32).
 /// 목적은 이미 자원 상태가 나쁠 때 새 학습/서빙 프로세스를 아예 시작하지 못하게 막는
-/// 것이지만, **이 함수를 부르는 스폰 경로는 아직 없다.** `run_mlx_finetune`/
-/// `start_model_serving`에 실제로 배선하는 일은 별도 이슈(#32, 커밋 53464bb)로 남겨뒀고
-/// 재랜드 스코프 밖이다(D40) — 지금은 판정 로직과 유닛 테스트만 존재하고 런타임
-/// 강제력은 없다. 오해를 사지 않도록 명시한다: 이 함수가 존재한다는 사실이 "게이트가
-/// 작동 중"이라는 뜻이 아니다.
+/// 것이며, `run_mlx_finetune`과 `start_model_serving`의 자식 프로세스 스폰 직전에
+/// 호출된다(D40 배선 완료).
 ///
-/// 배선이 들어갈 때도 "학습 vs 서빙 동시 실행 우선순위"(#32)는 여기서 별도 구현이
-/// 필요 없다: `spawn_guardrail_loop`가 학습 프로세스에만 붙어 자동 SIGSTOP하는 기존
+/// "학습 vs 서빙 동시 실행 우선순위"(#32)는 여기서 별도 구현이 필요 없다:
+/// `spawn_guardrail_loop`가 학습 프로세스에만 붙어 자동 SIGSTOP하는 기존
 /// 구조 자체가 이미 그 정책이다 — 서빙은 절대 자동으로 정지되지 않으므로 "서빙이
 /// 학습보다 우선"이 구조적으로 이미 성립해 있다.
 ///
@@ -70,11 +67,6 @@ fn thermal_should_pause(state: Option<&str>) -> bool {
 ///   이 하드웨어에서 발열 미탐지는 상시 상태이고(AGENTS.md — CLI 소스 자체가 없다),
 ///   발열이 실제로 위험 수준이면 이미 떠 있는 프로세스를 멈추는
 ///   `thermal_should_auto_pause`가 사후 안전망으로 존재한다.
-///
-/// `dead_code`는 위에서 설명한 "아직 호출부가 없다"는 사실 그대로이므로 지어내지
-/// 않고 `allow`로 명시한다(`services/artifact_manifest.rs::verify_manifest`와 같은
-/// 이유) — 배선(#32)이 들어가면 이 allow를 제거한다.
-#[allow(dead_code)]
 pub(crate) fn check_spawn_admission(
     memory_pressure_level: &str,
     thermal_state: Option<&str>,
