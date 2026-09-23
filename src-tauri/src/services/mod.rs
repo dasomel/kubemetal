@@ -2,6 +2,8 @@ pub mod artifact_manifest;
 pub mod deploy_target;
 pub mod lifecycle_guard;
 pub mod local_inference;
+pub mod mlx_artifacts;
+pub mod mlx_serving_recovery;
 pub mod ports;
 pub mod process;
 pub mod runtime_adapter;

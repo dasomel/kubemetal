@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::services::artifact_manifest::{verify_manifest, write_manifest, ManifestContext};
+use crate::services;
+use crate::services::artifact_manifest::{write_manifest, ManifestContext};
 use crate::services::ports;
 use crate::services::process::{
     augmented_path, external_command, resolve_bundled_resource, resolve_cli_path,
@@ -190,105 +191,68 @@ fn read_adapter_base_model(adapter_dir: &std::path::Path) -> Option<String> {
 }
 
 /// 어댑터 디렉터리의 매니페스트 검증 상태(이슈 #33 축소 스코프 — 체크포인트 상태
-/// 판정). 재랜드 시점의 main은 매니페스트 기록을 이미 `services/artifact_manifest.rs`로
-/// 통합했다(`write_training_manifest`/`TrainingManifest`/`ManifestFileEntry`는 더 이상
-/// 존재하지 않는다) — 원본 커밋처럼 여기서 로컬 파서/sha256 재계산을 다시 두면 같은
-/// 사실이 두 곳에 생긴다(AGENTS.md "같은 사실 두 곳 금지"). 대신 그 모듈의
-/// `verify_manifest`를 그대로 재사용해 판정만 셋으로 좁힌다.
-///
-/// - manifest.json이 없으면 `"missing"`(#22 이전 산출물이거나 실패한 학습).
-/// - 있고 `verify_manifest`가 missing/changed/extra 없이 유효하다고 판정하면 `"verified"`.
-/// - 있는데 파싱/스키마 실패, 또는 하나라도 missing/changed/extra면 `"corrupt"`.
+/// 판정). 순수 판정 로직은 `services::mlx_artifacts::manifest_verification_status`에
+/// 있다(2026-09-23 리뷰 — mlx.rs가 1128→1612줄로 불어난 것을 서비스 모듈로 덜어낸다,
+/// AGENTS.md "파일은 ~300줄 넘으면 쪼갠다"). 이 함수는 그 얇은 재노출이다.
 ///
 /// 프런트 소비자가 아직 없어 IPC로는 노출하지 않는다 — `commands` 모듈이 `lib.rs`에서
 /// `pub`이 아니므로 이 함수는 어차피 크레이트 외부에 도달 불가능하다. dead_code는
 /// "미등록 상태에서는 호출부가 없다"는 사실 그대로이므로 지어내지 않고 `allow`로
 /// 명시한다(IPC 등록 시 이 allow를 제거한다).
 #[allow(dead_code)]
-pub(crate) fn manifest_verification_status(adapter_dir: &std::path::Path) -> &'static str {
-    if !adapter_dir.join("manifest.json").is_file() {
-        return "missing";
-    }
-    match verify_manifest(adapter_dir) {
-        Ok(report) if report.is_valid() => "verified",
-        _ => "corrupt",
-    }
-}
-
-/// mlx 파인튜닝 래퍼(`scripts/mlx/finetune_wrapper.py`)가 어댑터를 쓰는 출력 디렉터리.
-/// `Path.home() / ".kubemetal" / "adapters" / <adapter_name>` — 래퍼 쪽 상수와 같은
-/// 사실이므로 여기서 새로 지어내지 않고 그 파일의 실제 동작을 그대로 옮긴다.
-fn adapter_output_dir(home: &Path, adapter_name: &str) -> PathBuf {
-    home.join(".kubemetal").join("adapters").join(adapter_name)
-}
-
-/// 심볼릭 링크·`.`/`..` 컴포넌트가 섞인 별칭 경로가 canonical 비교를 피해가지 못하게
-/// 정규화한다. canonicalize가 실패하면(경로가 아직 없는 경우 등) 원본을 그대로 쓴다 —
-/// 존재하지 않는 경로를 있는 그대로 보고하는 건 괜찮지만, 존재하는 서빙 중 어댑터의
-/// 별칭이 정규화를 피해 통과해서는 안 된다(2026-09-23 리뷰).
-fn canonicalize_or_self(p: &Path) -> PathBuf {
-    p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
+pub(crate) fn manifest_verification_status(adapter_dir: &Path) -> &'static str {
+    services::mlx_artifacts::manifest_verification_status(adapter_dir)
 }
 
 /// 어댑터가 삭제해도 안전한지 판정하는 GC 가드(이슈 #33 축소 스코프) — 실제 삭제(파일
 /// 시스템 rm) 기능은 이 스코프에 포함하지 않는다, 삭제 UI/커맨드는 별도 결정 사항이다.
-/// 세 경우 중 하나라도 해당하면 삭제를 금지한다: (1) 현재 서빙 중인 adapter,
-/// (2) `last_known_good_serving`에 기록된 adapter, (3) 아직 "done"에 이르지 못해
-/// `TrainingStatus.adapter_path`가 비어 있는 **진행 중인 학습**의 출력 디렉터리 —
-/// `adapter_name`으로 `adapter_output_dir`을 역산해 판별한다(2026-09-23 리뷰 전에는
-/// 이 세 번째 경우가 아예 없어 진행 중인 학습의 산출물이 삭제 가능하다고 오판했다).
-/// 경로 비교는 canonicalize를 거친다 — 심볼릭 링크나 `./`/`../` 별칭이 문자열 비교를
-/// 피해 "안전"으로 오판되지 않게 한다.
+///
+/// 순수 판정 로직(canonical 경로 비교로 서빙 중/last-known-good/진행 중인 학습
+/// 세 슬롯 중 하나라도 일치하는지)은 `services::mlx_artifacts::is_adapter_protected`에
+/// 있다(2026-09-23 리뷰로 이동). 이 함수가 맡는 건 `MlxState`의 세 Mutex를 잠그고
+/// 값을 뽑아 그 순수 함수에 넘기는 얇은 호출부뿐이다.
 ///
 /// **잠금이 poison되면(다른 스레드가 그 락을 쥔 채 panic) 즉시 false(삭제 불가)를
 /// 반환한다** — 예전 구현은 `.lock().ok().unwrap_or(false)`로 "잠금 실패 = 보호 없음"을
 /// 거쳐 최종적으로 "안전"을 반환했다. 셋 중 어느 것도 모른다는 사실을 "안전하다"로
-/// 지어내지 않는다(D22, fail-closed).
+/// 지어내지 않는다(D22, fail-closed) — `is_adapter_protected`의 계약대로, poison된
+/// 슬롯은 `None`으로 뭉개 넘기지 않고 그 자리에서 함수를 빠져나온다.
+///
+/// 진행 중인 학습의 출력 디렉터리는 `TrainingStatus.adapter_name`(스폰 시점부터
+/// 항상 채워짐, `adapter_path`와 달리 "done"을 기다리지 않는다)으로 역산한다 —
+/// 2026-09-23 리뷰 전에는 이 세 번째 경우가 아예 없어 진행 중인 학습의 산출물이
+/// 삭제 가능하다고 오판했다.
 ///
 /// 프런트 소비자가 아직 없어 IPC로는 노출하지 않는다(위 `manifest_verification_status`와
 /// 같은 이유).
 #[allow(dead_code)]
 pub(crate) fn is_adapter_safe_to_delete(adapter_dir: &Path, mlx_state: &MlxState) -> bool {
-    let target = canonicalize_or_self(adapter_dir);
-    let matches_adapter_path = |status: &Option<ServingStatus>| -> bool {
-        status
-            .as_ref()
-            .and_then(|s| s.adapter_path.as_deref())
-            .map(|p| canonicalize_or_self(Path::new(p)) == target)
-            .unwrap_or(false)
-    };
-
-    let is_serving = match mlx_state.serving.lock() {
-        Ok(g) => matches_adapter_path(&g),
+    let serving_adapter_path = match mlx_state.serving.lock() {
+        Ok(g) => g.as_ref().and_then(|s| s.adapter_path.clone()),
         Err(_) => return false,
     };
-    if is_serving {
-        return false;
-    }
-
-    let is_last_known_good = match mlx_state.last_known_good_serving.lock() {
-        Ok(g) => matches_adapter_path(&g),
+    let last_known_good_adapter_path = match mlx_state.last_known_good_serving.lock() {
+        Ok(g) => g.as_ref().and_then(|s| s.adapter_path.clone()),
         Err(_) => return false,
     };
-    if is_last_known_good {
-        return false;
-    }
-
-    let is_in_progress_training = match mlx_state.training.lock() {
+    let in_progress_adapter_dir = match mlx_state.training.lock() {
         Ok(g) => g
             .as_ref()
             .filter(|t| should_record_exit(&t.status))
             .and_then(|t| {
                 home_dir()
                     .ok()
-                    .map(|home| adapter_output_dir(&home, &t.adapter_name))
-            })
-            .map(|dir| canonicalize_or_self(&dir) == target)
-            .unwrap_or(false),
+                    .map(|home| services::mlx_artifacts::adapter_output_dir(&home, &t.adapter_name))
+            }),
         Err(_) => return false,
     };
 
-    !is_in_progress_training
+    !services::mlx_artifacts::is_adapter_protected(
+        adapter_dir,
+        serving_adapter_path.as_deref(),
+        last_known_good_adapter_path.as_deref(),
+        in_progress_adapter_dir.as_deref(),
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -1169,18 +1133,17 @@ async fn is_serving_healthy(base_url: &str) -> bool {
     crate::commands::access::check_serving_health(base_url).await == "ok"
 }
 
-/// pid가 여전히 현재 서빙과 일치할 때만 `config`를 last_known_good으로 기록한다. 기록
-/// 시점 사이에 프로세스가 죽거나 다른 서빙으로 교체됐으면 쓰지 않는다 — 죽은 구성을
-/// "마지막 성공"으로 남기면 되돌리기가 똑같이 죽는 구성으로 돌아간다(D22). AppHandle이
-/// 필요 없는 순수 판정이라 `MlxState`만으로 직접 테스트한다.
+/// pid가 여전히 현재 서빙과 일치할 때만 `config`를 last_known_good으로 기록한다 — 그
+/// 판정 자체(`should_record_as_last_known_good`)는
+/// `services::mlx_serving_recovery`의 순수 함수에 있다(2026-09-23 리뷰로 이동). 여기서는
+/// `MlxState`의 두 Mutex를 잠그고 쓰는 얇은 호출부만 담당한다.
 fn record_serving_success(state: &MlxState, pid: u32, config: ServingStatus) -> bool {
-    let still_current = state
+    let current_serving_pid = state
         .serving
         .lock()
         .ok()
-        .and_then(|g| g.as_ref().map(|s| s.pid))
-        == Some(pid);
-    if !still_current {
+        .and_then(|g| g.as_ref().map(|s| s.pid));
+    if !services::mlx_serving_recovery::should_record_as_last_known_good(current_serving_pid, pid) {
         return false;
     }
     match state.last_known_good_serving.lock() {
@@ -1225,15 +1188,16 @@ async fn record_last_known_good_after_healthcheck(
     }
 }
 
-/// state.last_known_good_serving에서 되돌릴 구성을 꺼낸다. 없으면 지어내지 않고
-/// 명확한 에러를 반환한다(D22).
+/// state.last_known_good_serving에서 되돌릴 구성을 꺼낸다. 없을 때 지어내지 않고
+/// 명확한 에러를 반환하는 판정(D22)은 `services::mlx_serving_recovery::pick_revert_target`에
+/// 있다(2026-09-23 리뷰로 이동) — 여기서는 Mutex를 잠그는 얇은 호출부만 담당한다.
 fn revert_config_or_error(state: &MlxState) -> Result<ServingStatus, String> {
-    state
+    let saved = state
         .last_known_good_serving
         .lock()
         .map_err(|e| e.to_string())?
-        .clone()
-        .ok_or_else(|| "되돌릴 이전 구성이 없습니다.".to_string())
+        .clone();
+    services::mlx_serving_recovery::pick_revert_target(saved)
 }
 
 /// 저장된 last_known_good 구성으로 현재 서빙을 중지 후 재시작한다(이슈 #12 축소 스코프).
@@ -1730,7 +1694,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         );
-        let in_progress_dir = adapter_output_dir(&home, &adapter_name);
+        let in_progress_dir = services::mlx_artifacts::adapter_output_dir(&home, &adapter_name);
 
         let state = MlxState::default();
         *state.training.lock().unwrap() = Some(TrainingStatus {
