@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-reland-metrics-health",
+  "task": "Re-land five metrics/health commits lost from main by a stray git reset --hard, surviving only on rescue/dropped-2026-08-23-26, adapted to current main as untrusted drafts",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "scripts/mlx/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Ported only the 5 named rescue commits (SystemMetrics.gpu_backend, GpuTelemetryBackend trait, ioreg/thermal fixtures, GPU matmul benchmark command, get_system_health_summary); left mlx.rs, guardrails.rs, and artifact_manifest.rs untouched (owned by another lane), and did not wire any frontend src/ callers per task scope"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Read each rescue commit with git show against current main before porting; confirmed current main's SystemMetrics, ClusterStatus, GuardrailStatus, and KagentDiagnosticReport struct shapes and command signatures still match what the rescue commits assume",
+      "evidence": [
+        "runtime:git-show-rescue-commits-diffed-against-origin-main",
+        "runtime:struct-field-parity-confirmed-before-cherry-pick"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Cherry-picked 811b084+f079775 (gpu_backend field + GpuTelemetryBackend trait, re-registered as D41 in docs/03-mvp-design.md since main had since taken D35-D39), 28d52b6 (ioreg/thermal fixtures, clean), 3ada561 (GPU matmul benchmark command, resolved a lib.rs import conflict against local_inference* imports main grew since the rescue branch diverged, registered run_gpu_benchmark in docs/02-requirements.md), and ff09e75 (get_system_health_summary, clean, registered in docs/02-requirements.md) as 4 commits"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "cargo test run after each cherry-picked commit and once more at the end; all metrics/health unit tests pass, including new fixture and derive_overall_status cases",
+      "scope": "src-tauri metrics.rs and health.rs unit tests",
+      "evidence": [
+        "test:cargo-test-manifest-path-src-tauri-Cargo.toml"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "cargo check, cargo clippy --all-targets -D warnings, and scripts/ci/check_ipc_types.py all run clean after the final commit; new run_gpu_benchmark and get_system_health_summary commands registered in lib.rs invoke_handler and docs/02-requirements.md IPC table",
+      "scope": "src-tauri compile, lint, and IPC type/doc sync",
+      "evidence": [
+        "ci:cargo-check-manifest-path-src-tauri-Cargo.toml",
+        "ci:cargo-clippy-all-targets-D-warnings",
+        "ci:check_ipc_types-py"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "All 5 rescue commits are re-landed on reland/metrics-health, adapted where current main had drifted, with D-registry and IPC docs kept in sync and no invariant violations introduced",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified for the 5-commit backend-only reland scope; frontend wiring, mlx.rs/guardrails.rs/artifact_manifest.rs, and pushing/PR creation are explicitly out of scope and untouched"
+    }
+  ]
+}
