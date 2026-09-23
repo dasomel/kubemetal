@@ -1,0 +1,17 @@
+{
+  "_README": "이 파일은 gen_runtime_license_inventory.sh의 자동 추출(License-Expression -> Classifier -> License 필드)이 전부 UNKNOWN을 낸 패키지에 한해 적용되는 '감사된 오버라이드' 목록이다. 항목은 사람이 verified_source에 적힌 실제 라이선스 텍스트를 직접 읽고 확인한 경우에만 추가한다 — 단순히 UNKNOWN 실패를 없애기 위해 추가해서는 안 된다. 라이선스 전문을 파싱해 식별자를 추측하는 것은 이 저장소가 금지하는 '상태 지어내기'(AGENTS.md D22)이므로, 여기 기록된 값은 항상 사람이 직접 검증한 값이어야 한다.",
+  "overrides": [
+    {
+      "name": "tiktoken",
+      "license": "MIT",
+      "verified_source": "https://github.com/openai/tiktoken/blob/main/LICENSE",
+      "note": "PyPI 메타데이터의 License 필드에 SPDX 식별자 대신 MIT 라이선스 전문(약 1077자)이 그대로 박혀 있어 자동 추출(60자 미만 규칙)이 사용할 수 없다."
+    },
+    {
+      "name": "word2number",
+      "license": "MIT",
+      "verified_source": "https://pypi.org/project/word2number/",
+      "note": "PyPI 메타데이터의 License 필드에 SPDX 식별자 대신 MIT 라이선스 전문(약 1113자)이 그대로 박혀 있어 자동 추출(60자 미만 규칙)이 사용할 수 없다."
+    }
+  ]
+}

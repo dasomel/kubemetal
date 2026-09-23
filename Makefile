@@ -29,7 +29,7 @@ VITE_PORT := 5173
 .DEFAULT_GOAL := help
 
 .PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap \
-        lint fmt verify license-check dependency-diff vuln-check supply-chain-check clean-light cluster-up cluster-down provision provision-all kagent-up \
+        lint fmt verify license-check dependency-diff runtime-license-inventory vuln-check supply-chain-check clean-light cluster-up cluster-down provision provision-all kagent-up \
         preflight render export-gitops \
         forward forward-stop status index-code analyze-code serve-codegraph clean
 
@@ -121,6 +121,14 @@ license-check: ## 번들 의존성 라이선스 정책 게이트 (self-test 포�
 dependency-diff: ## 업그레이드 전후 의존성/라이선스 diff 리포트
 	./scripts/release/gen_dependency_diff.sh --self-test
 	./scripts/release/gen_dependency_diff.sh $(BASE) $(TARGET)
+
+# verify/release.yml에 넣지 않는다 — 사용자 온디맨드 ~/.kubemetal/venv를 검사하는데
+# CI에는 이 venv가 없고, mlx.rs가 버전 고정 없이(requirements/constraints 파일 없이)
+# 설치하므로 재현 가능한 게이트가 아니다(이슈 #9).
+# 사용법: make runtime-license-inventory [VENV=<path>] [OUT_DIR=<dir>]
+runtime-license-inventory: ## MLX venv(런타임) 라이선스 인벤토리 생성 (self-test 포함)
+	./scripts/release/gen_runtime_license_inventory.sh --self-test
+	./scripts/release/gen_runtime_license_inventory.sh $(if $(VENV),--venv $(VENV)) $(if $(OUT_DIR),--out-dir $(OUT_DIR))
 
 # verify에 넣지 않는다 — trivy 취약점 DB는 네트워크를 타고, verify는 폐쇄망에서도
 # 돌아야 한다. 릴리스 워크플로가 같은 검사를 게이트로 건다(이슈 #35).
