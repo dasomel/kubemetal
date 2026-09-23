@@ -29,7 +29,7 @@ VITE_PORT := 5173
 .DEFAULT_GOAL := help
 
 .PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap \
-        lint fmt verify license-check dependency-diff runtime-license-inventory vuln-check supply-chain-check clean-light cluster-up cluster-down provision provision-all kagent-up \
+        lint fmt verify license-check dependency-diff runtime-license-inventory model-license-check vuln-check supply-chain-check clean-light cluster-up cluster-down provision provision-all kagent-up \
         preflight render export-gitops \
         forward forward-stop status index-code analyze-code serve-codegraph clean
 
@@ -129,6 +129,20 @@ dependency-diff: ## 업그레이드 전후 의존성/라이선스 diff 리포트
 runtime-license-inventory: ## MLX venv(런타임) 라이선스 인벤토리 생성 (self-test 포함)
 	./scripts/release/gen_runtime_license_inventory.sh --self-test
 	./scripts/release/gen_runtime_license_inventory.sh $(if $(VENV),--venv $(VENV)) $(if $(OUT_DIR),--out-dir $(OUT_DIR))
+
+# 게이트가 아니라 사용자 도구다 — 모델 가중치는 오너 스코프 결정상 이 저장소의
+# 릴리스 증거 범위 밖이고(docs/build-target-map.md), 검사할 모델 목록도 저장소가
+# 아니라 사용자가 정한다. HuggingFace API를 타므로 네트워크가 필요하다(이슈 #9).
+# 사용법: make model-license-check MODELS="org/model-a org/model-b"
+#        make model-license-check MODELS_FILE=my-models.txt
+model-license-check: ## 내려받을 모델 가중치의 라이선스 조회 (네트워크 필요)
+	@if [ -z "$(MODELS)" ] && [ -z "$(MODELS_FILE)" ]; then \
+		echo "오류: MODELS 또는 MODELS_FILE을 지정하세요." >&2; \
+		echo '  예: make model-license-check MODELS="mlx-community/Llama-3.2-3B-Instruct-4bit"' >&2; \
+		exit 2; \
+	fi
+	./scripts/release/gen_model_license_inventory.sh --self-test
+	./scripts/release/gen_model_license_inventory.sh $(if $(MODELS_FILE),--models-file $(MODELS_FILE)) $(if $(OUT_DIR),--out-dir $(OUT_DIR)) $(MODELS)
 
 # verify에 넣지 않는다 — trivy 취약점 DB는 네트워크를 타고, verify는 폐쇄망에서도
 # 돌아야 한다. 릴리스 워크플로가 같은 검사를 게이트로 건다(이슈 #35).
