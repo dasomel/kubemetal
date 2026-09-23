@@ -72,11 +72,63 @@ fn deletion_fails_closed_when_home_is_unavailable() {
 }
 
 #[test]
+fn deletion_fails_closed_for_relative_paths() {
+    let home = make_temp_dir("relative-paths");
+    // `.`은 실제 존재하므로 canonicalize 실패만으로 거부하는 회귀도 잡는다.
+    let results = ["training", "./x", "."]
+        .map(|path| is_adapter_safe_to_delete(Path::new(path), Some(&home), None, None, None));
+    std::fs::remove_dir_all(&home).unwrap();
+    assert_eq!(results, [false; 3]);
+}
+
+#[test]
+fn deletion_fails_closed_for_missing_paths_with_parent_components() {
+    let home = make_temp_dir("missing-parent");
+    let training = adapter_output_dir(&home, "training");
+    let alias = home.join(".kubemetal/adapters/../adapters/training");
+    let training_path = training.to_str().unwrap();
+    let results = [
+        is_adapter_safe_to_delete(&alias, Some(&home), None, None, None),
+        is_adapter_safe_to_delete(&alias, Some(&home), Some(training_path), None, None),
+        is_adapter_safe_to_delete(&alias, Some(&home), None, Some(training_path), None),
+        is_adapter_safe_to_delete(&alias, Some(&home), None, None, Some("training")),
+        is_adapter_safe_to_delete(
+            Path::new("~/.kubemetal/adapters/../adapters/training"),
+            Some(&home),
+            None,
+            None,
+            Some("training"),
+        ),
+    ];
+    std::fs::remove_dir_all(&home).unwrap();
+    assert_eq!(results, [false; 5]);
+}
+
+#[test]
+fn deletion_fails_closed_for_dangling_symlinks() {
+    let home = make_temp_dir("dangling-symlink");
+    let training = adapter_output_dir(&home, "training");
+    let alias = home.join("alias");
+    std::os::unix::fs::symlink(&training, &alias).unwrap();
+    assert!(alias.symlink_metadata().unwrap().file_type().is_symlink());
+    assert!(alias.canonicalize().is_err());
+    let training_path = training.to_str().unwrap();
+    let results = [
+        is_adapter_safe_to_delete(&alias, Some(&home), None, None, None),
+        is_adapter_safe_to_delete(&alias, Some(&home), Some(training_path), None, None),
+        is_adapter_safe_to_delete(&alias, Some(&home), None, Some(training_path), None),
+        is_adapter_safe_to_delete(&alias, Some(&home), None, None, Some("training")),
+    ];
+    std::fs::remove_dir_all(&home).unwrap();
+    assert_eq!(results, [false; 4]);
+}
+
+#[test]
 fn is_adapter_protected_matches_serving_path_exactly() {
     let dir = make_temp_dir("protected-serving");
     let path_str = dir.to_string_lossy().to_string();
     assert!(is_adapter_protected(
-        &dir,
+        &dir.canonicalize().unwrap(),
         Path::new("/"),
         Some(&path_str),
         None,
@@ -90,7 +142,7 @@ fn is_adapter_protected_matches_last_known_good_path() {
     let dir = make_temp_dir("protected-lkg");
     let path_str = dir.to_string_lossy().to_string();
     assert!(is_adapter_protected(
-        &dir,
+        &dir.canonicalize().unwrap(),
         Path::new("/"),
         None,
         Some(&path_str),
@@ -134,7 +186,7 @@ fn deletion_forbids_symlink_to_in_progress_training_adapter() {
 fn is_adapter_protected_matches_in_progress_training_dir() {
     let dir = make_temp_dir("protected-in-progress");
     assert!(is_adapter_protected(
-        &dir,
+        &dir.canonicalize().unwrap(),
         Path::new("/"),
         None,
         None,
@@ -149,7 +201,7 @@ fn is_adapter_protected_allows_unrelated_path() {
     let other = make_temp_dir("unprotected-other");
     let other_str = other.to_string_lossy().to_string();
     assert!(!is_adapter_protected(
-        &dir,
+        &dir.canonicalize().unwrap(),
         Path::new("/"),
         Some(&other_str),
         Some(&other_str),
@@ -204,6 +256,15 @@ fn deletion_forbids_tilde_path_for_training_before_output_exists() {
     let before = is_adapter_safe_to_delete(target, Some(&home), None, None, Some("training"));
     std::fs::create_dir_all(adapter_output_dir(&home, "training")).unwrap();
     let after = is_adapter_safe_to_delete(target, Some(&home), None, None, Some("training"));
+    let finished = is_adapter_safe_to_delete(target, Some(&home), None, None, None);
+    let missing = is_adapter_safe_to_delete(
+        Path::new("~/.kubemetal/adapters/other"),
+        Some(&home),
+        None,
+        None,
+        Some("training"),
+    );
+    std::fs::create_dir_all(adapter_output_dir(&home, "other")).unwrap();
     let unrelated = is_adapter_safe_to_delete(
         Path::new("~/.kubemetal/adapters/other"),
         Some(&home),
@@ -214,6 +275,8 @@ fn deletion_forbids_tilde_path_for_training_before_output_exists() {
     std::fs::remove_dir_all(&home).unwrap();
     assert!(!before);
     assert!(!after);
+    assert!(finished);
+    assert!(!missing);
     assert!(unrelated);
 }
 

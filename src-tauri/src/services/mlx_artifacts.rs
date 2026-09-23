@@ -52,10 +52,20 @@ pub(crate) fn is_adapter_safe_to_delete(
     let Some(home) = home else {
         return false;
     };
+    let adapter_dir = expand_home_path(adapter_dir, home);
+    // D-a (#33): CWD에 따라 달라지는 상대경로는 거부한다. 절대경로로 다시 요청해야 한다.
+    if !adapter_dir.is_absolute() {
+        return false;
+    }
+    // D-b (#33): 대상 정규화 실패는 거부한다. 없는 대상은 지울 것이 없고, 접근 복구 후 재판정한다.
+    // 보호 슬롯은 학습 출력 생성 전일 수 있어 canonicalize_or_self 폴백을 유지한다.
+    let Ok(adapter_dir) = adapter_dir.canonicalize() else {
+        return false;
+    };
     let in_progress_adapter_dir =
         in_progress_adapter_name.map(|name| adapter_output_dir(home, name));
     !is_adapter_protected(
-        adapter_dir,
+        &adapter_dir,
         home,
         serving_adapter_path,
         last_known_good_adapter_path,
@@ -63,28 +73,24 @@ pub(crate) fn is_adapter_safe_to_delete(
     )
 }
 
-/// 심볼릭 링크·`.`/`..` 컴포넌트가 섞인 별칭 경로가 canonical 비교를 피해가지 못하게
-/// 정규화한다. canonicalize가 실패하면(경로가 아직 없는 경우 등) 원본을 그대로 쓴다 —
-/// 존재하지 않는 경로를 있는 그대로 보고하는 건 괜찮지만, 존재하는 서빙 중 어댑터의
-/// 별칭이 정규화를 피해 통과해서는 안 된다(2026-09-23 리뷰).
+/// 보호 슬롯의 별칭을 정규화한다. 아직 생성되지 않은 출력 경로는 원본으로 비교한다.
 fn canonicalize_or_self(p: &Path) -> PathBuf {
     p.canonicalize().unwrap_or_else(|_| p.to_path_buf())
 }
 
-/// `adapter_dir`이 삭제로부터 보호돼야 하는가(이슈 #33 GC 가드의 순수 판정부) — 셋 중
+/// 이미 canonicalize한 `target`이 삭제로부터 보호돼야 하는가(이슈 #33 GC 가드) — 셋 중
 /// 하나라도 canonical 비교로 일치하면 보호 대상이다: 현재 서빙 중인 adapter, 마지막으로
 /// 헬스체크를 통과해 last-known-good으로 기록된 adapter, 아직 "done"에 이르지 못해
 /// `TrainingStatus.adapter_path`가 비어 있는 **진행 중인 학습**의 출력 디렉터리.
 ///
 fn is_adapter_protected(
-    adapter_dir: &Path,
+    target: &Path,
     home: &Path,
     serving_adapter_path: Option<&str>,
     last_known_good_adapter_path: Option<&str>,
     in_progress_adapter_dir: Option<&Path>,
 ) -> bool {
     let normalize = |p: &Path| canonicalize_or_self(&expand_home_path(p, home));
-    let target = normalize(adapter_dir);
     let matches_str = |p: &str| normalize(Path::new(p)) == target;
 
     if serving_adapter_path.map(matches_str).unwrap_or(false) {
