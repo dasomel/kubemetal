@@ -367,7 +367,10 @@ async fn run_gpu_benchmark_inner(
 
 fn gpu_benchmark_script_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
-    Ok(resolve_bundled_resource(&resource_dir, "scripts/mlx/gpu_benchmark.py"))
+    Ok(resolve_bundled_resource(
+        &resource_dir,
+        "scripts/mlx/gpu_benchmark.py",
+    ))
 }
 
 /// 실측 GPU matmul 벤치마크(이슈 #11 축소 스코프). 실행 실패·타임아웃·파싱 불가 시 반드시
@@ -409,7 +412,10 @@ mod tests {
 
         assert_eq!(result.matrix_dim, 2048);
         assert_eq!(result.iterations, 20);
-        assert!(result.gflops > 0.0, "GFLOPS must be a real positive measurement");
+        assert!(
+            result.gflops > 0.0,
+            "GFLOPS must be a real positive measurement"
+        );
         assert!(result.python_elapsed_seconds > 0.0);
         assert!(result.rust_elapsed_seconds >= result.python_elapsed_seconds);
     }
@@ -422,7 +428,10 @@ mod tests {
         let missing = PathBuf::from("/nonexistent/gpu_benchmark.py");
 
         let result = run_gpu_benchmark_inner(&venv_py, &missing).await;
-        assert!(result.is_err(), "missing script must error, not fabricate a result");
+        assert!(
+            result.is_err(),
+            "missing script must error, not fabricate a result"
+        );
     }
 
     /// 이 테스트는 발열 값이 **실제로 읽히는지**를 확인한다. CLI 경로가 전부 비어 있는
@@ -579,7 +588,11 @@ mod tests {
         const FIXTURE: &str =
             include_str!("../../tests/fixtures/ioreg-ioaccelerator-util-only-hand-built.txt");
         let (pct, mem) = parse_ioreg_accelerator(FIXTURE);
-        assert_eq!(pct, Some(12.0), "존재하는 Device Utilization %를 읽지 못했다");
+        assert_eq!(
+            pct,
+            Some(12.0),
+            "존재하는 Device Utilization %를 읽지 못했다"
+        );
         assert_eq!(
             mem, None,
             "In use system memory가 없는데 값을 만들어냈다 — 0으로 뭉개면 안 된다(D22)"
