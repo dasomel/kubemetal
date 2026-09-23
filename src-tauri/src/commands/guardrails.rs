@@ -41,24 +41,39 @@ fn thermal_should_pause(state: Option<&str>) -> bool {
     matches!(state, Some("serious") | Some("critical"))
 }
 
-/// 스폰 시점 admission 게이트(이슈 #31/#32 통합 축소 스코프). 이미 자원 상태가 나쁜데
-/// 새 학습/서빙 프로세스를 아예 시작하지 못하게 막는다 — `run_mlx_finetune`/
-/// `start_model_serving` 양쪽이 스폰 직전에 부른다.
+/// 스폰 시점 admission 게이트 **판정 로직**(이슈 #31/#32 통합 축소 스코프의 순수 함수).
+/// 목적은 이미 자원 상태가 나쁠 때 새 학습/서빙 프로세스를 아예 시작하지 못하게 막는
+/// 것이지만, **이 함수를 부르는 스폰 경로는 아직 없다.** `run_mlx_finetune`/
+/// `start_model_serving`에 실제로 배선하는 일은 별도 이슈(#32, 커밋 53464bb)로 남겨뒀고
+/// 재랜드 스코프 밖이다(D40) — 지금은 판정 로직과 유닛 테스트만 존재하고 런타임
+/// 강제력은 없다. 오해를 사지 않도록 명시한다: 이 함수가 존재한다는 사실이 "게이트가
+/// 작동 중"이라는 뜻이 아니다.
 ///
-/// "학습 vs 서빙 동시 실행 우선순위"(#32)는 여기서 별도로 구현하지 않는다:
-/// `spawn_guardrail_loop`가 학습 프로세스에만 붙어 자동 SIGSTOP하는 기존 구조 자체가
-/// 이미 그 정책이다 — 서빙은 절대 자동으로 정지되지 않으므로 "서빙이 학습보다 우선"이
-/// 구조적으로 이미 성립해 있었다. 빠져 있던 건 스폰 시점의 사전 거부뿐이다.
+/// 배선이 들어갈 때도 "학습 vs 서빙 동시 실행 우선순위"(#32)는 여기서 별도 구현이
+/// 필요 없다: `spawn_guardrail_loop`가 학습 프로세스에만 붙어 자동 SIGSTOP하는 기존
+/// 구조 자체가 이미 그 정책이다 — 서빙은 절대 자동으로 정지되지 않으므로 "서빙이
+/// 학습보다 우선"이 구조적으로 이미 성립해 있다.
 ///
 /// - memory_pressure_level == "critical"이면 원인과 무관하게 항상 거부(D16: critical은
 ///   오버라이드 불가 정책 — 방치하면 jetsam이 프로세스를 죽인다).
+/// - memory_pressure_level == "unknown"(측정 실패, `measure_memory_pressure_level`이
+///   sysctl 실행/파싱에 실패했을 때의 값)도 거부한다 — **fail-closed**. 아래 thermal의
+///   판정 불가(None)는 통과시키는 것과 반대 방향이다: 실제로는 critical인데 측정에만
+///   실패했을 경우 그대로 통과시키면 jetsam이 프로세스를 죽이는 비대칭 리스크가 있고,
+///   thermal과 달리 memory에는 critical 외의 상태에 대한 사후 안전망(자동 SIGSTOP)이
+///   없다 — "모르면 막지 않는다"(D22)는 사후에 관측 가능한 위험에 적용되는 원칙이지,
+///   측정 자체가 실패해 사후 관측도 불가능한 경우까지 통과를 정당화하지 않는다.
 /// - thermal_pause_enabled가 켜져 있고 thermal_state가 serious/critical이면 거부(D28).
 ///   thermal_pause_enabled가 꺼져 있으면 발열은 admission에 관여하지 않는다 — 옵트인
 ///   기능이라 스폰 거부도 옵트인이다.
-/// - 판정 불가(thermal_state: None)는 통과시킨다(D22) — 모르면 막지 않는다.
+/// - thermal 판정 불가(thermal_state: None)는 통과시킨다(D22) — 모르면 막지 않는다.
+///   이 하드웨어에서 발열 미탐지는 상시 상태이고(AGENTS.md — CLI 소스 자체가 없다),
+///   발열이 실제로 위험 수준이면 이미 떠 있는 프로세스를 멈추는
+///   `thermal_should_auto_pause`가 사후 안전망으로 존재한다.
 ///
-/// 스폰 지점 배선(#32)은 이 재랜드 스코프 밖이라 아직 호출부가 없다(D40) —
-/// `services/artifact_manifest.rs::verify_manifest`와 같은 이유로 `dead_code`를 허용한다.
+/// `dead_code`는 위에서 설명한 "아직 호출부가 없다"는 사실 그대로이므로 지어내지
+/// 않고 `allow`로 명시한다(`services/artifact_manifest.rs::verify_manifest`와 같은
+/// 이유) — 배선(#32)이 들어가면 이 allow를 제거한다.
 #[allow(dead_code)]
 pub(crate) fn check_spawn_admission(
     memory_pressure_level: &str,
@@ -69,6 +84,11 @@ pub(crate) fn check_spawn_admission(
         return Err(format!(
             "Cannot start — memory pressure is critical (level: {memory_pressure_level})"
         ));
+    }
+    if memory_pressure_level == "unknown" {
+        return Err(
+            "Cannot start — memory pressure could not be measured (probe failed); refusing to spawn without a reading".to_string(),
+        );
     }
     if thermal_pause_enabled && thermal_should_pause(thermal_state) {
         return Err(format!(
@@ -564,6 +584,24 @@ mod tests {
     fn check_spawn_admission_allows_unknown_thermal_state() {
         // 판정 불가(None)는 통과시킨다(D22) — 모르면 막지 않는다.
         assert!(check_spawn_admission("normal", None, true).is_ok());
+    }
+
+    #[test]
+    fn check_spawn_admission_rejects_unknown_memory_pressure() {
+        // 메모리는 thermal과 반대로 fail-closed다 — 측정 실패를 "정상"으로 지어내지
+        // 않는다(D22). thermal_state가 판정 가능(nominal)해도 memory가 unknown이면 거부.
+        let err = check_spawn_admission("unknown", Some("nominal"), false).unwrap_err();
+        assert!(
+            err.contains("could not be measured"),
+            "예상과 다른 오류: {err}"
+        );
+    }
+
+    #[test]
+    fn check_spawn_admission_rejects_unknown_memory_even_with_unknown_thermal() {
+        // 두 신호가 모두 unknown이어도 memory 쪽 fail-closed가 thermal의 pass-through에
+        // 가려지지 않아야 한다.
+        assert!(check_spawn_admission("unknown", None, true).is_err());
     }
 
     #[test]
