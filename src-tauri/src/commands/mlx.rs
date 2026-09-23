@@ -8,6 +8,8 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::services;
 use crate::services::artifact_manifest::{write_manifest, ManifestContext};
+#[allow(unused_imports)]
+pub use crate::services::mlx_lifecycle::{check_for_orphaned_mlx_processes, OrphanedProcessInfo};
 use crate::services::ports;
 use crate::services::process::{
     augmented_path, external_command, resolve_bundled_resource, resolve_cli_path,
@@ -76,6 +78,11 @@ pub struct TrainingStatus {
     /// 있도록 추가했다(2026-09-23 리뷰) — `adapter_path`의 기존 의미(완료 시에만
     /// 채워짐)는 바꾸지 않는다.
     pub adapter_name: String,
+    /// `finetune_wrapper.py`가 `reporter.start_run` 성공 직후 보고하는 실제 MLflow run id
+    /// (GitHub #13). 이 값이 있어야 wrapper가 자기 `end_run`을 못 부르고 죽었을 때(시그널로
+    /// kill됨) Rust가 대신 MLflow에 종료 상태를 알릴 수 있다. MLflow 비활성/미도달이면
+    /// wrapper가 이 이벤트를 아예 보내지 않으므로 `None`으로 남는다(D22 — 지어내지 않는다).
+    pub mlflow_run_id: Option<String>,
 }
 
 /// 서빙 런타임(D29). 둘 다 OpenAI 호환 HTTP 서버라 D10 브리지·kagent·평가(D20) 소비자는
@@ -504,6 +511,14 @@ fn apply_training_event(app: &tauri::AppHandle, value: &serde_json::Value) {
         Some("warning") => {
             // 경고는 상태를 바꾸지 않는다(예: MLflow 접근 실패) — 향후 로그 노출용으로만 무시하지 않고 수신.
         }
+        Some("mlflow_run_started") => {
+            // GitHub #13 — wrapper가 자기 end_run을 못 부르고 죽었을 때(시그널 kill) Rust가
+            // 대신 MLflow에 종료를 알리려면 이 run_id가 필요하다. MLflow가 꺼져 있으면
+            // wrapper가 이 이벤트 자체를 안 보내므로 여기 도달하지 않는다(D22).
+            if let Some(id) = value.get("run_id").and_then(|v| v.as_str()) {
+                training.mlflow_run_id = Some(id.to_string());
+            }
+        }
         _ => {}
     }
 }
@@ -572,9 +587,18 @@ fn should_record_exit(status: &str) -> bool {
 
 fn finalize_training(
     app: &tauri::AppHandle,
+    pid: u32,
     exit: std::io::Result<std::process::ExitStatus>,
     stderr_text: String,
 ) -> bool {
+    // child.wait()가 이미 완료됐다 — 프로세스는 실제로 종료됐으므로 기록된 상태와
+    // 무관하게 marker를 지운다(GitHub #13). 그래야 다음 실행이 이미 죽은 프로세스를
+    // 고아로 오탐하지 않는다.
+    if let Ok(home) = home_dir() {
+        let marker = crate::services::mlx_lifecycle::pid_marker_path(&home, "training");
+        crate::services::mlx_lifecycle::remove_pid_marker_if_matches(&marker, pid);
+    }
+
     let state = app.state::<MlxState>();
     let mut guard = match state.training.lock() {
         Ok(g) => g,
@@ -584,10 +608,27 @@ fn finalize_training(
         Some(t) => t,
         None => return false,
     };
+
+    // GitHub #13 — wrapper가 자기 end_run을 못 부르고 죽었으면 Rust가 대신 MLflow에
+    // 알린다. should_record_exit로 조기 반환하기 전에 계산해야 한다 — "killed"도 그
+    // 조기 반환 대상이지만 정확히 이 리컨실리에이션이 필요한 경우이기도 하다.
+    let wrapper_reported_terminal = matches!(training.status.as_str(), "done" | "error");
+    let reconciliation = crate::services::mlx_lifecycle::mlflow_reconciliation_decision(
+        &training.status,
+        training.mlflow_run_id.as_deref(),
+        wrapper_reported_terminal,
+        exit.as_ref().ok(),
+    );
+
     if !should_record_exit(&training.status) {
-        return matches!(exit, Ok(status) if status.success()) && training.status == "done";
+        let success = matches!(exit, Ok(status) if status.success()) && training.status == "done";
+        drop(guard);
+        if let Some(r) = reconciliation {
+            tokio::spawn(crate::services::mlx_lifecycle::reconcile_mlflow_run(r));
+        }
+        return success;
     }
-    match exit {
+    let success = match exit {
         Ok(status) if status.success() => {
             training.status = "done".into();
             true
@@ -606,13 +647,19 @@ fn finalize_training(
             training.error = Some(format!("Failed to wait for process: {e}"));
             false
         }
+    };
+    drop(guard);
+    if let Some(r) = reconciliation {
+        tokio::spawn(crate::services::mlx_lifecycle::reconcile_mlflow_run(r));
     }
+    success
 }
 
 async fn run_training_reader(
     app: tauri::AppHandle,
     mut child: tokio::process::Child,
     manifest_context: ManifestContext,
+    pid: u32,
 ) {
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -632,7 +679,7 @@ async fn run_training_reader(
     };
 
     let exit = child.wait().await;
-    if !finalize_training(&app, exit, stderr_text) {
+    if !finalize_training(&app, pid, exit, stderr_text) {
         return;
     }
 
@@ -703,6 +750,7 @@ pub async fn run_mlx_finetune(
             adapter_path: None,
             error: None,
             adapter_name: config.adapter_name.clone(),
+            mlflow_run_id: None,
         });
         prev
     };
@@ -791,7 +839,16 @@ pub async fn run_mlx_finetune(
                     adapter_path: None,
                     error: None,
                     adapter_name: config.adapter_name.clone(),
+                    mlflow_run_id: None,
                 });
+            }
+
+            // 앱 크래시 후에도 이 pid를 다음 실행이 고아로 탐지할 수 있게 남긴다(GitHub #13).
+            if let Ok(home) = home_dir() {
+                let marker = crate::services::mlx_lifecycle::pid_marker_path(&home, "training");
+                if let Err(e) = crate::services::mlx_lifecycle::write_pid_marker(&marker, pid) {
+                    eprintln!("[mlx] Failed to write training pid marker: {e}");
+                }
             }
 
             crate::commands::guardrails::start_caffeinate(&app, pid);
@@ -804,7 +861,7 @@ pub async fn run_mlx_finetune(
                 },
                 base_model: model_path.to_string_lossy().to_string(),
             };
-            tokio::spawn(run_training_reader(app, child, manifest_context));
+            tokio::spawn(run_training_reader(app, child, manifest_context, pid));
 
             Ok(pid)
         }
@@ -936,6 +993,13 @@ async fn run_serving_reader(app: tauri::AppHandle, mut child: tokio::process::Ch
     let stderr_task = stderr.map(|err| tokio::spawn(collect_stderr(err)));
 
     let exit = child.wait().await;
+    // child.wait()가 이미 완료됐다 — 프로세스는 실제로 종료됐으므로 아래 still_current
+    // 판정과 무관하게 marker를 지운다(GitHub #13). 그래야 다음 실행이 이미 죽은 프로세스를
+    // 고아로 오탐하지 않는다.
+    if let Ok(home) = home_dir() {
+        let marker = crate::services::mlx_lifecycle::pid_marker_path(&home, "serving");
+        crate::services::mlx_lifecycle::remove_pid_marker_if_matches(&marker, pid);
+    }
     let stderr_text = if let Some(t) = stderr_task {
         t.await.unwrap_or_default()
     } else {
@@ -1080,6 +1144,13 @@ pub async fn start_model_serving(
                     adapter_path: effective_adapter_str.clone(),
                     runtime,
                 });
+            }
+            // 앱 크래시 후에도 이 pid를 다음 실행이 고아로 탐지할 수 있게 남긴다(GitHub #13).
+            if let Ok(home) = home_dir() {
+                let marker = crate::services::mlx_lifecycle::pid_marker_path(&home, "serving");
+                if let Err(e) = crate::services::mlx_lifecycle::write_pid_marker(&marker, pid) {
+                    eprintln!("[mlx] Failed to write serving pid marker: {e}");
+                }
             }
             // 서빙 포트도 레지스트리에 기록해 다른 소비자가 같은 값을 본다.
             ports::set_assigned("serving", actual_port);
@@ -1779,6 +1850,7 @@ mod tests {
             adapter_path: None, // 아직 done이 아니다 — 이 테스트의 전제.
             error: None,
             adapter_name,
+            mlflow_run_id: None,
         });
 
         assert!(!is_adapter_safe_to_delete(&in_progress_dir, &state));

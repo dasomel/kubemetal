@@ -97,6 +97,12 @@ def main() -> int:
             "train_vision": args.train_vision,
         },
     )
+    # GitHub #13: run_id를 러스트에 보고해 둔다 — 이 프로세스가 시그널로 죽어 아래
+    # end_run을 못 부르면, 러스트가 이 run_id로 대신 MLflow에 종료를 알린다.
+    # MLflow가 꺼져 있거나 start_run이 실패하면 run_id가 없으므로 이 이벤트 자체를
+    # 보내지 않는다 — 없는 run_id를 지어내지 않는다(D22).
+    if reporter.run_id is not None:
+        emit({"type": "mlflow_run_started", "run_id": reporter.run_id})
 
     if args.runtime == "mlx-vlm":
         cmd = [

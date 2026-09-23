@@ -4,6 +4,7 @@ pub(crate) mod home_path;
 pub mod lifecycle_guard;
 pub mod local_inference;
 pub mod mlx_artifacts;
+pub mod mlx_lifecycle;
 pub mod mlx_serving_recovery;
 pub mod ports;
 pub mod process;

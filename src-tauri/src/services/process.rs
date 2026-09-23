@@ -84,6 +84,41 @@ pub fn resolve_bundled_resource(resource_dir: &std::path::Path, relative: &str) 
     resource_dir.join(relative)
 }
 
+/// pid 생존 확인 — 시그널 0은 실제로 프로세스를 죽이지 않고 생존 및 권한만 확인한다(kill(2) 관례).
+/// pid 0은 거부한다: `kill(0, ...)`은 호출자 자신의 프로세스 그룹으로 가므로, 0을 살아있는
+/// 것으로 오판해 이 앱 자신을 고아라고 보고하는 사고를 막는다(guardrails::signal_pid 가드와 동일).
+pub fn pid_is_alive(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    let result = unsafe { libc::kill(pid as i32, 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+/// pid에 대한 프로세스 전체 명령줄(args)을 조회한다.
+/// macOS `ps -p <pid> -o command=`를 `external_command`로 호출하여 비동기로 조회한다(D5/D22).
+pub async fn get_process_cmdline(pid: u32) -> Result<String, String> {
+    if pid == 0 {
+        return Err("invalid pid 0".to_string());
+    }
+    let mut cmd = external_command("ps")?;
+    cmd.args(["-p", &pid.to_string(), "-o", "command="]);
+    let output = cmd.output().await.map_err(|e| e.to_string())?;
+    if output.status.success() {
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if text.is_empty() {
+            Err("empty process command".to_string())
+        } else {
+            Ok(text)
+        }
+    } else {
+        Err(format!(
+            "ps failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,5 +151,15 @@ mod tests {
     fn resolve_cli_path_reports_searched_dirs_on_failure() {
         let err = resolve_cli_path("kubemetal-definitely-not-a-real-binary").unwrap_err();
         assert!(err.contains("/bin"), "search paths are not listed: {err}");
+    }
+
+    #[test]
+    fn pid_is_alive_rejects_pid_zero() {
+        assert!(!pid_is_alive(0));
+    }
+
+    #[test]
+    fn pid_is_alive_reports_current_process_as_alive() {
+        assert!(pid_is_alive(std::process::id()));
     }
 }
