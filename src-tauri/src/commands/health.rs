@@ -63,9 +63,25 @@ fn split_result<T>(result: Result<T, String>) -> (Option<T>, Option<String>) {
 
 /// 파생 판정 — 새 정책을 만들지 않고 각 하위 구조체가 이미 갖고 있는 필드만 본다.
 /// - 셋 다 조회 자체가 실패하면 아무것도 판정할 수 없으므로 "unknown".
-/// - 하나라도 조회 실패했거나, 조회에 성공했지만 이상 신호(guardrail의
-///   `memory_pressure_level == "critical"`, kagent의 `pod_issues_count > 0`, colima의
-///   `!is_running`)가 있으면 "degraded".
+/// - 하나라도 조회 실패했거나, 조회에 성공했지만 이상 신호가 있으면 "degraded":
+///   - colima: **클러스터가 떠 있을 때만** `kubernetes_active`/`mlflow_ready`/
+///     `seaweedfs_ready`를 함께 요구한다 — `is_running`만 보면 "떠는 있지만 스택이
+///     하나도 안 올라온" 상태가 healthy로 새는 결함이 있었다. 꺼져 있는 클러스터는
+///     그 자체로 이미 `is_running=false`로 잡힌다.
+///   - guardrails: `memory_pressure_level == "critical"`뿐 아니라 `"unknown"`도
+///     포함한다(sysctl 실패, `measure_memory_pressure_level`이 에러 대신 `"unknown"`
+///     문자열로 성공 반환한다) — 측정 못 한 값이 "healthy"로 새면 D22 위반이다.
+///     같은 이유로 `thermal_state.is_none()`(NSProcessInfo 읽기 실패)도 포함한다.
+///     "unknown 측정치"와 "실측된 위험 신호"를 이 필드 하나로는 구분하지 않기로
+///     했다 — 구분이 필요하면 호출자가 `guardrails`/`guardrails_error`를 직접
+///     본다(`overall`은 최소 판정일 뿐이다). `on_battery`는 pmset 실패 시 `false`로
+///     채워지는 미검증 값이라(guardrails.rs, 다른 레인 소유— 여기서 고치지 않는다)
+///     "healthy"의 근거로 쓰지 않는다(원래도 안 썼다 — 앞으로도 추가하지 않는다는
+///     것을 명시).
+///   - kagent: `pod_issues_count > 0`만 본다. **`kagent_installed == false`는
+///     이상 신호가 아니다** — kagent는 옵트인 설치이므로(D30/D33) 미설치가 기본
+///     상태다. 설치 안 됨을 degraded로 잡으면 kagent를 안 쓰는 대다수 설치에서
+///     이 커맨드가 항상 degraded를 반환하게 된다.
 /// - 셋 다 조회 성공하고 이상 신호가 하나도 없으면 "healthy".
 fn derive_overall_status(
     colima: Option<&ClusterStatus>,
@@ -78,8 +94,14 @@ fn derive_overall_status(
 
     let any_lookup_failed = colima.is_none() || guardrails.is_none() || kagent.is_none();
 
-    let colima_unhealthy = colima.is_some_and(|c| !c.is_running);
-    let guardrails_unhealthy = guardrails.is_some_and(|g| g.memory_pressure_level == "critical");
+    let colima_unhealthy = colima.is_some_and(|c| {
+        !(c.is_running && c.kubernetes_active && c.mlflow_ready && c.seaweedfs_ready)
+    });
+    let guardrails_unhealthy = guardrails.is_some_and(|g| {
+        g.memory_pressure_level == "critical"
+            || g.memory_pressure_level == "unknown"
+            || g.thermal_state.is_none()
+    });
     let kagent_unhealthy = kagent.is_some_and(|k| k.pod_issues_count > 0);
 
     if any_lookup_failed || colima_unhealthy || guardrails_unhealthy || kagent_unhealthy {
@@ -165,5 +187,65 @@ mod tests {
     #[test]
     fn all_lookups_failed_yields_unknown() {
         assert_eq!(derive_overall_status(None, None, None), "unknown");
+    }
+
+    /// sysctl 실패 시 `measure_memory_pressure_level`은 Err가 아니라 `"unknown"`
+    /// 문자열로 성공 반환한다(guardrails.rs) — 그 값이 healthy로 새면 안 된다(D22).
+    #[test]
+    fn unknown_memory_pressure_level_is_not_healthy() {
+        let colima = healthy_colima();
+        let mut guardrails = healthy_guardrails();
+        guardrails.memory_pressure_level = "unknown".to_string();
+        let kagent = healthy_kagent();
+        assert_eq!(
+            derive_overall_status(Some(&colima), Some(&guardrails), Some(&kagent)),
+            "degraded"
+        );
+    }
+
+    /// NSProcessInfo.thermalState를 못 읽으면 `thermal_state`가 None이다 — 측정
+    /// 실패를 "정상"으로 폴백하지 않는다(D22).
+    #[test]
+    fn missing_thermal_state_is_not_healthy() {
+        let colima = healthy_colima();
+        let mut guardrails = healthy_guardrails();
+        guardrails.thermal_state = None;
+        let kagent = healthy_kagent();
+        assert_eq!(
+            derive_overall_status(Some(&colima), Some(&guardrails), Some(&kagent)),
+            "degraded"
+        );
+    }
+
+    /// 클러스터는 떠 있지만(`is_running=true`) 스택 컴포넌트가 하나도 준비되지
+    /// 않은 상태 — `is_running`만 보면 이게 healthy로 샜다.
+    #[test]
+    fn cluster_running_but_stack_not_ready_is_not_healthy() {
+        let mut colima = healthy_colima();
+        colima.kubernetes_active = false;
+        colima.mlflow_ready = false;
+        colima.seaweedfs_ready = false;
+        let guardrails = healthy_guardrails();
+        let kagent = healthy_kagent();
+        assert_eq!(
+            derive_overall_status(Some(&colima), Some(&guardrails), Some(&kagent)),
+            "degraded"
+        );
+    }
+
+    /// kagent는 옵트인 설치다(D30/D33) — 미설치는 이상 신호가 아니라 기본 상태이므로
+    /// `pod_issues_count == 0`이면 여전히 healthy여야 한다.
+    #[test]
+    fn kagent_not_installed_with_no_pod_issues_is_still_healthy() {
+        let colima = healthy_colima();
+        let guardrails = healthy_guardrails();
+        let mut kagent = healthy_kagent();
+        kagent.kagent_installed = false;
+        kagent.kagent_ready = false;
+        kagent.pod_issues_count = 0;
+        assert_eq!(
+            derive_overall_status(Some(&colima), Some(&guardrails), Some(&kagent)),
+            "healthy"
+        );
     }
 }
