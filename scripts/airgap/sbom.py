@@ -89,6 +89,15 @@ def check_archive(path, expected):
         require(actual == expected, f"archive config digest mismatch: lock={expected}, archive={actual}")
 
 
+def is_gpl_family(name):
+    # Heuristic, not authoritative: catches common (L/A)GPL spellings (GPLv2, GPL2,
+    # LicenseRef-GPLv2+, LGPLv2.1, "GNU General Public License") without flagging
+    # unrelated identifiers that merely end in "gpl" (e.g. a hypothetical "xgpl").
+    # It can still miss unusual spellings this pattern doesn't anticipate.
+    return bool(re.search(r"(?:^|[^a-z0-9])(?:a|l)?gpl", name, re.I)
+                or re.search(r"general public license", name, re.I))
+
+
 def license_summary(entries, directory):
     counts = Counter()
     for entry in entries:
@@ -101,9 +110,9 @@ def license_summary(entries, directory):
     return {
         "informational_only": True,
         "counting": "One license expression per package per image; concluded, then declared, then NOASSERTION.",
+        "gpl_family_note": "gpl_family is a heuristic regex match; it can miss unusual spellings and is not a legal determination.",
         "package_count": sum(counts.values()),
-        "licenses": [{"license": name, "count": count,
-                      "gpl_family": bool(re.search(r"(?:^|[^a-z0-9])(?:a|l)?gpl(?:[^a-z0-9]|$)", name, re.I))}
+        "licenses": [{"license": name, "count": count, "gpl_family": is_gpl_family(name)}
                      for name, count in sorted(counts.items())],
     }
 

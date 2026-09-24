@@ -217,3 +217,59 @@ AIRGAP_ALLOW_UNLOCKED=1 TEST_PREEXISTING_ID='sha256:stale-cache-id' AIRGAP_DIR="
 grep -q 'AIRGAP_ALLOW_UNLOCKED=1' "${TEST_DIR}/opt-out.out"
 grep -q '프로비저닝 성공' "${TEST_DIR}/opt-out.out"
 echo 'PASS explicit unlocked opt-out permits the intentionally unverified install'
+
+# Re-collecting a bundle whose digests actually changed must not let stale sbom/
+# evidence ride along into the new manifest.sha256 (#98 follow-up): it would only
+# surface at install time as "SBOM digest differs". Isolated bundle so it never
+# touches $BUNDLE used above.
+STALE_DIR="${TEST_DIR}/bundle-stale-sbom"
+mkdir -p "$STALE_DIR/images" "$STALE_DIR/charts" "$STALE_DIR/binaries" "$STALE_DIR/manifests"
+cp "$payload" "$STALE_DIR/binaries/k3s"
+cp "$payload" "$STALE_DIR/binaries/kubescape"
+cp "$payload" "$STALE_DIR/charts/kagent-crds-0.9.12.tgz"
+cp "$payload" "$STALE_DIR/charts/kagent-0.9.12.tgz"
+
+rm -f "$TEST_DOCKER_STATE" "$TEST_DOCKER_LOG" "$TEST_PROVISION_LOG"
+AIRGAP_DIR="$STALE_DIR" TEST_PREEXISTING_ID="sha256:$(printf 'a%.0s' $(seq 1 64))" \
+  "${SCRIPT_DIR}/download_airgap_bundle.sh" > "${TEST_DIR}/stale-run1.out" 2>&1
+grep -q '완료: 모든 자원 수집 성공' "${TEST_DIR}/stale-run1.out" || {
+  cat "${TEST_DIR}/stale-run1.out" >&2
+  echo 'initial stale-sbom fixture collection failed' >&2
+  exit 1
+}
+
+# Fabricate SBOM evidence for this state, as `make airgap-sbom` would have, then
+# fold it into manifest.sha256 the same way the downloader does at the end of a run.
+mkdir -p "${STALE_DIR}/sbom"
+echo '{"schema_version":1,"images":[]}' > "${STALE_DIR}/sbom/manifest.json"
+echo '{"informational_only":true,"licenses":[]}' > "${STALE_DIR}/sbom/licenses.json"
+(
+  cd "$STALE_DIR" || exit 1
+  find . -type f ! -name manifest.sha256 -print0 | sort -z | xargs -0 shasum -a 256
+) > "${TEST_DIR}/stale-manifest.part"
+mv "${TEST_DIR}/stale-manifest.part" "${STALE_DIR}/manifest.sha256"
+grep -q './sbom/manifest.json' "${STALE_DIR}/manifest.sha256"
+
+# Force a real digest change: drop the cached archives so every image is re-pulled
+# with a different (fake) image ID.
+rm -f "$TEST_DOCKER_STATE" "$TEST_DOCKER_LOG" "$TEST_PROVISION_LOG"
+rm -rf "${STALE_DIR}/images"
+mkdir -p "${STALE_DIR}/images"
+AIRGAP_DIR="$STALE_DIR" TEST_PREEXISTING_ID="sha256:$(printf 'b%.0s' $(seq 1 64))" \
+  "${SCRIPT_DIR}/download_airgap_bundle.sh" > "${TEST_DIR}/stale-run2.out" 2>&1
+grep -q '완료: 모든 자원 수집 성공' "${TEST_DIR}/stale-run2.out" || {
+  cat "${TEST_DIR}/stale-run2.out" >&2
+  echo 'second stale-sbom fixture collection failed' >&2
+  exit 1
+}
+grep -qi 'sbom' "${TEST_DIR}/stale-run2.out"
+grep -qi 'airgap-sbom' "${TEST_DIR}/stale-run2.out"
+if [ -d "${STALE_DIR}/sbom" ]; then
+  echo 'stale sbom/ evidence survived a digest change' >&2
+  exit 1
+fi
+if grep -q './sbom/' "${STALE_DIR}/manifest.sha256"; then
+  echo 'manifest.sha256 still references removed sbom/ evidence' >&2
+  exit 1
+fi
+echo 'PASS re-collecting with changed digests removes stale sbom/ evidence and prompts regeneration'
