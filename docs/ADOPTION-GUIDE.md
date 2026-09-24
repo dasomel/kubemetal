@@ -22,7 +22,11 @@ A mocked adapter or healthy Kubernetes pod alone does not prove native MLX/Metal
 
 ## 3. External clusters come second
 
-Prefer the agent-only external-cluster path (D30) for observation/diagnostics/operations. Use the opt-in full-stack external path (D26) only after preflight checks for kubeconfig context, StorageClass, GitOps ownership, Kyverno policy, and host-bridge reachability.
+The stack's home is the app's own K3s. External clusters integrate in tiers (D30):
+
+- **L0 remote read (D34)** — one read-only ServiceAccount on the external cluster, zero workloads; diagnosis runs from local kagent. Works even where L1 does not fit.
+- **L1 agent-only (default)** — kagent CRDs only, no host bridge; nothing in the cluster may depend on the Mac's local stack.
+- **L2 full stack (opt-in)** — D26 stack deploy plus the D10 host bridge. Use it only after preflight passes for kubeconfig context, StorageClass, GitOps/ArgoCD ownership (D27), Kyverno policy, and a verified host-bridge address.
 
 ## 4. Read next
 
