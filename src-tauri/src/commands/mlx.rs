@@ -725,7 +725,7 @@ pub(crate) async fn check_current_spawn_admission(
     let thermal_pause_enabled = *state
         .thermal_pause_enabled
         .lock()
-        .map_err(|e| format!("Cannot read thermal pause configuration: {e}"))?;
+        .map_err(|e| format!("Cannot read thermal pause configuration: {e} — restart KubeMetal to reset guardrail settings."))?;
     crate::commands::guardrails::check_spawn_admission(
         &memory_pressure_level,
         thermal_state.as_deref(),
