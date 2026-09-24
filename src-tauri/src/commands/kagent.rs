@@ -19,6 +19,26 @@ fn kagent_version() -> &'static str {
     KAGENT_VERSION_RAW.trim()
 }
 
+/// kagent가 설치되는 유일한 네임스페이스. `install_kagent`과 `describe_deploy_operation`의
+/// InstallKagent 확인 요약(#18 리뷰)이 같은 값을 봐야 한다 — 저장된 `DeployTarget.namespace`와는
+/// 무관하며(kagent는 항상 이 네임스페이스), 두 곳에 리터럴을 따로 두지 않는다.
+pub const KAGENT_NAMESPACE: &str = "kagent";
+
+/// install_kagent이 대상 컨텍스트를 고르는 규칙 — `context` 인자(KagentOpsView의 kubeconfig
+/// 드롭다운 값)가 있으면 그것, 없으면 저장된 `DeployTarget`(D26)의 컨텍스트로 폴백한다.
+/// `describe_deploy_operation`의 InstallKagent 확인 요약도 이 함수를 그대로 호출해 두 경로가
+/// 어긋나지 않게 한다(#18 리뷰: 요약이 install_kagent와 다른 클러스터/네임스페이스를 보여주던
+/// 결함 — D33이 고친 것과 같은 축 혼동).
+pub async fn resolve_kagent_install_context(
+    app: tauri::AppHandle,
+    context: Option<String>,
+) -> Result<String, String> {
+    match context {
+        Some(ctx) => Ok(ctx),
+        None => Ok(get_deploy_target(app).await?.context),
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct KagentDiagnosticReport {
     pub target_context: String,
@@ -328,7 +348,7 @@ async fn helm_upgrade_kagent(
         cmd.arg("--install");
     }
     cmd.args([chart, &chart_ref])
-        .args(["--version", kagent_version(), "-n", "kagent"]);
+        .args(["--version", kagent_version(), "-n", KAGENT_NAMESPACE]);
     if let Some(path) = values_path {
         cmd.arg("-f").arg(path);
     }
@@ -366,12 +386,9 @@ pub async fn install_kagent(
     app: tauri::AppHandle,
     context: Option<String>,
 ) -> Result<String, String> {
-    let target_ctx = match context {
-        Some(ctx) => ctx,
-        None => get_deploy_target(app.clone()).await?.context,
-    };
+    let target_ctx = resolve_kagent_install_context(app.clone(), context).await?;
 
-    ensure_namespace(&target_ctx, "kagent").await?;
+    ensure_namespace(&target_ctx, KAGENT_NAMESPACE).await?;
 
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
     let values_path = resolve_bundled_resource(&resource_dir, "scripts/helm/kagent-values.yaml");
