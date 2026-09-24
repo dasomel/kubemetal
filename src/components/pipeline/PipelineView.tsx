@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { isTrainingActive } from '../../lib/trainingStatus';
+import { ACTIVE_TRAINING_STATUSES } from '../../lib/trainingStatus';
 import { ChevronDown, ChevronRight, Server, Database, Cpu, Archive, Rocket, FlaskConical, ArrowUpRight, Bot } from 'lucide-react';
 import { useColima } from '../../hooks/useColima';
 import { useHostPorts } from '../../hooks/useHostPorts';
@@ -202,10 +202,12 @@ export const PipelineView: React.FC = () => {
         detail: `iter ${training.current_iter}/${training.total_iters}`,
       };
     }
-    // 남은 것은 비종료 상태(running/paused*)뿐이어야 한다. 예전에는 이 자리가 fallback이라
-    // killed도, 모르는 값도 전부 "진행 중"으로 보였다 — 중지한 학습이 파이프라인에서만
-    // 계속 돌아가는 것처럼 보이던 원인이다.
-    if (!isTrainingActive(training.status)) {
+    // 남은 상태 중 알려진 running/paused*만 아래에서 "진행 중"으로 그린다. isTrainingActive는
+    // 비종료 집합 전체(모르는 값 포함)를 활성으로 보고 Stop/폴링을 계속시키는 게 맞지만, 그
+    // 판정을 여기 그대로 쓰면 모르는 상태도 "running (PID)"으로 표시돼 아래 주석과 어긋난다.
+    // 그래서 표시 여부는 알려진 상태 집합으로 직접 가른다 — Stop 버튼과 폴링은 다른 곳에서
+    // isTrainingActive 그대로 쓰여 계속 살아 있다.
+    if (!(ACTIVE_TRAINING_STATUSES as readonly string[]).includes(training.status)) {
       return {
         key: 'train',
         icon: Cpu,

@@ -492,6 +492,11 @@ async fn guardrail_loop(app: tauri::AppHandle, pid: u32) {
 
         // 발열은 옵트인이다. 켜져 있어도 serious 이상에서만 멈춘다 — fair는 부하가
         // 걸린 정상 상태에서도 흔해서, 거기서 멈추면 학습이 사실상 불가능해진다.
+        // Fails open (false) on poison here, unlike check_current_spawn_admission's
+        // fail-closed error in mlx.rs: this loop only decides whether to *auto-pause*
+        // an already-running training, and thermal pause is opt-in by default, so
+        // "can't read the setting" degrading to "don't auto-pause" preserves the
+        // pre-existing opt-in default rather than blocking new spawns on a poisoned lock.
         let thermal_pause_enabled = {
             match app.state::<GuardrailState>().thermal_pause_enabled.lock() {
                 Ok(g) => *g,
