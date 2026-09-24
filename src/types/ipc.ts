@@ -412,3 +412,19 @@ export interface PreflightReport {
   /** 차단 사유. 비어 있으면 배포 가능. code는 i18n 테이블(deployTarget.blockerCode.*)로 매핑(D31). */
   blockers: { code: string; detail: string | null }[];
 }
+
+/** 배포 작업 위험 등급 — 로컬(colima) 작업과 외부 클러스터 작업을 구분한다. */
+export type DeployRiskClass = 'local' | 'external';
+
+/**
+ * `describe_deploy_operation`(이슈 #18 축소 스코프)이 돌려주는, 파괴적 액션 실행 직전
+ * 확인 요약. `start_cluster`/`stop_cluster`는 저장된 배포 대상과 무관하게 항상 colima를
+ * 가리킨다(D26). 이 타입은 반환 형태 선언만이고 UI 통합(확인 다이얼로그)은 스코프 밖이다.
+ */
+export interface OperationSummary {
+  context: string;
+  namespace: string;
+  action: string;
+  target_description: string;
+  risk_class: DeployRiskClass;
+}

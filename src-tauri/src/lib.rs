@@ -13,7 +13,8 @@ use commands::data_ingest::{
     get_ingest_status, list_ingested_datasets, run_data_ingest, DataIngestState,
 };
 use commands::deploy_target::{
-    detect_host_bridge, get_deploy_target, preflight_deploy_target, save_deploy_target,
+    describe_deploy_operation, detect_host_bridge, get_deploy_target, preflight_deploy_target,
+    save_deploy_target,
 };
 use commands::guardrails::{
     get_guardrail_status, pause_mlx_training, resume_mlx_training, set_guardrail_config,
@@ -93,6 +94,7 @@ pub fn run() {
             save_deploy_target,
             preflight_deploy_target,
             detect_host_bridge,
+            describe_deploy_operation,
             get_kagent_diagnostics,
             toggle_kagent_agent,
             install_kagent,
