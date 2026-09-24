@@ -586,8 +586,11 @@ async fn collect_stderr(stderr: tokio::process::ChildStderr) -> String {
 /// 반대로 `killed`는 보호해야 한다. `kill_mlx_process`가 시그널을 보내기 **전에**
 /// 의도를 기록하므로, 그 뒤 도착하는 비정상 종료 코드가 사용자의 의도적 중지를
 /// "오류"로 덮어쓰면 안 된다.
+///
+/// 종착 상태 기준은 `run_mlx_finetune`의 재요청 거부 가드(GitHub #101)와 같아야 하므로
+/// `services::mlx_lifecycle::is_non_terminal_training_status`에 단일 정의를 두고 재사용한다.
 fn should_record_exit(status: &str) -> bool {
-    !matches!(status, "done" | "error" | "killed")
+    crate::services::mlx_lifecycle::is_non_terminal_training_status(status)
 }
 
 fn finalize_training(
@@ -752,8 +755,12 @@ pub async fn run_mlx_finetune(
     let prev_training = {
         let mut guard = state.training.lock().map_err(|e| e.to_string())?;
         if let Some(t) = guard.as_ref() {
-            if t.status == "running" {
-                return Err(format!("Training is already in progress (PID {}).", t.pid));
+            // GitHub #101 — `status == "running"`만 보면 가드레일이 SIGSTOP한 paused* 학습의
+            // 슬롯을 새 요청이 덮어쓴다. running/paused* 등 비종료 상태 전체를 거부한다.
+            if crate::services::mlx_lifecycle::is_non_terminal_training_status(&t.status) {
+                return Err(
+                    crate::services::mlx_lifecycle::in_progress_rejection_message(&t.status, t.pid),
+                );
             }
         }
         let prev = guard.clone();

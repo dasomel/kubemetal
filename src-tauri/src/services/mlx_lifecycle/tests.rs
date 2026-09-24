@@ -319,3 +319,53 @@ async fn scan_errors_instead_of_reporting_empty_when_parent_is_unreadable() {
     std::fs::remove_dir_all(&parent).unwrap();
     assert!(result.is_err());
 }
+
+/// GitHub #101 — `run_mlx_finetune` 진입 가드가 `status == "running"`만 거부하면,
+/// 가드레일이 SIGSTOP한 `paused*` 학습의 슬롯을 새 요청이 덮어쓴다. running과 모든
+/// paused* 상태가 비종료로 판정돼야 하고, 종착 상태(done/error/killed)만 통과돼야 한다.
+#[test]
+fn non_terminal_training_status_rejects_running_and_all_paused_variants() {
+    for status in [
+        "running",
+        "paused",
+        "paused_memory_pressure",
+        "paused_battery",
+        "paused_thermal",
+    ] {
+        assert!(
+            is_non_terminal_training_status(status),
+            "{status}는 비종료인데 새 요청이 통과됐다"
+        );
+    }
+    for status in ["done", "error", "killed"] {
+        assert!(
+            !is_non_terminal_training_status(status),
+            "{status}는 종착 상태인데 새 요청이 거부됐다"
+        );
+    }
+}
+
+#[test]
+fn in_progress_rejection_message_includes_status_and_pid() {
+    let msg = in_progress_rejection_message("running", 4242);
+    assert!(msg.contains("running"));
+    assert!(msg.contains("4242"));
+}
+
+#[test]
+fn in_progress_rejection_message_hints_resume_or_stop_when_paused() {
+    for status in [
+        "paused",
+        "paused_memory_pressure",
+        "paused_battery",
+        "paused_thermal",
+    ] {
+        let msg = in_progress_rejection_message(status, 1);
+        assert!(msg.contains(status));
+        assert!(msg.contains('1'));
+        assert!(
+            msg.to_lowercase().contains("resume") && msg.to_lowercase().contains("stop"),
+            "{status} rejection must hint resume/stop: {msg}"
+        );
+    }
+}
