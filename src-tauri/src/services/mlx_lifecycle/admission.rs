@@ -7,11 +7,34 @@
 //! 종료된다. 종착 상태(done/error/killed) 판정은 `commands::mlx::should_record_exit`와 같은
 //! 기준이어야 하므로, 그 기준을 여기 한 곳에만 두고 양쪽이 재사용한다.
 
+#[cfg(test)]
+mod tests;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TrainingStatusClass {
+    NonTerminal,
+    Terminal,
+}
+
+/// 백엔드가 생성하는 학습 상태 전체. TS의 두 배열과 정확히 같은 집합인지 테스트한다.
+pub const TRAINING_STATUSES: &[(&str, TrainingStatusClass)] = &[
+    ("running", TrainingStatusClass::NonTerminal),
+    ("paused", TrainingStatusClass::NonTerminal),
+    ("paused_memory_pressure", TrainingStatusClass::NonTerminal),
+    ("paused_battery", TrainingStatusClass::NonTerminal),
+    ("paused_thermal", TrainingStatusClass::NonTerminal),
+    ("done", TrainingStatusClass::Terminal),
+    ("error", TrainingStatusClass::Terminal),
+    ("killed", TrainingStatusClass::Terminal),
+];
+
 /// 학습 상태가 아직 결말이 나지 않았는가(= 진행 중으로 간주해 새 요청을 거부해야 하는가).
 ///
 /// 종착 상태는 `done`/`error`/`killed` 뿐이다. `running`과 모든 `paused*`는 비종료다.
 pub fn is_non_terminal_training_status(status: &str) -> bool {
-    !matches!(status, "done" | "error" | "killed")
+    !TRAINING_STATUSES
+        .iter()
+        .any(|(known, class)| *known == status && *class == TrainingStatusClass::Terminal)
 }
 
 /// 비종료 학습이 있을 때 새 `run_mlx_finetune` 요청에 반환할 거부 메시지.

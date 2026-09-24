@@ -7,11 +7,10 @@
  * 어디서는 "학습 진행 중"으로 남았고, `useMlx`에서는 3초 폴링이 영원히 멈추지 않았다
  * (실측 2026-08-21~22). 값이 하나 늘어난 순간 네 곳이 함께 조용히 틀린 것이다.
  *
- * 그래서 **비종료 상태를 명시적으로 열거**한다. 새 상태가 생기면 여기 한 곳만 고치면 되고,
- * 백엔드와 어긋나면 Rust 쪽 `training_status_sets_match_frontend` 테스트가 실패한다.
+ * 알려진 상태는 두 배열에 열거한다. 백엔드와 어긋나면 Rust 쪽
+ * `training_status_sets_match_frontend` 테스트가 종료/비종료 집합을 각각 대조해 실패한다.
  *
- * 백엔드 출처: `src-tauri/src/commands/mlx.rs`의 `TrainingStatus.status`
- * (비종료 `running`/`paused*`, 종료 `done`/`error`/`killed`)와 `should_record_exit`.
+ * 백엔드 출처: `src-tauri/src/services/mlx_lifecycle/admission.rs`의 `TRAINING_STATUSES`.
  */
 
 /** 아직 결말이 나지 않은 상태 — 진행 표시·폴링·배지가 살아 있어야 한다. */
@@ -29,9 +28,10 @@ export const TERMINAL_TRAINING_STATUSES = ['done', 'error', 'killed'] as const;
 /**
  * 학습이 아직 진행 중인가(일시정지 포함).
  *
- * 배제가 아니라 열거로 판정한다 — 모르는 값은 "진행 중"이 아니다. 알 수 없는 상태를
- * 진행 중으로 취급하면 스피너와 폴링이 영원히 남는다(D22: 모르는 것을 지어내지 않는다).
+ * D22: 모르는 문자열의 완료를 단정하지 않는다. 백엔드가 새 학습을 막는 동안 중지와
+ * 폴링을 유지한다(비용: 알 수 없는 상태도 계속 폴링, 탈출: 사용자 중지).
+ * null/undefined는 학습 슬롯 자체가 없는 경우다.
  */
 export function isTrainingActive(status: string | undefined | null): boolean {
-  return !!status && (ACTIVE_TRAINING_STATUSES as readonly string[]).includes(status);
+  return status != null && !(TERMINAL_TRAINING_STATUSES as readonly string[]).includes(status);
 }
