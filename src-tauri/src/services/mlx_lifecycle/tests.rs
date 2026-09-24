@@ -11,7 +11,7 @@ fn make_temp_dir(label: &str) -> PathBuf {
 #[tokio::test]
 async fn scan_returns_empty_when_dir_does_not_exist() {
     let dir = make_temp_dir("nonexistent-dir").join("sub");
-    let result = scan_orphaned_mlx_processes(&dir).await.unwrap();
+    let result = scan_orphaned_mlx_processes(&dir, &[]).await.unwrap();
     assert!(result.orphans.is_empty());
     assert!(result.unreadable.is_empty());
 }
@@ -30,7 +30,7 @@ async fn scan_detects_live_pid_marker() {
     let marker_file = dir.join(format!("training-{pid}.pid"));
     std::fs::write(&marker_file, pid.to_string()).unwrap();
 
-    let result = scan_orphaned_mlx_processes(&dir).await.unwrap();
+    let result = scan_orphaned_mlx_processes(&dir, &[]).await.unwrap();
     let _ = child.kill();
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&script_dir);
@@ -49,7 +49,7 @@ async fn scan_removes_marker_for_non_mlx_live_process_and_excludes_from_orphans(
     let marker_file = dir.join(format!("training-{pid}.pid"));
     std::fs::write(&marker_file, pid.to_string()).unwrap();
 
-    let result = scan_orphaned_mlx_processes(&dir).await.unwrap();
+    let result = scan_orphaned_mlx_processes(&dir, &[]).await.unwrap();
     assert!(result.orphans.is_empty(), "Non-MLX process excluded");
     assert!(result.unreadable.is_empty());
     assert!(!marker_file.exists(), "Marker must be cleaned up");
@@ -68,7 +68,7 @@ async fn scan_removes_dead_pid_marker_and_does_not_report() {
     let marker_file = dir.join(format!("training-{dead_pid}.pid"));
     std::fs::write(&marker_file, dead_pid.to_string()).unwrap();
 
-    let result = scan_orphaned_mlx_processes(&dir).await.unwrap();
+    let result = scan_orphaned_mlx_processes(&dir, &[]).await.unwrap();
     assert!(result.orphans.is_empty());
     assert!(result.unreadable.is_empty());
     assert!(!marker_file.exists(), "Dead PID marker must be cleaned up");
@@ -88,7 +88,7 @@ async fn scan_reports_symlink_as_unreadable_and_does_not_dereference() {
     #[cfg(unix)]
     std::os::unix::fs::symlink(&target, &link).unwrap();
 
-    let result = scan_orphaned_mlx_processes(&dir).await.unwrap();
+    let result = scan_orphaned_mlx_processes(&dir, &[]).await.unwrap();
     assert!(result.orphans.is_empty());
     assert_eq!(result.unreadable.len(), 1);
     assert_eq!(result.unreadable[0].path, link.display().to_string());
@@ -104,7 +104,7 @@ async fn scan_reports_out_of_range_pid_as_unreadable() {
     let marker_file = dir.join("training-9999999999.pid");
     std::fs::write(&marker_file, "9999999999").unwrap();
 
-    let result = scan_orphaned_mlx_processes(&dir).await.unwrap();
+    let result = scan_orphaned_mlx_processes(&dir, &[]).await.unwrap();
     assert!(result.orphans.is_empty());
     assert_eq!(result.unreadable.len(), 1);
     assert!(result.unreadable[0].error.contains("outside allowed range"));
@@ -117,7 +117,7 @@ async fn scan_reports_corrupt_content_as_unreadable() {
     let marker_file = dir.join("training-1234.pid");
     std::fs::write(&marker_file, "not-a-pid").unwrap();
 
-    let result = scan_orphaned_mlx_processes(&dir).await.unwrap();
+    let result = scan_orphaned_mlx_processes(&dir, &[]).await.unwrap();
     assert!(result.orphans.is_empty());
     assert_eq!(result.unreadable.len(), 1);
     assert!(result.unreadable[0].error.contains("Failed to parse PID"));
@@ -314,7 +314,7 @@ async fn scan_errors_instead_of_reporting_empty_when_parent_is_unreadable() {
     let dir = parent.join("mlx-markers");
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o000)).unwrap();
-    let result = scan_orphaned_mlx_processes(&dir).await;
+    let result = scan_orphaned_mlx_processes(&dir, &[]).await;
     std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
     std::fs::remove_dir_all(&parent).unwrap();
     assert!(result.is_err());
