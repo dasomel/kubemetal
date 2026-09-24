@@ -6,7 +6,10 @@
 use std::net::Ipv4Addr;
 use tauri::Manager;
 
-use crate::services::deploy_operation::{build_operation_summary, DeployAction, OperationSummary};
+use crate::commands::kagent::{resolve_kagent_install_context, KAGENT_NAMESPACE};
+use crate::services::deploy_operation::{
+    build_kagent_install_summary, build_operation_summary, DeployAction, OperationSummary,
+};
 use crate::services::deploy_target::{
     bridge_candidates, parse_ifconfig, set_active, BridgeState, DeployTarget, COLIMA_CONTEXT,
 };
@@ -52,21 +55,32 @@ pub async fn save_deploy_target(
 
 /// 파괴적 액션(`provision_mlops_stack`/`install_kagent`/`start_cluster`/`stop_cluster`)
 /// 실행 직전 프런트가 호출해 확인 요약을 받는다(이슈 #18 축소 스코프). 읽기 전용 —
-/// kubectl/helm/colima 변경 명령을 실행하지 않는다. 대상 해석은 기존 `get_deploy_target`
-/// (D26)을 그대로 재사용한다 — 네임스페이스·컨텍스트를 여기서 새로 하드코딩하지 않는다.
-/// 확인 다이얼로그 UI 자체는 이 커맨드의 스코프 밖.
+/// kubectl/helm/colima 변경 명령을 실행하지 않는다.
+///
+/// `context`는 `install_kagent`의 kubeconfig 선택기 값과 같은 축이며, **InstallKagent에만
+/// 쓰인다** — `resolve_kagent_install_context`로 install_kagent과 정확히 같은 규칙으로
+/// 해석해, 두 경로가 서로 다른 컨텍스트/네임스페이스를 보여주는 일을 막는다(#18 리뷰:
+/// 이전에는 요약이 항상 저장된 `DeployTarget`을 보여줘 드롭다운에서 고른 값과 어긋났다).
+/// 그 외 액션(`provision_mlops_stack`/`start_cluster`/`stop_cluster`)은 이 인자를 무시하고
+/// 기존 `get_deploy_target`(D26)/colima 고정 해석을 그대로 쓴다 — 네임스페이스·컨텍스트를
+/// 여기서 새로 하드코딩하지 않는다. 확인 다이얼로그 UI 자체는 이 커맨드의 스코프 밖.
 #[tauri::command]
 pub async fn describe_deploy_operation(
     app: tauri::AppHandle,
     action: String,
+    context: Option<String>,
 ) -> Result<OperationSummary, String> {
     match DeployAction::parse(&action)? {
         DeployAction::StartCluster | DeployAction::StopCluster => {
             build_operation_summary(&action, None)
         }
-        DeployAction::ProvisionMlopsStack | DeployAction::InstallKagent => {
+        DeployAction::ProvisionMlopsStack => {
             let target = get_deploy_target(app).await?;
             build_operation_summary(&action, Some(&target))
+        }
+        DeployAction::InstallKagent => {
+            let resolved_context = resolve_kagent_install_context(app, context).await?;
+            build_kagent_install_summary(&resolved_context, KAGENT_NAMESPACE)
         }
     }
 }

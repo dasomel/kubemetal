@@ -16,6 +16,14 @@ pub const COLIMA_CONTEXT: &str = "colima";
 /// default는 남의 영역이고, prune/삭제 사고의 반경이 너무 넓다.
 pub const DEFAULT_EXTERNAL_NAMESPACE: &str = "kubemetal";
 
+/// `context` 값만으로 colima 여부를 판정하는 단일 규칙. `DeployTarget::is_colima`뿐 아니라
+/// kagent 설치처럼 `DeployTarget`을 만들지 않고 컨텍스트 문자열만 들고 있는 호출부(#18 리뷰:
+/// `describe_deploy_operation`의 InstallKagent 요약)도 이 규칙을 그대로 써야 한다 — 두 번째
+/// 판정 규칙을 새로 만들면 축이 어긋난다(D33이 고친 것과 같은 종류의 결함).
+pub fn context_is_colima(context: &str) -> bool {
+    context == COLIMA_CONTEXT
+}
+
 // IPC 타입은 프로젝트 규약대로 snake_case를 유지한다(`src/types/ipc.ts` 상단 주석).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -90,7 +98,7 @@ impl DeployTarget {
     }
 
     pub fn is_colima(&self) -> bool {
-        self.context == COLIMA_CONTEXT
+        context_is_colima(&self.context)
     }
 
     /// D30: 자체 k3s가 스택의 정식 거처, 외부 기본은 에이전트 온리.
