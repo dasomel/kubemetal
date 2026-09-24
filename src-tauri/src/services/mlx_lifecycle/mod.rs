@@ -1,11 +1,14 @@
 //! MLX 프로세스 수명주기(고아 프로세스 탐지 및 MLflow run 상태 수렴) 서비스 — GitHub #13.
 
+pub mod admission;
 pub mod marker;
 pub mod reconcile;
 
 #[cfg(test)]
 mod tests;
 
+#[allow(unused_imports)]
+pub use admission::{in_progress_rejection_message, is_non_terminal_training_status};
 #[allow(unused_imports)]
 pub use marker::{
     classify_mlx_cmdline, marker_dir, pid_marker_path, remove_pid_marker,
