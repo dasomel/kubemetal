@@ -35,11 +35,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
   const [runtime, setRuntime] = useState<MlxRuntime>('mlx-lm');
   const [trainVision, setTrainVision] = useState(false);
 
-  // 종료 상태를 배제하는 방식이 아니라 **비종료 상태를 열거**한다. 예전에는
-  // `!== 'done' && !== 'error'`였는데 `killed`가 그 집합에 없어, 사용자가 중지를 누르고
-  // 프로세스가 실제로 죽은 뒤에도 스피너가 영원히 "학습 중"을 돌렸다(실측 2026-08-21).
-  // 백엔드 `should_record_exit`가 같은 이유로 같은 방향으로 고쳐졌다 — 상태 집합을
-  // 배제로 정의하면 값이 늘어날 때마다 조용히 틀린다.
+  // 백엔드가 새 학습을 막는 모르는 상태에서도 중지 버튼을 유지한다.
   const isTraining = !!training && isTrainingActive(training.status);
   const percent =
     training && training.total_iters > 0 ? Math.min((training.current_iter / training.total_iters) * 100, 100) : 0;
