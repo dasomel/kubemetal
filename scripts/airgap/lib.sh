@@ -7,6 +7,15 @@
 # 규칙을 각자 들고 있으면 규칙 쪽에서 다시 어긋나므로, 두 함수 모두 여기서만 정의한다.
 # ==============================================================================
 
+# Shell entrypoints inherit a caller's PATH; resolve optional tools once, then
+# invoke the resolved path (the desktop backend has its own Rust resolver).
+resolve_cli_path() {
+  command -v "$1" || {
+    echo "필수 도구를 찾을 수 없습니다: $1 — 요청한 단계를 중단합니다." >&2
+    return 1
+  }
+}
+
 # `#` 주석과 빈 줄을 허용하는 이미지 목록 파일을 한 줄에 하나씩 출력한다.
 # $1 = 목록 파일 경로
 read_image_list() {

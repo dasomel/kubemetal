@@ -28,7 +28,7 @@ VITE_PORT := 5173
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap \
+.PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap airgap-sbom verify-airgap-sbom \
         lint fmt verify license-check dependency-diff runtime-license-inventory model-license-check vuln-check supply-chain-check clean-light cluster-up cluster-down provision provision-all kagent-up \
         preflight render export-gitops \
         forward forward-stop status index-code analyze-code serve-codegraph clean
@@ -101,6 +101,12 @@ test-e2e: ## 종합 E2E 자율 피드백 검증 스위트 실행 (합성데이�
 # 호스트 네트워크를 건드리지 않고 "레지스트리 접근 0" 조건을 kubelet에 강제해 판정한다.
 verify-airgap: ## 폐쇄망 기동 가능성 검증 (imagePullPolicy: Never 프로브)
 	./scripts/airgap/verify_offline_images.sh
+
+airgap-sbom: ## 기존 번들 이미지의 SPDX·digest·라이선스 증거 첨부 (선택 실행, syft 필요, pull 없음)
+	./scripts/airgap/generate_sbom.sh
+
+verify-airgap-sbom: ## 첨부된 SBOM의 sha256·digest lock 검증 (오프라인, python3 필요)
+	./scripts/airgap/verify_sbom.sh
 
 lint: ## rustfmt --check + clippy(-D warnings) + tsc + DESIGN.md 토큰 린트 + IPC 타입 대조
 	cargo fmt --manifest-path $(CARGO_MANIFEST) --check

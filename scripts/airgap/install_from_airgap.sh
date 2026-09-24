@@ -62,6 +62,20 @@ else
   fi
 fi
 
+# D-b (#98): optional evidence, not a license gate. Missing evidence is explicit;
+# present but invalid evidence aborts before any image load or provisioning. This
+# script intentionally does not use `set -e` (see header) — guard explicitly so a
+# verify failure here still stops before [1/3], instead of only being collected
+# into FAILED at the end alongside recoverable per-image failures.
+if [ -e "$AIRGAP_DIR/sbom/manifest.json" ] || [ -L "$AIRGAP_DIR/sbom/manifest.json" ]; then
+  if ! bash "$SCRIPT_DIR/verify_sbom.sh"; then
+    echo "  !! SBOM 증거 검증에 실패했습니다 — 설치를 중단합니다." >&2
+    exit 1
+  fi
+else
+  echo "  -> SBOM 없음: 선택적 증거가 첨부되지 않았습니다 — 설치를 계속합니다."
+fi
+
 # legacy bundles predate digests.lock. Missing or malformed entries are otherwise a supply-chain
 # failure, not a warning: tag references alone cannot prove what docker load restored.
 VERIFY_IMAGE_IDS=1
