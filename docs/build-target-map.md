@@ -16,6 +16,8 @@ gate is split the way it is (offline-vs-network, verify-vs-release).
 | `supply-chain-check` | `cargo deny --config deny.toml check advisories sources` | `ci.yml` → `make supply-chain-check` | yes (advisory DB) |
 | `verify` | `test` + `lint` + `license-check` + `pnpm build` | `ci.yml` (top-level job) | no |
 | `verify-airgap` | offline `imagePullPolicy: Never` startup probe (D25) | — (manual, needs a running cluster) | no |
+| `airgap-sbom` | `scripts/airgap/generate_sbom.sh` → syft SPDX JSON + digest manifest + license summary | — (opt-in bundle evidence, issue #98) | no (existing bundle archives; syft + python3 required) |
+| `verify-airgap-sbom` | `scripts/airgap/verify_sbom.sh` → SBOM sha256 + complete `digests.lock` coverage | — (also called by offline installer when evidence is present) | no (python3 only) |
 | `build` / `bin` / `app` | `pnpm tauri build` variants | `release.yml` (`pnpm tauri build --bundles app` directly, not via `make`) | no (build itself); yes (`cargo`/`pnpm install` fetch on a cold cache) |
 
 ## Why some gates run outside `make`
@@ -40,12 +42,58 @@ the release-specific staging sequence.
   `release.yml` — see issue #35 for the remaining provenance/attestation work that would
   fold advisory checks into the release gate.
 
-## Out of scope for this map
+## Air-gap image SBOM evidence (issue #98)
+
+After collecting a bundle, run `AIRGAP_DIR=/path/to/bundle make airgap-sbom`
+(default: `~/.kubemetal/airgap`). This is a separate opt-in step: syft is **not** a
+bundle-download or installation dependency. Requesting generation without syft fails
+with a diagnostic; no tool is installed automatically. Python 3's standard library
+handles JSON and verification. The offline installer needs Python only when an SBOM
+manifest is present.
+
+The image set comes only from that bundle's `digests.lock`, not another maintained
+image list. Each single-image `docker save` archive (`images/*.tar[.gz]`) has its config
+SHA-256 checked against the lock's image ID before scanning. syft scans the explicit
+`docker-archive:` source with update checks and network license enrichment disabled;
+neither Docker nor a registry is contacted. See the upstream
+[syft CLI](https://oss.anchore.com/docs/reference/syft/cli/) and
+[configuration reference](https://oss.anchore.com/docs/reference/syft/configuration/).
+
+Outputs under `sbom/` are per-image `*.spdx.json`, `manifest.json` (schema version 1:
+`image_ref`, `repo_digest`, `image_id`, bundle-relative `sbom`, `sbom_sha256`), and
+`licenses.json`. Registry provenance marked `unverified` stays so; docker save cannot
+prove a registry RepoDigest. Generation stages all outputs and checks coverage before
+publishing. If `manifest.sha256` exists, only its `sbom/` entries are refreshed; other
+asset hashes remain unchanged. Do not generate evidence while collecting or installing
+the same bundle. A compressed source needs temporary space for one uncompressed tar.
+
+`AIRGAP_DIR=/path/to/bundle make verify-airgap-sbom` checks every locked image's SBOM
+hash and both digest fields offline, rejecting missing/empty/invalid SPDX files,
+duplicate entries and incomplete coverage. `install_from_airgap.sh` does this before
+loading images whenever `sbom/manifest.json` exists. With no manifest it explicitly
+prints `SBOM 없음` and continues. Existing bundle-integrity checks remain in force.
+Present but invalid SBOM evidence fails even with the legacy integrity opt-outs.
+
+This is evidence, **not** a vulnerability/license or release gate. `licenses.json`
+counts one license expression per package per image (concluded license, then declared,
+otherwise `NOASSERTION`), retaining compound expressions and flagging GPL/LGPL/AGPL.
+Unknown licenses and GPL-family matches do not reject an image. The summary is derived
+information, not a legal conclusion. Hashes detect inconsistency, not authenticity;
+signing/attestation remains outside #98. The inventory does not cover Helm chart
+contents or packages a container downloads after starting.
+
+Regression evidence: `bash scripts/airgap/test_sbom.sh` uses real local tar fixtures
+and a PATH syft stub, including absent syft, empty output, tampering and installer
+ordering. **Actual syft execution is unverified on this machine** (syft is absent;
+no installation or image pull was performed).
+
+## Remaining scope outside this map
 
 Kept out per issue #35's own comment history (`gh issue view 35 --comments`) — these need
 an owner scope decision before further work, not documentation:
 
-- Container/Helm artifact SBOM (separate from the binary SBOM `gen_sbom.sh` produces).
+- Helm chart artifact SBOM (bundle image SBOM is covered above; binary SBOM remains
+  separate in `gen_sbom.sh`).
 - Model/runtime artifact provenance graph.
 
 ### Multi-arch build matrix — scope resolved (issue #35), not yet implemented

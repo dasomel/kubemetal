@@ -193,6 +193,7 @@ bundle of those same images on the user's own machine (`docker pull` +
 use, but handing it to a third party is redistribution of the upstream images
 and their GPL userland — with the source-offer obligations that implies. That
 is the operator's call and the operator's obligation, not KubeMetal's.
+Optional `make airgap-sbom` attaches digest-linked SPDX/license evidence; see docs/build-target-map.md (issue #98).
 
 ================================================================================
 Trademark Notice
