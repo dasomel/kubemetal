@@ -7,6 +7,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+use super::session::is_tracked_pid;
+
 /// 고아 MLX 프로세스 정보.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OrphanedProcessInfo {
@@ -139,7 +141,10 @@ pub fn classify_mlx_cmdline(raw_cmdline: Option<&str>) -> CmdlineVerification {
 }
 
 /// marker 디렉터리를 비동기로 순회해 고아 MLX 프로세스 및 읽을 수 없는 marker를 탐지한다.
-pub async fn scan_orphaned_mlx_processes(dir: &Path) -> Result<OrphanScan, String> {
+pub async fn scan_orphaned_mlx_processes(
+    dir: &Path,
+    tracked_pids: &[u32],
+) -> Result<OrphanScan, String> {
     // `exists()`는 권한 오류도 false로 삼켜 "고아 없음"으로 위장한다 — NotFound만 빈 결과다(D22).
     let mut read_dir = match tokio::fs::read_dir(dir).await {
         Ok(rd) => rd,
@@ -241,6 +246,11 @@ pub async fn scan_orphaned_mlx_processes(dir: &Path) -> Result<OrphanScan, Strin
                 path: entry_path.display().to_string(),
                 error: format!("Filename PID {pid_str} disagrees with content PID {pid}"),
             });
+            continue;
+        }
+
+        // 현재 세션의 marker는 소유자가 정리한다. 프로브 실패로도 삭제하지 않는다.
+        if is_tracked_pid(pid, tracked_pids) {
             continue;
         }
 

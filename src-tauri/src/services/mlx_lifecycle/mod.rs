@@ -3,6 +3,7 @@
 pub mod admission;
 pub mod marker;
 pub mod reconcile;
+mod session;
 
 #[cfg(test)]
 mod tests;
@@ -22,15 +23,21 @@ pub use reconcile::{
 };
 
 use std::path::PathBuf;
+use tauri::State;
+
+use crate::commands::mlx::MlxState;
 
 /// 앱 시작 시 고아 MLX 프로세스 탐지 IPC 커맨드(GitHub #13).
 /// marker 디렉터리와 pid 생존 여부를 검사해 살아 있는 프로세스 목록을 반환한다.
 #[tauri::command]
-pub async fn check_for_orphaned_mlx_processes() -> Result<OrphanScan, String> {
+pub async fn check_for_orphaned_mlx_processes(
+    state: State<'_, MlxState>,
+) -> Result<OrphanScan, String> {
+    let tracked_pids = session::tracked_mlx_pids(&state)?;
     let home = match std::env::var("HOME").map(PathBuf::from) {
         Ok(h) => h,
         Err(e) => return Err(format!("Failed to determine HOME directory: {e}")),
     };
     let dir = marker_dir(&home);
-    scan_orphaned_mlx_processes(&dir).await
+    scan_orphaned_mlx_processes(&dir, &tracked_pids).await
 }
