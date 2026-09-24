@@ -1,6 +1,7 @@
 pub mod artifact_manifest;
 pub mod deploy_operation;
 pub mod deploy_target;
+pub(crate) mod gpu_benchmark;
 pub(crate) mod home_path;
 pub(crate) mod kagent_agents;
 pub mod lifecycle_guard;

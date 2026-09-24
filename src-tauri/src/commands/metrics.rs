@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use sysinfo::System;
 use tauri::{Manager, State};
 
+use crate::commands::guardrails::GuardrailState;
+use crate::commands::mlx::{check_current_spawn_admission, MlxState};
+use crate::services::gpu_benchmark::check_workloads;
 use crate::services::process::{augmented_path, external_command, resolve_bundled_resource};
 
 /// 정적 하드웨어 스펙. `gpu_cores`만 `Option`인 이유 — sysctl은 어떤 Mac에서도 CPU/RAM을
@@ -388,15 +391,51 @@ fn gpu_benchmark_script_path(app: &tauri::AppHandle) -> Result<PathBuf, String> 
     ))
 }
 
+async fn check_gpu_benchmark_admission(
+    state: &MlxState,
+    guardrails: &GuardrailState,
+) -> Result<(), String> {
+    let training = state
+        .training
+        .lock()
+        .map_err(|e| format!("Cannot check GPU benchmark training slot: {e}"))?
+        .as_ref()
+        .map(|t| (t.status.clone(), t.pid));
+    let serving = state
+        .serving
+        .lock()
+        .map_err(|e| format!("Cannot check GPU benchmark serving slot: {e}"))?
+        .as_ref()
+        .map(|s| (s.pid, s.port));
+    check_workloads(
+        training
+            .as_ref()
+            .map(|(status, pid)| (status.as_str(), *pid)),
+        serving,
+    )?;
+
+    // D40: reuse the spawn gate after the workload check, with no slot lock across await.
+    // This snapshot cannot stop a later training/serving start; that needs a shared
+    // reservation covering the benchmark lifetime (outside this #11 slice).
+    check_current_spawn_admission(guardrails).await
+}
+
 /// 실측 GPU matmul 벤치마크(이슈 #11 축소 스코프). 실행 실패·타임아웃·파싱 불가 시 반드시
 /// `Err`를 반환한다 — GFLOPS 0이나 가짜 구조체로 폴백하지 않는다(D22, mistakes-log의
 /// 조작된 메트릭 사례들과 같은 실수를 반복하지 않기 위함).
 #[tauri::command]
-pub async fn run_gpu_benchmark(app: tauri::AppHandle) -> Result<GpuBenchmarkResult, String> {
+pub async fn run_gpu_benchmark(
+    app: tauri::AppHandle,
+    state: State<'_, MlxState>,
+) -> Result<GpuBenchmarkResult, String> {
+    check_gpu_benchmark_admission(&state, &app.state::<GuardrailState>()).await?;
     let venv_py = crate::commands::mlx::venv_python()?;
     let script = gpu_benchmark_script_path(&app)?;
     run_gpu_benchmark_inner(&venv_py, &script).await
 }
+
+#[cfg(test)]
+mod admission_tests;
 
 #[cfg(test)]
 mod tests {

@@ -716,17 +716,16 @@ async fn run_training_reader(
 /// 현재 메모리 압력, 발열 상태, 발열 일시정지 설정을 조회하여 프로세스 스폰 허용 여부를 검사한다(D40).
 /// 슬롯 선점 및 동기 준비(경로 검증, config 읽기, 포트 탐색) 전에 1회 검사하며,
 /// 검사 시점과 실제 스폰 사이의 상태 변화는 막지 못한다.
-async fn check_current_spawn_admission(app: &tauri::AppHandle) -> Result<(), String> {
+pub(crate) async fn check_current_spawn_admission(
+    state: &crate::commands::guardrails::GuardrailState,
+) -> Result<(), String> {
     let memory_pressure_level = crate::commands::guardrails::measure_memory_pressure_level().await;
     let thermal_state = crate::commands::metrics::read_thermal_state();
-    let thermal_pause_enabled = match app
-        .state::<crate::commands::guardrails::GuardrailState>()
+    // D40/D22: a poisoned opt-in setting is unknown, not disabled; retry after restart.
+    let thermal_pause_enabled = *state
         .thermal_pause_enabled
         .lock()
-    {
-        Ok(g) => *g,
-        Err(_) => false,
-    };
+        .map_err(|e| format!("Cannot read thermal pause configuration: {e}"))?;
     crate::commands::guardrails::check_spawn_admission(
         &memory_pressure_level,
         thermal_state.as_deref(),
@@ -746,7 +745,8 @@ pub async fn run_mlx_finetune(
     // 이미 메모리 압력이 critical이거나(D16) 발열 일시정지가 켜진 채 serious 이상이면(D28)
     // 슬롯을 점유하지 않고 거부한다. 검사~스폰 사이 상태 변화는 막지 못하며, 학습은 스폰 후
     // spawn_guardrail_loop가 사후 방어한다.
-    check_current_spawn_admission(&app).await?;
+    check_current_spawn_admission(&app.state::<crate::commands::guardrails::GuardrailState>())
+        .await?;
 
     let prev_training = {
         let mut guard = state.training.lock().map_err(|e| e.to_string())?;
@@ -1079,7 +1079,8 @@ pub async fn start_model_serving(
     // 스폰 전 admission 게이트(D40, GitHub #32) — 슬롯 선점 및 동기 준비 전 1회 검사.
     // 학습과 동일한 기준이나, 서빙에는 `spawn_guardrail_loop`가 붙지 않아(학습 전용)
     // 검사~스폰 사이나 스폰 후의 상태 악화를 사후 방어하지 못하는 한계가 있다.
-    check_current_spawn_admission(&app).await?;
+    check_current_spawn_admission(&app.state::<crate::commands::guardrails::GuardrailState>())
+        .await?;
 
     {
         let mut guard = state.serving.lock().map_err(|e| e.to_string())?;
