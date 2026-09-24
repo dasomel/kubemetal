@@ -277,11 +277,7 @@ async fn pause_pid(app: &tauri::AppHandle, pid: u32, status: &str) -> Result<(),
     signal_pid(pid, libc::SIGSTOP).await?;
     let mlx_state = app.state::<MlxState>();
     let mut guard = mlx_state.training.lock().map_err(|e| e.to_string())?;
-    if let Some(t) = guard.as_mut() {
-        if t.pid == pid {
-            t.status = status.to_string();
-        }
-    }
+    apply_signal_transition(&mut guard, pid, status);
     Ok(())
 }
 
@@ -289,12 +285,25 @@ async fn resume_pid(app: &tauri::AppHandle, pid: u32) -> Result<(), String> {
     signal_pid(pid, libc::SIGCONT).await?;
     let mlx_state = app.state::<MlxState>();
     let mut guard = mlx_state.training.lock().map_err(|e| e.to_string())?;
-    if let Some(t) = guard.as_mut() {
-        if t.pid == pid {
-            t.status = "running".to_string();
+    apply_signal_transition(&mut guard, pid, "running");
+    Ok(())
+}
+
+/// SIGSTOP/SIGCONT 후 슬롯 상태를 갱신한다. 같은 pid이고 아직 비종료일 때만 바꾼다 —
+/// 루프가 `running`을 읽고 측정하는 사이 finalize가 종료 상태를 썼다면 그대로 둔다.
+/// 되살린 `paused_*`/`running`은 #101 진입 가드 때문에 새 학습을 계속 막는다.
+fn apply_signal_transition(
+    slot: &mut Option<crate::commands::mlx::TrainingStatus>,
+    pid: u32,
+    status: &str,
+) {
+    if let Some(t) = slot.as_mut() {
+        if t.pid == pid
+            && crate::services::mlx_lifecycle::is_non_terminal_training_status(&t.status)
+        {
+            t.status = status.to_string();
         }
     }
-    Ok(())
 }
 
 #[tauri::command]
@@ -500,6 +509,43 @@ async fn guardrail_loop(app: tauri::AppHandle, pid: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn slot(status: &str) -> Option<crate::commands::mlx::TrainingStatus> {
+        Some(crate::commands::mlx::TrainingStatus {
+            pid: 42,
+            status: status.into(),
+            current_iter: 0,
+            total_iters: 1,
+            last_loss: None,
+            adapter_path: None,
+            error: None,
+            adapter_name: String::new(),
+            mlflow_run_id: None,
+        })
+    }
+
+    /// 가드레일 루프가 `running`을 읽고 측정하는 사이 학습이 끝나 finalize가 `done`을 쓰면,
+    /// 뒤늦은 pause/resume이 그 종료 상태를 덮어쓰면 안 된다 — #101 이후 비종료 슬롯은
+    /// 새 학습을 막으므로, 되살아난 `paused_*`/`running`은 사용자가 치울 때까지 학습을 잠근다.
+    #[test]
+    fn signal_transition_never_overwrites_a_terminal_status() {
+        for terminal in ["done", "error", "killed"] {
+            let mut s = slot(terminal);
+            apply_signal_transition(&mut s, 42, "paused_memory_pressure");
+            assert_eq!(s.unwrap().status, terminal);
+            let mut s = slot(terminal);
+            apply_signal_transition(&mut s, 42, "running");
+            assert_eq!(s.unwrap().status, terminal);
+        }
+        let mut s = slot("running");
+        apply_signal_transition(&mut s, 42, "paused_thermal");
+        assert_eq!(s.as_ref().unwrap().status, "paused_thermal");
+        apply_signal_transition(&mut s, 42, "running");
+        assert_eq!(s.as_ref().unwrap().status, "running");
+        // 다른 pid의 슬롯은 건드리지 않는다.
+        apply_signal_transition(&mut s, 7, "paused");
+        assert_eq!(s.unwrap().status, "running");
+    }
 
     #[test]
     fn map_pressure_level_translates_known_codes() {
