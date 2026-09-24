@@ -6,6 +6,7 @@
 use std::net::Ipv4Addr;
 use tauri::Manager;
 
+use crate::services::deploy_operation::{build_operation_summary, DeployAction, OperationSummary};
 use crate::services::deploy_target::{
     bridge_candidates, parse_ifconfig, set_active, BridgeState, DeployTarget, COLIMA_CONTEXT,
 };
@@ -47,6 +48,27 @@ pub async fn save_deploy_target(
     std::fs::write(&path, text).map_err(|e| format!("failed to save {TARGET_FILE}: {e}"))?;
     set_active(&target);
     Ok(target)
+}
+
+/// 파괴적 액션(`provision_mlops_stack`/`install_kagent`/`start_cluster`/`stop_cluster`)
+/// 실행 직전 프런트가 호출해 확인 요약을 받는다(이슈 #18 축소 스코프). 읽기 전용 —
+/// kubectl/helm/colima 변경 명령을 실행하지 않는다. 대상 해석은 기존 `get_deploy_target`
+/// (D26)을 그대로 재사용한다 — 네임스페이스·컨텍스트를 여기서 새로 하드코딩하지 않는다.
+/// 확인 다이얼로그 UI 자체는 이 커맨드의 스코프 밖.
+#[tauri::command]
+pub async fn describe_deploy_operation(
+    app: tauri::AppHandle,
+    action: String,
+) -> Result<OperationSummary, String> {
+    match DeployAction::parse(&action)? {
+        DeployAction::StartCluster | DeployAction::StopCluster => {
+            build_operation_summary(&action, None)
+        }
+        DeployAction::ProvisionMlopsStack | DeployAction::InstallKagent => {
+            let target = get_deploy_target(app).await?;
+            build_operation_summary(&action, Some(&target))
+        }
+    }
 }
 
 pub(crate) async fn kubectl_json(
