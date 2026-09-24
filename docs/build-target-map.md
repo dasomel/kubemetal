@@ -67,6 +67,15 @@ publishing. If `manifest.sha256` exists, only its `sbom/` entries are refreshed;
 asset hashes remain unchanged. Do not generate evidence while collecting or installing
 the same bundle. A compressed source needs temporary space for one uncompressed tar.
 
+If re-running `download_airgap_bundle.sh` actually changes `digests.lock` (an image
+was re-collected with a different digest), the downloader deletes any existing `sbom/`
+evidence itself and prints that `make airgap-sbom` must be re-run — stale SBOM evidence
+tied to the old digests would otherwise get silently re-hashed into `manifest.sha256`
+and only fail at install time ("SBOM digest differs"). **Do not manually delete `sbom/`
+after generating it without also regenerating it or removing its entries from
+`manifest.sha256`** — `install_from_airgap.sh`'s integrity check covers those hashes, so
+a hand-deleted `sbom/` fails installation instead of being treated as "no SBOM".
+
 `AIRGAP_DIR=/path/to/bundle make verify-airgap-sbom` checks every locked image's SBOM
 hash and both digest fields offline, rejecting missing/empty/invalid SPDX files,
 duplicate entries and incomplete coverage. `install_from_airgap.sh` does this before
@@ -77,8 +86,9 @@ Present but invalid SBOM evidence fails even with the legacy integrity opt-outs.
 This is evidence, **not** a vulnerability/license or release gate. `licenses.json`
 counts one license expression per package per image (concluded license, then declared,
 otherwise `NOASSERTION`), retaining compound expressions and flagging GPL/LGPL/AGPL.
-Unknown licenses and GPL-family matches do not reject an image. The summary is derived
-information, not a legal conclusion. Hashes detect inconsistency, not authenticity;
+The `gpl_family` flag is a regex heuristic (`gpl_family_note` in the output) and can
+miss unusual spellings it doesn't anticipate. Unknown licenses and GPL-family matches
+do not reject an image. The summary is derived information, not a legal conclusion. Hashes detect inconsistency, not authenticity;
 signing/attestation remains outside #98. The inventory does not cover Helm chart
 contents or packages a container downloads after starting.
 

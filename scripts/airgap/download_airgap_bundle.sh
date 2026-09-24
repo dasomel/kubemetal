@@ -41,6 +41,14 @@ is_valid() {
 
 sha256_of() { shasum -a 256 "$1" | awk '{print $1}'; }
 
+# digests.lock 변경 여부를 이 실행 전/후로 비교해, 실제로 이미지가 바뀐 경우에만 오래된
+# sbom/ 증거를 지운다(#98 후속). SBOM evidence는 생성 시점 digests.lock과 짝지어 있어서,
+# 재수집으로 digest가 달라지면 그 evidence는 더 이상 유효하지 않은데도 이 스크립트가 그걸
+# 그대로 manifest.sha256에 재해시해 넣으면 install 단계에서야 "SBOM digest differs"로
+# 뒤늦게 드러난다 — 수집 시점에 곧바로 지우고 알리는 편이 D22에 맞다.
+OLD_DIGESTS_LOCK_SHA=""
+[ -f "$DIGESTS_LOCK" ] && OLD_DIGESTS_LOCK_SHA="$(sha256_of "$DIGESTS_LOCK")"
+
 # 업스트림이 게시한 기대 해시를 가져온다.
 #   bare  : 파일 전체가 sha256 한 줄 (kubescape의 `<asset>.sha256`)
 #   list  : `<sha>  <파일명>` 목록에서 해당 항목 (k3s의 `sha256sum-arm64.txt`)
@@ -218,6 +226,13 @@ fi
 if ! write_digest_lock "$DIGESTS_TMP" "$DIGESTS_LOCK"; then
   rm -f "$DIGESTS_LOCK" "${DIGESTS_LOCK}.part"
   FAILED+=("digests-lock")
+fi
+
+NEW_DIGESTS_LOCK_SHA=""
+[ -f "$DIGESTS_LOCK" ] && NEW_DIGESTS_LOCK_SHA="$(sha256_of "$DIGESTS_LOCK")"
+if [ "$NEW_DIGESTS_LOCK_SHA" != "$OLD_DIGESTS_LOCK_SHA" ] && [ -d "${AIRGAP_DIR}/sbom" ]; then
+  echo "  -> digests.lock이 바뀌어 오래된 sbom/ 증거를 제거합니다 — 새로 붙이려면 'make airgap-sbom'을 다시 실행하세요."
+  rm -rf "${AIRGAP_DIR}/sbom"
 fi
 
 echo "[4/4] K8s 매니페스트 동기화..."

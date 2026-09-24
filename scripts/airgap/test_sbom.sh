@@ -94,6 +94,24 @@ write_bundle_manifest() {
   mv "$TEST_DIR/manifest" "$AIRGAP_DIR/manifest.sha256"
 }
 
+python3 - "$SCRIPT_DIR" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+from sbom import is_gpl_family
+
+positive = [
+    "GPLv2", "GPL2", "LicenseRef-GPLv2+", "LicenseRef-LGPLv2.1",
+    "BSD AND GPLv3+", "GNU General Public License", "AGPL-3.0-only",
+    "GPL-2.0-only OR LGPL-2.1-only",
+]
+negative = ["MIT", "Apache-2.0", "BSD-3-Clause"]
+for name in positive:
+    assert is_gpl_family(name), f"expected GPL family: {name}"
+for name in negative:
+    assert not is_gpl_family(name), f"unexpected GPL family: {name}"
+PY
+echo 'PASS GPL-family heuristic covers common spellings without false-flagging MIT/Apache/BSD'
+
 write_bundle_manifest
 if ! generate > "$TEST_DIR/generate.out" 2>&1; then
   cat "$TEST_DIR/generate.out" >&2
