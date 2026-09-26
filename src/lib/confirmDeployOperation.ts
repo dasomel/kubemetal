@@ -25,15 +25,17 @@ export async function confirmDeployOperation(
         targetDescription: summary.target_description,
         context: summary.context,
         namespace: summary.namespace,
-        riskClass: summary.risk_class,
+        riskClass: t(`deployOp.risk.${summary.risk_class}`),
+        question: t(`deployOp.question.${action}`),
       }),
       { title: t('deployOp.confirmationTitle'), kind: 'warning' },
     );
   } catch (error) {
+    // 오류 다이얼로그마저 실패해도 호출부의 busy 상태가 풀리도록 이 함수는 절대 throw하지 않는다.
     await message(t('deployOp.confirmationFailed', { error: String(error) }), {
       title: t('deployOp.confirmationTitle'),
       kind: 'error',
-    });
+    }).catch(() => undefined);
     return false;
   }
 }
