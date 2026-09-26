@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { useColima } from '../../hooks/useColima';
 import { useTranslation } from '../../i18n/i18nContext';
+import { confirmDeployOperation } from '../../lib/confirmDeployOperation';
 import type { KagentDiagnosticReport } from '../../types/ipc';
 import { publishKagentDiagnostics } from '../../state/kagentDiagnosticsStore';
 import { KagentAgentToggleList } from './KagentAgentToggleList';
@@ -85,6 +86,12 @@ export const KagentOpsView: React.FC = () => {
 
   const handleInstallKagent = async () => {
     setInstallBusy(true);
+    const confirmed = await confirmDeployOperation(t, 'install_kagent', selectedContext);
+    if (!confirmed) {
+      setInstallBusy(false);
+      return;
+    }
+
     try {
       // 설치 대상은 이 패널의 kubeconfig 선택기와 같은 축이다(D33 개정) — 진단이 narwhal을
       // 보는데 설치만 저장된 DeployTarget(colima)으로 가면 재조회는 영원히 "미설치"가 된다.
