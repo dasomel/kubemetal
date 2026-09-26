@@ -17,6 +17,15 @@ export interface SystemMetrics {
   gpu_backend?: string;
 }
 
+/** `run_gpu_benchmark`가 돌려주는 실측 MLX matmul 결과. Rust 필드와 1:1 대응한다. */
+export interface GpuBenchmarkResult {
+  gflops: number;
+  matrix_dim: number;
+  iterations: number;
+  python_elapsed_seconds: number;
+  rust_elapsed_seconds: number;
+}
+
 export interface HardwareSpec {
   brand_name: string;
   cpu_cores: number;
