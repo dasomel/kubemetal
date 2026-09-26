@@ -1,11 +1,12 @@
 import React from 'react';
+import { Boxes, ExternalLink, RefreshCw, Zap, ArrowUpRight, Radio } from 'lucide-react';
 import { useColima } from '../../hooks/useColima';
 import { useDeployTarget } from '../../hooks/useDeployTarget';
 import { usePrefect } from '../../hooks/usePrefect';
 import { useServiceAccess } from '../../hooks/useServiceAccess';
 import { useTranslation } from '../../i18n/i18nContext';
+import { confirmDeployOperation } from '../../lib/confirmDeployOperation';
 import { openEndpoint } from '../../lib/openEndpoint';
-import { Boxes, ExternalLink, RefreshCw, Zap, ArrowUpRight, Radio } from 'lucide-react';
 
 export const ProvisionPanel: React.FC = () => {
   const {
@@ -18,6 +19,7 @@ export const ProvisionPanel: React.FC = () => {
     refresh,
   } = useColima();
   const { t } = useTranslation();
+  const [confirmingProvision, setConfirmingProvision] = React.useState(false);
 
   // 엔드포인트 목록의 URL 출처. 포워딩을 켜거나 끌 때마다 실제 포트가 바뀔 수 있으므로
   // 그 시점에 다시 읽는다(아래 start/stop 핸들러).
@@ -51,6 +53,20 @@ export const ProvisionPanel: React.FC = () => {
   // 파이프라인 탭이 아닌 대시보드 카드이므로 5초 폴링 없이 마운트(탭 진입) 시 1회만 조회한다.
   const { status: prefectStatus } = usePrefect(false);
   const prefectReady = prefectStatus?.server_ready ?? false;
+
+  const handleProvision = async () => {
+    setConfirmingProvision(true);
+    let confirmed = false;
+    try {
+      confirmed = await confirmDeployOperation(t, 'provision_mlops_stack');
+    } finally {
+      setConfirmingProvision(false);
+    }
+
+    if (confirmed) {
+      await provisionStack();
+    }
+  };
 
   return (
     <div className="rounded-xl bg-surface p-4 shadow-panel">
@@ -134,8 +150,8 @@ export const ProvisionPanel: React.FC = () => {
       {/* 액션 버튼 */}
       <div className="flex flex-wrap gap-3 mb-4">
         <button
-          onClick={() => provisionStack()}
-          disabled={loading || !clusterUsable || isL1}
+          onClick={() => void handleProvision()}
+          disabled={loading || confirmingProvision || !clusterUsable || isL1}
           className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
         >
           <Zap className="w-3.5 h-3.5" />
