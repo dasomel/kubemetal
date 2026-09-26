@@ -229,6 +229,18 @@ export interface GuardrailStatus {
   resume_overrides: string[];
 }
 
+/** `get_system_health_summary`의 하위 조회 결과. 실패한 조회는 값 대신 해당 `*_error`에
+ * 실제 오류를 남기므로, 다른 컴포넌트의 성공 결과를 지우면 안 된다(D22). */
+export interface SystemHealthSummary {
+  colima: ClusterStatus | null;
+  colima_error: string | null;
+  guardrails: GuardrailStatus | null;
+  guardrails_error: string | null;
+  kagent: KagentDiagnosticReport | null;
+  kagent_error: string | null;
+  overall: 'healthy' | 'degraded' | 'unknown';
+}
+
 export interface FlowRunInfo {
   id: string;
   name: string;
