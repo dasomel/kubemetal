@@ -17,6 +17,15 @@ export interface SystemMetrics {
   gpu_backend?: string;
 }
 
+/** `run_gpu_benchmark`가 돌려주는 실측 MLX matmul 결과. Rust 필드와 1:1 대응한다. */
+export interface GpuBenchmarkResult {
+  gflops: number;
+  matrix_dim: number;
+  iterations: number;
+  python_elapsed_seconds: number;
+  rust_elapsed_seconds: number;
+}
+
 export interface HardwareSpec {
   brand_name: string;
   cpu_cores: number;
@@ -229,6 +238,18 @@ export interface GuardrailStatus {
   resume_overrides: string[];
 }
 
+/** `get_system_health_summary`의 하위 조회 결과. 실패한 조회는 값 대신 해당 `*_error`에
+ * 실제 오류를 남기므로, 다른 컴포넌트의 성공 결과를 지우면 안 된다(D22). */
+export interface SystemHealthSummary {
+  colima: ClusterStatus | null;
+  colima_error: string | null;
+  guardrails: GuardrailStatus | null;
+  guardrails_error: string | null;
+  kagent: KagentDiagnosticReport | null;
+  kagent_error: string | null;
+  overall: 'healthy' | 'degraded' | 'unknown';
+}
+
 export interface FlowRunInfo {
   id: string;
   name: string;
@@ -419,7 +440,7 @@ export type DeployRiskClass = 'local' | 'external';
 /**
  * `describe_deploy_operation`(이슈 #18 축소 스코프)이 돌려주는, 파괴적 액션 실행 직전
  * 확인 요약. `start_cluster`/`stop_cluster`는 저장된 배포 대상과 무관하게 항상 colima를
- * 가리킨다(D26). 이 타입은 반환 형태 선언만이고 UI 통합(확인 다이얼로그)은 스코프 밖이다.
+ * 가리킨다(D26). Rust `OperationSummary`의 serde snake_case 필드와 일치해야 한다.
  */
 export interface OperationSummary {
   context: string;

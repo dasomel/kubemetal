@@ -4,6 +4,7 @@ import { useTranslation } from '../../i18n/i18nContext';
 import { MlxEnvCard } from './MlxEnvCard';
 import { MlxFineTuneCard } from './MlxFineTuneCard';
 import { MlxGuardrailCard } from './MlxGuardrailCard';
+import { GpuBenchmarkCard } from './GpuBenchmarkCard';
 import { MlxServingCard } from './MlxServingCard';
 import { LocalInferenceRuntimeCard } from './LocalInferenceRuntimeCard';
 import { LocalInferenceBridgeCard } from './LocalInferenceBridgeCard';
@@ -86,6 +87,8 @@ export const MlxStudio: React.FC = () => {
         onSetup={setupEnv}
         compact={envReady}
       />
+
+      <GpuBenchmarkCard />
 
       <LocalInferenceReadinessCard />
       <LocalInferenceRuntimeCard />
