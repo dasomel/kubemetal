@@ -10,7 +10,9 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use crate::services;
 use crate::services::artifact_manifest::{write_manifest, ManifestContext};
 #[allow(unused_imports)]
-pub use crate::services::mlx_lifecycle::{check_for_orphaned_mlx_processes, OrphanedProcessInfo};
+pub use crate::services::mlx_lifecycle::{
+    check_for_orphaned_mlx_processes, terminate_orphaned_mlx_process, OrphanedProcessInfo,
+};
 use crate::services::ports;
 use crate::services::process::{
     augmented_path, external_command, resolve_bundled_resource, resolve_cli_path,
@@ -1134,7 +1136,7 @@ pub(crate) fn resolve_signal_target(pid: u32, use_process_group: bool) -> Option
 /// 새 그룹 없이 앱과 그룹을 공유하므로 단일 pid로 보낸다.
 ///
 /// PID가 0이면 앱 자신의 프로세스 그룹에 시그널이 전송되는 것을 방지하기 위해 아무것도 하지 않고 즉시 반환한다.
-fn terminate_pid(pid: u32, use_process_group: bool) {
+pub(crate) fn terminate_pid(pid: u32, use_process_group: bool) {
     let target = match resolve_signal_target(pid, use_process_group) {
         Some(t) => t,
         None => return,
