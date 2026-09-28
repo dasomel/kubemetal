@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Rocket, Loader2, Play, Square, ArrowUpRight, AlertTriangle } from 'lucide-react';
-import type { LocalModel, MlxServingState, MlxRuntime } from '../../types/ipc';
+import { confirm } from '@tauri-apps/plugin-dialog';
+import { Rocket, Loader2, Play, Square, ArrowUpRight, AlertTriangle, RotateCcw } from 'lucide-react';
+import type { LocalModel, MlxServingState, MlxRuntime, ServingStatus } from '../../types/ipc';
 import { ModelChatPlayground } from './ModelChatPlayground';
 import { useTranslation } from '../../i18n/i18nContext';
 import { openEndpoint } from '../../lib/openEndpoint';
@@ -22,6 +23,9 @@ interface MlxServingCardProps {
   /** mlx-vlm 미설치면 VLM 선택지를 잠근다 — 스폰 후 ModuleNotFoundError로 죽는 것보다 낫다. */
   vlmAvailable: boolean;
   onStop: () => void;
+  lastKnownGoodServing?: ServingStatus | null;
+  reverting?: boolean;
+  onRevert?: () => Promise<void> | void;
 }
 
 const inputClass =
@@ -38,6 +42,9 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
   onStart,
   onStop,
   vlmAvailable,
+  lastKnownGoodServing,
+  reverting = false,
+  onRevert,
 }) => {
   const { t } = useTranslation();
   const [modelPath, setModelPath] = useState('');
@@ -78,6 +85,27 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
     e.preventDefault();
     if (!modelPath) return;
     onStart(modelPath, adapterPath || undefined, port, runtime);
+  };
+
+  const handleRevert = async () => {
+    if (!lastKnownGoodServing || reverting || !onRevert) return;
+    try {
+      const confirmed = await confirm(
+        t('mlx.serving.confirmRevertMsg', {
+          model: lastKnownGoodServing.model_path,
+          adapter: lastKnownGoodServing.adapter_path || t('mlx.serving.noAdapter'),
+          port: lastKnownGoodServing.port,
+        }),
+        {
+          title: t('mlx.serving.revertDialogTitle'),
+          kind: 'warning',
+        },
+      );
+      if (!confirmed) return;
+      await onRevert();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   return (
@@ -170,26 +198,66 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
           />
         </div>
 
-        {serving ? (
-          <button
-            type="button"
-            onClick={onStop}
-            disabled={stopping}
-            className="py-2.5 px-4 bg-dangerStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-          >
-            {stopping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
-            <span>{t('mlx.stopServingBtn')}</span>
-          </button>
-        ) : (
-          <button
-            type="submit"
-            disabled={starting || !modelPath}
-            className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
-          >
-            {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-            <span>{t('mlx.startServingBtn')}</span>
-          </button>
-        )}
+        <div className="flex items-center justify-between text-caption text-inkMuted p-2.5 rounded-lg bg-surfaceRaised border border-hairline/8">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="font-semibold text-ink shrink-0">{t('mlx.serving.lastKnownGoodLabel')}:</span>
+            {lastKnownGoodServing ? (
+              <span
+                className="truncate"
+                title={`${lastKnownGoodServing.model_path}${lastKnownGoodServing.adapter_path ? ` · ${lastKnownGoodServing.adapter_path}` : ''} (:${lastKnownGoodServing.port})`}
+              >
+                {lastKnownGoodServing.model_path}
+                {lastKnownGoodServing.adapter_path ? ` · ${lastKnownGoodServing.adapter_path}` : ''}
+                {` · :${lastKnownGoodServing.port}`}
+              </span>
+            ) : (
+              <span className="text-inkFaint">{t('mlx.serving.noLastKnownGood')}</span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {serving ? (
+            <button
+              type="button"
+              onClick={onStop}
+              disabled={stopping}
+              className="py-2.5 px-4 bg-dangerStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+            >
+              {stopping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
+              <span>{t('mlx.stopServingBtn')}</span>
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={starting || !modelPath}
+              className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+            >
+              {starting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+              <span>{t('mlx.startServingBtn')}</span>
+            </button>
+          )}
+
+          {onRevert && (
+            <button
+              type="button"
+              onClick={handleRevert}
+              disabled={!lastKnownGoodServing || reverting || starting || stopping}
+              title={
+                lastKnownGoodServing
+                  ? t('mlx.serving.revertTooltip', {
+                      model: lastKnownGoodServing.model_path,
+                      adapter: lastKnownGoodServing.adapter_path || t('mlx.serving.noAdapter'),
+                    })
+                  : t('mlx.serving.noLastKnownGood')
+              }
+              className="py-2.5 px-4 bg-surfaceRaised hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed text-ink text-bodyStrong rounded-md transition-all flex items-center gap-1.5 border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+            >
+              {reverting ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4 text-inkMuted" />}
+              <span>{t('mlx.serving.revertBtn')}</span>
+            </button>
+          )}
+        </div>
       </form>
 
       {serving && (

@@ -1506,6 +1506,27 @@ async fn record_last_known_good_after_healthcheck(
     }
 }
 
+/// 헬스체크를 통과해 기록된 마지막 정상 서빙 구성을 조회한다(이슈 #12).
+/// 저장된 구성이 없으면 `None`을 반환하며(지어내지 않음, D22),
+/// 프런트엔드는 이 정보를 기반으로 롤백 대상 안내 표시 및 버튼 활성화 여부를 결정한다.
+#[tauri::command]
+pub async fn get_last_known_good_serving(
+    state: State<'_, MlxState>,
+) -> Result<Option<ServingStatus>, String> {
+    get_last_known_good_serving_inner(&state)
+}
+
+pub(crate) fn get_last_known_good_serving_inner(
+    state: &MlxState,
+) -> Result<Option<ServingStatus>, String> {
+    let saved = state
+        .last_known_good_serving
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
+    Ok(saved)
+}
+
 /// state.last_known_good_serving에서 되돌릴 구성을 꺼낸다. 없을 때 지어내지 않고
 /// 명확한 에러를 반환하는 판정(D22)은 `services::mlx_serving_recovery::pick_revert_target`에
 /// 있다(2026-09-23 리뷰로 이동) — 여기서는 Mutex를 잠그는 얇은 호출부만 담당한다.
@@ -1518,14 +1539,13 @@ fn revert_config_or_error(state: &MlxState) -> Result<ServingStatus, String> {
     services::mlx_serving_recovery::pick_revert_target(saved)
 }
 
-/// 저장된 last_known_good 구성으로 현재 서빙을 중지 후 재시작한다(이슈 #12 축소 스코프).
-/// 프런트 소비자가 아직 없어 IPC로는 노출하지 않는다 — 필요해지면 generate_handler!에
-/// 등록하고 scripts/ci/check_ipc_types.py를 통과시킨다(harness.md 스코프 밖: 프런트 UI).
-/// `commands` 모듈이 `lib.rs`에서 `pub`이 아니라 이 함수는 어차피 크레이트 외부에
-/// 도달 불가능하다 — dead_code는 "미등록 상태에서는 호출부가 없다"는 사실 그대로이므로
-/// 지어내지 않고 `allow`로 명시한다(IPC 등록 시 이 allow를 제거한다).
-#[allow(dead_code)]
-pub(crate) async fn revert_to_last_serving(app: tauri::AppHandle) -> Result<String, String> {
+/// 저장된 last_known_good 구성으로 현재 서빙을 중지 후 재시작한다(이슈 #12).
+/// 헬스체크를 통과했던 이전 서빙 구성(모델/어댑터/포트/런타임)으로 되돌린다.
+/// 현재 서빙 중인 프로세스가 있으면 먼저 중지하고 재시작하며,
+/// 저장된 구성이 없으면 `services::mlx_serving_recovery::pick_revert_target`에서
+/// 지어내지 않고 에러를 반환한다(D22).
+#[tauri::command]
+pub async fn revert_to_last_serving(app: tauri::AppHandle) -> Result<String, String> {
     let target = {
         let state = app.state::<MlxState>();
         revert_config_or_error(&state)?
@@ -1848,6 +1868,34 @@ mod tests {
         let got = revert_config_or_error(&state).expect("saved config should be returned");
 
         assert_eq!(got.pid, 42);
+    }
+
+    #[test]
+    fn get_last_known_good_serving_returns_none_when_empty() {
+        let state = MlxState::default();
+        let result = get_last_known_good_serving_inner(&state).expect("getter should succeed");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn get_last_known_good_serving_returns_saved_config() {
+        let state = MlxState::default();
+        *state.last_known_good_serving.lock().unwrap() = Some(dummy_serving_status(42));
+
+        let result = get_last_known_good_serving_inner(&state).expect("getter should succeed");
+        assert_eq!(result.map(|s| s.pid), Some(42));
+    }
+
+    #[test]
+    fn last_known_good_serving_fails_closed_when_mutex_poisoned() {
+        let state = std::sync::Arc::new(MlxState::default());
+        let clone = state.clone();
+        let _ = std::panic::catch_unwind(move || {
+            let _lock = clone.last_known_good_serving.lock().unwrap();
+            panic!("force poison");
+        });
+        assert!(get_last_known_good_serving_inner(&state).is_err());
+        assert!(revert_config_or_error(&state).is_err());
     }
 
     // write_training_manifest_records_matching_sha256(원본 rescue 테스트)는 포트하지 않는다:
