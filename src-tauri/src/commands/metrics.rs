@@ -391,10 +391,14 @@ fn gpu_benchmark_script_path(app: &tauri::AppHandle) -> Result<PathBuf, String> 
     ))
 }
 
-async fn check_gpu_benchmark_admission(
-    state: &MlxState,
+async fn check_gpu_benchmark_admission<'a>(
+    state: &'a MlxState,
     guardrails: &GuardrailState,
-) -> Result<(), String> {
+) -> Result<crate::commands::mlx::BenchmarkReservationGuard<'a>, String> {
+    // GitHub #11: claim the benchmark reservation BEFORE the workload snapshot check
+    // so there is no window between check and claim; a second concurrent benchmark is refused too.
+    let guard = state.claim_benchmark_reservation()?;
+
     let training = state
         .training
         .lock()
@@ -415,9 +419,11 @@ async fn check_gpu_benchmark_admission(
     )?;
 
     // D40: reuse the spawn gate after the workload check, with no slot lock across await.
-    // This snapshot cannot stop a later training/serving start; that needs a shared
-    // reservation covering the benchmark lifetime (outside this #11 slice).
-    check_current_spawn_admission(guardrails).await
+    // The benchmark reservation held in `guard` covers the benchmark lifetime and
+    // prevents concurrent training/serving starts.
+    check_current_spawn_admission(guardrails).await?;
+
+    Ok(guard)
 }
 
 /// 실측 GPU matmul 벤치마크(이슈 #11 축소 스코프). 실행 실패·타임아웃·파싱 불가 시 반드시
@@ -428,7 +434,7 @@ pub async fn run_gpu_benchmark(
     app: tauri::AppHandle,
     state: State<'_, MlxState>,
 ) -> Result<GpuBenchmarkResult, String> {
-    check_gpu_benchmark_admission(&state, &app.state::<GuardrailState>()).await?;
+    let _guard = check_gpu_benchmark_admission(&state, &app.state::<GuardrailState>()).await?;
     let venv_py = crate::commands::mlx::venv_python()?;
     let script = gpu_benchmark_script_path(&app)?;
     run_gpu_benchmark_inner(&venv_py, &script).await
