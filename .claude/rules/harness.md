@@ -1,6 +1,6 @@
 # Agent Team Harness (agy-first) — full rules
 
-Summary lives in `CLAUDE.md`; this file is the detail. Load when orchestrating lanes.
+Applies when orchestrating lanes; ignore it for single-lane work.
 Model tiering, agy rotation, and the failure ladder are owned by the global
 `<routing_doctrine>` / `<agy_cli>` (`~/.claude/CLAUDE.md`) — this file pins only the
 **project-specific** lane → scope → worker → model mapping.
@@ -11,15 +11,10 @@ Model tiering, agy rotation, and the failure ladder are owned by the global
 |------|--------------------------------|--------|-------|
 | `rust-backend` | `src-tauri/**`, `scripts/**` (k8s manifests, mlx/prefect/ingest/airgap/e2e host scripts), `Cargo.toml`, `tauri.conf.json`, `capabilities/` | agy (primary) | `Gemini 3.8 Flash (High)` → `Claude Opus 4.6 (Thinking)` on quota exhaustion; native fallback `sonnet` |
 | `frontend` | `src/**`, `package.json`, `tsconfig.json`, `vite.config.ts`, `index.html` | agy (primary) | same rotation; native fallback `sonnet` |
-| `ui-design` | `DESIGN.md`, `tailwind.config.js`, component styling | `designer` subagent | `sonnet` |
+| `ui-design` | `DESIGN.md`, `src/index.css` (`@theme`), component styling | `designer` subagent | `sonnet` |
 | `qa/verify` | `cargo check`/`clippy`, `tsc --noEmit`, DESIGN.md lint, doc↔code sync (D-registry, IPC names) | `verifier` / `code-reviewer` subagent | `sonnet` (1st pass) |
 | `approve` | final approval pass on high-risk diffs — D-registry changes, colima lifecycle, guardrails (D11/D16/D17), credential & SSRF paths (D21), K8s↔host bridge (D10) | `critic` / `code-reviewer` subagent | `opus` |
 | `escalate` | only after an `opus` lane produced a demonstrably wrong/insufficient result on the hardest reasoning step | subagent | `fable` (rare) |
-
-Re-tiering note: lanes this harness once pinned to `opus` (code/YAML authoring, manifest
-normalization, 1st-pass review, doc drafts) belong on `sonnet`. Keep `opus` for the
-`approve` lane and cross-cutting judgment only — an all-`opus` harness is misrouted,
-not thorough.
 
 ## Rules
 
@@ -45,8 +40,8 @@ ladder) belong to the global `<agy_cli>` — don't restate them here. What this 
 
 `executor` implements, `verifier`/`code-reviewer` take the qa pass, `designer` owns UI,
 `critic` takes the approval lane. Detached `agyp` + log files is the default runtime;
-`omc-teams` (tmux panes) only when a lane needs live watching. Autonomous modes
-(`autopilot`/`ralph`/`ultrawork`) are keyword-triggered, never assumed.
+`/team` only when lanes need in-session coordination. Autonomous modes
+(`autopilot`/`ralph`) are keyword-triggered, never assumed.
 
 Defects land in `docs/mistakes-log.md` — that file is the reason this repo stopped
 repeating the same class of mistake, so a fix without a row there is unfinished.
