@@ -163,13 +163,19 @@ export interface OrphanScan {
   unreadable: UnreadableMarker[];
 }
 
-export interface MlxServingState {
+/**
+ * 서빙 프로세스 상태 및 헬스체크 통과 시 기록되는 last-known-good 구성 (GitHub #12).
+ * Rust `commands::mlx::ServingStatus`와 1:1 대응한다.
+ */
+export interface ServingStatus {
   pid: number;
   port: number;
   model_path: string;
   adapter_path?: string;
   runtime: MlxRuntime;
 }
+
+export type MlxServingState = ServingStatus;
 
 export interface MlxStatus {
   env_setup?: MlxEnvSetupState;

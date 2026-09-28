@@ -29,6 +29,9 @@ export const MlxStudio: React.FC = () => {
     startServing,
     stoppingServing,
     stopServing,
+    lastKnownGoodServing,
+    revertingServing,
+    revertServing,
     guardrailStatus,
     settingBatteryPause,
     setBatteryPause,
@@ -75,6 +78,9 @@ export const MlxStudio: React.FC = () => {
       onStart={startServing}
       onStop={stopServing}
       vlmAvailable={!!envStatus?.mlx_vlm_installed}
+      lastKnownGoodServing={lastKnownGoodServing}
+      reverting={revertingServing}
+      onRevert={revertServing}
     />
   );
 
