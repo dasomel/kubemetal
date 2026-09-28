@@ -53,6 +53,10 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
   const [runtime, setRuntime] = useState<MlxRuntime>('mlx-lm');
   const prefilledRef = useRef(false);
   const portEditedRef = useRef(false);
+  // React state 업데이트는 비동기라, 확인 다이얼로그가 열려 있는 동안(또는 클릭 두 번이
+  // 같은 렌더 사이에 몰릴 때) `reverting` prop만으로는 두 번째 클릭을 막지 못한다 —
+  // ref는 동기적으로 바로 반영되므로 다이얼로그를 열기 전부터 중복 실행을 막는다(#12 리뷰 HIGH).
+  const revertInFlightRef = useRef(false);
 
   // 파인튜닝 결과 어댑터 경로가 새로 생기면 비어 있는 어댑터 입력을 한 번만 채운다.
   // (베이스 모델 칸은 항상 로컬 베이스 모델 선택을 유지한다.)
@@ -88,7 +92,10 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
   };
 
   const handleRevert = async () => {
-    if (!lastKnownGoodServing || reverting || !onRevert) return;
+    if (!lastKnownGoodServing || reverting || !onRevert || revertInFlightRef.current) return;
+    // 다이얼로그를 열기 전에 동기적으로 세워둔다 — 확인창이 떠 있는 동안 들어오는 두 번째
+    // 클릭도 여기서 막힌다.
+    revertInFlightRef.current = true;
     try {
       const confirmed = await confirm(
         t('mlx.serving.confirmRevertMsg', {
@@ -105,6 +112,8 @@ export const MlxServingCard: React.FC<MlxServingCardProps> = ({
       await onRevert();
     } catch (err) {
       console.error(err);
+    } finally {
+      revertInFlightRef.current = false;
     }
   };
 

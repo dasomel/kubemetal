@@ -136,6 +136,11 @@ pub struct MlxState {
     /// 실측 GPU matmul 벤치마크 실행 중 여부(이슈 #11 상호 배제).
     /// 벤치마크 admission 시 `compare_exchange`로 원자적 선점되며, RAII 가드가 해제한다.
     pub benchmark_active: AtomicBool,
+    /// `revert_to_last_serving` 실행 중 여부(#12 리뷰 HIGH — 동시 되돌리기 요청이 서빙을
+    /// 이중으로 stop/restart하지 않도록 직렬화). `adapter_admission`(std::sync::Mutex)은
+    /// 재사용하지 않는다 — revert는 `stop_model_serving`/`start_model_serving`의 `.await`를
+    /// 거치는데, 그 구간에 걸쳐 std Mutex 가드를 들고 있을 수 없기 때문이다(AGENTS.md).
+    pub reverting_serving: AtomicBool,
 }
 
 /// GPU 벤치마크 상호 배제 예약 RAII 가드 (GitHub #11).
@@ -147,6 +152,20 @@ pub struct BenchmarkReservationGuard<'a> {
 }
 
 impl<'a> Drop for BenchmarkReservationGuard<'a> {
+    fn drop(&mut self) {
+        self.reserved.store(false, Ordering::SeqCst);
+    }
+}
+
+/// `revert_to_last_serving` 상호 배제 예약 RAII 가드 (#12 리뷰 HIGH).
+/// 정상 완료, `?`로 인한 조기 반환, panic unwinding 등 모든 탈출 경로에서 드롭되어
+/// 예약 상태를 반드시 해제한다.
+#[derive(Debug)]
+pub struct RevertReservationGuard<'a> {
+    reserved: &'a AtomicBool,
+}
+
+impl<'a> Drop for RevertReservationGuard<'a> {
     fn drop(&mut self) {
         self.reserved.store(false, Ordering::SeqCst);
     }
@@ -183,6 +202,19 @@ impl MlxState {
             return Err("Cannot start model serving while GPU benchmark is running.".to_string());
         }
         Ok(())
+    }
+
+    /// `revert_to_last_serving` 예약을 원자적으로 선점한다 (`compare_exchange`).
+    /// 이미 다른 되돌리기가 진행 중이면 거부 Err를 반환한다(#12 리뷰 HIGH).
+    pub fn claim_revert_reservation(&self) -> Result<RevertReservationGuard<'_>, String> {
+        self.reverting_serving
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .map_err(|_| {
+                "A revert to the last known-good serving is already in progress.".to_string()
+            })?;
+        Ok(RevertReservationGuard {
+            reserved: &self.reverting_serving,
+        })
     }
 }
 
@@ -1539,32 +1571,53 @@ fn revert_config_or_error(state: &MlxState) -> Result<ServingStatus, String> {
     services::mlx_serving_recovery::pick_revert_target(saved)
 }
 
+/// `revert_to_last_serving`이 현재 서빙을 멈추기 전에 반드시 통과해야 하는 게이트다
+/// (#12 리뷰 MED). `state.check_serving_admission()`(벤치마크 상호 배제, GitHub #11)이
+/// Err면 이 함수도 Err를 반환하고 `state.serving`은 전혀 읽거나 쓰지 않은 채 끝난다 —
+/// 호출부는 그 Err를 `?`로 즉시 전파해 `stop_model_serving`을 부르지 않으므로, admission이
+/// 거부됐을 때 이미 정상 동작 중인 known-good 서빙까지 죽이는 일이 없다. 스폰
+/// admission(`check_current_spawn_admission`, 메모리/발열 실측)은 AppHandle이 필요해
+/// 여기 넣지 않고 호출부에서 이 함수 직후 같은 순서로 별도 호출한다.
+fn revert_should_stop_current_serving(state: &MlxState) -> Result<bool, String> {
+    state.check_serving_admission()?;
+    let guard = state.serving.lock().map_err(|e| e.to_string())?;
+    Ok(guard.is_some())
+}
+
 /// 저장된 last_known_good 구성으로 현재 서빙을 중지 후 재시작한다(이슈 #12).
 /// 헬스체크를 통과했던 이전 서빙 구성(모델/어댑터/포트/런타임)으로 되돌린다.
 /// 현재 서빙 중인 프로세스가 있으면 먼저 중지하고 재시작하며,
 /// 저장된 구성이 없으면 `services::mlx_serving_recovery::pick_revert_target`에서
 /// 지어내지 않고 에러를 반환한다(D22).
+///
+/// #12 리뷰(HIGH/MED, 2026-09-28) 이후:
+/// - `MlxState::reverting_serving`을 `compare_exchange`로 선점해 동시 호출을 직렬화한다
+///   (프런트도 확인 다이얼로그가 열리기 전부터 useRef로 중복 클릭을 막지만, 백엔드가
+///   IPC 자체의 이중 호출까지 마지막 방어선으로 막는다).
+/// - `start_model_serving`이 스폰 직전 거는 것과 같은 admission 게이트
+///   (`check_serving_admission` + `check_current_spawn_admission`)를 **현재 서빙을 멈추기
+///   전에** 그대로 재호출한다 — 로직을 복제하지 않고 같은 함수를 재사용하되 호출 순서만
+///   앞당겨서, admission이 거부됐을 때 이미 죽여버린 known-good 서빙까지 잃지 않게 한다.
+///   (이 재확인과 `start_model_serving` 내부 재확인 사이에는 여전히 검사~스폰 TOCTOU
+///   윈도우가 남는다 — 이 파일의 다른 스폰 경로와 동일한, 문서화된 한계다.)
 #[tauri::command]
 pub async fn revert_to_last_serving(app: tauri::AppHandle) -> Result<String, String> {
-    let target = {
-        let state = app.state::<MlxState>();
-        revert_config_or_error(&state)?
-    };
+    let state = app.state::<MlxState>();
+    let _revert_guard = state.claim_revert_reservation()?;
 
-    let is_serving = {
-        let state = app.state::<MlxState>();
-        let guard = state.serving.lock().map_err(|e| e.to_string())?;
-        guard.is_some()
-    };
-    if is_serving {
-        let state = app.state::<MlxState>();
-        stop_model_serving(state).await?;
+    let should_stop = revert_should_stop_current_serving(&state)?;
+    check_current_spawn_admission(&app.state::<crate::commands::guardrails::GuardrailState>())
+        .await?;
+
+    let target = revert_config_or_error(&state)?;
+
+    if should_stop {
+        stop_model_serving(app.state::<MlxState>()).await?;
     }
 
-    let state = app.state::<MlxState>();
     start_model_serving(
         app.clone(),
-        state,
+        app.state::<MlxState>(),
         target.model_path,
         target.adapter_path,
         target.port,
@@ -1884,6 +1937,65 @@ mod tests {
 
         let result = get_last_known_good_serving_inner(&state).expect("getter should succeed");
         assert_eq!(result.map(|s| s.pid), Some(42));
+    }
+
+    /// #12 리뷰 HIGH: 확인 다이얼로그가 열려 있는 동안 또는 첫 요청이 아직 끝나기 전에
+    /// 두 번째 `revert_to_last_serving` IPC 호출이 겹치면 서빙이 이중으로 stop/restart된다.
+    /// `claim_revert_reservation`의 `compare_exchange`가 이를 막는다 — 이 가드(선점 검사)를
+    /// 지우면(예: 항상 `Ok`를 반환하도록 바꾸면) 이 테스트는 실패한다(2026-09-28 확인 후 복구).
+    #[test]
+    fn claim_revert_reservation_refuses_concurrent_revert() {
+        let state = MlxState::default();
+        let _first = state
+            .claim_revert_reservation()
+            .expect("first revert claim should succeed");
+
+        let err = state
+            .claim_revert_reservation()
+            .expect_err("a second revert while one is in flight must be refused");
+        assert!(err.contains("already in progress"));
+
+        drop(_first);
+        assert!(
+            state.claim_revert_reservation().is_ok(),
+            "reservation must be claimable again once the in-flight guard drops"
+        );
+    }
+
+    /// #12 리뷰 MED: 되돌리기가 현재 서빙을 멈춘 뒤에야 admission을 확인하면, admission이
+    /// 거부됐을 때 이미 정상 동작 중이던 known-good 서빙까지 죽인 채로 끝난다.
+    /// `revert_should_stop_current_serving`이 `state.serving`을 건드리기 전에 admission부터
+    /// 확인하는 게이트다 — 이 함수에서 `state.check_serving_admission()?`을 지우면(admission을
+    /// 건너뛰면) 이 테스트는 실패한다(2026-09-28 확인 후 복구).
+    #[test]
+    fn revert_should_stop_current_serving_refuses_when_benchmark_active() {
+        let state = MlxState::default();
+        *state.serving.lock().unwrap() = Some(dummy_serving_status(7));
+        let _benchmark_guard = state
+            .claim_benchmark_reservation()
+            .expect("benchmark reservation should succeed");
+
+        let err = revert_should_stop_current_serving(&state)
+            .expect_err("revert admission must be refused while a GPU benchmark is running");
+        assert!(err.contains("GPU benchmark"));
+
+        assert!(
+            state.serving.lock().unwrap().is_some(),
+            "admission이 거부됐는데 서빙 슬롯이 비워졌다 — stop이 admission 확인보다 먼저 실행된 회귀다"
+        );
+    }
+
+    #[test]
+    fn revert_should_stop_current_serving_reports_true_when_admitted_and_serving() {
+        let state = MlxState::default();
+        *state.serving.lock().unwrap() = Some(dummy_serving_status(7));
+        assert_eq!(revert_should_stop_current_serving(&state), Ok(true));
+    }
+
+    #[test]
+    fn revert_should_stop_current_serving_reports_false_when_nothing_serving() {
+        let state = MlxState::default();
+        assert_eq!(revert_should_stop_current_serving(&state), Ok(false));
     }
 
     #[test]
