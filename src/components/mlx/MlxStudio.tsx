@@ -1,5 +1,6 @@
 import React from 'react';
 import { useMlx } from '../../hooks/useMlx';
+import { useServingRollback } from '../../hooks/useServingRollback';
 import { useTranslation } from '../../i18n/i18nContext';
 import { MlxEnvCard } from './MlxEnvCard';
 import { MlxFineTuneCard } from './MlxFineTuneCard';
@@ -19,6 +20,7 @@ export const MlxStudio: React.FC = () => {
     settingUpEnv,
     setupEnv,
     mlxStatus,
+    fetchStatus,
     localModels,
     startingTraining,
     runFinetune,
@@ -29,9 +31,6 @@ export const MlxStudio: React.FC = () => {
     startServing,
     stoppingServing,
     stopServing,
-    lastKnownGoodServing,
-    revertingServing,
-    revertServing,
     guardrailStatus,
     settingBatteryPause,
     setBatteryPause,
@@ -39,6 +38,7 @@ export const MlxStudio: React.FC = () => {
     resumingTraining,
     resumeTraining,
   } = useMlx();
+  const { lastKnownGoodServing, revertingServing, revertServing } = useServingRollback(fetchStatus);
   const { t } = useTranslation();
 
   const envReady = !!(envStatus?.venv_exists && envStatus?.mlx_lm_installed);

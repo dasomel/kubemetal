@@ -10,7 +10,6 @@ import type {
   GuardrailStatus,
   MlxRuntime,
   DeleteAdapterCheckpointArgs,
-  ServingStatus,
 } from '../types/ipc';
 import { useTranslation } from '../i18n/i18nContext';
 
@@ -30,8 +29,6 @@ export function useMlx() {
   const [killingPid, setKillingPid] = useState<number | null>(null);
   const [startingServing, setStartingServing] = useState(false);
   const [stoppingServing, setStoppingServing] = useState(false);
-  const [lastKnownGoodServing, setLastKnownGoodServing] = useState<ServingStatus | null>(null);
-  const [revertingServing, setRevertingServing] = useState(false);
   const [guardrailStatus, setGuardrailStatus] = useState<GuardrailStatus | null>(null);
   const [settingBatteryPause, setSettingBatteryPause] = useState(false);
   const [resumingTraining, setResumingTraining] = useState(false);
@@ -170,30 +167,6 @@ export function useMlx() {
     }
   }, [fetchStatus, t]);
 
-  const fetchLastKnownGoodServing = useCallback(async () => {
-    try {
-      const res = await invoke<ServingStatus | null>('get_last_known_good_serving');
-      setLastKnownGoodServing(res);
-    } catch (err) {
-      console.error(t('mlx.err.lastKnownGoodLoad'), err);
-    }
-  }, [t]);
-
-  const revertServing = useCallback(async () => {
-    setRevertingServing(true);
-    try {
-      const res = await invoke<string>('revert_to_last_serving');
-      await message(res || t('mlx.toast.servingReverted'), { title: 'KubeMetal', kind: 'info' });
-      await fetchStatus();
-      await fetchLastKnownGoodServing();
-    } catch (err) {
-      await message(t('mlx.toast.servingRevertFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
-      await fetchStatus();
-    } finally {
-      setRevertingServing(false);
-    }
-  }, [fetchStatus, fetchLastKnownGoodServing, t]);
-
   const fetchGuardrailStatus = useCallback(async () => {
     try {
       const res = await invoke<GuardrailStatus>('get_guardrail_status');
@@ -266,8 +239,7 @@ export function useMlx() {
     fetchStatus();
     fetchLocalModels();
     fetchGuardrailStatus();
-    fetchLastKnownGoodServing();
-  }, [checkEnv, fetchStatus, fetchLocalModels, fetchGuardrailStatus, fetchLastKnownGoodServing]);
+  }, [checkEnv, fetchStatus, fetchLocalModels, fetchGuardrailStatus]);
 
   const envInstalling = mlxStatus?.env_setup?.state === 'installing';
   // 폴링 종료 조건이기도 하다 — killed가 빠져 있던 동안 중지 후에도 3초 폴링이 영원히 돌았다.
@@ -301,6 +273,7 @@ export function useMlx() {
     settingUpEnv,
     setupEnv,
     mlxStatus,
+    fetchStatus,
     localModels,
     refreshLocalModels: fetchLocalModels,
     startingTraining,
@@ -312,10 +285,6 @@ export function useMlx() {
     startServing,
     stoppingServing,
     stopServing,
-    lastKnownGoodServing,
-    fetchLastKnownGoodServing,
-    revertingServing,
-    revertServing,
     guardrailStatus,
     settingBatteryPause,
     setBatteryPause,
