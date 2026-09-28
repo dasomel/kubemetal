@@ -1233,6 +1233,27 @@ pub(crate) fn tracked_mlx_process_is_training(
     }
 }
 
+/// pid가 현재 추적되는 학습/서빙 프로세스가 아닐 때 Stop 요청의 처리를 결정한다.
+/// 경합(서빙이 이미 종료돼 reaper인 `run_serving_reader`가 state를 비운 뒤 사용자가 Stop을
+/// 누름)이면 pid는 이미 죽어 있으므로 이미 멈춘 것으로 보아 성공 처리한다 — 살아 있는데
+/// 추적되지 않는 pid는 권한 밖이므로 계속 거부한다(D22, GitHub #13 MED).
+pub(crate) fn untracked_pid_stop_outcome(pid: u32, is_alive: bool) -> Result<bool, String> {
+    if is_alive {
+        Err(format!(
+            "Process {pid} is not the currently tracked MLX training or serving process."
+        ))
+    } else {
+        Ok(true)
+    }
+}
+
+/// 시그널 전송이 실패했을 때 `kill_mlx_process`가 시그널 전에 낙관적으로 써둔 "killed"
+/// 상태를 되돌려야 하는지 결정한다. 그 사이 다른 경로(예: finalize_training)가 이미 다른
+/// 종착 상태로 갱신했다면 건드리지 않는다(D22, GitHub #13 LOW).
+pub(crate) fn should_revert_optimistic_killed_status(current_status: &str) -> bool {
+    current_status == "killed"
+}
+
 #[tauri::command]
 pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bool, String> {
     if pid == 0 {
@@ -1247,10 +1268,12 @@ pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bo
         let guard = state.serving.lock().map_err(|e| e.to_string())?;
         guard.as_ref().map(|s| s.pid)
     };
-    let is_training =
-        tracked_mlx_process_is_training(pid, training_pid, serving_pid).ok_or_else(|| {
-            format!("Process {pid} is not the currently tracked MLX training or serving process.")
-        })?;
+    let is_training = match tracked_mlx_process_is_training(pid, training_pid, serving_pid) {
+        Some(is_training) => is_training,
+        None => {
+            return untracked_pid_stop_outcome(pid, crate::services::process::pid_is_alive(pid))
+        }
+    };
 
     // **시그널을 보내기 전에** 의도를 기록한다. 이 블록이 terminate_pid 뒤에 있었을 때는
     // 사용자가 중지를 눌러도 화면에 "Training process exited abnormally" 오류가 떴다:
@@ -1273,7 +1296,18 @@ pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bo
         }
     }
 
-    terminate_pid(pid, is_training).await?;
+    if let Err(error) = terminate_pid(pid, is_training).await {
+        // 시그널 전송이 실패했으니 위에서 낙관적으로 쓴 "killed"를 되돌린다 — 프로세스가
+        // 여전히 살아있을 수 있는데 종료된 것으로 보여주면 안 된다(D22).
+        let mut guard = state.training.lock().map_err(|e| e.to_string())?;
+        if let Some(t) = guard.as_mut() {
+            if t.pid == pid && should_revert_optimistic_killed_status(&t.status) {
+                t.status = "error".into();
+                t.error = Some(error.clone());
+            }
+        }
+        return Err(error);
+    }
 
     {
         // 서빙 프로세스는 spawn 직후 run_serving_reader가 Child 소유권을 가져가 wait()한다.
@@ -1765,6 +1799,31 @@ mod tests {
             None
         );
         assert_eq!(tracked_mlx_process_is_training(0, Some(41), Some(42)), None);
+    }
+
+    /// 경합: 서빙이 이미 종료돼 reaper가 state를 비운 뒤 사용자가 Stop을 눌렀다 — pid가
+    /// 죽어 있으면 오류가 아니라 이미 멈춘 것으로 처리해야 한다(GitHub #13 MED).
+    #[test]
+    fn untracked_pid_stop_outcome_treats_dead_pid_as_already_stopped() {
+        assert_eq!(untracked_pid_stop_outcome(4242, false), Ok(true));
+    }
+
+    /// 추적되지 않는데 아직 살아있는 pid는 권한 밖이므로 계속 거부해야 한다(D22).
+    #[test]
+    fn untracked_pid_stop_outcome_refuses_live_pid() {
+        let err = untracked_pid_stop_outcome(4242, true).unwrap_err();
+        assert!(err.contains("4242"));
+        assert!(err.contains("not the currently tracked"));
+    }
+
+    /// kill_mlx_process가 시그널 전에 낙관적으로 쓴 "killed"만 되돌려야 한다 — 다른 종착
+    /// 상태(done/error)를 시그널 실패로 덮어쓰면 안 된다(GitHub #13 LOW).
+    #[test]
+    fn should_revert_optimistic_killed_status_only_reverts_killed() {
+        assert!(should_revert_optimistic_killed_status("killed"));
+        assert!(!should_revert_optimistic_killed_status("done"));
+        assert!(!should_revert_optimistic_killed_status("error"));
+        assert!(!should_revert_optimistic_killed_status("running"));
     }
 
     #[test]

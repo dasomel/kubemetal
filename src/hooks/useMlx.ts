@@ -104,10 +104,12 @@ export function useMlx() {
       // 거짓이면 tsc는 아무것도 잡지 못한다.
       await invoke<boolean>('kill_mlx_process', { pid });
       await message(t('mlx.toast.processKilled'), { title: 'KubeMetal', kind: 'info' });
-      await fetchStatus();
     } catch (err) {
       await message(t('mlx.toast.processKillFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
+      // 실패 시에도 반드시 새로고침한다 — 백엔드가 오류를 반환해도(경합으로 이미 종료됐거나
+      // 시그널이 실패한 경우) 화면에는 오래된 행이 남아있을 수 있다(#13 MED).
+      await fetchStatus();
       setKillingPid(null);
     }
   }, [fetchStatus, t]);
