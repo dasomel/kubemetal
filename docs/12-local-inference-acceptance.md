@@ -202,3 +202,46 @@ UI fixes on top. Evidence: `evidence/local-inference/20260906-ondevice/` (`accep
   18000.
 - **Not verified in this run**: air-gapped (network actually disconnected) repeat, warm/ssd-restore
   cache runs, external-cluster L2 bridge, the mlx-lm fallback path via this UI.
+
+## 13. Anthropic `/v1/messages` endpoint evidence — 2026-09-28
+
+Scope: real, reproducible evidence that oMLX's Anthropic-compatible `/v1/messages` endpoint works
+on this Mac, for issue #58. Evidence: `evidence/local-inference/20260928-anthropic-messages/`
+(`01-models.json`, `02-messages-nonstream.json`, `03-messages-stream.sse.txt`,
+`04-messages-noauth.json`, `05-chat-completions.json`, `omlx-serve.log`, `manifest.json`).
+
+- **Runtime**: `omlx --version` measured **0.7.0rc1** at `/opt/homebrew/bin/omlx` — not 0.6.4;
+  recorded as measured, kept as-is rather than corrected to an assumed value.
+- **Start**: shell-owned server (not the MLX Studio-managed path used in §12), started with
+  `omlx serve --host 127.0.0.1 --port 8010 --model-dir ~/.kubemetal/models --log-level info`,
+  backgrounded, PID 74282. Port 8000 was occupied by an unrelated process (verified with `lsof`
+  before starting) and was left untouched; 8010 was confirmed free first. No `--api-key` on the
+  command line; the bearer key was read from `~/.omlx/settings.json` into a shell variable and
+  never echoed, logged, or written to any file.
+- **Model**: smallest available, `mlx-community__Qwen2.5-0.5B-Instruct-4bit` (confirmed present via
+  `GET /v1/models`, HTTP 200).
+- **`POST /v1/messages` non-streaming**: HTTP 200, `anthropic-version: 2023-06-01`, `max_tokens: 32`.
+  Response has `type: message`, `role: assistant`, a `content` array with a `text` block,
+  `stop_reason: end_turn`, and `usage.input_tokens`/`usage.output_tokens` populated.
+- **`POST /v1/messages` streaming (`stream: true`)**: HTTP 200. SSE event sequence: `ping`,
+  `message_start`, `content_block_start`, `content_block_delta` (x2), `content_block_stop`,
+  `message_delta`, `message_stop` — a valid Anthropic streaming shape.
+- **Negative case — no auth header**: HTTP 401, body
+  `{"error":{"message":"API key required","type":"authentication_error","param":null,"code":null}}`.
+- **`POST /v1/chat/completions` comparison** (same prompt, same model/port): HTTP 200, short text
+  `"Hello! 📱👋, how can I assist you today?"` — included only as the requested side-by-side, not as
+  Anthropic-route evidence.
+- **Stop**: `kill -TERM 74282` only (the PID this task started). `omlx-serve.log` shows a clean
+  `Engine pool shutdown complete` / `Finished server process [74282]`; `ps -p 74282` and
+  `lsof -i :8010` both confirm the process is gone and the port is free.
+- **Key-handling check**: `grep -rlF "$OMLX_KEY" evidence/local-inference/20260928-anthropic-messages`
+  (key value substituted from a shell variable, never typed literally) returned no matches —
+  confirmed absent from all evidence files.
+- **Known process defect this run surfaced**: an earlier `python3 -c` one-liner intended to print a
+  redacted `~/.omlx/settings.json` only redacted top-level dict keys, so the nested `auth.api_key`
+  and `auth.secret_key` values were printed once to the agent's own tool output during
+  investigation (not written to any evidence file or command run against the server). Recorded here
+  per the no-fabrication rule; the test key is a throwaway value scoped to this local dev machine.
+- **Not verified**: concurrent/streaming-under-load `/v1/messages` behavior, larger models than the
+  0.5B smoke model, MCP/tool-use content blocks over `/v1/messages`, and behavior with a non-empty
+  but *invalid* bearer token (only the fully-missing-header negative case was run).
