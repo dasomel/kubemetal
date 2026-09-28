@@ -266,10 +266,12 @@ export interface EvalMetric {
 export interface RagSearchResult {
   id?: string;
   text: string;
+  /** Dense: vector distance. Lexical: SQLite bm25() (lower, often negative, is better); branch on mode. */
   score: number;
   source?: string;
   filename?: string;
   chunk_index?: number;
+  mode: 'dense' | 'lexical';
 }
 
 export interface RagIndexStatus {

@@ -94,6 +94,7 @@ check: ## Rust 타입/컴파일 체크
 
 test: ## Rust 단위 테스트 (경로 방어·가드레일 포함)
 	cargo test --locked --manifest-path $(CARGO_MANIFEST) --lib
+	python3 -m unittest discover -s tests/rag -v
 
 test-e2e: ## 종합 E2E 자율 피드백 검증 스위트 실행 (합성데이터→파인튜닝→kagent진단→코딩패치)
 	./scripts/e2e/run_full_e2e_verification.sh
