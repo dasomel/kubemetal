@@ -24,7 +24,8 @@ bundle = Path(sys.argv[1])
 records = []
 for index in range(2):
     ref = f"example.invalid/demo{index}:1.0"
-    config = json.dumps({"architecture": "arm64", "os": "linux", "index": index}).encode()
+    config = json.dumps({"architecture": "arm64", "os": "linux", "index": index,
+                         "rootfs": {"type": "layers", "diff_ids": []}}).encode()
     digest = hashlib.sha256(config).hexdigest()
     config_path = f"{digest}.json" if index == 0 else f"blobs/sha256/{digest}"
     repo = f"example.invalid/demo{index}@sha256:{'a' * 64}" if index == 0 else "unverified"
@@ -112,92 +113,9 @@ for name in negative:
 PY
 echo 'PASS GPL-family heuristic covers common spellings without false-flagging MIT/Apache/BSD'
 
-# Regression for the real on-device #98 run (2026-09-28): Docker Desktop's
-# containerd-backed image store (default since 4.34) reports `docker image
-# inspect .Id` as the pulled manifest(-list) digest, not the config blob
-# digest classic dockerd used — measured on aquasec/trivy:0.69.3, where
-# `.Id` == RepoDigest == the archive's own OCI index.json manifest digest,
-# while manifest.json's Config digest is a different value. That backend's
-# `docker save` also emits an index.json the legacy format lacks. check_archive
-# must accept either digest, but only after independently hashing whatever
-# index.json points at — never trust the claim in the file itself.
-python3 - "$SCRIPT_DIR" "$TEST_DIR" <<'PY'
-import hashlib
-import io
-import json
-from pathlib import Path
-import sys
-import tarfile
-
-sys.path.insert(0, sys.argv[1])
-from sbom import check_archive
-
-work = Path(sys.argv[2])
-config = json.dumps({"architecture": "arm64", "os": "linux", "kind": "containerd-store-fixture"}).encode()
-config_digest = "sha256:" + hashlib.sha256(config).hexdigest()
-top_manifest = json.dumps({"mediaType": "application/vnd.docker.distribution.manifest.list.v2+json"}).encode()
-top_digest = "sha256:" + hashlib.sha256(top_manifest).hexdigest()
-
-def write_tar(path, members, index_manifests=None, corrupt_index_blob=False):
-    with tarfile.open(path, "w") as tar:
-        def add(name, data):
-            info = tarfile.TarInfo(name)
-            info.size = len(data)
-            tar.addfile(info, io.BytesIO(data))
-        for name, data in members:
-            add(name, data)
-        if index_manifests is not None:
-            add("index.json", json.dumps({"manifests": index_manifests}).encode())
-            blob = top_manifest if not corrupt_index_blob else top_manifest + b"tampered"
-            add(f"blobs/sha256/{top_digest.split(':', 1)[1]}", blob)
-
-manifest_json = json.dumps([{"Config": f"blobs/sha256/{config_digest.split(':', 1)[1]}",
-                              "RepoTags": ["example.invalid/containerd-store:1.0"], "Layers": []}]).encode()
-base_members = [(f"blobs/sha256/{config_digest.split(':', 1)[1]}", config), ("manifest.json", manifest_json)]
-
-# Classic archive (no index.json): only the config digest is valid, as before the fix.
-classic = work / "classic.tar"
-write_tar(classic, base_members)
-check_archive(str(classic), config_digest)
-try:
-    check_archive(str(classic), top_digest)
-    raise AssertionError("classic archive must not accept a manifest-list digest")
-except ValueError:
-    pass
-
-# containerd-store archive (index.json present, self-verified blob).
-with_index = work / "with-index.tar"
-write_tar(with_index, base_members, index_manifests=[{"digest": top_digest}])
-check_archive(str(with_index), config_digest)   # backward compatible: config digest still accepted
-check_archive(str(with_index), top_digest)      # the real bug: `.Id` == this value under containerd store
-
-# A digest matching neither candidate must still fail.
-try:
-    check_archive(str(with_index), "sha256:" + "c" * 64)
-    raise AssertionError("unrelated digest must be rejected")
-except ValueError:
-    pass
-
-# index.json's own claim is never trusted blindly — a blob that does not hash to
-# its claimed digest must fail even if the claimed digest matches `expected`.
-tampered = work / "tampered-index.tar"
-write_tar(tampered, base_members, index_manifests=[{"digest": top_digest}], corrupt_index_blob=True)
-try:
-    check_archive(str(tampered), top_digest)
-    raise AssertionError("forged index.json blob must be rejected")
-except ValueError as error:
-    assert "does not match its own claimed digest" in str(error), str(error)
-
-# A multi-entry OCI index (ambiguous single-image identity) must be rejected too.
-ambiguous = work / "ambiguous-index.tar"
-write_tar(ambiguous, base_members, index_manifests=[{"digest": top_digest}, {"digest": config_digest}])
-try:
-    check_archive(str(ambiguous), top_digest)
-    raise AssertionError("multi-manifest OCI index must be rejected")
-except ValueError:
-    pass
-PY
-echo 'PASS check_archive accepts the containerd-store OCI index digest (self-verified) alongside the classic config digest (#98, 2026-09-28)'
+# #98 archive binding (2026-09-28): genuine classic and containerd-store chains
+# pass; forged/swapped/ambiguous/missing/traversal archives fail closed.
+python3 "$SCRIPT_DIR/test_archive_identity.py"
 
 write_bundle_manifest
 if ! generate > "$TEST_DIR/generate.out" 2>&1; then

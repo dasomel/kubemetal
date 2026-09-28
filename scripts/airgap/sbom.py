@@ -9,10 +9,7 @@ import shutil
 import sys
 import tarfile
 
-
-def require(condition, message):
-    if not condition:
-        raise ValueError(message)
+from archive_identity import check_archive, require
 
 
 def read_lock(path):
@@ -70,53 +67,6 @@ def packages(path):
         require(isinstance(package, dict) and isinstance(package.get("name"), str)
                 and package["name"], f"invalid SPDX package: {path}")
     return document["packages"]
-
-
-def check_archive(path, expected):
-    # Read only regular members; never extract potentially hostile archive paths.
-    with tarfile.open(path, "r:*") as archive:
-        members = archive.getmembers()
-
-        def member_bytes(name):
-            matches = [item for item in members if item.name == name]
-            require(len(matches) == 1 and matches[0].isfile(), f"invalid docker-save member: {name}")
-            with archive.extractfile(matches[0]) as member:
-                return member.read()
-
-        def has_member(name):
-            return any(item.name == name and item.isfile() for item in members)
-
-        manifest = json.loads(member_bytes("manifest.json"))
-        require(isinstance(manifest, list) and len(manifest) == 1,
-                "SBOM requires a single-image docker-save archive")
-        config = member_bytes(manifest[0]["Config"])
-        candidates = {"sha256:" + hashlib.sha256(config).hexdigest()}
-
-        # Docker Desktop's containerd-backed image store (default since 4.34) reports
-        # `docker image inspect .Id` as the pulled manifest(-list) digest, not the
-        # config blob digest classic dockerd used for it — measured 2026-09-28 on
-        # aquasec/trivy:0.69.3: .Id == RepoDigest == the archive's own OCI index.json
-        # manifest digest, while manifest.json's Config digest is a different value.
-        # That backend's `docker save` also emits an OCI index.json alongside the
-        # legacy manifest.json; when present, accept its manifest digest too, but only
-        # after independently hashing the blob it points at (never trust the claim
-        # in index.json itself — that would just move the daemon-trust problem here).
-        if has_member("index.json"):
-            index = json.loads(member_bytes("index.json"))
-            manifests = index.get("manifests") if isinstance(index, dict) else None
-            require(isinstance(manifests, list) and len(manifests) == 1,
-                    f"SBOM requires a single-manifest OCI index: {path}")
-            index_digest = manifests[0].get("digest") if isinstance(manifests[0], dict) else None
-            require(isinstance(index_digest, str) and re.fullmatch(r"sha256:[0-9a-f]{64}", index_digest),
-                    f"invalid OCI index manifest digest: {path}")
-            blob = member_bytes("blobs/" + index_digest.replace(":", "/"))
-            actual_index_digest = "sha256:" + hashlib.sha256(blob).hexdigest()
-            require(actual_index_digest == index_digest,
-                    f"OCI index manifest blob does not match its own claimed digest: {path}")
-            candidates.add(index_digest)
-
-        require(expected in candidates,
-                f"archive config digest mismatch: lock={expected}, archive={sorted(candidates)}")
 
 
 def is_gpl_family(name):

@@ -63,10 +63,15 @@ first time with a real `syft` (1.52.0) against a freshly downloaded 12-image bun
 of a published SPDX file was correctly rejected. The run also exposed a real bug: on Docker
 Desktop's containerd-backed image store (default since 4.34), `docker image inspect .Id`
 returns the pulled manifest(-list) digest instead of the config blob digest classic dockerd
-returned, which `scripts/airgap/sbom.py`'s archive-binding check assumed. Fixed in
-`check_archive()` to also accept a self-verified OCI `index.json` manifest digest when
-present, without changing `digests.lock`'s shared format or issue #5's install-time
-verification. Evidence: `evidence/airgap-sbom/20260928/`.
+returned, which `scripts/airgap/sbom.py`'s archive-binding check assumed. The first fix
+(accept any self-verified OCI `index.json` manifest digest) was bypassable: nothing tied that
+blob to the `manifest.json` Config/Layers syft scans, and an approval review's forged tar
+passed. The final `check_archive()` (`scripts/airgap/archive_identity.py`) walks lock digest →
+re-hashed manifest list → exactly one linux/arm64 manifest → re-hashed Config and Layers, and
+checks every layer against the config's `rootfs.diff_ids` on both store types. All 12 real
+archives pass it; `digests.lock`'s shared format and issue #5's install-time verification are
+unchanged. zstd layers and symlinked layer members are rejected, not supported. Evidence:
+`evidence/airgap-sbom/20260928/`.
 
 ## Measured reference
 
