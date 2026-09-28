@@ -100,9 +100,19 @@ pub async fn remove_pid_marker(base_dir: &Path, kind: &str, pid: u32) {
 }
 
 /// 프로세스 명령줄이 실제 MLX 관련인지 토큰 단위로 검증한다.
-/// - argv[0]의 basename이 Python 인터프리터(`python`, `python3`, `python3.x`)이고,
+/// - argv[0]의 basename이 Python 인터프리터(대소문자 무관 `python`, `python3`, `python3.x`)
+///   이거나, macOS Homebrew/python.org 프레임워크 파이썬의 재실행(re-exec) 경로
+///   (`.../Python.app/Contents/MacOS/Python`)이고,
 /// - argv 토큰에서 `-m` 바로 다음 토큰이 `mlx_lm`, `mlx_vlm`, 또는 `mlx_lm.`/`mlx_vlm.`으로 시작하는 모듈명
 /// - 또는 KubeMetal이 직접 기동하는 `scripts/mlx/finetune_wrapper.py` 스크립트
+///
+/// 프레임워크 파이썬(venv에서 `python`/`python3`가 심볼릭 링크로 가리키는 Homebrew
+/// `python@3.x` 등)은 spawn 직후 자기 자신을 `.../Python.framework/.../Python.app/Contents/
+/// MacOS/Python`으로 재실행(re-exec)한다 — `ps -o command=`가 이 재실행 이후의 argv를
+/// 보고하므로 basename이 대문자 `Python`으로 관측된다(실측: `~/.kubemetal/venv/bin/python3`
+/// spawn 후 `ps`에서 `/opt/homebrew/Cellar/python@3.14/.../Resources/Python.app/Contents/
+/// MacOS/Python` 확인, 2026-09-28). 이를 NotMlx로 오판하면 실행 중인 학습/서빙 프로세스가
+/// Stop에서 SIGKILL되지 않고, 고아 스캔이 진짜 고아의 marker를 삭제해버린다.
 ///
 /// 그 외에는 MLX가 아닌 것(PID 재사용 가능성)으로 판정하고, 명령줄이 비어있거나 없으면 확인 불가로 판정한다.
 pub fn classify_mlx_cmdline(raw_cmdline: Option<&str>) -> CmdlineVerification {
@@ -115,18 +125,23 @@ pub fn classify_mlx_cmdline(raw_cmdline: Option<&str>) -> CmdlineVerification {
     }
 
     let tokens: Vec<&str> = trimmed.split_whitespace().collect();
-    let executable = Path::new(tokens[0])
+    let executable_path = Path::new(tokens[0]);
+    let executable = executable_path
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or_default();
-    let is_python = executable == "python"
-        || executable == "python3"
-        || executable.strip_prefix("python3.").is_some_and(|version| {
-            !version.is_empty()
-                && version
-                    .split('.')
-                    .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
-        });
+    let executable_lower = executable.to_ascii_lowercase();
+    let is_python = executable_lower == "python"
+        || executable_lower == "python3"
+        || executable_lower
+            .strip_prefix("python3.")
+            .is_some_and(|version| {
+                !version.is_empty()
+                    && version
+                        .split('.')
+                        .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
+            })
+        || executable_path.ends_with(Path::new("Python.app/Contents/MacOS/Python"));
     if !is_python {
         return CmdlineVerification::NotMlx;
     }

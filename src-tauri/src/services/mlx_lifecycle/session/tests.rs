@@ -1,7 +1,27 @@
 use super::super::scan_orphaned_mlx_processes;
 use super::{is_tracked_pid, tracked_mlx_pids};
 use crate::commands::mlx::{MlxRuntime, MlxState, ServingStatus, TrainingStatus};
-use crate::services::process::external_command;
+use crate::services::process::{external_command, get_process_cmdline};
+
+/// macOS의 python3는 spawn 직후 자신을 Python.framework 경로로 재실행(re-exec)한다(실측
+/// 2026-09-28, GitHub #13 HIGH-2). 스폰 직후 곧바로 스캔하면 재실행 전 argv로 경합해
+/// 통과하므로 classify_mlx_cmdline의 재실행 후 basename 판정 회귀(HIGH-1)를 잡지 못한다.
+/// argv가 스폰 시점 값과 달라지거나(재실행 완료) 최대 1.5초가 지날 때까지 폴링한다.
+async fn wait_for_argv_settled(pid: u32) {
+    let initial = get_process_cmdline(pid).await.unwrap_or_default();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
+    loop {
+        if std::time::Instant::now() >= deadline {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        if let Ok(current) = get_process_cmdline(pid).await {
+            if current != initial {
+                return;
+            }
+        }
+    }
+}
 
 fn state_with_pids(training_pid: u32, serving_pid: u32) -> MlxState {
     let state = MlxState::default();
@@ -104,6 +124,9 @@ async fn scan_excludes_session_markers_without_deleting_them() {
             .unwrap();
     }
 
+    // orphan_pid만 추적되지 않아 classify_mlx_cmdline을 실제로 거친다(HIGH-2) — 재실행
+    // 전 argv로 스캔하면 이 테스트가 재실행 후 basename 판정 회귀를 잡지 못한다.
+    wait_for_argv_settled(orphan_pid).await;
     let tracked = tracked_mlx_pids(&state_with_pids(training_pid, serving_pid)).unwrap();
     let scan = scan_orphaned_mlx_processes(&markers, &tracked)
         .await

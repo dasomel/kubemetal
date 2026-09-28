@@ -6,6 +6,7 @@
   "changeContext": {
     "paths": [
       "src-tauri/**",
+      "src/**",
       ".agents/**"
     ]
   },
@@ -67,6 +68,71 @@
       "type": "task_outcome",
       "state": "A",
       "summary": "Complete and verified at unit and trace-gate scope; no live training or serving process was deliberately terminated during verification."
+    },
+    {
+      "id": "e7",
+      "type": "reproduction",
+      "summary": "An approval review of e2r found four regressions: classify_mlx_cmdline required a lowercase python/python3 basename, but macOS re-execs the venv and CommandLineTools interpreters into a Python.framework path with basename 'Python' (capital P) ~1-1.5s after spawn, so every real MLX process classified NotMlx and Stop stopped SIGKILLing survivors while the orphan scan deleted real orphan markers; the two live scan tests spawned and scanned immediately, observing the pre-re-exec argv and passing by race instead of catching this; kill_mlx_process errored on an untracked pid even when it had already exited (reaper race), leaving a stale row because useMlx's catch skipped fetchStatus; and kill_mlx_process wrote status='killed' before terminate_pid, which can fail, leaving a live process shown as killed.",
+      "evidence": [
+        "policy:issue-13-approval-review-round2",
+        "runtime:ps-o-command-macos-python-framework-reexec-2026-09-28"
+      ]
+    },
+    {
+      "id": "e7m",
+      "type": "reproduction",
+      "summary": "Measured on-device: spawning ~/.kubemetal/venv/bin/python3 and /usr/bin/python3 (CommandLineTools) with 'import time; time.sleep(3)', then `ps -o command= -p <pid>` ~1.5s later, both reported an absolute path ending in Python.framework/.../Resources/Python.app/Contents/MacOS/Python with basename 'Python', not 'python'/'python3'.",
+      "evidence": [
+        "runtime:ps-o-command-macos-python-framework-reexec-2026-09-28"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "bug_fix",
+      "summary": "classify_mlx_cmdline now matches the interpreter basename case-insensitively and also accepts any argv[0] ending in Python.app/Contents/MacOS/Python (HIGH-1); the two live scans (marker.rs orphan test, session scan test) now poll ps for the target pid until its argv changes from the value captured right after spawn or ~1.5s elapse, so they observe the settled post-re-exec argv instead of racing it (HIGH-2); kill_mlx_process treats an untracked-and-dead pid as already stopped (Ok(true)) while still refusing an untracked-and-alive pid, extracted as untracked_pid_stop_outcome, and useMlx's killProcess now calls fetchStatus in a finally block so a stale row is refreshed on both success and failure (MED); and kill_mlx_process now reverts the optimistically written 'killed' training status to 'error' with the real termination error when terminate_pid fails, extracted as should_revert_optimistic_killed_status (LOW)."
+    },
+    {
+      "id": "e9",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "New and adjusted unit tests cover the measured framework-Python re-exec basename classification, the argv-settled live scans, the untracked-dead-pid stop outcome, and the optimistic 'killed' status revert on termination failure. The mlx_lifecycle suite was run twice (single-threaded and default-threaded) to confirm the argv-settle change is not flaky.",
+      "scope": "MLX process classification for macOS Python framework re-exec, argv-settled live orphan/session scans, untracked-pid stop authorization, and killed-status revert on termination failure",
+      "evidence": [
+        "test:services::mlx_lifecycle::tests::classify_cmdline_accepts_measured_framework_python_reexec_paths",
+        "test:services::mlx_lifecycle::tests::classify_cmdline_rejects_false_positive_substrings",
+        "test:services::mlx_lifecycle::tests::scan_detects_live_pid_marker",
+        "test:services::mlx_lifecycle::session::tests::scan_excludes_session_markers_without_deleting_them",
+        "test:commands::mlx::tests::untracked_pid_stop_outcome_treats_dead_pid_as_already_stopped",
+        "test:commands::mlx::tests::untracked_pid_stop_outcome_refuses_live_pid",
+        "test:commands::mlx::tests::should_revert_optimistic_killed_status_only_reverts_killed"
+      ]
+    },
+    {
+      "id": "e10",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Full Rust unit suite (263 passed, 1 ignored), `make lint` (rustfmt --check, clippy -D warnings, tsc --noEmit, DESIGN.md token lint, IPC type cross-check), and `pnpm build` all passed after the round-2 fixes.",
+      "scope": "Tauri MLX command and lifecycle regression suite plus repository lint and frontend build gates",
+      "evidence": [
+        "ci:cargo-test-manifest-src-tauri-Cargo-toml",
+        "ci:make-lint",
+        "ci:pnpm-build"
+      ]
+    },
+    {
+      "id": "e11",
+      "type": "completion_claim",
+      "summary": "All four approval-review regressions (HIGH-1, HIGH-2, MED, LOW) in the MLX kill-hardening change are fixed and covered by tests that would have caught them before the fix.",
+      "evidence": [
+        "e9",
+        "e10"
+      ]
+    },
+    {
+      "id": "e12",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified: framework-Python re-exec is classified as MLX, the live tests that would have caught the regression now wait for argv to settle, Stop no longer errors on an already-exited untracked pid and always refreshes status, and a failed termination no longer shows a live process as killed. No live training or serving process was deliberately terminated during verification."
     }
   ]
 }

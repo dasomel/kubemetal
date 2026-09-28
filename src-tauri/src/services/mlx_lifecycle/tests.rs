@@ -8,6 +8,30 @@ fn make_temp_dir(label: &str) -> PathBuf {
     dir
 }
 
+/// macOS의 python/python3는 spawn 직후 자신을 Python.framework 경로로 재실행(re-exec)한다
+/// (실측: CommandLineTools `/usr/bin/python3`, Homebrew venv 파이썬 모두 재실행 후
+/// `.../Python.app/Contents/MacOS/Python`, 2026-09-28, GitHub #13 HIGH-2). 스폰 직후 곧바로
+/// 스캔하면 재실행 전 argv로 경합해 통과하므로, classify_mlx_cmdline의 재실행 후 basename
+/// 판정 회귀(HIGH-1)를 이 테스트가 잡지 못했다. argv가 스폰 시점 값과 달라지거나(재실행
+/// 완료) 최대 1.5초가 지날 때까지 폴링한 뒤 스캔한다.
+async fn wait_for_argv_settled(pid: u32) {
+    let initial = crate::services::process::get_process_cmdline(pid)
+        .await
+        .unwrap_or_default();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(1500);
+    loop {
+        if std::time::Instant::now() >= deadline {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        if let Ok(current) = crate::services::process::get_process_cmdline(pid).await {
+            if current != initial {
+                return;
+            }
+        }
+    }
+}
+
 #[tokio::test]
 async fn scan_returns_empty_when_dir_does_not_exist() {
     let dir = make_temp_dir("nonexistent-dir").join("sub");
@@ -31,6 +55,7 @@ async fn scan_detects_live_pid_marker() {
     let marker_file = dir.join(format!("training-{pid}.pid"));
     std::fs::write(&marker_file, pid.to_string()).unwrap();
 
+    wait_for_argv_settled(pid).await;
     let result = scan_orphaned_mlx_processes(&dir, &[]).await.unwrap();
     let _ = child.kill();
     let _ = child.wait();
@@ -141,6 +166,32 @@ fn classify_cmdline_identifies_valid_mlx_processes() {
     assert_eq!(
         classify_mlx_cmdline(Some(ft)),
         CmdlineVerification::Mlx(ft.into())
+    );
+}
+
+/// 실측 argv 형태(2026-09-28, GitHub #13 HIGH-1): `~/.kubemetal/venv/bin/python3` 및
+/// macOS CommandLineTools `/usr/bin/python3` 모두 spawn ~1.5초 후 `ps -o command=`에서
+/// 대문자 `Python` basename의 프레임워크 재실행(re-exec) 경로로 관측됐다. 이 정확한 경로에
+/// `-m mlx_lm`을 붙인 형태가 Mlx로 분류되지 않으면 실행 중인 프로세스가 NotMlx로 오판되어
+/// Stop이 SIGKILL을 못 보내고 orphan 스캔이 진짜 고아의 marker를 지운다.
+#[test]
+fn classify_cmdline_accepts_measured_framework_python_reexec_paths() {
+    let venv_reexec = "/opt/homebrew/Cellar/python@3.14/3.14.7/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python -m mlx_lm server --port 8080";
+    assert_eq!(
+        classify_mlx_cmdline(Some(venv_reexec)),
+        CmdlineVerification::Mlx(venv_reexec.into())
+    );
+
+    let cli_tools_reexec = "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -m mlx_vlm.server --host 127.0.0.1";
+    assert_eq!(
+        classify_mlx_cmdline(Some(cli_tools_reexec)),
+        CmdlineVerification::Mlx(cli_tools_reexec.into())
+    );
+
+    let library_frameworks_reexec = "/Library/Frameworks/Python.framework/Versions/3.10/Resources/Python.app/Contents/MacOS/Python scripts/mlx/finetune_wrapper.py --model foo";
+    assert_eq!(
+        classify_mlx_cmdline(Some(library_frameworks_reexec)),
+        CmdlineVerification::Mlx(library_frameworks_reexec.into())
     );
 }
 
