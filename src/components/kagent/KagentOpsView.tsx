@@ -95,7 +95,13 @@ export const KagentOpsView: React.FC = () => {
     try {
       // 설치 대상은 이 패널의 kubeconfig 선택기와 같은 축이다(D33 개정) — 진단이 narwhal을
       // 보는데 설치만 저장된 DeployTarget(colima)으로 가면 재조회는 영원히 "미설치"가 된다.
-      const res = await invoke<string>('install_kagent', { context: selectedContext });
+      const res = await invoke<string>('install_kagent', {
+        context: selectedContext,
+        expectedTarget: {
+          context: confirmed.context,
+          namespace: confirmed.namespace,
+        },
+      });
       const shown = res ? summarizeInstallOutput(res) : t('kagent.install.fallbackAck');
       await message(shown, { title: 'KubeMetal', kind: 'info' });
     } catch (e) {

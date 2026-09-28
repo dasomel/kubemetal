@@ -7,6 +7,7 @@ import { useServiceAccess } from '../../hooks/useServiceAccess';
 import { useTranslation } from '../../i18n/i18nContext';
 import { confirmDeployOperation } from '../../lib/confirmDeployOperation';
 import { openEndpoint } from '../../lib/openEndpoint';
+import type { OperationSummary } from '../../types/ipc';
 
 export const ProvisionPanel: React.FC = () => {
   const {
@@ -56,7 +57,7 @@ export const ProvisionPanel: React.FC = () => {
 
   const handleProvision = async () => {
     setConfirmingProvision(true);
-    let confirmed = false;
+    let confirmed: OperationSummary | null = null;
     try {
       confirmed = await confirmDeployOperation(t, 'provision_mlops_stack');
     } finally {
@@ -64,7 +65,7 @@ export const ProvisionPanel: React.FC = () => {
     }
 
     if (confirmed) {
-      await provisionStack();
+      await provisionStack(confirmed);
     }
   };
 
