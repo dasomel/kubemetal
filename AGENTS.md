@@ -57,7 +57,7 @@ Changing a D-registry decision requires updating all affected docs in the same t
   clusters default to **agent-only (L1)** — kagent CRDs, no bridge, nothing in the
   cluster may depend on the Mac's local stack. Full-stack external deploy with the
   D10 bridge is the opt-in **L2** tier.
-- `DESIGN.md` frontmatter is the only token source, mapped 1:1 into `tailwind.config.js`.
+- `DESIGN.md` frontmatter is the only token source, mapped 1:1 into the `@theme` block of `src/index.css`.
   Components use tokens — a raw hex or a default-palette class is a defect the lint gate
   will not always catch for you.
 - **K8s security baseline (D38)**: mlflow/seaweedfs/prefect run non-root (UID/GID/fsGroup
@@ -70,8 +70,8 @@ Changing a D-registry decision requires updating all affected docs in the same t
 ## Commands & Evidence
 
 `make help` is the entrypoint — recipes there are canonical, so read the relevant recipe rather than
-reconstructing flags. The gates worth knowing by name: `make verify` (tests + clippy + tsc +
-design lint + web build), `make verify-airgap` (offline-startup probe, D25).
+reconstructing flags. The gates worth knowing by name: `make verify` (the completion suite)
+and `make verify-airgap` (offline-startup probe, D25).
 
 Green gates say the code compiles, not that the feature works. Anything user-facing gets
 observed in the running app; anything cluster-facing gets checked against real colima as the
@@ -119,7 +119,7 @@ forwards die with their parent.
 
 ## Commits
 
-Conventional Commits, scoped per verified task. `CHANGELOG.md` / `CHANGELOG.ko.md` carry
+Conventional Commits, scoped per verified task. `CHANGELOG.md` / `CHANGELOG-ko.md` carry
 **user-visible** change per release (Keep a Changelog, updated at release time — not per
 commit). Everything else stays where it already lives: rationale in the D-registry, defects
 and their lessons in `docs/mistakes-log.md`, and the full history in `git log`. Don't restate
