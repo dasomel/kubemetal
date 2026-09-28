@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issues-33-12-11-38-mlx-rag",
+  "task": "Adapter checkpoint deletion (#33), benchmark reservation (#11), last-known-good serving rollback (#12) and lexical RAG retrieval (#38)",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "src/**",
+      "scripts/rag/**",
+      "tests/**",
+      "docs/**",
+      "Makefile",
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Implemented only the bounded gap each issue's triage found in code: a delete IPC over the existing safety predicate (#33), the benchmark reservation the code comment deferred (#11), IPC/UI exposure of the existing revert (#12), and a lexical mode beside dense search (#38). Sleep/wake, promotion gates and adaptive routing stay open."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Cross-vendor reviews found defects before merge: a trailing slash made symlink_metadata follow a symlink (measured on this Mac: is_symlink()==false for 'link/'), a check-then-delete window against training/serving start, a double revert and revert stopping serving before admission, and lexical search quoting the whole query as one FTS5 phrase so reordered or extra-word queries returned nothing.",
+      "evidence": [
+        "policy:agy-adversarial-review-issue-33",
+        "policy:codex-review-issue-12",
+        "policy:claude-review-issue-38",
+        "runtime:symlink-metadata-trailing-slash-macos-2026-09-28"
+      ]
+    },
+    {
+      "id": "e2r",
+      "type": "bug_fix",
+      "summary": "Paths are rebuilt from components and every component under the adapters root is checked for symlinks; protection check and removal hold the admission mutex shared with fine-tune and serving start; revert claims a reservation and runs serving admission before stopping; lexical queries quote each token and OR them."
+    },
+    {
+      "id": "e3",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Guard tests were mutation-checked: removing each guard made its test fail, restoring it made the test pass. The reviewer's lexical reproduction now returns the relevant chunk.",
+      "scope": "Adapter deletion path safety, benchmark/revert reservations, serving admission ordering, lexical tokenization",
+      "evidence": [
+        "test:commands::mlx::tests::claim_revert_reservation_refuses_concurrent_revert",
+        "test:commands::mlx::tests::revert_should_stop_current_serving_refuses_when_benchmark_active",
+        "test:commands::metrics::admission_tests::second_benchmark_refused_while_held",
+        "test:tests/rag/test_rag_lexical.py"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Full Rust unit suite, clippy -D warnings, rustfmt, tsc, IPC type check, pnpm build and the Python lexical tests passed on the integrated branch.",
+      "scope": "Tauri command, frontend build and RAG script regression suite",
+      "evidence": [
+        "ci:cargo-test-manifest-src-tauri-Cargo-toml",
+        "ci:make-test"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The four bounded slices are implemented and verified at unit, build and review scope; no live adapter, benchmark or serving process was exercised in the running app.",
+      "evidence": [
+        "e3",
+        "e4"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified at unit/build/trace-gate scope; in-app observation of the new delete, rollback and lexical controls is not part of this evidence."
+    }
+  ]
+}
