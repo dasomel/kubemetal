@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "issue": 58,
+  "date": "2026-09-28",
+  "runtime": "omlx",
+  "omlx_binary": "/opt/homebrew/bin/omlx",
+  "omlx_version": "0.7.0rc1",
+  "omlx_version_note": "Task brief assumed oMLX 0.6.4; actual installed version measured via `omlx --version` is 0.7.0rc1. Recorded as measured, not corrected to the assumed value.",
+  "host": {
+    "os": "macOS",
+    "os_version": "27.0",
+    "build": "26A428",
+    "arch": "arm64"
+  },
+  "endpoint": "http://127.0.0.1:8010",
+  "port_note": "8000 is owned by an unrelated running process (verified via `lsof -i :8000` before start) and was not touched; 8010 was free (verified via `lsof -i :8010` returning no rows) and used instead.",
+  "model": "mlx-community__Qwen2.5-0.5B-Instruct-4bit",
+  "model_dir": "~/.kubemetal/models",
+  "runtime_pid": 74282,
+  "auth": {
+    "mode": "bearer",
+    "key_source": "~/.omlx/settings.json auth.api_key, read into a shell variable, never echoed, never written to any command line log or evidence file",
+    "key_present_in_evidence": false,
+    "key_absence_grep_result": "grep -rlF \"$OMLX_KEY\" <evidence-dir> -> no matches (KEY_ABSENT_CONFIRMED)"
+  },
+  "start_command": "omlx serve --host 127.0.0.1 --port 8010 --model-dir ~/.kubemetal/models --log-level info (backgrounded, no --api-key on the command line)",
+  "stop_command": "kill -TERM 74282",
+  "checks": [
+    {
+      "id": "models-list",
+      "description": "GET /v1/models with bearer auth",
+      "command": "curl -H 'Authorization: Bearer <redacted>' http://127.0.0.1:8010/v1/models",
+      "http_status": 200,
+      "result": "pass",
+      "evidence_file": "01-models.json",
+      "notes": "mlx-community__Qwen2.5-0.5B-Instruct-4bit present in model list alongside other discovered models."
+    },
+    {
+      "id": "messages-nonstream",
+      "description": "POST /v1/messages non-streaming, anthropic-version 2023-06-01, max_tokens 32",
+      "command": "curl -H 'Authorization: Bearer <redacted>' -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -X POST http://127.0.0.1:8010/v1/messages -d '{\"model\":\"mlx-community__Qwen2.5-0.5B-Instruct-4bit\",\"max_tokens\":32,\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in one short sentence.\"}]}'",
+      "http_status": 200,
+      "result": "pass",
+      "evidence_file": "02-messages-nonstream.json",
+      "notes": "Response shape matches Anthropic Messages API: id, type=message, role=assistant, content=[{type:text,...}], stop_reason=end_turn, usage.input_tokens/output_tokens present."
+    },
+    {
+      "id": "messages-stream",
+      "description": "POST /v1/messages with stream:true, same headers/prompt",
+      "command": "curl -N -H 'Authorization: Bearer <redacted>' -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -X POST http://127.0.0.1:8010/v1/messages -d '{\"model\":\"mlx-community__Qwen2.5-0.5B-Instruct-4bit\",\"max_tokens\":32,\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in one short sentence.\"}]}'",
+      "http_status": 200,
+      "result": "pass",
+      "evidence_file": "03-messages-stream.sse.txt",
+      "sse_event_sequence": ["ping", "message_start", "content_block_start", "content_block_delta", "content_block_delta", "content_block_stop", "message_delta", "message_stop"],
+      "notes": "Valid Anthropic streaming event sequence including leading ping before message_start."
+    },
+    {
+      "id": "messages-no-auth-negative",
+      "description": "POST /v1/messages with no Authorization header",
+      "command": "curl -H 'anthropic-version: 2023-06-01' -H 'Content-Type: application/json' -X POST http://127.0.0.1:8010/v1/messages -d '{...}'",
+      "http_status": 401,
+      "result": "pass",
+      "evidence_file": "04-messages-noauth.json",
+      "notes": "Body: {\"error\":{\"message\":\"API key required\",\"type\":\"authentication_error\",\"param\":null,\"code\":null}}"
+    },
+    {
+      "id": "chat-completions-comparison",
+      "description": "POST /v1/chat/completions for the same prompt, status + short text only",
+      "command": "curl -H 'Authorization: Bearer <redacted>' -H 'Content-Type: application/json' -X POST http://127.0.0.1:8010/v1/chat/completions -d '{\"model\":\"mlx-community__Qwen2.5-0.5B-Instruct-4bit\",\"max_tokens\":32,\"messages\":[{\"role\":\"user\",\"content\":\"Say hello in one short sentence.\"}]}'",
+      "http_status": 200,
+      "result": "pass",
+      "evidence_file": "05-chat-completions.json",
+      "notes": "OpenAI-shaped response also returns 200 on the same port/model; not evidence of the Anthropic route itself, included only as the requested side-by-side."
+    }
+  ],
+  "shutdown": {
+    "signal": "SIGTERM",
+    "pid": 74282,
+    "confirmed_exit": true,
+    "confirmed_port_free": true,
+    "log_evidence": "omlx-serve.log tail shows 'Engine pool shutdown complete' and 'Finished server process [74282]'"
+  },
+  "not_verified": [
+    "Concurrent/streaming-under-load behavior of /v1/messages",
+    "Larger models than the 0.5B smoke model",
+    "MCP or tool-use blocks over /v1/messages",
+    "Behavior with an invalid (non-empty, wrong) bearer token, only the no-auth negative case was run"
+  ]
+}
