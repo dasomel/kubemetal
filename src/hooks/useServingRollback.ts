@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
 import type { ServingStatus } from '../types/ipc';
@@ -8,15 +8,21 @@ export function useServingRollback(serving: ServingStatus | null | undefined, on
   const { t } = useTranslation();
   const [lastKnownGoodServing, setLastKnownGoodServing] = useState<ServingStatus | null>(null);
   const [revertingServing, setRevertingServing] = useState(false);
+  // This fetch runs on every status poll; alert once per failure streak, not once per tick.
+  const loadErrorShownRef = useRef(false);
 
   const fetchLastKnownGoodServing = useCallback(async () => {
     try {
       const res = await invoke<ServingStatus | null>('get_last_known_good_serving');
       setLastKnownGoodServing(res);
+      loadErrorShownRef.current = false;
     } catch (err) {
       console.error(t('mlx.err.lastKnownGoodLoad'), err);
       setLastKnownGoodServing(null);
-      await message(t('mlx.err.lastKnownGoodLoad'), { title: 'KubeMetal', kind: 'error' });
+      if (!loadErrorShownRef.current) {
+        loadErrorShownRef.current = true;
+        await message(t('mlx.err.lastKnownGoodLoad'), { title: 'KubeMetal', kind: 'error' });
+      }
     }
   }, [t]);
 
@@ -39,6 +45,8 @@ export function useServingRollback(serving: ServingStatus | null | undefined, on
       if (onRefreshStatus) {
         await onRefreshStatus();
       }
+      // A mismatch refusal means the saved config moved; show the current one right away.
+      await fetchLastKnownGoodServing();
     } finally {
       setRevertingServing(false);
     }
