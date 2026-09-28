@@ -123,7 +123,8 @@ export const MlxOrphanedProcessesCard: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => void terminate(orphan)}
-                  disabled={loading || terminatingPid !== null}
+                  disabled={loading || terminatingPid !== null || !orphan.verified}
+                  title={orphan.verified ? undefined : t('mlx.orphans.unverifiedReason')}
                   className="py-1.5 px-3 bg-dangerStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-caption rounded-md transition-all flex items-center gap-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   {terminatingPid === orphan.pid ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Square className="w-3.5 h-3.5" />}
@@ -131,6 +132,12 @@ export const MlxOrphanedProcessesCard: React.FC = () => {
                 </button>
               </div>
               <code className="block break-all text-caption text-inkMuted">{orphan.cmdline}</code>
+              {!orphan.verified && (
+                <p className="flex items-start gap-1.5 text-caption text-inkFaint">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                  <span>{t('mlx.orphans.unverifiedReason')}</span>
+                </p>
+              )}
             </div>
           ))}
         </div>

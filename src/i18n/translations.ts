@@ -875,6 +875,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'mlx.orphans.terminate': '종료',
     'mlx.orphans.terminateTitle': '고아 MLX 프로세스 종료',
     'mlx.orphans.terminateConfirm': 'PID {pid} 프로세스를 종료하시겠습니까?\n\n{cmdline}',
+    'mlx.orphans.unverifiedReason': '명령줄을 확인할 수 없어 종료할 수 없습니다.',
 
     // Error boundary (common/ErrorBoundary)
     'errorBoundary.renderErrorLog': '렌더링 오류:',
@@ -1761,6 +1762,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'mlx.orphans.terminate': 'Terminate',
     'mlx.orphans.terminateTitle': 'Terminate orphaned MLX process',
     'mlx.orphans.terminateConfirm': 'Terminate PID {pid}?\n\n{cmdline}',
+    'mlx.orphans.unverifiedReason': 'Cannot terminate — the command line could not be verified.',
 
     // Error boundary (common/ErrorBoundary)
     'errorBoundary.renderErrorLog': 'Render error:',

@@ -160,6 +160,8 @@ export interface OrphanedProcessInfo {
   pid: number;
   kind: string;
   cmdline: string;
+  /** false면 cmdline이 확인 불가 자리표시자다 — 종료 요청은 백엔드 재검증에서 항상 거부된다. */
+  verified: boolean;
 }
 
 export interface UnreadableMarker {

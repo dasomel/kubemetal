@@ -23,9 +23,35 @@ pub use reconcile::{
 };
 
 use std::path::PathBuf;
+use std::time::Duration;
 use tauri::State;
 
 use crate::commands::mlx::MlxState;
+
+/// `terminate_orphaned_mlx_process`가 종료 확인을 위해 생존 여부를 다시 검사하는 최대 횟수.
+const ORPHAN_EXIT_POLL_ATTEMPTS: u32 = 15;
+/// 폴링 간 대기 간격. attempts와 곱하면 약 3초의 상한이 된다.
+const ORPHAN_EXIT_POLL_INTERVAL: Duration = Duration::from_millis(200);
+
+/// SIGTERM/SIGKILL 직후에는 Metal teardown 등으로 프로세스가 잠시 더 살아있을 수 있어
+/// 단일 `pid_is_alive` 체크는 방금 종료된 프로세스를 "종료 실패"로 오탐한다. `is_alive`를
+/// 짧은 간격으로 최대 `attempts`번 재확인해 실제 종료를 기다린다.
+/// 순수 함수로 분리해 실제 프로세스 없이 주입된 클로저로 단위 테스트할 수 있게 한다.
+fn wait_for_process_exit(
+    mut is_alive: impl FnMut() -> bool,
+    attempts: u32,
+    interval: Duration,
+) -> bool {
+    for attempt in 0..attempts.max(1) {
+        if !is_alive() {
+            return true;
+        }
+        if attempt + 1 < attempts {
+            std::thread::sleep(interval);
+        }
+    }
+    false
+}
 
 /// 앱 시작 시 고아 MLX 프로세스 탐지 IPC 커맨드(GitHub #13).
 /// marker 디렉터리와 pid 생존 여부를 검사해 살아 있는 프로세스 목록을 반환한다.
@@ -90,14 +116,20 @@ pub async fn terminate_orphaned_mlx_process(
 
     let exited = tokio::task::spawn_blocking(move || {
         crate::commands::mlx::terminate_pid(pid, use_process_group);
-        !crate::services::process::pid_is_alive(pid)
+        wait_for_process_exit(
+            || crate::services::process::pid_is_alive(pid),
+            ORPHAN_EXIT_POLL_ATTEMPTS,
+            ORPHAN_EXIT_POLL_INTERVAL,
+        )
     })
     .await
     .map_err(|e| format!("Failed to wait for orphaned process termination: {e}"))?;
 
     if !exited {
         return Err(format!(
-            "Orphaned MLX process {pid} did not exit after termination attempt."
+            "Orphaned MLX process {pid} did not exit within {:.1}s after termination attempt.",
+            ORPHAN_EXIT_POLL_ATTEMPTS.saturating_sub(1) as f64
+                * ORPHAN_EXIT_POLL_INTERVAL.as_secs_f64()
         ));
     }
 

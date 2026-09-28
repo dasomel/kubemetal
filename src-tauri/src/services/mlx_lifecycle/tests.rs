@@ -178,6 +178,7 @@ fn orphan_termination_allows_pid_in_fresh_orphan_scan() {
             pid: 42,
             kind: "training".into(),
             cmdline: "python -m mlx_lm.lora".into(),
+            verified: true,
         }],
         unreadable: vec![],
     };
@@ -205,11 +206,40 @@ fn orphan_termination_refuses_session_tracked_pid() {
             pid: 42,
             kind: "serving".into(),
             cmdline: "python -m mlx_lm server".into(),
+            verified: true,
         }],
         unreadable: vec![],
     };
 
     assert_eq!(orphan_termination_candidate(&scan, &[42], 42), None);
+}
+
+#[test]
+fn wait_for_process_exit_returns_true_once_process_dies_within_attempts() {
+    use std::cell::Cell;
+    // 처음 2번은 살아있다고 보고하고, 3번째 확인부터 종료된 것으로 본다(Metal teardown 지연 모사).
+    let calls = Cell::new(0u32);
+    let exited = wait_for_process_exit(
+        || {
+            let n = calls.get();
+            calls.set(n + 1);
+            n < 2
+        },
+        5,
+        Duration::ZERO,
+    );
+    assert!(exited);
+    assert_eq!(
+        calls.get(),
+        3,
+        "3번째 확인에서 종료를 감지하고 즉시 멈춰야 한다"
+    );
+}
+
+#[test]
+fn wait_for_process_exit_returns_false_when_process_never_dies() {
+    let exited = wait_for_process_exit(|| true, 3, Duration::ZERO);
+    assert!(!exited);
 }
 
 #[test]
