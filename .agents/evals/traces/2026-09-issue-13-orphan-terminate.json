@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-13-orphan-terminate",
+  "task": "Surface orphaned MLX processes and safely terminate a freshly re-verified orphan from MLX Studio",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Kept the existing general kill_mlx_process command unchanged; the new termination command independently rescans marker ownership, process liveness, and MLX command line before signaling."
+    },
+    {
+      "id": "e1r",
+      "type": "reproduction",
+      "summary": "The existing orphan scan exposed detected processes but supplied no orphan-only termination path; the unrelated kill_mlx_process command accepts an arbitrary PID and therefore cannot establish fresh orphan ownership.",
+      "evidence": [
+        "policy:issue-13-reduced-scope"
+      ]
+    },
+    {
+      "id": "e2",
+      "type": "bug_fix",
+      "summary": "Added a fail-closed orphan-only termination path, marker removal only after confirmed exit, and an MLX Studio card that renders scan errors and unreadable markers without claiming an empty scan."
+    },
+    {
+      "id": "e3",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Pure admission tests prove that only a PID in the fresh orphan scan is allowed and that missing or session-tracked PIDs are refused.",
+      "scope": "orphan termination admission decision in src-tauri services/mlx_lifecycle",
+      "evidence": [
+        "test:services::mlx_lifecycle::tests::orphan_termination_allows_pid_in_fresh_orphan_scan",
+        "test:services::mlx_lifecycle::tests::orphan_termination_refuses_pid_missing_from_fresh_scan",
+        "test:services::mlx_lifecycle::tests::orphan_termination_refuses_session_tracked_pid"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "summary": "The targeted Rust tests and TypeScript type check passed after command registration and UI IPC wiring.",
+      "scope": "orphan termination command and frontend IPC consumer",
+      "evidence": [
+        "test:cargo-test-orphan_termination",
+        "ci:tsc-noemit"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The requested orphan scan UI and server-side PID-reuse-safe termination path are complete within issue #13 reduced scope.",
+      "evidence": [
+        "e3",
+        "e4"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified at unit, type-check, build-gate, and trace-gate scope; no live orphan process was created or terminated during verification."
+    }
+  ]
+}

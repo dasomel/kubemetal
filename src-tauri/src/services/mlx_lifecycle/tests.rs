@@ -172,6 +172,47 @@ fn classify_cmdline_unverifiable_on_none_or_empty() {
 }
 
 #[test]
+fn orphan_termination_allows_pid_in_fresh_orphan_scan() {
+    let scan = OrphanScan {
+        orphans: vec![OrphanedProcessInfo {
+            pid: 42,
+            kind: "training".into(),
+            cmdline: "python -m mlx_lm.lora".into(),
+        }],
+        unreadable: vec![],
+    };
+
+    assert_eq!(
+        orphan_termination_candidate(&scan, &[], 42).map(|orphan| orphan.pid),
+        Some(42)
+    );
+}
+
+#[test]
+fn orphan_termination_refuses_pid_missing_from_fresh_scan() {
+    let scan = OrphanScan {
+        orphans: vec![],
+        unreadable: vec![],
+    };
+
+    assert_eq!(orphan_termination_candidate(&scan, &[], 42), None);
+}
+
+#[test]
+fn orphan_termination_refuses_session_tracked_pid() {
+    let scan = OrphanScan {
+        orphans: vec![OrphanedProcessInfo {
+            pid: 42,
+            kind: "serving".into(),
+            cmdline: "python -m mlx_lm server".into(),
+        }],
+        unreadable: vec![],
+    };
+
+    assert_eq!(orphan_termination_candidate(&scan, &[42], 42), None);
+}
+
+#[test]
 fn reconciliation_suppresses_when_slot_occupied_by_new_process() {
     #[cfg(unix)]
     {

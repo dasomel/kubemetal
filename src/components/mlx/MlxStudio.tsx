@@ -7,6 +7,7 @@ import { MlxFineTuneCard } from './MlxFineTuneCard';
 import { MlxGuardrailCard } from './MlxGuardrailCard';
 import { GpuBenchmarkCard } from './GpuBenchmarkCard';
 import { MlxServingCard } from './MlxServingCard';
+import { MlxOrphanedProcessesCard } from './MlxOrphanedProcessesCard';
 import { LocalInferenceRuntimeCard } from './LocalInferenceRuntimeCard';
 import { LocalInferenceBridgeCard } from './LocalInferenceBridgeCard';
 import { LocalInferenceOpsCard } from './LocalInferenceOpsCard';
@@ -97,6 +98,7 @@ export const MlxStudio: React.FC = () => {
       />
 
       <GpuBenchmarkCard />
+      <MlxOrphanedProcessesCard />
 
       <LocalInferenceReadinessCard />
       <LocalInferenceRuntimeCard />

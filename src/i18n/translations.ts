@@ -865,6 +865,16 @@ export const translations: Record<Language, Record<string, string>> = {
     'mlx.guardrail.pausedGenericLabel': '학습이 일시정지되었습니다.',
     'mlx.guardrail.runningLabel': '학습이 진행 중입니다.',
     'mlx.guardrail.pauseBtn': '일시정지',
+    'mlx.orphans.title': '고아 MLX 프로세스',
+    'mlx.orphans.refresh': '새로 고침',
+    'mlx.orphans.loading': '고아 MLX 프로세스를 확인하는 중...',
+    'mlx.orphans.empty': '고아 프로세스를 찾지 못했습니다.',
+    'mlx.orphans.processesLabel': '고아 프로세스',
+    'mlx.orphans.unreadableLabel': '읽을 수 없는 marker',
+    'mlx.orphans.pidKind': 'PID {pid} · {kind}',
+    'mlx.orphans.terminate': '종료',
+    'mlx.orphans.terminateTitle': '고아 MLX 프로세스 종료',
+    'mlx.orphans.terminateConfirm': 'PID {pid} 프로세스를 종료하시겠습니까?\n\n{cmdline}',
 
     // Error boundary (common/ErrorBoundary)
     'errorBoundary.renderErrorLog': '렌더링 오류:',
@@ -1741,6 +1751,16 @@ export const translations: Record<Language, Record<string, string>> = {
     'mlx.guardrail.pausedGenericLabel': 'Training is paused.',
     'mlx.guardrail.runningLabel': 'Training in progress.',
     'mlx.guardrail.pauseBtn': 'Pause',
+    'mlx.orphans.title': 'Orphaned MLX Processes',
+    'mlx.orphans.refresh': 'Refresh',
+    'mlx.orphans.loading': 'Checking for orphaned MLX processes...',
+    'mlx.orphans.empty': 'No orphaned processes found.',
+    'mlx.orphans.processesLabel': 'Orphaned processes',
+    'mlx.orphans.unreadableLabel': 'Unreadable markers',
+    'mlx.orphans.pidKind': 'PID {pid} · {kind}',
+    'mlx.orphans.terminate': 'Terminate',
+    'mlx.orphans.terminateTitle': 'Terminate orphaned MLX process',
+    'mlx.orphans.terminateConfirm': 'Terminate PID {pid}?\n\n{cmdline}',
 
     // Error boundary (common/ErrorBoundary)
     'errorBoundary.renderErrorLog': 'Render error:',
