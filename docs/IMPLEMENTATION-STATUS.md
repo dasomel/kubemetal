@@ -57,6 +57,17 @@ Hardware guardrails include memory-pressure/battery/sleep handling, thermal-stat
 
 The application includes an Air-Gap Management surface for container images, charts, binaries and version verification. Release tooling also generates third-party notices and CycloneDX/SPDX SBOM artifacts for bundled dependencies.
 
+**2026-09-28 (#98):** `make airgap-sbom` / `make verify-airgap-sbom` ran end to end for the
+first time with a real `syft` (1.52.0) against a freshly downloaded 12-image bundle — all
+12 images produced valid SPDX-2.3 SBOMs, `verify-airgap-sbom` passed, and a one-byte tamper
+of a published SPDX file was correctly rejected. The run also exposed a real bug: on Docker
+Desktop's containerd-backed image store (default since 4.34), `docker image inspect .Id`
+returns the pulled manifest(-list) digest instead of the config blob digest classic dockerd
+returned, which `scripts/airgap/sbom.py`'s archive-binding check assumed. Fixed in
+`check_archive()` to also accept a self-verified OCI `index.json` manifest digest when
+present, without changing `digests.lock`'s shared format or issue #5's install-time
+verification. Evidence: `evidence/airgap-sbom/20260928/`.
+
 ## Measured reference
 
 The README records packaged-app measurements on Apple M4 Pro / 64GB hardware, including VLM throughput/TTFT, LoRA memory behavior and the VM resource profile. These are reference measurements rather than universal performance guarantees.

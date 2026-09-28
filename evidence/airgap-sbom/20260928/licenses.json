@@ -1,0 +1,1093 @@
+{
+  "informational_only": true,
+  "counting": "One license expression per package per image; concluded, then declared, then NOASSERTION.",
+  "gpl_family_note": "gpl_family is a heuristic regex match; it can miss unusual spellings and is not a legal determination.",
+  "package_count": 4662,
+  "licenses": [
+    {
+      "license": "(Apache-2.0 AND BSD-2-Clause)",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "(Apache-2.0 AND CNRI-Python)",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "(Apache-2.0 AND MIT)",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "(Apache-2.0 OR BSD-2-Clause)",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "(Apache-2.0 OR BSD-3-Clause)",
+      "count": 3,
+      "gpl_family": false
+    },
+    {
+      "license": "(Apache-2.0 WITH LLVM-exception)",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "(BSD-2-Clause AND GPL-2.0-or-later)",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "(BSD-2-Clause OR GPL-2.0-or-later)",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "(BSD-3-Clause AND IJG AND Zlib)",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "(BSD-3-Clause OR GPL-2.0-only)",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "(BSD-3-Clause OR GPL-2.0-or-later)",
+      "count": 7,
+      "gpl_family": true
+    },
+    {
+      "license": "(BSD-3-Clause-Attribution AND BSD-4-Clause)",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "(FTL OR GPL-2.0-or-later)",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "(GPL-2.0-only AND LGPL-2.1-only)",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "(GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-3-Clause AND MIT)",
+      "count": 5,
+      "gpl_family": true
+    },
+    {
+      "license": "(GPL-2.0-or-later AND LGPL-2.0-or-later)",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "(GPL-2.0-or-later AND LGPL-2.1-or-later)",
+      "count": 9,
+      "gpl_family": true
+    },
+    {
+      "license": "(GPL-2.0-or-later AND LGPL-3.0-or-later)",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "(GPL-2.0-or-later OR LGPL-2.0-or-later)",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "(GPL-2.0-or-later OR LGPL-3.0-or-later)",
+      "count": 12,
+      "gpl_family": true
+    },
+    {
+      "license": "(GPL-3.0-or-later AND GPL-2.0-or-later AND GPL-2.0-only AND GPL-1.0-only AND LGPL-2.1-or-later AND BSD-1-Clause AND BSD-2-Clause AND BSD-3-Clause AND BSD-4-Clause-UC AND MIT AND CC-PDDC)",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "(GPL-3.0-or-later AND LGPL-2.1-or-later AND MIT)",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "(GPL-3.0-or-later WITH GCC-exception-3.1)",
+      "count": 4,
+      "gpl_family": true
+    },
+    {
+      "license": "(LGPL-2.1-or-later OR MIT)",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "(MIT AND BSD-2-Clause AND GPL-2.0-or-later)",
+      "count": 5,
+      "gpl_family": true
+    },
+    {
+      "license": "(MIT AND ISC)",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "(MIT AND PSF-2.0)",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "(MIT AND Python-2.0)",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "(MIT OR Apache-2.0)",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "(MPL-2.0 AND MIT)",
+      "count": 15,
+      "gpl_family": false
+    },
+    {
+      "license": "0BSD AND Apache-2.0 AND Apache-2.0 AND BSD-3-Clause AND LicenseRef-BSD-3-Clause-Variant AND LicenseRef-BSD-4-Clause-CMU AND LicenseRef-Expat AND LicenseRef-GPL AND GPL-2.0-only AND GPL-2.0-or-later AND ISC AND Kazlib AND LGPL-2.0-only AND Latex2e",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "0BSD AND FSFUL AND FSFULLR AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND LicenseRef-GPL-3.0-or-later-WITH-Autoconf-exception-macro AND LGPL-2.1-only AND LGPL-2.1-or-later AND LicenseRef-PD AND LicenseRef-PD-debian AND LicenseRef-noderivs AND LicenseRef-permissive-nowarranty",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "0BSD AND LicenseRef-AND AND GPL-2.0-or-later AND LGPL-2.1-or-later AND LicenseRef-Public-Domain",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "Apache-2.0",
+      "count": 102,
+      "gpl_family": false
+    },
+    {
+      "license": "Apache-2.0 AND BSD-3-Clause AND FSFAP AND FSFULLR AND GPL-2.0-or-later AND GPL-3.0-or-later AND ISC AND LGPL-2.1-only AND LGPL-2.1-or-later AND X11 AND LicenseRef-customFSFUL AND LicenseRef-customFSFULLRWD",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "Apache-2.0 AND LicenseRef-Artistic AND BSD-3-Clause AND LicenseRef-Boost AND LicenseRef-EDL-1.0 AND LicenseRef-Expat AND LicenseRef-GPL AND GPL-1.0-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND ISC AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND Zlib AND LicenseRef-dlmalloc AND LicenseRef-mingw-runtime",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "Apache-2.0 AND LicenseRef-Artistic AND GPL-1.0-only AND GPL-1.0-or-later",
+      "count": 3,
+      "gpl_family": true
+    },
+    {
+      "license": "Artistic-2.0",
+      "count": 3,
+      "gpl_family": false
+    },
+    {
+      "license": "BSD-2-Clause",
+      "count": 25,
+      "gpl_family": false
+    },
+    {
+      "license": "BSD-2-Clause AND BSD-2-Clause AND BSD-3-Clause AND LicenseRef-BSD-3-clause-Aaron-D-Gifford AND Beerware AND ISC AND LicenseRef-public-domain-md4 AND LicenseRef-public-domain-md5 AND LicenseRef-public-domain-sha1",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "BSD-2-Clause AND BSD-2-Clause AND GPL-2.0-only AND GPL-2.0-or-later",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-2-Clause AND BSD-2-Clause AND LicenseRef-BSD-2-clause-author AND LicenseRef-BSD-2-clause-verbatim AND BSD-3-Clause AND LicenseRef-BSD-3-clause-John-Birrell AND LicenseRef-BSD-3-clause-Regents AND LicenseRef-BSD-3-clause-author AND LicenseRef-BSD-5-clause-Peter-Wemm AND Beerware AND LicenseRef-Expat AND ISC AND LicenseRef-ISC-Original AND LicenseRef-public-domain",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "BSD-2-Clause AND BSD-3-Clause AND BSD-4-Clause AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LicenseRef-LGPL AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND MIT AND LicenseRef-public-domain",
+      "count": 7,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-2-Clause AND BSD-3-Clause AND BSD-4-Clause AND LicenseRef-BSLA AND LicenseRef-Expat AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND ISC AND LicenseRef-LGPL AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND LicenseRef-public-domain",
+      "count": 9,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-2-Clause AND BSD-3-Clause AND LicenseRef-BSD-3-clause-Cambridge AND X11 AND LicenseRef-public-domain",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "BSD-2-Clause AND GPL-2.0-only",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-2-Clause AND GPL-2.0-only AND GPL-2.0-or-later",
+      "count": 3,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-2-Clause AND GPL-2.0-only AND GPL-2.0-or-later AND LicenseRef-public-domain-md5 AND LicenseRef-public-domain-s-s-d",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-2-Clause AND GPL-2.0-only AND LicenseRef-GPL-2--or-X11 AND LGPL-2.1-only AND LicenseRef-Unicode-data AND LicenseRef-Xen-interface",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-2-Clause AND LicenseRef-BSD-2.2-clause AND BSD-3-Clause-Attribution AND BSD-3-Clause AND LicenseRef-BSD-3-clause-JANET AND LicenseRef-BSD-3-clause-PADL AND BSD-4-Clause-UC AND FSFULLR AND GPL-3.0-only AND GPL-3.0-or-later AND LicenseRef-IBM-as-is AND MIT-CMU AND LicenseRef-MIT-Export AND LicenseRef-MIT-OpenVision AND LicenseRef-OpenLDAP AND RSA-MD",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-2-Clause AND LicenseRef-BSD-3-clause-Berkeley AND LicenseRef-BSD-3-clause-Carnegie AND LicenseRef-BSD-3-clause-Oracle AND LicenseRef-BSD-3-clause-WIDE AND LicenseRef-BSD-like-Spencer AND BSL-1.0 AND LicenseRef-CORE-MATH AND LicenseRef-Carnegie AND LicenseRef-DEC AND FSFAP AND GPL-2.0-only AND GPL-2.0-or-later AND LicenseRef-GPL-2--with-link-exception AND GPL-3.0-only AND GPL-3.0-or-later AND LicenseRef-IBM AND ISC AND LicenseRef-Inner-Net AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LicenseRef-LGPL-2.1--with-link-exception AND LGPL-3.0-only AND LGPL-3.0-or-later AND LicenseRef-MIT-like-Lord AND LicenseRef-PCRE AND SunPro AND Unicode-DFS-2016 AND LicenseRef-Univ-Coimbra AND LicenseRef-public-domain",
+      "count": 4,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-2-Clause AND LicenseRef-Expat AND GPL-3.0-only AND GPL-3.0-or-later AND MIT AND LicenseRef-all-permissive",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-2-Clause-Views AND LGPL-2.0-or-later AND LGPL-2.1-or-later AND MIT",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause",
+      "count": 90,
+      "gpl_family": false
+    },
+    {
+      "license": "BSD-3-Clause AND BSD-3-Clause AND BSD-4-Clause-UC AND FSFULLR AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-or-later AND ISC AND OLDAP-2.8 AND X11 AND curl",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND BSD-3-Clause AND GPL-2.0-only AND GPL-2.0-or-later AND LicenseRef-public-domain",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND BSD-3-Clause AND LicenseRef-Expat AND FSFUL AND FSFULLR AND GPL-2.0-only AND GPL-2.0-or-later AND LicenseRef-public-domain",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND CC0-1.0 AND LicenseRef-Expat AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND LicenseRef-RFC-Reference AND LicenseRef-TinySCHEME AND LicenseRef-permissive",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND FSFAP AND FSFULLR AND GFDL-1.3-only AND LicenseRef-GFDL-NIV-1.3- AND LicenseRef-GPL AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND ISC AND LicenseRef-LGPL AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND X11 AND LicenseRef-public-domain",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND GFDL-1.2-no-invariants-or-later AND GPL-3.0-or-later AND ISC",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND GPL-1.0-only AND GPL-2.0-only AND GPL-2.0-or-later",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND GPL-2.0-only",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND GPL-2.0-only AND GPL-2.0-or-later",
+      "count": 3,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND GPL-2.0-only AND LGPL-2.1-only",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND GPL-2.0-only AND LicenseRef-GPL-2--autoconf-exception AND GPL-3.0-only AND LicenseRef-GPL-3--autoconf-exception AND MIT AND LicenseRef-permissive-autoconf-m4 AND LicenseRef-permissive-autoconf-m4-no-warranty AND LicenseRef-permissive-configure AND LicenseRef-permissive-fsf AND LicenseRef-permissive-makefile-in",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND GPL-2.0-only AND LicenseRef-GPL-2--autoconf-exception AND LicenseRef-GPL-2--libtool-exception AND GPL-3.0-only AND LicenseRef-GPL-3--autoconf-exception AND LGPL-2.1-only AND LGPL-2.1-or-later AND MIT AND LicenseRef-permissive-autoconf-m4 AND LicenseRef-permissive-autoconf-m4-no-warranty AND LicenseRef-permissive-configure AND LicenseRef-permissive-fsf AND LicenseRef-permissive-makefile-in",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LicenseRef-g10-permissive",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND ISC AND LicenseRef-ISC-IBM AND LicenseRef-permissive-like-automake-output AND LicenseRef-same-as-rest-of-p11kit",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "BSD-3-Clause AND LicenseRef-BSD-3-clause-California AND LicenseRef-BSD-3-clause-variant AND LicenseRef-BSD-4-clause-California AND Beerware AND LicenseRef-Expat AND LicenseRef-Expat-ISC AND LicenseRef-Expat-UNM AND LicenseRef-F5 AND LicenseRef-FSF-unlimited AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LicenseRef-JCG AND LicenseRef-MIT-XC AND LicenseRef-NeoSoft-permissive AND LicenseRef-OpenLDAP-2.8 AND LicenseRef-UMich AND LicenseRef-public-domain",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND LicenseRef-BSD-tcp-wrappers AND Beerware AND GPL-1.0-only AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-2.0-only AND LGPL-2.0-or-later AND LicenseRef-public-domain",
+      "count": 4,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND LicenseRef-Expat AND GPL-2.0-only AND GPL-2.0-or-later AND curl",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND LicenseRef-Expat AND GPL-2.0-only AND Zlib",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND LicenseRef-FreeSoftware AND GFDL-1.2-or-later AND GFDL-1.3-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND ISC AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND Unicode-DFS-2016 AND X11 AND BSD-3-Clause AND GFDL-1.2-or-later AND GFDL-1.3-or-later AND ISC AND LicenseRef-public-domain AND Unicode-DFS-2016",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-3-Clause AND LicenseRef-MIT-X11 AND X11",
+      "count": 8,
+      "gpl_family": false
+    },
+    {
+      "license": "BSD-4-Clause AND GPL-2.0-or-later",
+      "count": 6,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-4-Clause-UC AND BSL-1.0 AND GFDL-1.3-only AND LicenseRef-GFDL-NIV-1.3- AND GPL-3.0-only AND GPL-3.0-or-later AND ISC AND X11 AND LicenseRef-pcre",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-4-Clause-UC AND FSFULLR AND GFDL-1.3-only AND LicenseRef-GFDL-NIV-1.3 AND GPL-3.0-only AND GPL-3.0-or-later AND ISC",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BSD-4-Clause-UC AND GFDL-1.3-only AND LicenseRef-GFDL-NIV-1.3 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND Latex2e AND LicenseRef-MIT-like AND LicenseRef-permissive",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "BlueOak-1.0.0",
+      "count": 17,
+      "gpl_family": false
+    },
+    {
+      "license": "CC-BY-3.0",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "CC-BY-3.0 AND GPL-2.0-only AND GPL-2.0-only AND X11",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "CC0-1.0",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "CC0-1.0 AND LicenseRef-Expat AND GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LicenseRef-public-domain",
+      "count": 4,
+      "gpl_family": true
+    },
+    {
+      "license": "FSFAP AND FSFUL AND FSFULLR AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND MIT",
+      "count": 3,
+      "gpl_family": true
+    },
+    {
+      "license": "FSFAP AND FSFULLR AND GFDL-1.3-only AND LicenseRef-GFDL-NIV-1.3 AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND X11 AND LicenseRef-public-domain",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "GD",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "GPL-1.0-only AND GPL-2.0-only AND LGPL-2.1-only",
+      "count": 4,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only",
+      "count": 53,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-only AND LGPL-2.1-only AND LGPL-2.1-or-later",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND GPL-2.0-or-later",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND LicenseRef-Unicode",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND LGPL-2.1-only AND LGPL-2.1-or-later",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.0-only AND LGPL-2.0-or-later",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.0-or-later AND LGPL-2.1-only",
+      "count": 4,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND GPL-2.0-or-later AND LGPL-2.1-only AND LGPL-2.1-or-later AND Zlib",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND GPL-2.0-or-later AND LicenseRef-public-domain",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND GPL-2.0-or-later AND LicenseRef-public-domain-s-s-d",
+      "count": 3,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND GPL-2.0-or-later AND MPL-2.0",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND GPL-2.0-or-later AND SMAIL-GPL AND LicenseRef-public-domain",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND LGPL-2.1-only AND LGPL-2.1-or-later",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-only AND LicenseRef-public-domain",
+      "count": 3,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-2.0-or-later",
+      "count": 4,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-3.0-only AND GPL-3.0-or-later",
+      "count": 4,
+      "gpl_family": true
+    },
+    {
+      "license": "GPL-3.0-or-later",
+      "count": 10,
+      "gpl_family": true
+    },
+    {
+      "license": "ICU",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "ISC",
+      "count": 87,
+      "gpl_family": false
+    },
+    {
+      "license": "Info-ZIP",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LGPL-2.0-only AND LGPL-2.0-or-later",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "LGPL-2.0-or-later",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "LGPL-2.1-only",
+      "count": 3,
+      "gpl_family": true
+    },
+    {
+      "license": "LGPL-2.1-or-later",
+      "count": 10,
+      "gpl_family": true
+    },
+    {
+      "license": "LGPL-3.0-or-later",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "Libpng",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-0122839ddca455eb169542587ae16197e41ed70618bb7f0f6a5dd9b16fa27035",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-1934ff9a4bb0ed9238392c228e8c9cca0858b22d8528c2ac6b9ea45129d55330",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-1efd6de77e03a0dc2652da8c425085e0284cc0e6eb17e64589643ed21ab0054f",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-2-clause AND LicenseRef-BSD-like AND LicenseRef-license",
+      "count": 6,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-20390f8a6f3b1e4d7cb45dd8652dabb259bbef688cbad839bcdb0b9ba7252f79",
+      "count": 20,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-20a9818b14f941467bcc0f459a1b1951e3bfecc1cc259e5004f8b9a80d7dc804",
+      "count": 8,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-217cf1b67ce79cfc930dfb4a8bdaccfa4c263226131e650f13cd2b342d9171d8",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-3-Clause-BSD-License",
+      "count": 3,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-34414ad829fcea0064729c14f1f900632bfa7d38061b13a9797eec320c372d9e",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-3a3174c995a17c797069650c273120b145bc26157eed25ad6bd1be18a25d1096",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-3c8b5112cb8f74ba959233291908d73f527afa6f1d96f93649aeb912b5884567",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-3cb2c7aa8ec1f91fe59071d47f0d875cd1381b51d1cbf3ec8e225168c552597a",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-3e67668ed552fe3a0684e77282325d07fa8847f2575ea1e1906000de571b5c1e",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-40c7e1f2118531f038ca22999bd976901254e1bc5cd1b0f0211bdd064c599987",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-4302abcc1ea1b6cbe8d19c79b892acf78878030220210707c19006828866207c",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-4a2d321ab57260e8de4b67bde8cff76c07d28be69c2d8b22dfc2bfa42f5c41b9",
+      "count": 4,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-4e89b2eeb82ea10ec61119c814f2ca0bbccdc22b72d0eb4f5542ef08f6a73ed2",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-56ca9c00cdef4d69b35d2013465c539eb9e09a80fec538d0f6dc91423dbaa1d3",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-5a5e7ca0e9f3f9679977e3a3e9ede45ad92885a3297ea78e766979f9866c5a16",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-5b0071d92fec4640942cea6af421f561698dbde02c9c4c62d563fb254c34f644",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-5b188ea82b86a3136a7480600b2e244df542c702effe7aedf04951c9d9559eb3",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-5e07fa97dc98e502dc15d09d4c14647ec77509f949267a30d1341cadf84d629f",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-5f9f7b538d221104bdb561ae80fd794ec5f813eb8fd04650293bddcc0f856e7d",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-60886b6264e9531565ccf1e31a63cd9b23f0bf4bbd7053b46aa9e6ae7622d31d",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-641806738b0c6a3d03168c2649e6b94205198bb66cd557e6bae3a20b71c9bb0b",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-6f717a1464301a641ac17e7301f1a1b221da802e8edf8cf4bc963721d487b146",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-719dd73912334e65a64c63fb1f7ccdacf70c27258570de0fb123b33d490eddf5",
+      "count": 3,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-7258c8acc378030d8dbe1fcdf394e915769fa31dcbaf3d2991d9a79891f3bcdc",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-74a10b02e3422fe1be9a5ae06568ea587592123505284dea9df65ab72d94d183",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-75b41b8de75b1596a239f6fa8e4caa409de4cf985cee2943d2a94b4e96a5197d",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-7c584b7b1f37b612da7fdf3b076eb2b2c1bae72865f0699d745ae2ac7d40d13e",
+      "count": 4,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-80763e4cca3963670637b98abff467ee09b83d1737d683ad5ccfb1e919bea94b",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-8cdc2d0eeeb4ed84963c58be27389b148e830ce5ec42c2598cf194721d0430ec",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-8f11910ef604ead72fbdc0c0caa641e3f955f66c4868175310ed7290e32b0f37",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-8f918c0bebd1454a084698a95c09d9a03cec8453dad1fc6eab9e6427da9d33a9",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-936728f4181718f42951b881c1e8f1386bf6b2723c4fbc533c374d6f42c71816",
+      "count": 4,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-9e3a4384b6d8d2358d44103f62bcd948328b3f8a63a1a6baa66abeb43302d581",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-AND AND BSD-2-Clause AND BSD-3-Clause AND Beerware AND LicenseRef-Domain AND ISC AND LicenseRef-Public",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-AND AND BSD-2-Clause AND LicenseRef-custom",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-Apache-2",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-Apache-2.0",
+      "count": 34,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-Apache-License--Version-2.0",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-Apache-License-2.0",
+      "count": 6,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-Apache-Software-License",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-Artistic AND Artistic-2.0 AND Artistic-dist AND BSD-3-Clause AND LicenseRef-BSD-3-clause-GENERIC AND LicenseRef-BSD-3-clause-with-weird-numbering AND LicenseRef-BSD-4-clause-POWERDOG AND LicenseRef-BZIP AND LicenseRef-DONT-CHANGE-THE-GPL AND LicenseRef-Expat AND FSFAP AND GPL-1.0-only AND GPL-1.0-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND LicenseRef-GPL-3--WITH-BISON-EXCEPTION AND LGPL-2.1-only AND LicenseRef-REGCOMP AND LicenseRef-REGCOMP- AND LicenseRef-SDBM-PUBLIC-DOMAIN AND LicenseRef-TEXT-TABS AND LicenseRef-Unicode AND Zlib",
+      "count": 4,
+      "gpl_family": true
+    },
+    {
+      "license": "LicenseRef-Artistic AND Artistic-2.0 AND Artistic-dist AND BSD-3-Clause AND LicenseRef-BSD-3-clause-GENERIC AND LicenseRef-BSD-3-clause-with-weird-numbering AND LicenseRef-BSD-4-clause-POWERDOG AND LicenseRef-BZIP AND LicenseRef-DONT-CHANGE-THE-GPL AND LicenseRef-Expat AND GPL-1.0-only AND GPL-1.0-or-later AND GPL-2.0-only AND GPL-2.0-or-later AND LicenseRef-GPL-3--WITH-BISON-EXCEPTION AND LicenseRef-HSIEH-BSD AND LicenseRef-HSIEH-DERIVATIVE AND LGPL-2.1-only AND LicenseRef-REGCOMP AND LicenseRef-REGCOMP- AND LicenseRef-RRA-KEEP-THIS-NOTICE AND LicenseRef-SDBM-PUBLIC-DOMAIN AND LicenseRef-TEXT-TABS AND LicenseRef-Unicode AND Zlib",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "LicenseRef-Artistic AND BSD-3-Clause AND LicenseRef-BSD-3-clause-fjord AND LicenseRef-GPL AND GPL-3.0-only AND LicenseRef-MIT-old AND MS-PL AND Sleepycat AND LicenseRef-TCL-like AND X11 AND Zlib",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "LicenseRef-Artistic AND GPL-1.0-only AND GPL-1.0-or-later AND LicenseRef-MIT-X11",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "LicenseRef-Artistic-License",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-Autoconf AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND LGPL-2.0-only AND LGPL-2.1-only AND LGPL-2.1-or-later AND LicenseRef-PD AND LicenseRef-PD-debian AND LicenseRef-config-h AND LicenseRef-noderivs AND LicenseRef-permissive-fsf AND LicenseRef-permissive-nowarranty AND LicenseRef-probably-PD",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "LicenseRef-BSD",
+      "count": 4,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-BSD-3-Clause-OR-Apache-2.0",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-BSD-License",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-BSD-variant AND GPL-2.0-only",
+      "count": 3,
+      "gpl_family": true
+    },
+    {
+      "license": "LicenseRef-BSD3 AND ISC",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-Chromium AND MIT AND LicenseRef-gnulib",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-Dual-License",
+      "count": 3,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-Expat",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-Expat AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LGPL-3.0-only AND LGPL-3.0-or-later AND LicenseRef-Unicode",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "LicenseRef-Expat AND LicenseRef-GAP AND LicenseRef-GPL AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-or-later AND LicenseRef-LGPL AND LGPL-2.0-only AND LGPL-2.0-or-later AND LGPL-3.0-or-later AND LicenseRef-public-domain",
+      "count": 4,
+      "gpl_family": true
+    },
+    {
+      "license": "LicenseRef-Expat AND LicenseRef-GPL AND GPL-2.0-or-later AND GPL-3.0-or-later AND MPL-1.1 AND X11 AND LicenseRef-public-domain",
+      "count": 1,
+      "gpl_family": true
+    },
+    {
+      "license": "LicenseRef-FSF-manpages AND LicenseRef-GFDL-1.3--no-invariant AND LicenseRef-GFDL-3 AND GPL-3.0-only AND GPL-3.0-or-later",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "LicenseRef-GFDL AND LicenseRef-GFDL-NIV-1.3- AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later AND LicenseRef-ISC-no-attribution",
+      "count": 2,
+      "gpl_family": true
+    },
+    {
+      "license": "LicenseRef-GFDL-NIV-1.3- AND GPL-2.0-only AND GPL-2.0-or-later AND GPL-3.0-only AND GPL-3.0-or-later",
+      "count": 3,
+      "gpl_family": true
+    },
+    {
+      "license": "LicenseRef-GPL AND GPL-2.0-or-later AND LicenseRef-verbatim",
+      "count": 4,
+      "gpl_family": true
+    },
+    {
+      "license": "LicenseRef-ISC-License",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-MIT-License",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-MIT-license",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-Modified-BSD-License",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-Public-Domain",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-a07e99815cf1998f1dabbc21fe199460bfa09b85ead0d56b49a32cac3d1791b5",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-ab2f3532a1bf45d90643e92c1dfb985982698ecbf63f12595acfd9598d36350d",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-ac9276490d2fa167442ae1aae33926514ad10c8886baa40046c5e367fccc5938",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-ad-hoc",
+      "count": 3,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-b32aecaae84643700a33bc9ee83fa9b36938d35aa7b61b5042092eca77ddb732",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-b3bbc6fbb3f2a0e6a487e953eb8c3cc4bdb6f4150f7f51d20b1e9a3c8ef92d3d",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-b7b391571e7253d4cf607e33e3b463895768fad264471e7774882974f834faa1",
+      "count": 3,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-c434a44e656a89e72b5cee13bba6719011e0899bfc626ab9c08205010ab2dbbe",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-c72606efed09f6bf6e17e38541d34a1d21caf4d7c9ca190c19b84a26da4b85d3",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-cdb5461d8515002d0fe3babb764eec3877458b20f4e4bb16219f62ea953afeea",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-da7a8d93abf1eccdeaf326642c8ce9ed760f3a973ca46f3f69b3cf755bb81ade",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-e00e6a86c598f9e24ced0180a70a5f2f2e45e133d93adf2b17ce8a06ce4b1b51",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-e4ad5b1bb6aa6e7aa93d7e2b516e1ae8de6e75b20cfb4c18934d111d3e918ae4",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-f65dae37239e4d61a1bdeaf2ded76b8569d012a054aa042233b78615e7a83210",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-f73f781beb9f85b3f921f9bf540fc89d6eff9e20689ef9323ce510d077a30878",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "LicenseRef-public-domain",
+      "count": 7,
+      "gpl_family": false
+    },
+    {
+      "license": "MIT",
+      "count": 343,
+      "gpl_family": false
+    },
+    {
+      "license": "MIT-0",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "MIT-CMU",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "MPL-2.0",
+      "count": 4,
+      "gpl_family": false
+    },
+    {
+      "license": "MPL-2.0 AND (Apache-2.0 OR MIT)",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "NOASSERTION",
+      "count": 3423,
+      "gpl_family": false
+    },
+    {
+      "license": "OLDAP-2.8",
+      "count": 3,
+      "gpl_family": false
+    },
+    {
+      "license": "OpenSSL",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "PSF-2.0",
+      "count": 6,
+      "gpl_family": false
+    },
+    {
+      "license": "X11",
+      "count": 9,
+      "gpl_family": false
+    },
+    {
+      "license": "Zlib",
+      "count": 7,
+      "gpl_family": false
+    },
+    {
+      "license": "blessing",
+      "count": 2,
+      "gpl_family": false
+    },
+    {
+      "license": "bzip2-1.0.6",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "curl",
+      "count": 6,
+      "gpl_family": false
+    },
+    {
+      "license": "libselinux-1.0",
+      "count": 1,
+      "gpl_family": false
+    },
+    {
+      "license": "libtiff",
+      "count": 1,
+      "gpl_family": false
+    }
+  ]
+}

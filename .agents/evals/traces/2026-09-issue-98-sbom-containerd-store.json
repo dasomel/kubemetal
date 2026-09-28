@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-98-sbom-containerd-store-2026-09-28",
+  "task": "Run the opt-in air-gap SBOM pipeline (#98) for real with a real syft, once, end to end, and record honest evidence",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/**",
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped to the real on-device #98 run (download into a scratch AIRGAP_DIR, generate/verify SBOMs, a tamper test) plus the minimal fix the run exposed in scripts/airgap/sbom.py, its regression test, a dated note in docs/IMPLEMENTATION-STATUS.md and docs/mistakes-log.md, and evidence/airgap-sbom/20260928/. digests.lock's shared format, lib.sh, download_airgap_bundle.sh, and install_from_airgap.sh (#5's install-time verification) were left untouched; ~/.kubemetal/airgap was never read or written"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "make airgap-sbom against a freshly downloaded 12-image scratch bundle failed immediately: 'SBOM 오류: archive config digest mismatch: lock=sha256:bcc376d..., archive=sha256:7bcf084...' on the first image (aquasec/trivy:0.69.3). Root-caused via docker context ls / docker info / manual archive inspection: this machine's Docker Desktop (29.8.0) uses the containerd-backed image store (io.containerd.snapshotter.v1, default since 4.34), under which `docker image inspect --format='{{.Id}}'` returns the pulled manifest(-list) digest (== RepoDigest) instead of the manifest.json Config blob digest that scripts/airgap/sbom.py's check_archive() assumed and that classic dockerd returned for that field",
+      "evidence": [
+        "runtime:airgap-sbom-real-run-archive-digest-mismatch"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "scripts/airgap/sbom.py check_archive() now accepts either the classic manifest.json Config blob digest, or, when the archive also carries an OCI index.json (as this containerd-store backend's docker save now does), the digest of the blob index.json points at — but only after independently re-hashing that blob from the archive's own bytes, never trusting index.json's claim. digests.lock's schema, lib.sh, download_airgap_bundle.sh, and install_from_airgap.sh's post-load identity check (#5) were not changed, so this fix carries no risk to that separate contract"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "scripts/airgap/test_sbom.sh extended with a dedicated check_archive() unit test: classic archive still requires the Config digest (backward compatible), a containerd-store-shaped archive (index.json + self-verified blob) accepts either the Config digest or the index digest, a digest matching neither is rejected, a forged index.json blob (claimed digest does not match the blob's actual bytes) is rejected, and a multi-manifest OCI index is rejected. Full test_sbom.sh suite (29 assertions) and the unrelated test_digest_lock.sh suite (issue #5, 7 scenarios) both re-run clean, confirming zero regression to the shared digests.lock contract",
+      "scope": "scripts/airgap/sbom.py check_archive() archive-binding logic, plus the full existing airgap SBOM and digest-lock stub-based regression suites",
+      "evidence": [
+        "test:airgap-test-sbom-containerd-store-index-digest",
+        "test:airgap-test-sbom-full-suite-29-assertions-pass",
+        "test:airgap-test-digest-lock-seven-scenarios-pass",
+        "ci:shellcheck-clean-test-sbom-sh"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "After the fix, real end-to-end run against a freshly downloaded bundle (12 images: mlflow v3.14.0, seaweedfs 4.40, prefect 3.7.8, curl, nginx:alpine, kagent controller/app/ui 0.9.12, kagent tools 0.2.1, kmcp controller 0.3.0, postgres 18.3-alpine, trivy 0.69.3) in a scratch AIRGAP_DIR: syft 1.52.0 produced valid SPDX-2.3 SBOMs for all 12 images, `make airgap-sbom` and `make verify-airgap-sbom` both passed, and a tamper test (copy the bundle, flip one byte inside a published SPDX file, restore) was correctly rejected with 'SBOM sha256 mismatch: nginx:alpine' and a non-zero exit code, then the tampered copy was discarded",
+      "scope": "real syft against a freshly downloaded 12-image air-gap bundle in a scratch directory; ~/.kubemetal/airgap untouched; no colima start/stop, no cluster image load",
+      "evidence": [
+        "runtime:airgap-sbom-12-images-syft-1.52.0-pass",
+        "runtime:verify-airgap-sbom-pass",
+        "runtime:airgap-sbom-tamper-test-detected-and-rejected",
+        "artifact:evidence-airgap-sbom-20260928-manifest-json"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "#98's opt-in SBOM pipeline is now verified against a real syft end to end (generation, verification, tamper rejection), and the containerd-image-store bug it exposed is fixed with a regression-tested, narrowly-scoped change that does not touch issue #5's install-time contract"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified: real syft run passed for all 12 images, verify passed, tamper test correctly failed, the genuine script defect the run exposed is fixed with a regression test, and evidence is recorded under evidence/airgap-sbom/20260928/ without ever touching the user's existing ~/.kubemetal/airgap bundle"
+    }
+  ]
+}
