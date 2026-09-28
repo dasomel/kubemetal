@@ -1,0 +1,151 @@
+{
+  "date": "2026-09-28",
+  "issue": 98,
+  "syft_version": "1.52.0",
+  "docker": {
+    "version": "29.8.0",
+    "context": "desktop-linux",
+    "image_store": "containerd (io.containerd.snapshotter.v1)"
+  },
+  "bundle_dir_note": "built into a scratch AIRGAP_DIR, never touched ~/.kubemetal/airgap",
+  "image_count": 12,
+  "images": [
+    {
+      "image_ref": "aquasec/trivy:0.69.3",
+      "repo_digest": "aquasec/trivy@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c",
+      "image_id": "sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c",
+      "sbom": "sbom/aquasec_trivy_0.69.3.spdx.json",
+      "sbom_sha256": "9ec01c55a7499f4efd5c34cf4bbcbf20a0e3806714a991900a562c44f41abc1b",
+      "package_count": 442,
+      "spdx_version": "SPDX-2.3"
+    },
+    {
+      "image_ref": "cr.kagent.dev/kagent-dev/kagent/app:0.9.12",
+      "repo_digest": "cr.kagent.dev/kagent-dev/kagent/app@sha256:5ee30b4584e8de3266eb3cc11f5c46e8627716339d04d14166c50bda5f0f4182",
+      "image_id": "sha256:5ee30b4584e8de3266eb3cc11f5c46e8627716339d04d14166c50bda5f0f4182",
+      "sbom": "sbom/cr.kagent.dev_kagent-dev_kagent_app_0.9.12.spdx.json",
+      "sbom_sha256": "0f1bac3fa4394316bfbca0320280a908f10144b22b4dbae1c845304a8e07bf76",
+      "package_count": 1431,
+      "spdx_version": "SPDX-2.3"
+    },
+    {
+      "image_ref": "cr.kagent.dev/kagent-dev/kagent/controller:0.9.12",
+      "repo_digest": "cr.kagent.dev/kagent-dev/kagent/controller@sha256:d1ea7b70bb8d97de9f0774d44b598971c944b3ab4e88294b0bb78e59d1a63c15",
+      "image_id": "sha256:d1ea7b70bb8d97de9f0774d44b598971c944b3ab4e88294b0bb78e59d1a63c15",
+      "sbom": "sbom/cr.kagent.dev_kagent-dev_kagent_controller_0.9.12.spdx.json",
+      "sbom_sha256": "27037d76d183cf5314eecf4a61afcdc06ff447286fbd465984725ba82937ba9e",
+      "package_count": 154,
+      "spdx_version": "SPDX-2.3"
+    },
+    {
+      "image_ref": "cr.kagent.dev/kagent-dev/kagent/ui:0.9.12",
+      "repo_digest": "cr.kagent.dev/kagent-dev/kagent/ui@sha256:1d5ada8d7f65a6b9ad28232463f9fd670c4c20875baa1c8008aaa1f1f988382e",
+      "image_id": "sha256:1d5ada8d7f65a6b9ad28232463f9fd670c4c20875baa1c8008aaa1f1f988382e",
+      "sbom": "sbom/cr.kagent.dev_kagent-dev_kagent_ui_0.9.12.spdx.json",
+      "sbom_sha256": "c6f21335ab582e331c623a0224f20593a49b93ce09bdd1cdccb5006190628e36",
+      "package_count": 135,
+      "spdx_version": "SPDX-2.3"
+    },
+    {
+      "image_ref": "docker.io/chrislusf/seaweedfs:4.40",
+      "repo_digest": "chrislusf/seaweedfs@sha256:52194fba4fecd0083c842158b3a902ba6e04a63619b2b0efcd08007bdb6a4602",
+      "image_id": "sha256:52194fba4fecd0083c842158b3a902ba6e04a63619b2b0efcd08007bdb6a4602",
+      "sbom": "sbom/docker.io_chrislusf_seaweedfs_4.40.spdx.json",
+      "sbom_sha256": "e3afd54e651949ef26a9772a8e24ed78a5996747f2064cfd527d859465562a7f",
+      "package_count": 278,
+      "spdx_version": "SPDX-2.3"
+    },
+    {
+      "image_ref": "docker.io/curlimages/curl:8.21.0",
+      "repo_digest": "curlimages/curl@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13",
+      "image_id": "sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13",
+      "sbom": "sbom/docker.io_curlimages_curl_8.21.0.spdx.json",
+      "sbom_sha256": "392f65d536bb2143f77b01f8e8663da9e2faf76170b24d70db0ceb4370f5adad",
+      "package_count": 38,
+      "spdx_version": "SPDX-2.3"
+    },
+    {
+      "image_ref": "docker.io/prefecthq/prefect:3.7.8-python3.12",
+      "repo_digest": "prefecthq/prefect@sha256:a1a789339d6176bf4ba37e0e7658ad8a4b021e14a63912f00afcd3e8e75d1863",
+      "image_id": "sha256:a1a789339d6176bf4ba37e0e7658ad8a4b021e14a63912f00afcd3e8e75d1863",
+      "sbom": "sbom/docker.io_prefecthq_prefect_3.7.8-python3.12.spdx.json",
+      "sbom_sha256": "7d38308b7e65c710adcea731b3ccc18b66c2de29ae4c0e87e78665671978e6d5",
+      "package_count": 792,
+      "spdx_version": "SPDX-2.3"
+    },
+    {
+      "image_ref": "ghcr.io/kagent-dev/kagent/tools:0.2.1",
+      "repo_digest": "ghcr.io/kagent-dev/kagent/tools@sha256:50b431281d3e32666f27a292962fd486aabaac157083a844d037c12137e353aa",
+      "image_id": "sha256:50b431281d3e32666f27a292962fd486aabaac157083a844d037c12137e353aa",
+      "sbom": "sbom/ghcr.io_kagent-dev_kagent_tools_0.2.1.spdx.json",
+      "sbom_sha256": "59cbb49c8116fa829efbc03d351e1307addcbe1963dda709899cdb8c12d0f7db",
+      "package_count": 954,
+      "spdx_version": "SPDX-2.3"
+    },
+    {
+      "image_ref": "ghcr.io/kagent-dev/kmcp/controller:0.3.0",
+      "repo_digest": "127.0.0.1:5001/ghcr.io/kagent-dev/kmcp/controller@sha256:86ab878da25a639358aad18933c6b99e06a7ac34a801dc17fd657db0f28cee28",
+      "image_id": "sha256:86ab878da25a639358aad18933c6b99e06a7ac34a801dc17fd657db0f28cee28",
+      "sbom": "sbom/ghcr.io_kagent-dev_kmcp_controller_0.3.0.spdx.json",
+      "sbom_sha256": "4fbffbcd8ee9c311ee534834facfc42bbb39384f500981dd71c4b3bcfcaef2c6",
+      "package_count": 91,
+      "spdx_version": "SPDX-2.3"
+    },
+    {
+      "image_ref": "ghcr.io/mlflow/mlflow:v3.14.0",
+      "repo_digest": "ghcr.io/mlflow/mlflow@sha256:967de3ca34b6a5751718e380a0a383eb0ce1a6f5b484f363bd0da7559117a5f8",
+      "image_id": "sha256:967de3ca34b6a5751718e380a0a383eb0ce1a6f5b484f363bd0da7559117a5f8",
+      "sbom": "sbom/ghcr.io_mlflow_mlflow_v3.14.0.spdx.json",
+      "sbom_sha256": "e16fd3ea1f60cd21b4c7520fc5fa8ff2fe847fa3a8d70e0394c399a3dd09a8a8",
+      "package_count": 215,
+      "spdx_version": "SPDX-2.3"
+    },
+    {
+      "image_ref": "nginx:alpine",
+      "repo_digest": "nginx@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2",
+      "image_id": "sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2",
+      "sbom": "sbom/nginx_alpine.spdx.json",
+      "sbom_sha256": "da98152d9ad4e657d0b11239717bfb5447d5ff1f5c44e77f1e9cd3568a9fbe19",
+      "package_count": 72,
+      "spdx_version": "SPDX-2.3"
+    },
+    {
+      "image_ref": "postgres:18.3-alpine",
+      "repo_digest": "postgres@sha256:54451ecb8ab38c24c3ec123f2fd501303a3a1856a5c66e98cecf2460d5e1e9d7",
+      "image_id": "sha256:54451ecb8ab38c24c3ec123f2fd501303a3a1856a5c66e98cecf2460d5e1e9d7",
+      "sbom": "sbom/postgres_18.3-alpine.spdx.json",
+      "sbom_sha256": "1a8a996f56ac885e08748365cb29337c88936c3ee3b530c2a109eb331f2cc521",
+      "package_count": 60,
+      "spdx_version": "SPDX-2.3"
+    }
+  ],
+  "license_summary": {
+    "package_count": 4662,
+    "distinct_licenses": 217,
+    "gpl_family_count": 291
+  },
+  "verify_airgap_sbom": {
+    "result": "PASS",
+    "output": "SBOM 검증 통과: 12개 이미지 (digest lock + SPDX JSON + sha256)"
+  },
+  "tamper_test": {
+    "method": "copied bundle to a temp dir, flipped one byte inside nginx_alpine.spdx.json (offset 100, XOR 0x01, same length), reran verify_sbom.sh against the copy, then discarded the copy",
+    "result": "FAIL as expected",
+    "error": "SBOM 오류: SBOM sha256 mismatch: nginx:alpine",
+    "exit_code": 1
+  },
+  "script_defect_found": {
+    "summary": "check_archive() assumed digests.lock's image_id (docker inspect .Id at collection time) always equals the docker-save archive's manifest.json Config digest. Under Docker Desktop's containerd-backed image store (default since 4.34, active on this machine), .Id returns the pulled manifest(-list) digest instead.",
+    "fix": "scripts/airgap/sbom.py check_archive() now also accepts a self-verified OCI index.json manifest digest (blob hash independently recomputed from archive bytes, never trusted from index.json's own claim) alongside the classic Config digest. digests.lock's format and install_from_airgap.sh (#5) were not touched.",
+    "regression_tests_added": "scripts/airgap/test_sbom.sh: classic archive still requires Config digest; containerd-store archive accepts Config digest or self-verified index digest; unrelated digest rejected; forged index.json blob rejected; multi-manifest OCI index rejected",
+    "trace": ".agents/evals/traces/2026-09-issue-98-sbom-containerd-store.json"
+  },
+  "commands": [
+    "brew install syft",
+    "AIRGAP_DIR=<scratch> ./scripts/airgap/download_airgap_bundle.sh",
+    "AIRGAP_DIR=<scratch> make airgap-sbom",
+    "AIRGAP_DIR=<scratch> make verify-airgap-sbom",
+    "bash scripts/airgap/test_sbom.sh",
+    "bash scripts/airgap/test_digest_lock.sh"
+  ]
+}
