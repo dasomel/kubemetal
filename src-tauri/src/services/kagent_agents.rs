@@ -283,4 +283,58 @@ mod tests {
         }
         assert!(!manifest.contains("vulnerability scanning"));
     }
+
+    #[test]
+    fn agent_system_messages_name_only_tools_in_tool_names() {
+        for name in TOGGLEABLE_AGENTS {
+            let manifest = agent_manifest(name).expect("manifest missing");
+            let mut tool_names = Vec::new();
+            let (mut in_tool_names, mut in_sys_msg, mut sys_indent) = (false, false, 0);
+            let mut sys_msg = String::new();
+
+            for line in manifest.lines() {
+                let trimmed = line.trim();
+                if trimmed == "toolNames:" {
+                    in_tool_names = true;
+                } else if in_tool_names {
+                    if let Some(tool) = trimmed.strip_prefix("- ") {
+                        tool_names.push(tool.trim());
+                    } else if !trimmed.is_empty() {
+                        in_tool_names = false;
+                    }
+                }
+
+                if trimmed.starts_with("systemMessage:") {
+                    in_sys_msg = true;
+                    sys_indent = line.len() - line.trim_start().len();
+                } else if in_sys_msg {
+                    if !trimmed.is_empty() && (line.len() - line.trim_start().len()) <= sys_indent {
+                        in_sys_msg = false;
+                    } else {
+                        sys_msg.push_str(line);
+                        sys_msg.push(' ');
+                    }
+                }
+            }
+
+            let mentioned_tools: Vec<&str> = sys_msg
+                .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .filter(|token| token.starts_with("k8s_"))
+                .collect();
+
+            if !manifest.contains("tools:") {
+                assert!(
+                    mentioned_tools.is_empty(),
+                    "{name} has no tools block but systemMessage mentions tools: {mentioned_tools:?}"
+                );
+            }
+
+            for tool in &mentioned_tools {
+                assert!(
+                    tool_names.contains(tool),
+                    "{name} systemMessage mentions tool [{tool}] not present in toolNames: {tool_names:?}"
+                );
+            }
+        }
+    }
 }
