@@ -38,7 +38,7 @@ export const MlxStudio: React.FC = () => {
     resumingTraining,
     resumeTraining,
   } = useMlx();
-  const { lastKnownGoodServing, revertingServing, revertServing } = useServingRollback(fetchStatus);
+  const { lastKnownGoodServing, revertingServing, revertServing } = useServingRollback(mlxStatus?.serving, fetchStatus);
   const { t } = useTranslation();
 
   const envReady = !!(envStatus?.venv_exists && envStatus?.mlx_lm_installed);

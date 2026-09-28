@@ -1562,13 +1562,23 @@ pub(crate) fn get_last_known_good_serving_inner(
 /// state.last_known_good_serving에서 되돌릴 구성을 꺼낸다. 없을 때 지어내지 않고
 /// 명확한 에러를 반환하는 판정(D22)은 `services::mlx_serving_recovery::pick_revert_target`에
 /// 있다(2026-09-23 리뷰로 이동) — 여기서는 Mutex를 잠그는 얇은 호출부만 담당한다.
-fn revert_config_or_error(state: &MlxState) -> Result<ServingStatus, String> {
+fn revert_config_or_error(
+    state: &MlxState,
+    expected: &ServingStatus,
+) -> Result<ServingStatus, String> {
     let saved = state
         .last_known_good_serving
         .lock()
         .map_err(|e| e.to_string())?
         .clone();
-    services::mlx_serving_recovery::pick_revert_target(saved)
+    let target = services::mlx_serving_recovery::pick_revert_target(saved)?;
+    if target.model_path != expected.model_path
+        || target.adapter_path != expected.adapter_path
+        || target.runtime != expected.runtime
+    {
+        return Err("The last known-good serving configuration changed. Review the updated target and try again.".to_string());
+    }
+    Ok(target)
 }
 
 /// `revert_to_last_serving`이 현재 서빙을 멈추기 전에 반드시 통과해야 하는 게이트다
@@ -1601,15 +1611,26 @@ fn revert_should_stop_current_serving(state: &MlxState) -> Result<bool, String> 
 ///   (이 재확인과 `start_model_serving` 내부 재확인 사이에는 여전히 검사~스폰 TOCTOU
 ///   윈도우가 남는다 — 이 파일의 다른 스폰 경로와 동일한, 문서화된 한계다.)
 #[tauri::command]
-pub async fn revert_to_last_serving(app: tauri::AppHandle) -> Result<String, String> {
+pub async fn revert_to_last_serving(
+    app: tauri::AppHandle,
+    expected_model_path: String,
+    expected_adapter_path: Option<String>,
+    expected_runtime: MlxRuntime,
+) -> Result<String, String> {
     let state = app.state::<MlxState>();
     let _revert_guard = state.claim_revert_reservation()?;
+    let expected = ServingStatus {
+        pid: 0,
+        port: 0,
+        model_path: expected_model_path,
+        adapter_path: expected_adapter_path,
+        runtime: expected_runtime,
+    };
+    let target = revert_config_or_error(&state, &expected)?;
 
     let should_stop = revert_should_stop_current_serving(&state)?;
     check_current_spawn_admission(&app.state::<crate::commands::guardrails::GuardrailState>())
         .await?;
-
-    let target = revert_config_or_error(&state)?;
 
     if should_stop {
         stop_model_serving(app.state::<MlxState>()).await?;
@@ -1909,7 +1930,9 @@ mod tests {
     #[test]
     fn revert_config_or_error_errors_when_nothing_saved() {
         let state = MlxState::default();
-        let err = revert_config_or_error(&state).expect_err("되돌릴 이전 구성이 없습니다");
+        let expected = dummy_serving_status(0);
+        let err =
+            revert_config_or_error(&state, &expected).expect_err("되돌릴 이전 구성이 없습니다");
         assert!(err.contains("되돌릴 이전 구성이 없습니다"));
     }
 
@@ -1918,9 +1941,39 @@ mod tests {
         let state = MlxState::default();
         *state.last_known_good_serving.lock().unwrap() = Some(dummy_serving_status(42));
 
-        let got = revert_config_or_error(&state).expect("saved config should be returned");
+        let expected = dummy_serving_status(0);
+        let got =
+            revert_config_or_error(&state, &expected).expect("saved config should be returned");
 
         assert_eq!(got.pid, 42);
+    }
+
+    #[test]
+    fn revert_config_or_error_refuses_changed_confirmation_before_serving_mutation() {
+        let state = MlxState::default();
+        let saved = dummy_serving_status(42);
+        *state.serving.lock().unwrap() = Some(dummy_serving_status(7));
+        *state.last_known_good_serving.lock().unwrap() = Some(saved);
+        let mut stale_confirmation = dummy_serving_status(0);
+        stale_confirmation.model_path.push_str("-stale");
+
+        let error = revert_config_or_error(&state, &stale_confirmation)
+            .expect_err("stale confirmation must be refused");
+
+        assert!(error.contains("configuration changed"));
+        assert_eq!(state.serving.lock().unwrap().as_ref().unwrap().pid, 7);
+    }
+
+    #[test]
+    fn matching_revert_confirmation_proceeds_to_admission() {
+        let state = MlxState::default();
+        let saved = dummy_serving_status(42);
+        *state.last_known_good_serving.lock().unwrap() = Some(saved.clone());
+
+        let target = revert_config_or_error(&state, &saved).expect("matching target accepted");
+
+        assert_eq!(target.pid, 42);
+        assert_eq!(revert_should_stop_current_serving(&state), Ok(false));
     }
 
     #[test]
@@ -2007,7 +2060,7 @@ mod tests {
             panic!("force poison");
         });
         assert!(get_last_known_good_serving_inner(&state).is_err());
-        assert!(revert_config_or_error(&state).is_err());
+        assert!(revert_config_or_error(&state, &dummy_serving_status(0)).is_err());
     }
 
     // write_training_manifest_records_matching_sha256(원본 rescue 테스트)는 포트하지 않는다:

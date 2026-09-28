@@ -91,7 +91,8 @@ fn is_adapter_protected(
     in_progress_adapter_dir: Option<&Path>,
 ) -> bool {
     let normalize = |p: &Path| canonicalize_or_self(&expand_home_path(p, home));
-    let matches_str = |p: &str| normalize(Path::new(p)) == target;
+    let protects_target = |protected: &Path| protected.starts_with(target);
+    let matches_str = |p: &str| protects_target(&normalize(Path::new(p)));
 
     if serving_adapter_path.map(matches_str).unwrap_or(false) {
         return true;
@@ -103,7 +104,7 @@ fn is_adapter_protected(
         return true;
     }
     if let Some(dir) = in_progress_adapter_dir {
-        if normalize(dir) == target {
+        if protects_target(&normalize(dir)) {
             return true;
         }
     }

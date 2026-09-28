@@ -175,6 +175,12 @@ export interface ServingStatus {
   runtime: MlxRuntime;
 }
 
+export interface RevertServingTarget {
+  expectedModelPath: string;
+  expectedAdapterPath: string | null;
+  expectedRuntime: MlxRuntime;
+}
+
 export type MlxServingState = ServingStatus;
 
 export interface MlxStatus {
