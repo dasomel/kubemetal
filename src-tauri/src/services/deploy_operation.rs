@@ -49,6 +49,34 @@ pub struct OperationSummary {
     pub risk_class: DeployRiskClass,
 }
 
+/// 사용자가 확인 다이얼로그에서 본 작업 대상의 최소 식별자. 설명이나 위험 등급은
+/// 표시용이라 실행 대상 비교에 넣지 않는다.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ConfirmedOperationTarget {
+    pub context: String,
+    pub namespace: String,
+}
+
+/// 확인 이후 저장 대상이나 화면 선택기가 바뀌었으면, 적용 전에 멈춘다. `None`은 이전 IPC
+/// 호출자의 호환 경로이며, 새 UI 호출자는 항상 확인한 값을 전달한다.
+pub fn ensure_confirmed_target(
+    expected: Option<&ConfirmedOperationTarget>,
+    actual_context: &str,
+    actual_namespace: &str,
+) -> Result<(), String> {
+    let Some(expected) = expected else {
+        return Ok(());
+    };
+
+    if expected.context != actual_context || expected.namespace != actual_namespace {
+        return Err(format!(
+            "deploy target changed after confirmation: confirmed context='{}', namespace='{}'; actual context='{}', namespace='{}'. Reconfirm before applying.",
+            expected.context, expected.namespace, actual_context, actual_namespace
+        ));
+    }
+    Ok(())
+}
+
 /// `action`별 요약을 조립하는 순수 함수.
 /// `DeployTarget`을 이미 들고 있는 호출부(테스트 포함)가 `AppHandle` 없이 바로 쓸 수 있게 분리했다.
 ///

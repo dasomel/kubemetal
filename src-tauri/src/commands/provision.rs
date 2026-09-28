@@ -1,6 +1,7 @@
 use tauri::Manager;
 
 use crate::commands::deploy_target::get_deploy_target;
+use crate::services::deploy_operation::{ensure_confirmed_target, ConfirmedOperationTarget};
 use crate::services::process::{external_command, resolve_bundled_resource};
 
 /// 매니페스트 목록은 여기 없다 — `scripts/k8s/kustomization.yaml`이 단일 출처이고
@@ -9,8 +10,12 @@ use crate::services::process::{external_command, resolve_bundled_resource};
 const RENDER_SCRIPT: &str = "scripts/k8s/render.sh";
 
 #[tauri::command]
-pub async fn provision_mlops_stack(app: tauri::AppHandle) -> Result<String, String> {
+pub async fn provision_mlops_stack(
+    app: tauri::AppHandle,
+    expected_target: Option<ConfirmedOperationTarget>,
+) -> Result<String, String> {
     let target = get_deploy_target(app.clone()).await?;
+    ensure_confirmed_target(expected_target.as_ref(), &target.context, &target.namespace)?;
     // 외부 클러스터의 기본 통합은 에이전트 온리다 — 풀스택 프로비저닝을 차단한다(D30).
     target.full_stack_gate()?;
     // 브리지가 미검증이면 여기서 막힌다 — 추측 주소를 클러스터로 보내지 않기 위해서다.

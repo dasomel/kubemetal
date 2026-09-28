@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
-import type { ClusterStatus } from '../types/ipc';
+import type { ClusterStatus, OperationSummary } from '../types/ipc';
 import { useTranslation } from '../i18n/i18nContext';
 
 // src-tauri/src/commands/port_forward.rs 의 JOBS 배열 길이와 일치해야 한다 —
@@ -59,11 +59,16 @@ export function useColima() {
     }
   }, [fetchStatus, t]);
 
-  const provisionStack = useCallback(async () => {
+  const provisionStack = useCallback(async (confirmed: OperationSummary) => {
     setLoading(true);
     setActionMessage(t('cluster.toast.provisioning'));
     try {
-      const res = await invoke<string>('provision_mlops_stack');
+      const res = await invoke<string>('provision_mlops_stack', {
+        expectedTarget: {
+          context: confirmed.context,
+          namespace: confirmed.namespace,
+        },
+      });
       await message(res || t('cluster.toast.provisioned'), { title: 'KubeMetal', kind: 'info' });
       await fetchStatus();
     } catch (err) {

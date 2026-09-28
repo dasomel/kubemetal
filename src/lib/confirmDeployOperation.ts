@@ -7,20 +7,20 @@ type TranslateFn = (key: string, params?: Record<string, string | number>) => st
 /**
  * 파괴적 배포 액션(provision_mlops_stack/stop_cluster/install_kagent) 실행 직전 공용
  * 확인 플로우. `describe_deploy_operation`이 돌려주는 요약을 `ask()`로 보여주고 사용자
- * 확인을 받는다. describe 자체가 실패하면 원인을 `message()`로 보여주고 항상 false를
- * 반환한다 — 확인 없이 진행하지 않는다(D22 원칙: 실패를 성공처럼 넘기지 않는다).
+ * 확인을 받는다. 승인하면 실행 대상 비교에 쓸 요약을 돌려준다. describe 자체가 실패하면
+ * 원인을 `message()`로 보여주고 null을 반환한다 — 확인 없이 진행하지 않는다(D22 원칙).
  */
 export async function confirmDeployOperation(
   t: TranslateFn,
   action: string,
   context?: string,
-): Promise<boolean> {
+): Promise<OperationSummary | null> {
   try {
     const summary = await invoke<OperationSummary>('describe_deploy_operation', {
       action,
       context,
     });
-    return await ask(
+    const confirmed = await ask(
       t('deployOp.confirmationMessage', {
         targetDescription: summary.target_description,
         context: summary.context,
@@ -30,12 +30,13 @@ export async function confirmDeployOperation(
       }),
       { title: t('deployOp.confirmationTitle'), kind: 'warning' },
     );
+    return confirmed ? summary : null;
   } catch (error) {
     // 오류 다이얼로그마저 실패해도 호출부의 busy 상태가 풀리도록 이 함수는 절대 throw하지 않는다.
     await message(t('deployOp.confirmationFailed', { error: String(error) }), {
       title: t('deployOp.confirmationTitle'),
       kind: 'error',
     }).catch(() => undefined);
-    return false;
+    return null;
   }
 }

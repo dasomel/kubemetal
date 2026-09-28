@@ -481,3 +481,9 @@ export interface OperationSummary {
   target_description: string;
   risk_class: DeployRiskClass;
 }
+
+/** 확인 다이얼로그에서 승인한 실행 대상의 최소 식별자. */
+export interface ConfirmedOperationTarget {
+  context: string;
+  namespace: string;
+}

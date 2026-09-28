@@ -7,6 +7,7 @@ use tauri::{Manager, State};
 use crate::commands::deploy_target::{get_deploy_target, kubectl_json};
 use crate::commands::mlx::MlxState;
 use crate::commands::provision::ensure_namespace;
+use crate::services::deploy_operation::{ensure_confirmed_target, ConfirmedOperationTarget};
 use crate::services::kagent_agents::{agent_manifest, TOGGLEABLE_AGENTS};
 use crate::services::process::{external_command, resolve_bundled_resource};
 
@@ -385,8 +386,10 @@ async fn helm_upgrade_kagent(
 pub async fn install_kagent(
     app: tauri::AppHandle,
     context: Option<String>,
+    expected_target: Option<ConfirmedOperationTarget>,
 ) -> Result<String, String> {
     let target_ctx = resolve_kagent_install_context(app.clone(), context).await?;
+    ensure_confirmed_target(expected_target.as_ref(), &target_ctx, KAGENT_NAMESPACE)?;
 
     ensure_namespace(&target_ctx, KAGENT_NAMESPACE).await?;
 

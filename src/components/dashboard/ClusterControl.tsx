@@ -4,6 +4,7 @@ import { useMetrics } from '../../hooks/useMetrics';
 import { recommendVmResources } from '../../lib/recommendVmResources';
 import { useTranslation } from '../../i18n/i18nContext';
 import { confirmDeployOperation } from '../../lib/confirmDeployOperation';
+import type { OperationSummary } from '../../types/ipc';
 import { Server, Play, Square, Loader2, ShieldCheck } from 'lucide-react';
 
 interface ClusterControlProps {
@@ -25,7 +26,7 @@ export const ClusterControl: React.FC<ClusterControlProps> = ({ compact = false 
 
   const handleStop = async () => {
     setConfirmingStop(true);
-    let confirmed = false;
+    let confirmed: OperationSummary | null = null;
     try {
       confirmed = await confirmDeployOperation(t, 'stop_cluster');
     } finally {

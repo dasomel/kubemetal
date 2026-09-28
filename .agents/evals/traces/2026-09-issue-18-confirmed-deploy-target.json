@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-18-confirmed-deploy-target",
+  "task": "Reject deployment when the target changed after the user confirmed its context and namespace (#18 follow-up)",
+  "changeContext": { "paths": [ "src-tauri/**", "src/**", "docs/**", ".agents/**" ] },
+  "events": [
+    { "id": "e1", "type": "scope_check", "summary": "Scoped to the destructive deployment IPC contracts, their confirmation callers, requirements table, and the required operational trace." },
+    { "id": "e2", "type": "reproduction", "summary": "provision_mlops_stack re-read deploy-target.json after confirmation, so a saved target change could apply to a context and namespace the dialog did not show.", "evidence": [ "policy:issue-18-approval-review" ] },
+    { "id": "e3", "type": "bug_fix", "summary": "Added a pure optional confirmed-target comparison before rendering, namespace creation, Helm, or kubectl apply; the UI always passes the approved context and namespace, while legacy IPC callers retain the None compatibility path." },
+    { "id": "e4", "type": "regression_verification", "status": "passed", "summary": "Pure comparison accepts an exact target and None, and rejects changed context or namespace with a reconfirmation error.", "scope": "src-tauri deploy operation confirmation guard", "evidence": [ "test:confirmed_target_matches_actual_target", "test:confirmed_target_rejects_context_mismatch", "test:confirmed_target_rejects_namespace_mismatch", "test:missing_confirmed_target_skips_compatibility_check" ] },
+    { "id": "e5", "type": "verification", "status": "passed", "summary": "TypeScript compile and IPC type check completed; full lint, Rust tests, production build, and trace gates are recorded by this task's verification run.", "scope": "Rust IPC, React confirmation callers, requirements contract, and agent trace", "evidence": [ "ci:make-lint", "test:cargo-test-manifest-src-tauri", "ci:pnpm-build", "ci:agent-trace-gates" ] },
+    { "id": "e6", "type": "completion_claim", "summary": "The confirmed deployment target is now bound to the subsequent provision and kagent install operations; mismatches are rejected before side effects.", "evidence": [ "e4", "e5" ] },
+    { "id": "e7", "type": "task_outcome", "state": "A", "summary": "Complete and verified by unit, lint, build, IPC, and trace-gate evidence." }
+  ]
+}
