@@ -15,6 +15,10 @@ pub struct OrphanedProcessInfo {
     pub pid: u32,
     pub kind: String,
     pub cmdline: String,
+    /// 명령줄을 `classify_mlx_cmdline`으로 확인했는지 여부. `false`면 `cmdline`은
+    /// "확인 불가" 자리표시자이며, UI는 이 PID에 대한 종료 요청을 거부해야 한다 —
+    /// `terminate_orphaned_mlx_process`가 재검증 단계에서 항상 거부하기 때문이다.
+    pub verified: bool,
 }
 
 /// 읽거나 검증할 수 없는 marker 파일 정보.
@@ -264,6 +268,7 @@ pub async fn scan_orphaned_mlx_processes(
                         pid,
                         kind: kind.to_string(),
                         cmdline,
+                        verified: true,
                     });
                 }
                 CmdlineVerification::NotMlx => {
@@ -275,6 +280,7 @@ pub async fn scan_orphaned_mlx_processes(
                         pid,
                         kind: kind.to_string(),
                         cmdline: "확인 불가".to_string(),
+                        verified: false,
                     });
                 }
             }
