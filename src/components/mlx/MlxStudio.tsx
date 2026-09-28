@@ -22,6 +22,7 @@ export const MlxStudio: React.FC = () => {
     localModels,
     startingTraining,
     runFinetune,
+    deleteAdapterCheckpoint,
     killingPid,
     killProcess,
     startingServing,
@@ -47,6 +48,7 @@ export const MlxStudio: React.FC = () => {
       killingPid={killingPid}
       onStart={runFinetune}
       onKill={killProcess}
+      onDeleteAdapter={deleteAdapterCheckpoint}
     />
   );
 
