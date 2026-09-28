@@ -69,10 +69,15 @@ fn poisoned_slots_fail_instead_of_claiming_no_owned_processes() {
 async fn scan_excludes_session_markers_without_deleting_them() {
     let dir = std::env::temp_dir().join(format!("kubemetal-session-scan-{}", std::process::id()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
-    let script = dir.join("finetune_wrapper.py");
-    tokio::fs::write(&script, "read line\n").await.unwrap();
+    let script = dir.join("scripts/mlx/finetune_wrapper.py");
+    tokio::fs::create_dir_all(script.parent().unwrap())
+        .await
+        .unwrap();
+    tokio::fs::write(&script, "import time\ntime.sleep(30)\n")
+        .await
+        .unwrap();
     let spawn = || {
-        external_command("sh")
+        external_command("python3")
             .unwrap()
             .arg(&script)
             .stdin(std::process::Stdio::piped())
