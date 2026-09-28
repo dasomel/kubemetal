@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-13-kill-hardening",
+  "task": "Restrict MLX process termination to tracked processes and re-verify process identity before escalation",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Kept terminate_orphaned_mlx_process as the separate orphan-only path while limiting kill_mlx_process to the active training or serving slot."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "The prior command accepted a frontend-supplied PID without matching it to either MlxState slot, and escalation trusted only a one-second liveness check before SIGKILL.",
+      "evidence": [
+        "policy:issue-13-approval-review"
+      ]
+    },
+    {
+      "id": "e2r",
+      "type": "bug_fix",
+      "summary": "SIGKILL now follows a fresh MLX command-line check; training liveness uses signal 0 on the process group so surviving children are not missed."
+    },
+    {
+      "id": "e3",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Pure tracked-PID admission tests and command-line classification tests passed, including editor and log-reader false positives.",
+      "scope": "MLX termination authorization and PID-reuse-safe MLX identity classification",
+      "evidence": [
+        "test:commands::mlx::tests::tracked_mlx_process_decision_allows_only_current_training_or_serving_pid",
+        "test:commands::mlx::tests::tracked_mlx_process_decision_refuses_untracked_pid",
+        "test:services::mlx_lifecycle::tests::classify_cmdline_identifies_valid_mlx_processes",
+        "test:services::mlx_lifecycle::tests::classify_cmdline_rejects_false_positive_substrings"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Full Rust unit suite passed after adapting MLX marker fixtures to the stricter Python-executable contract.",
+      "scope": "Tauri MLX command and lifecycle regression suite",
+      "evidence": [
+        "test:commands::mlx::tests::terminate_pid_noop_on_zero",
+        "test:services::mlx_lifecycle::session::tests::scan_excludes_session_markers_without_deleting_them",
+        "ci:cargo-test-manifest-src-tauri-Cargo-toml"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The requested MLX PID authorization and termination-escalation hardening is complete without changing the orphan termination contract.",
+      "evidence": [
+        "e3",
+        "e4"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified at unit and trace-gate scope; no live training or serving process was deliberately terminated during verification."
+    }
+  ]
+}

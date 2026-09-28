@@ -1129,27 +1129,107 @@ pub(crate) fn resolve_signal_target(pid: u32, use_process_group: bool) -> Option
     }
 }
 
-/// SIGTERM 전송 후 1초 대기, 여전히 살아있으면 SIGKILL. `libc::kill(pid, 0)`으로 생존 여부를 확인한다.
+/// SIGTERM 전송 후 1초 대기하고, 남아 있는 대상은 명령줄을 다시 검증한 뒤 SIGKILL 한다.
 /// `use_process_group`이면 시그널을 `-pid`(프로세스 그룹)로 보낸다 — 학습 래퍼는
 /// `.process_group(0)`으로 기동되어 자신이 그룹 리더이므로, 그룹으로 보내야 내부에서
 /// `subprocess.Popen`으로 띄운 `mlx_lm` 학습 자식까지 함께 종료된다(D17). 서빙 프로세스는
 /// 새 그룹 없이 앱과 그룹을 공유하므로 단일 pid로 보낸다.
 ///
 /// PID가 0이면 앱 자신의 프로세스 그룹에 시그널이 전송되는 것을 방지하기 위해 아무것도 하지 않고 즉시 반환한다.
-pub(crate) fn terminate_pid(pid: u32, use_process_group: bool) {
+fn signal_target_is_alive(target: i32) -> bool {
+    let result = unsafe { libc::kill(target, 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+/// SIGTERM 후 그룹 리더만 먼저 사라진 경우에도, 살아 있는 PGID는 같은 그룹의 자식을
+/// 가리킨다. 단일 서빙 PID와 리더가 아직 살아 있는 경우에는 이 예외를 적용하지 않는다.
+fn may_kill_surviving_training_group(use_process_group: bool, leader_is_alive: bool) -> bool {
+    use_process_group && !leader_is_alive
+}
+
+/// SIGTERM 뒤의 대기만 blocking worker에서 수행한다. 학습은 `-pgid`에 signal 0을 보내
+/// 리더가 아닌 남은 자식도 확인한다. SIGKILL 직전에는 PID의 명령줄을 다시 읽어 PID 재사용으로
+/// 무관한 프로세스(또는 그룹)를 종료하지 않게 한다.
+pub(crate) async fn terminate_pid(pid: u32, use_process_group: bool) -> Result<(), String> {
     let target = match resolve_signal_target(pid, use_process_group) {
         Some(t) => t,
-        None => return,
+        None => return Ok(()),
     };
-    unsafe {
-        libc::kill(target, libc::SIGTERM);
-    }
-    std::thread::sleep(std::time::Duration::from_secs(1));
-    let alive = unsafe { libc::kill(pid as i32, 0) == 0 };
-    if alive {
-        unsafe {
-            libc::kill(target, libc::SIGKILL);
+    let target_survives = tokio::task::spawn_blocking(move || -> Result<bool, String> {
+        let term_result = unsafe { libc::kill(target, libc::SIGTERM) };
+        if term_result != 0 {
+            let error = std::io::Error::last_os_error();
+            if error.raw_os_error() == Some(libc::ESRCH) {
+                return Ok(false);
+            }
+            return Err(format!("Failed to SIGTERM process {pid}: {error}"));
         }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        Ok(signal_target_is_alive(target))
+    })
+    .await
+    .map_err(|e| format!("Failed to wait for process termination: {e}"))??;
+    if !target_survives {
+        return Ok(());
+    }
+
+    match crate::services::process::get_process_cmdline(pid).await {
+        Ok(cmdline)
+            if matches!(
+                crate::services::mlx_lifecycle::classify_mlx_cmdline(Some(&cmdline)),
+                crate::services::mlx_lifecycle::CmdlineVerification::Mlx(_)
+            ) => {}
+        Ok(_) => {
+            return Err(format!(
+                "Refusing to SIGKILL process {pid}: it is no longer a verified MLX process."
+            ))
+        }
+        Err(error)
+            if may_kill_surviving_training_group(
+                use_process_group,
+                crate::services::process::pid_is_alive(pid),
+            ) =>
+        {
+            // 그룹 리더는 SIGTERM에 먼저 종료될 수 있지만 `kill(-pgid, 0)`은 아직 멤버가
+            // 남았음을 확인했다. 살아 있는 PGID는 재사용될 수 없으므로 이 경우에만 리더의
+            // 명령줄 재확인 불가를 허용해 남은 MLX 자식을 SIGKILL한다.
+            eprintln!(
+                "[mlx] Training leader {pid} exited before SIGKILL re-verification; terminating surviving process group: {error}"
+            );
+        }
+        Err(error) => {
+            return Err(format!(
+                "Refusing to SIGKILL process {pid}: could not re-verify MLX identity: {error}"
+            ))
+        }
+    }
+
+    tokio::task::spawn_blocking(move || {
+        let kill_result = unsafe { libc::kill(target, libc::SIGKILL) };
+        if kill_result != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok::<(), std::io::Error>(())
+    })
+    .await
+    .map_err(|e| format!("Failed to SIGKILL process {pid}: {e}"))?
+    .map_err(|e| format!("Failed to SIGKILL process {pid}: {e}"))?;
+    Ok(())
+}
+
+/// 프런트엔드는 현재 세션이 추적하는 학습 또는 서빙 PID만 종료할 수 있다. `Some(true)`는
+/// 학습 프로세스 그룹을, `Some(false)`는 서빙 단일 PID를 뜻한다.
+pub(crate) fn tracked_mlx_process_is_training(
+    pid: u32,
+    training_pid: Option<u32>,
+    serving_pid: Option<u32>,
+) -> Option<bool> {
+    if training_pid == Some(pid) {
+        Some(true)
+    } else if serving_pid == Some(pid) {
+        Some(false)
+    } else {
+        None
     }
 }
 
@@ -1159,10 +1239,18 @@ pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bo
         return Err("Process is still starting; nothing to stop yet.".into());
     }
 
-    let is_training = {
+    let training_pid = {
         let guard = state.training.lock().map_err(|e| e.to_string())?;
-        guard.as_ref().map(|t| t.pid == pid).unwrap_or(false)
+        guard.as_ref().map(|t| t.pid)
     };
+    let serving_pid = {
+        let guard = state.serving.lock().map_err(|e| e.to_string())?;
+        guard.as_ref().map(|s| s.pid)
+    };
+    let is_training =
+        tracked_mlx_process_is_training(pid, training_pid, serving_pid).ok_or_else(|| {
+            format!("Process {pid} is not the currently tracked MLX training or serving process.")
+        })?;
 
     // **시그널을 보내기 전에** 의도를 기록한다. 이 블록이 terminate_pid 뒤에 있었을 때는
     // 사용자가 중지를 눌러도 화면에 "Training process exited abnormally" 오류가 떴다:
@@ -1185,9 +1273,7 @@ pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bo
         }
     }
 
-    tokio::task::spawn_blocking(move || terminate_pid(pid, is_training))
-        .await
-        .map_err(|e| format!("Failed to wait for process termination: {e}"))?;
+    terminate_pid(pid, is_training).await?;
 
     {
         // 서빙 프로세스는 spawn 직후 run_serving_reader가 Child 소유권을 가져가 wait()한다.
@@ -1460,9 +1546,7 @@ pub async fn stop_model_serving(state: State<'_, MlxState>) -> Result<String, St
         return Err("Serving process is still starting; nothing to stop yet.".into());
     }
 
-    tokio::task::spawn_blocking(move || terminate_pid(pid, false))
-        .await
-        .map_err(|e| format!("Failed to wait for process termination: {e}"))?;
+    terminate_pid(pid, false).await?;
 
     // Child 소유권은 run_serving_reader가 갖고 있으므로 여기서는 상태만 비운다.
     // reaper가 실제 종료를 감지하고 last_serving_error를 남기지 않는다(사용자 의도 종료).
@@ -1661,6 +1745,34 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn tracked_mlx_process_decision_allows_only_current_training_or_serving_pid() {
+        assert_eq!(
+            tracked_mlx_process_is_training(41, Some(41), Some(42)),
+            Some(true)
+        );
+        assert_eq!(
+            tracked_mlx_process_is_training(42, Some(41), Some(42)),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn tracked_mlx_process_decision_refuses_untracked_pid() {
+        assert_eq!(
+            tracked_mlx_process_is_training(43, Some(41), Some(42)),
+            None
+        );
+        assert_eq!(tracked_mlx_process_is_training(0, Some(41), Some(42)), None);
+    }
+
+    #[test]
+    fn surviving_training_group_is_only_killed_when_its_leader_has_exited() {
+        assert!(may_kill_surviving_training_group(true, false));
+        assert!(!may_kill_surviving_training_group(true, true));
+        assert!(!may_kill_surviving_training_group(false, false));
+    }
 
     #[test]
     fn validate_adapter_name_accepts_simple_names() {
@@ -2465,10 +2577,10 @@ mod tests {
         assert_eq!(resolve_signal_target(1234, true), Some(-1234));
     }
 
-    #[test]
-    fn terminate_pid_noop_on_zero() {
+    #[tokio::test]
+    async fn terminate_pid_noop_on_zero() {
         // PID 0은 시그널 전송이나 sleep 대기 없이 즉시 no-op으로 반환되어야 한다.
-        terminate_pid(0, false);
-        terminate_pid(0, true);
+        assert!(terminate_pid(0, false).await.is_ok());
+        assert!(terminate_pid(0, true).await.is_ok());
     }
 }

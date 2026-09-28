@@ -20,9 +20,10 @@ async fn scan_returns_empty_when_dir_does_not_exist() {
 async fn scan_detects_live_pid_marker() {
     let dir = make_temp_dir("live-marker");
     let script_dir = make_temp_dir("dummy-script");
-    let script_path = script_dir.join("finetune_wrapper.py");
-    std::fs::write(&script_path, "sleep 5\n").unwrap();
-    let mut child = std::process::Command::new("/bin/sh")
+    let script_path = script_dir.join("scripts/mlx/finetune_wrapper.py");
+    std::fs::create_dir_all(script_path.parent().unwrap()).unwrap();
+    std::fs::write(&script_path, "import time\ntime.sleep(5)\n").unwrap();
+    let mut child = std::process::Command::new("python3")
         .arg(&script_path)
         .spawn()
         .expect("failed to spawn dummy finetune_wrapper");
@@ -151,6 +152,14 @@ fn classify_cmdline_rejects_false_positive_substrings() {
     // 리뷰의 오탐 예시 2: finetune_wrapper.py.log를 tail하는 무관한 프로세스
     let r2 = "/usr/bin/tail -f /tmp/finetune_wrapper.py.log";
     assert_eq!(classify_mlx_cmdline(Some(r2)), CmdlineVerification::NotMlx);
+    let r3 = "vim finetune_wrapper.py";
+    assert_eq!(classify_mlx_cmdline(Some(r3)), CmdlineVerification::NotMlx);
+    let r4 = "less mlx_lm.log";
+    assert_eq!(classify_mlx_cmdline(Some(r4)), CmdlineVerification::NotMlx);
+    let r5 = "python3 /tmp/finetune_wrapper.py";
+    assert_eq!(classify_mlx_cmdline(Some(r5)), CmdlineVerification::NotMlx);
+    let r6 = "python3.evil -m mlx_lm server";
+    assert_eq!(classify_mlx_cmdline(Some(r6)), CmdlineVerification::NotMlx);
     // 일반적인 무관한 프로세스
     let slack = "/Applications/Slack.app/Contents/MacOS/Slack";
     assert_eq!(

@@ -114,8 +114,9 @@ pub async fn terminate_orphaned_mlx_process(
     }
     let use_process_group = orphan.kind == "training";
 
+    crate::commands::mlx::terminate_pid(pid, use_process_group).await?;
+
     let exited = tokio::task::spawn_blocking(move || {
-        crate::commands::mlx::terminate_pid(pid, use_process_group);
         wait_for_process_exit(
             || crate::services::process::pid_is_alive(pid),
             ORPHAN_EXIT_POLL_ATTEMPTS,

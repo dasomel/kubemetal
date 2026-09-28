@@ -100,8 +100,9 @@ pub async fn remove_pid_marker(base_dir: &Path, kind: &str, pid: u32) {
 }
 
 /// 프로세스 명령줄이 실제 MLX 관련인지 토큰 단위로 검증한다.
+/// - argv[0]의 basename이 Python 인터프리터(`python`, `python3`, `python3.x`)이고,
 /// - argv 토큰에서 `-m` 바로 다음 토큰이 `mlx_lm`, `mlx_vlm`, 또는 `mlx_lm.`/`mlx_vlm.`으로 시작하는 모듈명
-/// - 또는 어떤 토큰의 파일명(basename)이 정확히 `finetune_wrapper.py`
+/// - 또는 KubeMetal이 직접 기동하는 `scripts/mlx/finetune_wrapper.py` 스크립트
 ///
 /// 그 외에는 MLX가 아닌 것(PID 재사용 가능성)으로 판정하고, 명령줄이 비어있거나 없으면 확인 불가로 판정한다.
 pub fn classify_mlx_cmdline(raw_cmdline: Option<&str>) -> CmdlineVerification {
@@ -114,9 +115,23 @@ pub fn classify_mlx_cmdline(raw_cmdline: Option<&str>) -> CmdlineVerification {
     }
 
     let tokens: Vec<&str> = trimmed.split_whitespace().collect();
-    let mut is_mlx = false;
+    let executable = Path::new(tokens[0])
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let is_python = executable == "python"
+        || executable == "python3"
+        || executable.strip_prefix("python3.").is_some_and(|version| {
+            !version.is_empty()
+                && version
+                    .split('.')
+                    .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
+        });
+    if !is_python {
+        return CmdlineVerification::NotMlx;
+    }
 
-    for (i, token) in tokens.iter().enumerate() {
+    for (i, token) in tokens.iter().enumerate().skip(1) {
         if *token == "-m" {
             if let Some(next) = tokens.get(i + 1) {
                 if *next == "mlx_lm"
@@ -124,24 +139,18 @@ pub fn classify_mlx_cmdline(raw_cmdline: Option<&str>) -> CmdlineVerification {
                     || *next == "mlx_vlm"
                     || next.starts_with("mlx_vlm.")
                 {
-                    is_mlx = true;
-                    break;
+                    return CmdlineVerification::Mlx(trimmed.to_string());
                 }
             }
         }
 
         let path = Path::new(token);
-        if path.file_name().and_then(|n| n.to_str()) == Some("finetune_wrapper.py") {
-            is_mlx = true;
-            break;
+        if path.ends_with(Path::new("scripts/mlx/finetune_wrapper.py")) {
+            return CmdlineVerification::Mlx(trimmed.to_string());
         }
     }
 
-    if is_mlx {
-        CmdlineVerification::Mlx(trimmed.to_string())
-    } else {
-        CmdlineVerification::NotMlx
-    }
+    CmdlineVerification::NotMlx
 }
 
 /// marker 디렉터리를 비동기로 순회해 고아 MLX 프로세스 및 읽을 수 없는 marker를 탐지한다.
