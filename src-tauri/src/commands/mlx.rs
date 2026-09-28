@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -132,6 +133,57 @@ pub struct MlxState {
     /// 대상. 스폰 성공만으로는 채우지 않는다: 모델 로드 실패로 죽는 프로세스를 "성공"으로
     /// 남기면 되돌리기가 똑같이 죽는 구성으로 되돌아간다(D22).
     pub last_known_good_serving: Mutex<Option<ServingStatus>>,
+    /// 실측 GPU matmul 벤치마크 실행 중 여부(이슈 #11 상호 배제).
+    /// 벤치마크 admission 시 `compare_exchange`로 원자적 선점되며, RAII 가드가 해제한다.
+    pub benchmark_active: AtomicBool,
+}
+
+/// GPU 벤치마크 상호 배제 예약 RAII 가드 (GitHub #11).
+/// 정상 완료, Err 반환, 타임아웃, panic unwinding 등 모든 탈출 경로에서 드롭되어
+/// 예약 상태를 반드시 해제한다.
+#[derive(Debug)]
+pub struct BenchmarkReservationGuard<'a> {
+    reserved: &'a AtomicBool,
+}
+
+impl<'a> Drop for BenchmarkReservationGuard<'a> {
+    fn drop(&mut self) {
+        self.reserved.store(false, Ordering::SeqCst);
+    }
+}
+
+impl MlxState {
+    /// GPU 벤치마크 예약을 원자적으로 선점한다 (`compare_exchange`).
+    /// 이미 다른 벤치마크가 실행 중이면 거부 Err를 반환한다.
+    pub fn claim_benchmark_reservation(&self) -> Result<BenchmarkReservationGuard<'_>, String> {
+        self.benchmark_active
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .map_err(|_| "GPU benchmark is already in progress.".to_string())?;
+        Ok(BenchmarkReservationGuard {
+            reserved: &self.benchmark_active,
+        })
+    }
+
+    /// 현재 GPU 벤치마크 예약이 선점되어 있는지 확인한다.
+    pub fn is_benchmark_active(&self) -> bool {
+        self.benchmark_active.load(Ordering::SeqCst)
+    }
+
+    /// 학습 시작 시 벤치마크 상호 배제를 검사한다.
+    pub fn check_training_admission(&self) -> Result<(), String> {
+        if self.is_benchmark_active() {
+            return Err("Cannot start fine-tuning while GPU benchmark is running.".to_string());
+        }
+        Ok(())
+    }
+
+    /// 모델 서빙 시작 시 벤치마크 상호 배제를 검사한다.
+    pub fn check_serving_admission(&self) -> Result<(), String> {
+        if self.is_benchmark_active() {
+            return Err("Cannot start model serving while GPU benchmark is running.".to_string());
+        }
+        Ok(())
+    }
 }
 
 pub(crate) fn home_dir() -> Result<PathBuf, String> {
@@ -849,6 +901,9 @@ pub async fn run_mlx_finetune(
 ) -> Result<u32, String> {
     let training_runtime = config.runtime.unwrap_or(MlxRuntime::MlxLm);
 
+    // GitHub #11: GPU benchmark 상호 배제 — 벤치마크 실행 중이면 즉시 거부한다.
+    state.check_training_admission()?;
+
     // 스폰 전 admission 게이트(D40, GitHub #32) — 슬롯 선점 및 동기 준비 전 1회 검사.
     // 이미 메모리 압력이 critical이거나(D16) 발열 일시정지가 켜진 채 serious 이상이면(D28)
     // 슬롯을 점유하지 않고 거부한다. 검사~스폰 사이 상태 변화는 막지 못하며, 학습은 스폰 후
@@ -859,6 +914,8 @@ pub async fn run_mlx_finetune(
     let prev_training = {
         let _admission = state.adapter_admission.lock().map_err(|e| e.to_string())?;
         let mut guard = state.training.lock().map_err(|e| e.to_string())?;
+        // 슬롯 점유 락을 잡은 상태에서 벤치마크 선점 여부를 재확인하여 레이스 윈도우를 차단한다.
+        state.check_training_admission()?;
         if let Some(t) = guard.as_ref() {
             // GitHub #101 — `status == "running"`만 보면 가드레일이 SIGSTOP한 paused* 학습의
             // 슬롯을 새 요청이 덮어쓴다. running/paused* 등 비종료 상태 전체를 거부한다.
@@ -1185,6 +1242,9 @@ pub async fn start_model_serving(
     // 지정이 없으면 mlx-lm — 기존 사용자·기존 프런트 호출의 동작이 바뀌지 않는다(D29).
     let runtime = runtime.unwrap_or(MlxRuntime::MlxLm);
 
+    // GitHub #11: GPU benchmark 상호 배제 — 벤치마크 실행 중이면 즉시 거부한다.
+    state.check_serving_admission()?;
+
     // 스폰 전 admission 게이트(D40, GitHub #32) — 슬롯 선점 및 동기 준비 전 1회 검사.
     // 학습과 동일한 기준이나, 서빙에는 `spawn_guardrail_loop`가 붙지 않아(학습 전용)
     // 검사~스폰 사이나 스폰 후의 상태 악화를 사후 방어하지 못하는 한계가 있다.
@@ -1194,6 +1254,8 @@ pub async fn start_model_serving(
     {
         let _admission = state.adapter_admission.lock().map_err(|e| e.to_string())?;
         let mut guard = state.serving.lock().map_err(|e| e.to_string())?;
+        // 슬롯 점유 락을 잡은 상태에서 벤치마크 선점 여부를 재확인하여 레이스 윈도우를 차단한다.
+        state.check_serving_admission()?;
         if guard.is_some() {
             return Err("Model serving is already in progress.".into());
         }
