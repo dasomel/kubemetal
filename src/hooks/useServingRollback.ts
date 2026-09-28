@@ -4,7 +4,7 @@ import { message } from '@tauri-apps/plugin-dialog';
 import type { ServingStatus } from '../types/ipc';
 import { useTranslation } from '../i18n/i18nContext';
 
-export function useServingRollback(onRefreshStatus?: () => Promise<void>) {
+export function useServingRollback(serving: ServingStatus | null | undefined, onRefreshStatus?: () => Promise<void>) {
   const { t } = useTranslation();
   const [lastKnownGoodServing, setLastKnownGoodServing] = useState<ServingStatus | null>(null);
   const [revertingServing, setRevertingServing] = useState(false);
@@ -15,13 +15,20 @@ export function useServingRollback(onRefreshStatus?: () => Promise<void>) {
       setLastKnownGoodServing(res);
     } catch (err) {
       console.error(t('mlx.err.lastKnownGoodLoad'), err);
+      setLastKnownGoodServing(null);
+      await message(t('mlx.err.lastKnownGoodLoad'), { title: 'KubeMetal', kind: 'error' });
     }
   }, [t]);
 
   const revertServing = useCallback(async () => {
     setRevertingServing(true);
     try {
-      const res = await invoke<string>('revert_to_last_serving');
+      if (!lastKnownGoodServing) return;
+      const res = await invoke<string>('revert_to_last_serving', {
+        expectedModelPath: lastKnownGoodServing.model_path,
+        expectedAdapterPath: lastKnownGoodServing.adapter_path ?? null,
+        expectedRuntime: lastKnownGoodServing.runtime,
+      });
       await message(res || t('mlx.toast.servingReverted'), { title: 'KubeMetal', kind: 'info' });
       if (onRefreshStatus) {
         await onRefreshStatus();
@@ -35,11 +42,12 @@ export function useServingRollback(onRefreshStatus?: () => Promise<void>) {
     } finally {
       setRevertingServing(false);
     }
-  }, [onRefreshStatus, fetchLastKnownGoodServing, t]);
+  }, [onRefreshStatus, fetchLastKnownGoodServing, lastKnownGoodServing, t]);
 
   useEffect(() => {
+    void serving;
     fetchLastKnownGoodServing();
-  }, [fetchLastKnownGoodServing]);
+  }, [serving, fetchLastKnownGoodServing]);
 
   return {
     lastKnownGoodServing,

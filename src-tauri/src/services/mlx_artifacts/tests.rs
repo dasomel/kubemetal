@@ -138,6 +138,27 @@ fn is_adapter_protected_matches_serving_path_exactly() {
 }
 
 #[test]
+fn deletion_protects_ancestor_of_serving_and_lkg_but_allows_sibling() {
+    let home = make_temp_dir("protected-ancestor");
+    let group = home.join("adapters/group");
+    let adapter = group.join("a");
+    let sibling = home.join("adapters/other");
+    std::fs::create_dir_all(&adapter).unwrap();
+    std::fs::create_dir_all(&sibling).unwrap();
+    let adapter_path = adapter.to_string_lossy().to_string();
+    let serving_ancestor =
+        is_adapter_safe_to_delete(&group, Some(&home), Some(&adapter_path), None, None);
+    let lkg_ancestor =
+        is_adapter_safe_to_delete(&group, Some(&home), None, Some(&adapter_path), None);
+    let unrelated_sibling =
+        is_adapter_safe_to_delete(&sibling, Some(&home), Some(&adapter_path), None, None);
+    std::fs::remove_dir_all(&home).unwrap();
+    assert!(!serving_ancestor);
+    assert!(!lkg_ancestor);
+    assert!(unrelated_sibling);
+}
+
+#[test]
 fn is_adapter_protected_matches_last_known_good_path() {
     let dir = make_temp_dir("protected-lkg");
     let path_str = dir.to_string_lossy().to_string();
