@@ -34,7 +34,10 @@ spec:
     runtime: python
     modelConfig: default-model-config
     systemMessage: |
-      You are SecurityAssist, a specialized AI agent for Kubernetes security and vulnerability scanning.
+      You are SecurityAssist, auditing Kubernetes security posture: RBAC bindings, Pod Security
+      settings and security-relevant events. Your tools read resources, descriptions and events
+      only; you cannot scan images for CVEs, so say that when asked rather than guessing.
+      Report only what the tools returned.
     deployment:
       resources:
         limits:
@@ -71,7 +74,9 @@ spec:
     runtime: python
     modelConfig: default-model-config
     systemMessage: |
-      You are PromQLAssist, an AI agent for cluster metrics and Prometheus analysis.
+      You are PromQLAssist, helping with Prometheus and PromQL questions for this cluster.
+      You have no tools in this deployment, so you cannot query live metrics: help write and
+      explain PromQL, and never state a metric value you were not given in the conversation.
 "#,
         ),
         "observability-agent" => Some(
@@ -90,7 +95,9 @@ spec:
     runtime: python
     modelConfig: default-model-config
     systemMessage: |
-      You are ObservabilityAssist, an AI agent analyzing OpenTelemetry and trace data.
+      You are ObservabilityAssist, helping interpret OpenTelemetry traces, logs and metrics.
+      You have no tools in this deployment: work only from data pasted into the conversation,
+      and say when something would need data you have not been given.
 "#,
         ),
         // #2/#26/#27 승인된 축소 MVP. 실측(2026-08-26, colima): security-agent의
@@ -194,5 +201,86 @@ mod tests {
         let manifest = agent_manifest("rca-agent").expect("rca-agent manifest missing");
         assert!(manifest.contains("insufficient evidence"));
         assert!(manifest.contains("do not invent a plausible cause"));
+    }
+
+    /// 최소한의 구조 검증: `agent_manifest`가 돌려주는 모든 매니페스트가 하나의
+    /// YAML 문서로 파싱 가능해야 한다 — 전용 YAML crate가 없으므로(Cargo.toml
+    /// 확인됨) 문자열 기반으로 들여쓰기/토큰 규칙을 확인한다.
+    fn assert_parses_as_yaml_document(manifest: &str) {
+        assert!(
+            manifest.starts_with("apiVersion: kagent.dev/v1alpha2\n"),
+            "manifest must start with a single top-level apiVersion key"
+        );
+        assert_eq!(
+            manifest.matches("\napiVersion:").count(),
+            0,
+            "manifest must contain exactly one top-level document (no embedded second apiVersion key)"
+        );
+        assert!(
+            manifest.contains("kind: Agent\n"),
+            "manifest must declare kind: Agent"
+        );
+        assert!(
+            manifest.contains("\n    systemMessage: |\n"),
+            "systemMessage must use the literal block scalar under declarative:"
+        );
+        // Every non-blank line beyond the header keys must be indented (no
+        // top-level scalar leaking outside metadata/spec), i.e. the doc has
+        // exactly two top-level keys: apiVersion and kind, then metadata/spec.
+        let mut top_level_keys = 0;
+        for line in manifest.lines() {
+            if line.is_empty() {
+                continue;
+            }
+            if !line.starts_with(' ') && !line.starts_with('\t') {
+                top_level_keys += 1;
+            }
+        }
+        assert_eq!(
+            top_level_keys, 4,
+            "expected exactly 4 top-level keys (apiVersion, kind, metadata, spec), got {top_level_keys}"
+        );
+    }
+
+    #[test]
+    fn every_toggleable_agent_manifest_parses_as_one_yaml_document() {
+        for name in TOGGLEABLE_AGENTS {
+            let manifest = agent_manifest(name).expect("manifest missing");
+            assert_parses_as_yaml_document(manifest);
+        }
+    }
+
+    #[test]
+    fn promql_and_observability_agents_declare_no_tools_and_say_so() {
+        for name in ["promql-agent", "observability-agent"] {
+            let manifest = agent_manifest(name).expect("manifest missing");
+            assert!(
+                !manifest.contains("tools:"),
+                "{name} manifest unexpectedly declares a tools: block"
+            );
+            assert!(
+                manifest.contains("no tools"),
+                "{name} systemMessage must state it has no tools, to match the CR"
+            );
+        }
+    }
+
+    #[test]
+    fn security_agent_system_message_disclaims_cve_scanning() {
+        let manifest = agent_manifest("security-agent").expect("security-agent manifest missing");
+        assert!(manifest.contains("cannot scan images for CVEs"));
+        // Pin the contract: security-agent's tools are read-only k8s inspection,
+        // so the prompt must not promise capabilities those tools don't provide.
+        for tool in [
+            "k8s_get_resources",
+            "k8s_describe_resource",
+            "k8s_get_events",
+        ] {
+            assert!(
+                manifest.contains(tool),
+                "security-agent manifest is missing tool [{tool}]"
+            );
+        }
+        assert!(!manifest.contains("vulnerability scanning"));
     }
 }
