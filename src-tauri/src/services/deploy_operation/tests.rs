@@ -14,13 +14,13 @@ fn confirmed_target(context: &str, namespace: &str) -> ConfirmedOperationTarget 
 #[test]
 fn confirmed_target_matches_actual_target() {
     let expected = confirmed_target("narwhal", "team-ml");
-    assert!(ensure_confirmed_target(Some(&expected), "narwhal", "team-ml").is_ok());
+    assert!(ensure_confirmed_target(&expected, "narwhal", "team-ml").is_ok());
 }
 
 #[test]
 fn confirmed_target_rejects_context_mismatch() {
     let expected = confirmed_target("colima", "default");
-    let err = ensure_confirmed_target(Some(&expected), "narwhal", "default")
+    let err = ensure_confirmed_target(&expected, "narwhal", "default")
         .expect_err("a changed context must require reconfirmation");
     assert!(err.contains("confirmed context='colima'"));
     assert!(err.contains("actual context='narwhal'"));
@@ -29,15 +29,10 @@ fn confirmed_target_rejects_context_mismatch() {
 #[test]
 fn confirmed_target_rejects_namespace_mismatch() {
     let expected = confirmed_target("narwhal", "team-ml");
-    let err = ensure_confirmed_target(Some(&expected), "narwhal", "other-team")
+    let err = ensure_confirmed_target(&expected, "narwhal", "other-team")
         .expect_err("a changed namespace must require reconfirmation");
     assert!(err.contains("confirmed context='narwhal', namespace='team-ml'"));
     assert!(err.contains("actual context='narwhal', namespace='other-team'"));
-}
-
-#[test]
-fn missing_confirmed_target_skips_compatibility_check() {
-    assert!(ensure_confirmed_target(None, "narwhal", "team-ml").is_ok());
 }
 
 #[test]

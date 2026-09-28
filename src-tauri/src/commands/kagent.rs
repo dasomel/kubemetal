@@ -386,10 +386,10 @@ async fn helm_upgrade_kagent(
 pub async fn install_kagent(
     app: tauri::AppHandle,
     context: Option<String>,
-    expected_target: Option<ConfirmedOperationTarget>,
+    expected_target: ConfirmedOperationTarget,
 ) -> Result<String, String> {
     let target_ctx = resolve_kagent_install_context(app.clone(), context).await?;
-    ensure_confirmed_target(expected_target.as_ref(), &target_ctx, KAGENT_NAMESPACE)?;
+    ensure_confirmed_target(&expected_target, &target_ctx, KAGENT_NAMESPACE)?;
 
     ensure_namespace(&target_ctx, KAGENT_NAMESPACE).await?;
 
