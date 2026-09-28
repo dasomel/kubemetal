@@ -284,10 +284,14 @@ export const translations: Record<Language, Record<string, string>> = {
     'rag.vectorChunks': '벡터 청크:',
     'rag.lastUpdated': '최종 업데이트:',
     'rag.searchTitle': '시맨틱 검색 테스트',
+    'rag.modeLabel': '검색 방식',
+    'rag.modeDense': 'Dense 의미 검색',
+    'rag.modeLexical': 'Lexical 키워드 검색',
     'rag.searchPlaceholder': '검색할 질의 입력 (예: Apple Silicon Metal 메모리 최적화...)',
     'rag.searchBtn': '검색',
     'rag.searchResultsHeader': '유사도 검색 결과 ({count}건)',
     'rag.similarity': '유사도:',
+    'rag.score': 'BM25 점수:',
     'rag.noResults': '검색 결과가 없습니다.',
 
     // Pipeline Card - DVC
@@ -1088,10 +1092,14 @@ export const translations: Record<Language, Record<string, string>> = {
     'rag.vectorChunks': 'Vector Chunks:',
     'rag.lastUpdated': 'Last Updated:',
     'rag.searchTitle': 'Semantic Search Test',
+    'rag.modeLabel': 'Retrieval mode',
+    'rag.modeDense': 'Dense semantic search',
+    'rag.modeLexical': 'Lexical keyword search',
     'rag.searchPlaceholder': 'Enter search query (e.g. Apple Silicon Metal memory optimization...)',
     'rag.searchBtn': 'Search',
     'rag.searchResultsHeader': 'Similarity Search Results ({count})',
     'rag.similarity': 'Similarity:',
+    'rag.score': 'BM25 score:',
     'rag.noResults': 'No search results found.',
 
     // Pipeline Card - DVC

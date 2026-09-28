@@ -49,11 +49,11 @@ export function useRAG(active: boolean = false) {
     [fetchStatus, t],
   );
 
-  const search = useCallback(async (query: string, topK: number = 3) => {
+  const search = useCallback(async (query: string, topK: number = 3, mode: 'dense' | 'lexical' = 'dense') => {
     if (!query.trim()) return;
     setSearching(true);
     try {
-      const res = await invoke<RagSearchResult[]>('query_rag', { query, topK });
+      const res = await invoke<RagSearchResult[]>('query_rag', { query, topK, mode });
       setSearchResults(res);
     } catch (err) {
       await message(t('rag.toast.searchFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });

@@ -11,7 +11,54 @@ import os
 import shutil
 import sys
 import subprocess
+import sqlite3
+import tempfile
 from pathlib import Path
+
+def ensure_fts5(connection_factory=sqlite3.connect):
+    """Fail explicitly when this Python build lacks SQLite FTS5."""
+    try:
+        connection = connection_factory(":memory:")
+        connection.execute("CREATE VIRTUAL TABLE fts_probe USING fts5(text)")
+        connection.close()
+    except sqlite3.Error as exc:
+        raise RuntimeError(f"SQLite FTS5 is unavailable: {exc}") from exc
+
+def lexical_search(chunks, query, top_k, connection_factory=sqlite3.connect):
+    tokens = []
+    token = []
+    for char in query:
+        if char.isalnum():
+            token.append(char)
+        elif token:
+            tokens.append("".join(token))
+            token = []
+    if token:
+        tokens.append("".join(token))
+    if not tokens:
+        return []
+
+    ensure_fts5(connection_factory)
+    with tempfile.TemporaryDirectory(prefix="kubemetal-rag-fts-") as temp_dir:
+        # Rebuild from the available first slice; persistent indexing is intentionally deferred.
+        connection = connection_factory(str(Path(temp_dir) / "chunks.sqlite3"))
+        connection.execute("CREATE VIRTUAL TABLE chunks USING fts5(text, filename, source, tokenize='unicode61')")
+        connection.executemany("INSERT INTO chunks(text, filename, source) VALUES (?, ?, ?)",
+                               [(item.get("text", ""), item.get("filename", ""), item.get("source", "")) for item in chunks])
+        # Quote each token so user input cannot introduce FTS operators or column filters.
+        match_query = " OR ".join('"' + value.replace('"', '""') + '"' for value in tokens)
+        rows = connection.execute(
+            "SELECT rowid, bm25(chunks) FROM chunks WHERE chunks MATCH ? ORDER BY bm25(chunks) LIMIT ?",
+            (match_query, top_k),
+        ).fetchall()
+        results = []
+        for rowid, score in rows:
+            item = chunks[rowid - 1]
+            results.append({"text": item.get("text", ""), "filename": item.get("filename", ""),
+                            "source": item.get("source", ""), "chunk_index": item.get("chunk_index", 0),
+                            "score": float(score), "mode": "lexical"})
+        connection.close()
+        return results
 
 def get_dvc_bin() -> str:
     """
@@ -157,10 +204,12 @@ def cmd_query(args):
 
     table = db.open_table(collection)
 
-    model = get_embedding_model(model_name)
-    query_vector = model.encode(query_str, show_progress_bar=False).tolist()
-
-    search_results = table.search(query_vector).limit(top_k).to_list()
+    if args.mode == "lexical":
+        search_results = lexical_search(table.to_list(), query_str, top_k)
+    else:
+        model = get_embedding_model(model_name)
+        query_vector = model.encode(query_str, show_progress_bar=False).tolist()
+        search_results = table.search(query_vector).limit(top_k).to_list()
 
     formatted_results = []
     for r in search_results:
@@ -170,7 +219,8 @@ def cmd_query(args):
             "filename": r.get("filename", ""),
             "source": r.get("source", ""),
             "chunk_index": r.get("chunk_index", 0),
-            "score": float(score)
+            "score": float(score),
+            "mode": r.get("mode", args.mode)
         })
 
     print(json.dumps({
@@ -253,6 +303,7 @@ def main():
     p_query.add_argument("--collection", default="default")
     p_query.add_argument("--top-k", type=int, default=3)
     p_query.add_argument("--model", default="sentence-transformers/all-MiniLM-L6-v2")
+    p_query.add_argument("--mode", choices=("dense", "lexical"), default="dense")
 
     # dvc-commit subcommand
     p_dvc = subparsers.add_parser("dvc-commit")

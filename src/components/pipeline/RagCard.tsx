@@ -12,6 +12,7 @@ export const RagCard: React.FC = () => {
   const { t } = useTranslation();
   const [docPath, setDocPath] = useState('docs');
   const [searchQuery, setSearchQuery] = useState('');
+  const [retrievalMode, setRetrievalMode] = useState<'dense' | 'lexical'>('dense');
 
   const handleIndexSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,7 +22,7 @@ export const RagCard: React.FC = () => {
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      search(searchQuery);
+      search(searchQuery, 3, retrievalMode);
     }
   };
 
@@ -124,6 +125,10 @@ export const RagCard: React.FC = () => {
             placeholder={t('rag.searchPlaceholder')}
             className={inputClass}
           />
+          <select aria-label={t('rag.modeLabel')} value={retrievalMode} onChange={(e) => setRetrievalMode(e.target.value as 'dense' | 'lexical')} className={inputClass}>
+            <option value="dense">{t('rag.modeDense')}</option>
+            <option value="lexical">{t('rag.modeLexical')}</option>
+          </select>
           <button
             type="submit"
             disabled={searching || !searchQuery.trim()}
@@ -146,7 +151,9 @@ export const RagCard: React.FC = () => {
                     {item.source || item.id}
                   </span>
                   <span className="px-1.5 py-0.5 rounded bg-surface text-inkMuted text-[11px]">
-                    {t('rag.similarity')} {(item.score * 100).toFixed(1)}%
+                    {item.mode === 'lexical'
+                      ? `${t('rag.score')} ${item.score.toExponential(2)}`
+                      : `${t('rag.similarity')} ${(item.score * 100).toFixed(1)}%`}
                   </span>
                 </div>
                 <p className="text-body text-ink text-sm leading-relaxed">{item.text}</p>

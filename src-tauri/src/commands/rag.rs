@@ -17,7 +17,21 @@ pub struct RagSearchResult {
     pub filename: String,
     pub source: String,
     pub chunk_index: u32,
+    /// Dense mode is vector distance; lexical mode is SQLite bm25() (lower, often negative, is better). Consumers must branch on mode.
     pub score: f64,
+    pub mode: String,
+}
+
+fn validate_retrieval_mode(mode: Option<String>) -> Result<String, String> {
+    match mode.as_deref().unwrap_or("dense") {
+        "dense" => Ok("dense".into()),
+        "lexical" => Ok("lexical".into()),
+        _ => Err("Unsupported retrieval mode. Choose dense or lexical.".into()),
+    }
+}
+
+fn retrieval_mode_args(mode: &str) -> [&str; 2] {
+    ["--mode", mode]
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -362,10 +376,12 @@ pub async fn query_rag(
     collection_name: Option<String>,
     top_k: Option<u32>,
     embedding_model: Option<String>,
+    mode: Option<String>,
 ) -> Result<Vec<RagSearchResult>, String> {
     if query.trim().is_empty() {
         return Err("Query text cannot be empty.".into());
     }
+    let mode = validate_retrieval_mode(mode)?;
 
     let venv_py = venv_python()?;
     if !venv_py.is_file() {
@@ -397,6 +413,7 @@ pub async fn query_rag(
         .arg(k.to_string())
         .arg("--model")
         .arg(&model)
+        .args(retrieval_mode_args(&mode))
         .env("PATH", augmented_path())
         .output()
         .await
@@ -436,6 +453,22 @@ pub async fn query_rag(
             .map_err(|e| format!("Failed to convert to RagSearchResult: {e}"))?;
 
     Ok(search_results)
+}
+
+#[cfg(test)]
+mod retrieval_mode_tests {
+    use super::{retrieval_mode_args, validate_retrieval_mode};
+
+    #[test]
+    fn retrieval_mode_allowlist_and_default() {
+        assert_eq!(validate_retrieval_mode(None).unwrap(), "dense");
+        assert_eq!(
+            validate_retrieval_mode(Some("lexical".into())).unwrap(),
+            "lexical"
+        );
+        assert_eq!(retrieval_mode_args("lexical"), ["--mode", "lexical"]);
+        assert!(validate_retrieval_mode(Some("dense;rm -rf /".into())).is_err());
+    }
 }
 
 #[tauri::command]
