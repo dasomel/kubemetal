@@ -9,12 +9,15 @@ Model tiering, agy rotation, and the failure ladder are owned by the global
 
 | Lane | Scope (disjoint — do not cross) | Worker | Model |
 |------|--------------------------------|--------|-------|
-| `rust-backend` | `src-tauri/**`, `scripts/**` (k8s manifests, mlx/prefect/ingest/airgap/e2e host scripts), `Cargo.toml`, `tauri.conf.json`, `capabilities/` | agy (primary) | `Gemini 3.8 Flash (High)` → `Claude Opus 4.6 (Thinking)` on quota exhaustion; native fallback `sonnet` |
+| `rust-backend` | `src-tauri/**`, `scripts/**` (k8s manifests, mlx/prefect/ingest/airgap/e2e host scripts), `Cargo.toml`, `tauri.conf.json`, `capabilities/` | agy (primary) | agy rotation per global `<agy_cli>`; native fallback `sonnet` |
 | `frontend` | `src/**`, `package.json`, `tsconfig.json`, `vite.config.ts`, `index.html` | agy (primary) | same rotation; native fallback `sonnet` |
 | `ui-design` | `DESIGN.md`, `src/index.css` (`@theme`), component styling | `designer` subagent | `sonnet` |
 | `qa/verify` | `cargo check`/`clippy`, `tsc --noEmit`, DESIGN.md lint, doc↔code sync (D-registry, IPC names) | `verifier` / `code-reviewer` subagent | `sonnet` (1st pass) |
 | `approve` | final approval pass on high-risk diffs — D-registry changes, colima lifecycle, guardrails (D11/D16/D17), credential & SSRF paths (D21), K8s↔host bridge (D10) | `critic` / `code-reviewer` subagent | `opus` |
 | `escalate` | only after an `opus` lane produced a demonstrably wrong/insufficient result on the hardest reasoning step | subagent | `fable` (rare) |
+
+Authoring, manifest normalization, 1st-pass review and doc drafts run on `sonnet`; `opus` is
+for the `approve` lane and cross-cutting judgment only.
 
 ## Rules
 
