@@ -15,7 +15,7 @@
       "repo_digest": "aquasec/trivy@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c",
       "image_id": "sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c",
       "sbom": "sbom/aquasec_trivy_0.69.3.spdx.json",
-      "sbom_sha256": "1127e9042252b47b48184e4811c6215d57c95e981212a06fd59ed38cbc567340",
+      "sbom_sha256": "a927870d3df31d0f9590ec394109590b8563e3dbd7cd1eb4b8c5dbee5393404b",
       "package_count": 442,
       "spdx_version": "SPDX-2.3"
     },
@@ -24,7 +24,7 @@
       "repo_digest": "cr.kagent.dev/kagent-dev/kagent/app@sha256:5ee30b4584e8de3266eb3cc11f5c46e8627716339d04d14166c50bda5f0f4182",
       "image_id": "sha256:5ee30b4584e8de3266eb3cc11f5c46e8627716339d04d14166c50bda5f0f4182",
       "sbom": "sbom/cr.kagent.dev_kagent-dev_kagent_app_0.9.12.spdx.json",
-      "sbom_sha256": "81e1fafbe78f19d5570b8185981a76631c3ffda7ab08a18708cfc46574125d50",
+      "sbom_sha256": "fba3a35a190d993caf368122dc53fec284382b2e5514f6d2f831ad8c04e56360",
       "package_count": 1431,
       "spdx_version": "SPDX-2.3"
     },
@@ -33,7 +33,7 @@
       "repo_digest": "cr.kagent.dev/kagent-dev/kagent/controller@sha256:d1ea7b70bb8d97de9f0774d44b598971c944b3ab4e88294b0bb78e59d1a63c15",
       "image_id": "sha256:d1ea7b70bb8d97de9f0774d44b598971c944b3ab4e88294b0bb78e59d1a63c15",
       "sbom": "sbom/cr.kagent.dev_kagent-dev_kagent_controller_0.9.12.spdx.json",
-      "sbom_sha256": "d8a3353ed6d36aabbd8f1d8f646f32a36a187f406288cfa3a8cad0f260cfcc26",
+      "sbom_sha256": "9d093289e6ca0caf783e0cc7467262ea70720852d8d0a68441639d0722da779e",
       "package_count": 154,
       "spdx_version": "SPDX-2.3"
     },
@@ -42,7 +42,7 @@
       "repo_digest": "cr.kagent.dev/kagent-dev/kagent/ui@sha256:1d5ada8d7f65a6b9ad28232463f9fd670c4c20875baa1c8008aaa1f1f988382e",
       "image_id": "sha256:1d5ada8d7f65a6b9ad28232463f9fd670c4c20875baa1c8008aaa1f1f988382e",
       "sbom": "sbom/cr.kagent.dev_kagent-dev_kagent_ui_0.9.12.spdx.json",
-      "sbom_sha256": "544dbe30709dcc208be7ae89349d67a11b7e23a35db253458061df9995bb648a",
+      "sbom_sha256": "865d3c2b728ce547c41bec8c0929fcbb200650ff03fc003d06dc371c25f6d3ce",
       "package_count": 135,
       "spdx_version": "SPDX-2.3"
     },
@@ -51,7 +51,7 @@
       "repo_digest": "chrislusf/seaweedfs@sha256:52194fba4fecd0083c842158b3a902ba6e04a63619b2b0efcd08007bdb6a4602",
       "image_id": "sha256:52194fba4fecd0083c842158b3a902ba6e04a63619b2b0efcd08007bdb6a4602",
       "sbom": "sbom/docker.io_chrislusf_seaweedfs_4.40.spdx.json",
-      "sbom_sha256": "8a0b2105b455019285b1f0bb670f447a89dce02c69671619e6c094eb808a51a8",
+      "sbom_sha256": "0481b978e5fa240a3e1b174ae0c06de5a5fd9128ee25c5672a82155b214ff8c6",
       "package_count": 278,
       "spdx_version": "SPDX-2.3"
     },
@@ -60,7 +60,7 @@
       "repo_digest": "curlimages/curl@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13",
       "image_id": "sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13",
       "sbom": "sbom/docker.io_curlimages_curl_8.21.0.spdx.json",
-      "sbom_sha256": "44f9effdc0c9df58827a07cc5d1420217cb505c69815d7aacfd9788adb11e81c",
+      "sbom_sha256": "7fc92aa6e21a4648623d07c5bfc69af948cf7c8504af723c3f3046eb1c78a8c7",
       "package_count": 38,
       "spdx_version": "SPDX-2.3"
     },
@@ -69,7 +69,7 @@
       "repo_digest": "prefecthq/prefect@sha256:a1a789339d6176bf4ba37e0e7658ad8a4b021e14a63912f00afcd3e8e75d1863",
       "image_id": "sha256:a1a789339d6176bf4ba37e0e7658ad8a4b021e14a63912f00afcd3e8e75d1863",
       "sbom": "sbom/docker.io_prefecthq_prefect_3.7.8-python3.12.spdx.json",
-      "sbom_sha256": "f03b08c1f423abe8dec6458fe6a88a2bb7a94cf1cc0c0c78ce8bf66aacb471a6",
+      "sbom_sha256": "8f4350ddda3e3d1e366e39d74ffae863be481e6d395434658af838cfb92154c0",
       "package_count": 792,
       "spdx_version": "SPDX-2.3"
     },
@@ -78,7 +78,7 @@
       "repo_digest": "ghcr.io/kagent-dev/kagent/tools@sha256:50b431281d3e32666f27a292962fd486aabaac157083a844d037c12137e353aa",
       "image_id": "sha256:50b431281d3e32666f27a292962fd486aabaac157083a844d037c12137e353aa",
       "sbom": "sbom/ghcr.io_kagent-dev_kagent_tools_0.2.1.spdx.json",
-      "sbom_sha256": "d5843a796338db1a3766182c8efcbff0a6ab753386b9a696acb1bc96bbb1aca3",
+      "sbom_sha256": "17efdd068cb47bef09b5d5e37a185ea62ee989424ef82ec4939dc29b61806524",
       "package_count": 954,
       "spdx_version": "SPDX-2.3"
     },
@@ -87,7 +87,7 @@
       "repo_digest": "127.0.0.1:5001/ghcr.io/kagent-dev/kmcp/controller@sha256:86ab878da25a639358aad18933c6b99e06a7ac34a801dc17fd657db0f28cee28",
       "image_id": "sha256:86ab878da25a639358aad18933c6b99e06a7ac34a801dc17fd657db0f28cee28",
       "sbom": "sbom/ghcr.io_kagent-dev_kmcp_controller_0.3.0.spdx.json",
-      "sbom_sha256": "505120e0e0f4cbae7312e78b3a640dc64646e86bc7431da0fc4785d5544ad406",
+      "sbom_sha256": "6fdb93510a97908387919d6125da6374e4c5e873b39be3c020f344607e28ae4a",
       "package_count": 91,
       "spdx_version": "SPDX-2.3",
       "repo_digest_source": "local registry mirror (127.0.0.1:5001), not ghcr.io: the pull on this machine went through a local pull-through mirror, so this RepoDigest records what the mirror served. Not independently re-checked against ghcr.io in this run."
@@ -97,7 +97,7 @@
       "repo_digest": "ghcr.io/mlflow/mlflow@sha256:967de3ca34b6a5751718e380a0a383eb0ce1a6f5b484f363bd0da7559117a5f8",
       "image_id": "sha256:967de3ca34b6a5751718e380a0a383eb0ce1a6f5b484f363bd0da7559117a5f8",
       "sbom": "sbom/ghcr.io_mlflow_mlflow_v3.14.0.spdx.json",
-      "sbom_sha256": "58ee3d3fcee5bb2db25ca00e5cbe6e759e69d4826a6cf766743065aa9a147b9a",
+      "sbom_sha256": "fe98084bc5ba020eeab80994fa87faa0b2474ed246a7c0cc46cb1c371ca638b0",
       "package_count": 215,
       "spdx_version": "SPDX-2.3"
     },
@@ -106,7 +106,7 @@
       "repo_digest": "nginx@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2",
       "image_id": "sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2",
       "sbom": "sbom/nginx_alpine.spdx.json",
-      "sbom_sha256": "36ff8fc6463681dcc8e405e397b01b29e070357603101960f5fad6efc0bde9cb",
+      "sbom_sha256": "7a02b0429c4829995251d4f74e417c0fecccf135d33993a5a96914940f19231f",
       "package_count": 72,
       "spdx_version": "SPDX-2.3"
     },
@@ -115,7 +115,7 @@
       "repo_digest": "postgres@sha256:54451ecb8ab38c24c3ec123f2fd501303a3a1856a5c66e98cecf2460d5e1e9d7",
       "image_id": "sha256:54451ecb8ab38c24c3ec123f2fd501303a3a1856a5c66e98cecf2460d5e1e9d7",
       "sbom": "sbom/postgres_18.3-alpine.spdx.json",
-      "sbom_sha256": "6a846e70d64ca78b9123cc3c3028ba94574742f53dac4e69b630260515fb68dd",
+      "sbom_sha256": "d43f806544304150a79e7cdaa11c1f4d868f737aea05bc01b441532aa2013d43",
       "package_count": 60,
       "spdx_version": "SPDX-2.3"
     }
@@ -150,5 +150,10 @@
     "bash scripts/airgap/test_sbom.sh",
     "bash scripts/airgap/test_digest_lock.sh"
   ],
-  "regenerated_note": "SPDX files were regenerated after the check_archive() rework (second fix); syft output differs only in creation timestamps/namespaces, so sbom_sha256 values changed while per-image package counts and licenses.json are unchanged."
+  "regenerated_note": "SPDX files were regenerated after archive_identity.py's resource-exhaustion caps and per-path linux/arm64 platform enforcement (third fix, critic review of the containerd-store fix above): syft output differs only in creation timestamps/namespaces, so sbom_sha256 values changed while per-image package counts and licenses.json are unchanged. All 12 real bundle archives are linux/arm64 and none exceed the caps, so none were newly rejected.",
+  "resource_and_platform_hardening": {
+    "summary": "Critic review of the containerd-store fix (check_archive() above) found two gaps: gzip layer decompression and whole-member JSON reads (manifest.json/config/index blobs) had no size bound, and the linux/arm64 platform check ran only on the manifest-list path, so an amd64 image locked by config digest (classic) or by a direct single-manifest digest (no list) would have passed and gotten a \"verified\" SBOM.",
+    "fix": "scripts/airgap/archive_identity.py: gzip layers are decompressed in bounded chunks (zlib max_length) with a running-total cap (KUBEMETAL_ARCHIVE_LAYER_CAP_BYTES, default 8 GiB); manifest.json/config/index JSON members are size-checked against their declared tar size before being read in full (KUBEMETAL_ARCHIVE_JSON_CAP_BYTES, default 16 MiB); tar member count is capped (KUBEMETAL_ARCHIVE_MEMBER_CAP, default 100000) via lazy iteration instead of getmembers(); and the image config's os/architecture/variant is checked once, before branching, so it covers every binding path (classic, manifest-list, direct single manifest) instead of only the list path.",
+    "regression_tests_added": "scripts/airgap/test_archive_identity.py: a gzip-bomb layer rejected by the decompressed-size cap without decompressing it in full, an oversized manifest.json JSON member rejected by its declared size, and amd64 images rejected via both the classic (config-digest) and direct single-manifest-digest paths (arm64 passing on every path was already covered by the existing accept cases)."
+  }
 }

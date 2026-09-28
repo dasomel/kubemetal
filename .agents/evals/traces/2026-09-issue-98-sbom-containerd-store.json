@@ -61,10 +61,52 @@
       "summary": "#98's opt-in SBOM pipeline is verified against a real syft end to end (generation, verification, tamper rejection), and the containerd-image-store bug it exposed is fixed by binding the lock digest through the full manifest chain to the exact Config/Layers syft scans, after the first fix was shown bypassable; issue #5's install-time contract is untouched"
     },
     {
-      "id": "e7",
+      "id": "e8",
+      "type": "scope_check",
+      "summary": "A cross-vendor critic reviewed archive_identity.py's check_archive() and found two MED issues, no bypass otherwise found: (1) resource exhaustion - gzip layer decompression, tar getmembers(), and whole-blob/JSON read() were all unbounded, so a small gzip bomb or an oversized JSON member could exhaust memory before the diff_id/digest checks ever ran; (2) the linux/arm64 platform check ran only on the manifest-list path - an amd64 image locked by config digest (classic dockerd) or by a direct single-manifest digest (no list) would pass and get a \"verified\" SBOM. Scoped to archive_identity.py and its test fixtures; digests.lock's schema, lib.sh, download_airgap_bundle.sh, install_from_airgap.sh, and sbom.py's assemble/verify/publish logic were not touched."
+    },
+    {
+      "id": "e9",
+      "type": "bug_fix",
+      "summary": "scripts/airgap/archive_identity.py: gzip layer decompression now runs in bounded chunks (zlib decompressobj.decompress(data, max_length=CHUNK)) with a running decompressed-byte total capped at KUBEMETAL_ARCHIVE_LAYER_CAP_BYTES (default 8 GiB) - a layer is rejected the instant the cap is crossed, never after materializing it in full. Tar member iteration switched from getmembers() (loads the whole index up front) to lazy `for item in archive`, capped at KUBEMETAL_ARCHIVE_MEMBER_CAP (default 100000). manifest.json/config/index-blob JSON reads are now capped by their declared tar member size at KUBEMETAL_ARCHIVE_JSON_CAP_BYTES (default 16 MiB) before being read in full. All three caps are documented in the module docstring and read fresh from env vars on every call, so they're configurable without a code change. Separately, the image config's os/architecture/variant is now checked once, right after config_bytes is parsed and before the classic/containerd-store branch, so linux/arm64 is enforced on every binding path (classic config-digest, containerd manifest-list, and direct single-manifest digest) instead of only the manifest-list path via _platform_manifest()."
+    },
+    {
+      "id": "e10",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "scripts/airgap/test_archive_identity.py extended with 4 new fixture cases (24 total, up from 20): a gzip-bomb layer (64 MiB of zeros compressed to a few KB) rejected by the decompressed-size cap without decompressing it in full, with KUBEMETAL_ARCHIVE_LAYER_CAP_BYTES set to 4096 via env var so the assertion is fast; an oversized manifest.json JSON member (padded past 1024 bytes) rejected by its declared tar size with KUBEMETAL_ARCHIVE_JSON_CAP_BYTES set to 1024; and amd64 images rejected on both the classic path (lock = config digest) and the direct single-manifest-digest path (no list) - arm64 passing on every path was already covered by the 5 existing genuine-chain accept cases. Full test_sbom.sh (52 PASS lines, up from 48, including all 24 check_archive cases) and test_digest_lock.sh (7 scenarios, unchanged - digest_lock.sh and its script were not touched) re-run clean. No shell scripts were touched in this pass (only archive_identity.py and test_archive_identity.py), so shellcheck -x was not re-run against new content; a full-suite shellcheck -x pass over the touched shell scripts (test_sbom.sh, test_digest_lock.sh, generate_sbom.sh, verify_sbom.sh, install_from_airgap.sh, download_airgap_bundle.sh, verify_offline_images.sh, lib.sh) was executed and shows only pre-existing findings (SC1091 lib.sh source-follow info, and SC2329/SC2004 in verify_offline_images.sh, none in files this pass changed).",
+      "scope": "scripts/airgap/archive_identity.py check_archive()/_stream_digests() resource caps and per-path platform enforcement, plus the full existing airgap SBOM and digest-lock stub-based regression suites",
+      "evidence": [
+        "test:airgap-test-archive-identity-24-cases-pass",
+        "test:airgap-test-archive-identity-gzip-bomb-and-oversized-json-rejected",
+        "test:airgap-test-archive-identity-amd64-classic-and-direct-rejected",
+        "test:airgap-test-sbom-full-suite-52-pass-lines",
+        "test:airgap-test-digest-lock-seven-scenarios-pass",
+        "ci:shellcheck-clean-airgap-sbom-scripts-no-new-findings"
+      ]
+    },
+    {
+      "id": "e11",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Real re-run against the previously-downloaded 12-image scratch AIRGAP_DIR (unchanged bundle: mlflow v3.14.0, seaweedfs 4.40, prefect 3.7.8, curl, nginx:alpine, kagent controller/app/ui 0.9.12, kagent tools 0.2.1, kmcp controller 0.3.0, postgres 18.3-alpine, trivy 0.69.3): `make airgap-sbom` regenerated all 12 SPDX SBOMs through the hardened check_archive() (resource caps + per-path platform check) with syft 1.52.0, and `make verify-airgap-sbom` passed - all 12 real archives are linux/arm64 and none exceed the resource caps, so none were newly rejected by this pass's stricter checks. Per-image package_count and licenses.json are unchanged from the prior run; sbom_sha256 values changed because syft's SPDX creation timestamp/namespace differ run to run, not because of a content change, so evidence/airgap-sbom/20260928/manifest.json and spdx-sha256sums.txt were regenerated to match (digests.lock and licenses.json in that evidence directory are byte-identical to the prior run).",
+      "scope": "real syft against the existing 12-image air-gap scratch bundle; ~/.kubemetal/airgap untouched; no colima start/stop, no cluster image load",
+      "evidence": [
+        "runtime:airgap-sbom-12-images-hardened-check-syft-1.52.0-pass",
+        "runtime:verify-airgap-sbom-pass",
+        "artifact:evidence-airgap-sbom-20260928-manifest-json-sbom-sha256-refreshed"
+      ]
+    },
+    {
+      "id": "e12",
+      "type": "completion_claim",
+      "summary": "Both critic-review MED findings are fixed: gzip layer decompression, tar member iteration, and whole-member JSON reads are now bounded with documented, env-configurable caps that fail closed; and linux/arm64 platform enforcement now covers all three archive-binding paths (classic, manifest-list, direct single-manifest) instead of only the manifest-list path. Verified via 4 new offline fixture cases plus the full existing regression suite, and a real end-to-end re-run against the 12-image bundle with no newly rejected images."
+    },
+    {
+      "id": "e13",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete and verified: the full-chain archive check passed all 12 real archives, the real syft run and verify passed, the tamper test correctly failed, forged-archive fixtures (including the review PoC) are rejected, and evidence under evidence/airgap-sbom/20260928/ was regenerated without touching ~/.kubemetal/airgap. Remaining gap: zstd-compressed layers and archives with symlinked layers are rejected rather than supported"
+      "summary": "Complete and verified: resource-exhaustion caps (gzip layer decompression, tar member count, whole-member JSON size) and full-path linux/arm64 platform enforcement are implemented in scripts/airgap/archive_identity.py, covered by 4 new regression fixtures plus the full existing test_sbom.sh/test_archive_identity.py/test_digest_lock.sh suites (all green), and confirmed against a real 12-image air-gap bundle re-run (make airgap-sbom + make verify-airgap-sbom, 12/12 pass, none newly rejected). Evidence under evidence/airgap-sbom/20260928/ was refreshed (sbom_sha256 + spdx-sha256sums.txt only; digests.lock and licenses.json unchanged). Remaining gap (carried over, out of scope for this pass): zstd-compressed layers and archives with symlinked layers are still rejected rather than supported."
     }
   ]
 }

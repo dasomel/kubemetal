@@ -10,6 +10,7 @@ import gzip
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tarfile
@@ -40,10 +41,11 @@ def layer(text):
 class Image:
     """A genuine index -> manifest -> config/layers chain, mutable per case."""
 
-    def __init__(self, tag, platforms=(("linux", "arm64", None),), compress=True):
+    def __init__(self, tag, platforms=(("linux", "arm64", None),), compress=True,
+                 config_os="linux", config_arch="arm64"):
         self.plain = [layer(f"{tag}-base"), layer(f"{tag}-app")]
         self.stored = [gzip.compress(item, mtime=0) if compress else item for item in self.plain]
-        self.config = json.dumps({"architecture": "arm64", "os": "linux", "tag": tag,
+        self.config = json.dumps({"architecture": config_arch, "os": config_os, "tag": tag,
                                   "rootfs": {"type": "layers",
                                              "diff_ids": [digest(item) for item in self.plain]}}).encode()
         self.manifest = json.dumps({
@@ -178,6 +180,66 @@ def main(work):
         info.size = len(data)
         tar.addfile(info, io.BytesIO(data))
     reject("duplicate manifest.json member", str(duplicate), lock_list, "duplicate")
+
+    # #98 critic review: platform enforcement previously ran only on the
+    # manifest-list path, so an amd64 image locked by config digest (classic
+    # dockerd) or by a direct single-manifest digest (no list) passed and got a
+    # "verified" SBOM. arm64 passing on every path is already covered by the
+    # accept cases above (list digest, single-manifest digest, config digest,
+    # arm64/v8 variant, classic uncompressed).
+    amd64_classic = Image("amd64-classic", config_os="linux", config_arch="amd64")
+    reject("amd64 image via classic path (lock = config digest)",
+           write(work / "amd64-classic.tar", amd64_classic.members()),
+           digest(amd64_classic.config), "image config is not linux/arm64")
+    amd64_direct = Image("amd64-direct", config_os="linux", config_arch="amd64")
+    reject("amd64 image via direct single-manifest digest (no list)",
+           write(work / "amd64-direct.tar", amd64_direct.members()),
+           digest(amd64_direct.manifest), "image config is not linux/arm64")
+
+    # #98 critic review: resource exhaustion. Caps are read fresh from env vars
+    # on every check_archive() call, so setting them here (no reload/monkeypatch
+    # needed) exercises the real production code path with a low, fast-to-hit
+    # threshold instead of actually allocating gigabytes.
+    old_layer_cap = os.environ.get("KUBEMETAL_ARCHIVE_LAYER_CAP_BYTES")
+    os.environ["KUBEMETAL_ARCHIVE_LAYER_CAP_BYTES"] = "4096"
+    try:
+        # Small compressed input, huge expansion: zeros compress to a few KB but
+        # decompress to 64 MiB, so this is a genuine gzip-bomb shape even though
+        # building the plain bytes here (to compress them) is cheap and fast.
+        bomb_plain = bytes(64 * 1024 * 1024)
+        bomb_stored = gzip.compress(bomb_plain, mtime=0)
+        bomb_config = json.dumps({"architecture": "arm64", "os": "linux", "tag": "bomb",
+                                  "rootfs": {"type": "layers", "diff_ids": [digest(bomb_plain)]}}).encode()
+        bomb_manifest_json = json.dumps([{"Config": blob_name(digest(bomb_config)),
+                                          "RepoTags": ["example.invalid/bomb:1.0"],
+                                          "Layers": [blob_name(digest(bomb_stored))]}]).encode()
+        bomb_members = {"manifest.json": bomb_manifest_json,
+                         blob_name(digest(bomb_config)): bomb_config,
+                         blob_name(digest(bomb_stored)): bomb_stored}
+        reject("gzip bomb layer rejected by the decompressed size cap, without decompressing it in full",
+               write(work / "bomb.tar", bomb_members), digest(bomb_config), "decompressed size cap")
+    finally:
+        if old_layer_cap is None:
+            del os.environ["KUBEMETAL_ARCHIVE_LAYER_CAP_BYTES"]
+        else:
+            os.environ["KUBEMETAL_ARCHIVE_LAYER_CAP_BYTES"] = old_layer_cap
+
+    old_json_cap = os.environ.get("KUBEMETAL_ARCHIVE_JSON_CAP_BYTES")
+    os.environ["KUBEMETAL_ARCHIVE_JSON_CAP_BYTES"] = "1024"
+    try:
+        oversized = Image("oversized")
+        padded_manifest = json.loads(oversized.members()["manifest.json"])
+        padded_manifest[0]["padding"] = "x" * 4096  # pushes manifest.json past the 1024-byte cap
+        oversized_members = dict(oversized.members())
+        oversized_members["manifest.json"] = json.dumps(padded_manifest).encode()
+        reject("oversized manifest.json JSON member rejected by its declared size",
+               write(work / "oversized-json.tar", oversized_members),
+               digest(oversized.config), "JSON member exceeds size cap")
+    finally:
+        if old_json_cap is None:
+            del os.environ["KUBEMETAL_ARCHIVE_JSON_CAP_BYTES"]
+        else:
+            os.environ["KUBEMETAL_ARCHIVE_JSON_CAP_BYTES"] = old_json_cap
 
     for label in passed:
         print(f"PASS check_archive: {label}")
