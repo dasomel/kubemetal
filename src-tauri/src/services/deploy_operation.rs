@@ -57,17 +57,16 @@ pub struct ConfirmedOperationTarget {
     pub namespace: String,
 }
 
-/// 확인 이후 저장 대상이나 화면 선택기가 바뀌었으면, 적용 전에 멈춘다. `None`은 이전 IPC
-/// 호출자의 호환 경로이며, 새 UI 호출자는 항상 확인한 값을 전달한다.
+/// 확인 이후 저장 대상이나 화면 선택기가 바뀌었으면, 적용 전에 멈춘다. `expected`는 필수다
+/// (#18 승인 리뷰) — 이전에는 `Option`이었고 `None`이 "확인 생략"으로 통과됐는데, 프런트가
+/// 항상 값을 넘기는 상황에서는 TS 쪽 키 오타(`expectedTarget` 누락)가 Tauri에서 조용히
+/// `None`으로 역직렬화되어 가드 자체를 무력화할 수 있었다. 필수 파라미터로 만들면 키가
+/// 빠졌을 때 serde가 즉시 실패해 이 경로가 아예 열리지 않는다.
 pub fn ensure_confirmed_target(
-    expected: Option<&ConfirmedOperationTarget>,
+    expected: &ConfirmedOperationTarget,
     actual_context: &str,
     actual_namespace: &str,
 ) -> Result<(), String> {
-    let Some(expected) = expected else {
-        return Ok(());
-    };
-
     if expected.context != actual_context || expected.namespace != actual_namespace {
         return Err(format!(
             "deploy target changed after confirmation: confirmed context='{}', namespace='{}'; actual context='{}', namespace='{}'. Reconfirm before applying.",

@@ -482,7 +482,12 @@ export interface OperationSummary {
   risk_class: DeployRiskClass;
 }
 
-/** 확인 다이얼로그에서 승인한 실행 대상의 최소 식별자. */
+/**
+ * 확인 다이얼로그에서 승인한 실행 대상의 최소 식별자. `provision_mlops_stack`/`install_kagent`의
+ * `expectedTarget` 인자는 이 형태를 **필수**로 받는다(#18 승인 리뷰, 2026-09-28) — Rust 쪽이
+ * `Option`이던 시절에는 이 키가 빠진 호출도 `None`으로 역직렬화되어 확인 가드를 조용히
+ * 우회할 수 있었다.
+ */
 export interface ConfirmedOperationTarget {
   context: string;
   namespace: string;
