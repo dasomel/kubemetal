@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { isTrainingActive } from '../../lib/trainingStatus';
-import { Sliders, Loader2, Play, Square } from 'lucide-react';
+import { Sliders, Loader2, Play, Square, Trash2 } from 'lucide-react';
 import type { LocalModel, MlxTrainingState, FineTuneConfig, MlxRuntime } from '../../types/ipc';
 import { useTranslation } from '../../i18n/i18nContext';
 
@@ -11,6 +11,7 @@ interface MlxFineTuneCardProps {
   killingPid: number | null;
   onStart: (config: FineTuneConfig) => void;
   onKill: (pid: number) => void;
+  onDeleteAdapter: (path: string) => void;
 }
 
 const inputClass =
@@ -24,6 +25,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
   killingPid,
   onStart,
   onKill,
+  onDeleteAdapter,
 }) => {
   const { t } = useTranslation();
   const [modelPath, setModelPath] = useState('');
@@ -243,9 +245,14 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
               </div>
             )}
             {training.status === 'done' && (
-              <div className="flex items-center gap-1.5 text-caption text-inkMuted">
+              <div className="flex items-center justify-between gap-2 text-caption text-inkMuted">
+                <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-success" />
                 <span>{t('pipeline.trainDone')}{training.adapter_path ? ` · ${training.adapter_path}` : ''}</span>
+                </div>
+                {training.adapter_path && <button type="button" onClick={() => onDeleteAdapter(training.adapter_path!)} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-danger hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                  <Trash2 className="h-3.5 w-3.5" />{t('mlx.adapter.deleteAction')}
+                </button>}
               </div>
             )}
             {training.status === 'killed' && (

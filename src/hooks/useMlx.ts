@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { isTrainingActive } from '../lib/trainingStatus';
 import { invoke } from '@tauri-apps/api/core';
-import { message } from '@tauri-apps/plugin-dialog';
+import { confirm, message } from '@tauri-apps/plugin-dialog';
 import type {
   MlxEnvStatus,
   MlxStatus,
@@ -9,6 +9,7 @@ import type {
   LocalModel,
   GuardrailStatus,
   MlxRuntime,
+  DeleteAdapterCheckpointArgs,
 } from '../types/ipc';
 import { useTranslation } from '../i18n/i18nContext';
 
@@ -108,6 +109,21 @@ export function useMlx() {
       await message(t('mlx.toast.processKillFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
       setKillingPid(null);
+    }
+  }, [fetchStatus, t]);
+
+  const deleteAdapterCheckpoint = useCallback(async (adapterPath: string) => {
+    const approved = await confirm(t('mlx.adapter.deleteConfirm', { path: adapterPath }), {
+      title: t('mlx.adapter.deleteTitle'), kind: 'warning', okLabel: t('mlx.adapter.deleteAction'), cancelLabel: t('common.cancel'),
+    });
+    if (!approved) return;
+    try {
+      const args: DeleteAdapterCheckpointArgs = { adapter_path: adapterPath };
+      await invoke<void>('delete_adapter_checkpoint', { adapterPath: args.adapter_path });
+      await fetchStatus();
+      await message(t('mlx.adapter.deleted'), { title: 'KubeMetal', kind: 'info' });
+    } catch (err) {
+      await message(String(err), { title: 'KubeMetal', kind: 'error' });
     }
   }, [fetchStatus, t]);
 
@@ -261,6 +277,7 @@ export function useMlx() {
     refreshLocalModels: fetchLocalModels,
     startingTraining,
     runFinetune,
+    deleteAdapterCheckpoint,
     killingPid,
     killProcess,
     startingServing,

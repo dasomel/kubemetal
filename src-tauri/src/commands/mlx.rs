@@ -122,6 +122,8 @@ pub struct MlxStatus {
 
 #[derive(Default)]
 pub struct MlxState {
+    /// Serializes adapter deletion with training/serving slot admission.
+    pub adapter_admission: Mutex<()>,
     pub env_setup: Mutex<EnvSetupStatus>,
     pub training: Mutex<Option<TrainingStatus>>,
     pub serving: Mutex<Option<ServingStatus>>,
@@ -206,8 +208,7 @@ fn adapter_deletion_home(home: Result<PathBuf, String>) -> Option<PathBuf> {
     home.ok().map(|home| home.canonicalize().unwrap_or(home))
 }
 
-/// 어댑터가 삭제해도 안전한지 판정하는 GC 가드(이슈 #33 축소 스코프) — 실제 삭제(파일
-/// 시스템 rm) 기능은 이 스코프에 포함하지 않는다, 삭제 UI/커맨드는 별도 결정 사항이다.
+/// 어댑터가 삭제해도 안전한지 판정하는 GC 가드(이슈 #33).
 ///
 /// 순수 판정 로직(canonical 경로 비교로 서빙 중/last-known-good/진행 중인 학습
 /// 세 슬롯 중 하나라도 일치하는지)은 `services::mlx_artifacts::is_adapter_safe_to_delete`에
@@ -225,10 +226,12 @@ fn adapter_deletion_home(home: Result<PathBuf, String>) -> Option<PathBuf> {
 /// 2026-09-23 리뷰 전에는 이 세 번째 경우가 아예 없어 진행 중인 학습의 산출물이
 /// 삭제 가능하다고 오판했다. HOME 조회 실패도 서비스에 전달해 삭제를 거부한다.
 ///
-/// 프런트 소비자가 아직 없어 IPC로는 노출하지 않는다(위 `manifest_verification_status`와
-/// 같은 이유).
-#[allow(dead_code)]
-pub(crate) fn is_adapter_safe_to_delete(adapter_dir: &Path, mlx_state: &MlxState) -> bool {
+pub(crate) fn is_adapter_safe_to_delete(
+    adapter_dir: &Path,
+    mlx_state: &MlxState,
+    home: Result<PathBuf, String>,
+) -> bool {
+    let home = adapter_deletion_home(home);
     let serving_adapter_path = match mlx_state.serving.lock() {
         Ok(g) => g.as_ref().and_then(|s| s.adapter_path.clone()),
         Err(_) => return false,
@@ -247,11 +250,116 @@ pub(crate) fn is_adapter_safe_to_delete(adapter_dir: &Path, mlx_state: &MlxState
 
     services::mlx_artifacts::is_adapter_safe_to_delete(
         adapter_dir,
-        adapter_deletion_home(home_dir()).as_deref(),
+        home.as_deref(),
         serving_adapter_path.as_deref(),
         last_known_good_adapter_path.as_deref(),
         in_progress_adapter_name.as_deref(),
     )
+}
+
+fn remove_adapter_checkpoint(
+    adapter_path: &str,
+    home: Result<PathBuf, String>,
+    mlx_state: &MlxState,
+) -> Result<(), String> {
+    let _admission = mlx_state
+        .adapter_admission
+        .lock()
+        .map_err(|_| "Failed to lock MLX adapter admission.".to_string())?;
+    let requested = Path::new(adapter_path);
+    if !requested.is_absolute() {
+        return Err("Adapter path must be absolute.".into());
+    }
+    if requested
+        .components()
+        .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return Err("Adapter path must not contain '..'.".into());
+    }
+    let home = home?;
+    let requested_root = home.join(".kubemetal").join("adapters");
+    let adapters_root = requested_root
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve adapters directory: {e}"))?;
+    // Rebuild components to discard trailing separators before lstat; on macOS a trailing
+    // slash makes symlink_metadata follow a symlink instead of inspecting the link itself.
+    let normalized = requested
+        .components()
+        .fold(PathBuf::new(), |mut path, part| {
+            path.push(part.as_os_str());
+            path
+        });
+    let target_metadata = std::fs::symlink_metadata(&normalized)
+        .map_err(|e| format!("Failed to inspect adapter path: {e}"))?;
+    if target_metadata.file_type().is_symlink() {
+        return Err("Adapter path must not be a symlink.".into());
+    }
+    if !target_metadata.is_dir() {
+        return Err("Adapter path must be a directory.".into());
+    }
+    if !normalized.starts_with(&requested_root) || normalized == requested_root {
+        return Err("Adapter path must be a directory inside the adapters directory.".into());
+    }
+    let mut component_path = requested_root.clone();
+    for component in normalized
+        .strip_prefix(&requested_root)
+        .unwrap()
+        .components()
+    {
+        component_path.push(component);
+        if std::fs::symlink_metadata(&component_path)
+            .map_err(|e| format!("Failed to inspect adapter path component: {e}"))?
+            .file_type()
+            .is_symlink()
+        {
+            return Err("Adapter path must not contain symlinks.".into());
+        }
+    }
+    let target = normalized
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve adapter path: {e}"))?;
+    if target == adapters_root || !target.starts_with(&adapters_root) {
+        return Err("Adapter path must be a directory inside the adapters directory.".into());
+    }
+    if !is_adapter_safe_to_delete(&target, mlx_state, Ok(home.clone())) {
+        return Err(
+            "Adapter is protected because it is serving, last-known-good, or training.".into(),
+        );
+    }
+    let training_adapter_matches = mlx_state
+        .training
+        .lock()
+        .map_err(|_| "Failed to refresh MLX training state after adapter deletion.".to_string())?
+        .as_ref()
+        .and_then(|status| status.adapter_path.as_deref())
+        .and_then(|path| Path::new(path).canonicalize().ok())
+        .as_deref()
+        == Some(target.as_path());
+    std::fs::remove_dir_all(&target)
+        .map_err(|e| format!("Failed to remove adapter checkpoint: {e}"))?;
+    let mut training = mlx_state
+        .training
+        .lock()
+        .map_err(|_| "Failed to refresh MLX training state after adapter deletion.".to_string())?;
+    if let Some(status) = training.as_mut() {
+        if training_adapter_matches {
+            status.adapter_path = None;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_adapter_checkpoint(
+    app: tauri::AppHandle,
+    adapter_path: String,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let state = app.state::<MlxState>();
+        remove_adapter_checkpoint(&adapter_path, home_dir(), &state)
+    })
+    .await
+    .map_err(|e| format!("Adapter deletion task failed: {e}"))?
 }
 
 #[derive(Debug, Deserialize)]
@@ -749,6 +857,7 @@ pub async fn run_mlx_finetune(
         .await?;
 
     let prev_training = {
+        let _admission = state.adapter_admission.lock().map_err(|e| e.to_string())?;
         let mut guard = state.training.lock().map_err(|e| e.to_string())?;
         if let Some(t) = guard.as_ref() {
             // GitHub #101 — `status == "running"`만 보면 가드레일이 SIGSTOP한 paused* 학습의
@@ -1083,6 +1192,7 @@ pub async fn start_model_serving(
         .await?;
 
     {
+        let _admission = state.adapter_admission.lock().map_err(|e| e.to_string())?;
         let mut guard = state.serving.lock().map_err(|e| e.to_string())?;
         if guard.is_some() {
             return Err("Model serving is already in progress.".into());
@@ -1091,7 +1201,9 @@ pub async fn start_model_serving(
             pid: 0,
             port,
             model_path: model_path.clone(),
-            adapter_path: adapter_path.clone(),
+            // Until path validation determines whether model_path is itself an adapter,
+            // reserve both possible request paths so deletion cannot race that resolution.
+            adapter_path: adapter_path.clone().or_else(|| Some(model_path.clone())),
             runtime,
         });
     }
@@ -1739,6 +1851,183 @@ mod tests {
         assert_eq!(adapter_deletion_home(Err("HOME unavailable".into())), None);
     }
 
+    fn deletion_fixture(name: &str) -> (PathBuf, PathBuf) {
+        let home = make_temp_model_dir(name);
+        let adapters = home.join(".kubemetal/adapters");
+        std::fs::create_dir_all(&adapters).unwrap();
+        (home, adapters)
+    }
+
+    #[test]
+    fn delete_adapter_checkpoint_removes_only_a_safe_adapter_directory() {
+        let (home, adapters) = deletion_fixture("delete-adapter-happy");
+        let target = adapters.join("ready");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("weights"), b"checkpoint").unwrap();
+        remove_adapter_checkpoint(
+            target.to_str().unwrap(),
+            Ok(home.clone()),
+            &MlxState::default(),
+        )
+        .unwrap();
+        assert!(!target.exists());
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn delete_adapter_checkpoint_refuses_traversal_absolute_outside_root_and_root() {
+        let (home, adapters) = deletion_fixture("delete-adapter-boundaries");
+        let outside = home.join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        let state = MlxState::default();
+        assert!(remove_adapter_checkpoint(
+            &format!("{}/../outside", adapters.display()),
+            Ok(home.clone()),
+            &state
+        )
+        .is_err());
+        assert!(
+            remove_adapter_checkpoint(outside.to_str().unwrap(), Ok(home.clone()), &state).is_err()
+        );
+        assert!(
+            remove_adapter_checkpoint(adapters.to_str().unwrap(), Ok(home.clone()), &state)
+                .is_err()
+        );
+        assert!(outside.exists());
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn delete_adapter_checkpoint_refuses_symlinks_into_and_out_of_adapters_root() {
+        let (home, adapters) = deletion_fixture("delete-adapter-symlink");
+        let real = adapters.join("real");
+        let outside = home.join("elsewhere");
+        let inside_alias = adapters.join("inside-alias");
+        let intermediate_alias = adapters.join("intermediate-alias");
+        let nested_target = adapters.join("nested").join("target");
+        let outside_alias = adapters.join("outside-alias");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::create_dir_all(&nested_target).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        std::os::unix::fs::symlink(&real, &inside_alias).unwrap();
+        std::os::unix::fs::symlink(adapters.join("nested"), &intermediate_alias).unwrap();
+        std::os::unix::fs::symlink(&outside, &outside_alias).unwrap();
+        let state = MlxState::default();
+        assert!(remove_adapter_checkpoint(
+            inside_alias.to_str().unwrap(),
+            Ok(home.clone()),
+            &state
+        )
+        .is_err());
+        assert!(remove_adapter_checkpoint(
+            &format!("{}/", inside_alias.display()),
+            Ok(home.clone()),
+            &state
+        )
+        .is_err());
+        assert!(remove_adapter_checkpoint(
+            intermediate_alias.join("target").to_str().unwrap(),
+            Ok(home.clone()),
+            &state
+        )
+        .is_err());
+        assert!(remove_adapter_checkpoint(
+            outside_alias.to_str().unwrap(),
+            Ok(home.clone()),
+            &state
+        )
+        .is_err());
+        assert!(real.exists() && outside.exists());
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn delete_adapter_checkpoint_requires_absolute_path() {
+        let (home, _) = deletion_fixture("delete-adapter-relative");
+        assert!(remove_adapter_checkpoint(
+            "adapters/relative",
+            Ok(home.clone()),
+            &MlxState::default()
+        )
+        .is_err());
+        std::fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn adapter_deletion_admission_lock_serializes_start_with_deletion() {
+        let state = std::sync::Arc::new(MlxState::default());
+        let held = state.adapter_admission.lock().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker_state = state.clone();
+        let worker = std::thread::spawn(move || {
+            let _admission = worker_state.adapter_admission.lock().unwrap();
+            tx.send(()).unwrap();
+        });
+        assert!(rx
+            .recv_timeout(std::time::Duration::from_millis(50))
+            .is_err());
+        drop(held);
+        rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap();
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn delete_adapter_checkpoint_refuses_serving_and_last_known_good_adapters() {
+        for protected in ["serving", "last-good"] {
+            let (home, adapters) = deletion_fixture(&format!("delete-adapter-{protected}"));
+            let target = adapters.join("protected");
+            std::fs::create_dir(&target).unwrap();
+            let state = MlxState::default();
+            let serving = ServingStatus {
+                pid: 1,
+                port: 8080,
+                model_path: "/model".into(),
+                adapter_path: Some(target.to_string_lossy().into()),
+                runtime: MlxRuntime::MlxLm,
+            };
+            if protected == "serving" {
+                *state.serving.lock().unwrap() = Some(serving);
+            } else {
+                *state.last_known_good_serving.lock().unwrap() = Some(serving);
+            }
+            assert!(
+                remove_adapter_checkpoint(target.to_str().unwrap(), Ok(home.clone()), &state)
+                    .is_err()
+            );
+            assert!(target.exists());
+            std::fs::remove_dir_all(home).unwrap();
+        }
+    }
+
+    #[test]
+    fn delete_adapter_checkpoint_refuses_adapter_being_trained() {
+        let name = format!("delete-in-progress-{}", std::process::id());
+        let (fixture_home, adapters) = deletion_fixture("delete-adapter-training");
+        let target = adapters.join(&name);
+        std::fs::create_dir(&target).unwrap();
+        let state = MlxState::default();
+        *state.training.lock().unwrap() = Some(TrainingStatus {
+            pid: 12,
+            status: "running".into(),
+            current_iter: 1,
+            total_iters: 2,
+            last_loss: None,
+            adapter_path: None,
+            error: None,
+            adapter_name: name,
+            mlflow_run_id: None,
+        });
+        assert!(remove_adapter_checkpoint(
+            target.to_str().unwrap(),
+            Ok(fixture_home.clone()),
+            &state
+        )
+        .is_err());
+        assert!(target.exists());
+        std::fs::remove_dir_all(fixture_home).unwrap();
+    }
+
     #[test]
     fn is_adapter_safe_to_delete_forbids_currently_serving_adapter() {
         let dir = make_temp_model_dir("safe-delete-serving");
@@ -1750,8 +2039,26 @@ mod tests {
             adapter_path: Some(dir.to_string_lossy().to_string()),
             runtime: MlxRuntime::MlxLm,
         });
-        assert!(!is_adapter_safe_to_delete(&dir, &state));
+        assert!(!is_adapter_safe_to_delete(&dir, &state, home_dir()));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn is_adapter_safe_to_delete_forbids_case_variant_serving_adapter_path() {
+        let (home, adapters) = deletion_fixture("safe-delete-case-variant");
+        let dir = adapters.join("My-Lora");
+        std::fs::create_dir(&dir).unwrap();
+        let state = MlxState::default();
+        *state.serving.lock().unwrap() = Some(ServingStatus {
+            pid: 1,
+            port: 8080,
+            model_path: "/models/base".into(),
+            adapter_path: Some(adapters.join("MY-LORA").to_string_lossy().into()),
+            runtime: MlxRuntime::MlxLm,
+        });
+        assert!(!is_adapter_safe_to_delete(&dir, &state, Ok(home.clone())));
+        std::fs::remove_dir_all(home).unwrap();
     }
 
     #[test]
@@ -1765,7 +2072,7 @@ mod tests {
             adapter_path: Some(dir.to_string_lossy().to_string()),
             runtime: MlxRuntime::MlxLm,
         });
-        assert!(!is_adapter_safe_to_delete(&dir, &state));
+        assert!(!is_adapter_safe_to_delete(&dir, &state, home_dir()));
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1781,7 +2088,7 @@ mod tests {
             adapter_path: Some(other_dir.to_string_lossy().to_string()),
             runtime: MlxRuntime::MlxLm,
         });
-        assert!(is_adapter_safe_to_delete(&dir, &state));
+        assert!(is_adapter_safe_to_delete(&dir, &state, home_dir()));
         std::fs::remove_dir_all(&dir).ok();
         std::fs::remove_dir_all(&other_dir).ok();
     }
@@ -1801,7 +2108,7 @@ mod tests {
             adapter_path: Some(alias.to_string_lossy().to_string()),
             runtime: MlxRuntime::MlxLm,
         });
-        assert!(!is_adapter_safe_to_delete(&dir, &state));
+        assert!(!is_adapter_safe_to_delete(&dir, &state, home_dir()));
         std::fs::remove_dir_all(&root).unwrap();
     }
 
@@ -1834,11 +2141,19 @@ mod tests {
             mlflow_run_id: None,
         });
 
-        assert!(!is_adapter_safe_to_delete(&in_progress_dir, &state));
+        assert!(!is_adapter_safe_to_delete(
+            &in_progress_dir,
+            &state,
+            home_dir()
+        ));
 
         // D-b: 학습이 끝나도 없는 대상은 거부한다. 실제 출력의 보호 해제는 서비스 테스트가 검증한다.
         *state.training.lock().unwrap() = None;
-        assert!(!is_adapter_safe_to_delete(&in_progress_dir, &state));
+        assert!(!is_adapter_safe_to_delete(
+            &in_progress_dir,
+            &state,
+            home_dir()
+        ));
     }
 
     #[test]
@@ -1857,7 +2172,7 @@ mod tests {
         }));
         assert!(state.serving.is_poisoned());
 
-        assert!(!is_adapter_safe_to_delete(&dir, &state));
+        assert!(!is_adapter_safe_to_delete(&dir, &state, home_dir()));
         std::fs::remove_dir_all(&dir).ok();
     }
 

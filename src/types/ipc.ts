@@ -143,6 +143,10 @@ export interface MlxTrainingState {
   mlflow_run_id?: string;
 }
 
+export interface DeleteAdapterCheckpointArgs {
+  adapter_path: string;
+}
+
 export interface OrphanedProcessInfo {
   pid: number;
   kind: string;
