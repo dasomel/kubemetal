@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-support-bundle-17",
+  "task": "Add a redacting support bundle generator (create_support_bundle) for issue #17",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Backend only: services/support_bundle*, commands/support_bundle.rs, lib.rs registration, docs/02 §4.1; no frontend wiring, no capability/permission widening, no external binary spawns"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Cross-vendor critic and an independent opus approver reproduced secret leaks over three rounds (YAML block scalars, PEM, userinfo, case variants, key gaps, nested JSON, quadratic cost, symlink-followed output)",
+      "evidence": [
+        "test:services::support_bundle::redact regression tests",
+        "runtime:opus-adversarial-probes-88-inputs"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Redesigned redaction as key-name driven and case-insensitive with linear cost, exclusive no-follow output creation, recorded (not swallowed) collection failures, and a best-effort review_before_sharing flag in manifest and return value"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "cargo fmt --check, clippy -D warnings and cargo test support_bundle (19) passed outside the sandbox in the reviewer run",
+      "evidence": [
+        "test:cargo-test-support_bundle",
+        "ci:verify"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Redaction is a best-effort denylist; known MED/LOW leak shapes remain (escaped JSON-in-string, multi-line JSON args, k8s env name/value pairs, curl -u). No UI surfaces the warning yet and no real app bundle was generated",
+      "scope": "unit and adversarial-probe evidence only; not observed in the running app",
+      "evidence": [
+        "test:cargo-test-support_bundle"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Support bundle backend complete within verified unit-level scope, with residual leak classes documented as follow-ups"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified at unit/probe level; residual risks listed"
+    }
+  ]
+}
