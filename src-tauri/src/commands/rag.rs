@@ -12,21 +12,37 @@ use crate::services::ports;
 use crate::services::process::{augmented_path, external_command, resolve_bundled_resource};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrieverHit {
+    pub rank: u32,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrievalProvenance {
+    pub retrievers: Vec<String>,
+    pub lexical: Option<RetrieverHit>,
+    pub dense: Option<RetrieverHit>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RagSearchResult {
+    pub id: Option<String>,
     pub text: String,
     pub filename: String,
     pub source: String,
     pub chunk_index: u32,
-    /// Dense mode is vector distance; lexical mode is SQLite bm25() (lower, often negative, is better). Consumers must branch on mode.
+    /// Dense mode is vector distance; lexical mode is SQLite bm25(); hybrid is RRF (higher is better).
     pub score: f64,
     pub mode: String,
+    pub provenance: Option<RetrievalProvenance>,
 }
 
 fn validate_retrieval_mode(mode: Option<String>) -> Result<String, String> {
     match mode.as_deref().unwrap_or("dense") {
         "dense" => Ok("dense".into()),
         "lexical" => Ok("lexical".into()),
-        _ => Err("Unsupported retrieval mode. Choose dense or lexical.".into()),
+        "hybrid" => Ok("hybrid".into()),
+        _ => Err("Unsupported retrieval mode. Choose dense, lexical, or hybrid.".into()),
     }
 }
 
@@ -466,6 +482,11 @@ mod retrieval_mode_tests {
             validate_retrieval_mode(Some("lexical".into())).unwrap(),
             "lexical"
         );
+        assert_eq!(
+            validate_retrieval_mode(Some("hybrid".into())).unwrap(),
+            "hybrid"
+        );
+        assert_eq!(retrieval_mode_args("hybrid"), ["--mode", "hybrid"]);
         assert_eq!(retrieval_mode_args("lexical"), ["--mode", "lexical"]);
         assert!(validate_retrieval_mode(Some("dense;rm -rf /".into())).is_err());
     }

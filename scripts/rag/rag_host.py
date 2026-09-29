@@ -15,6 +15,9 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
+RRF_K = 60
+HYBRID_CANDIDATE_COUNT = 50
+
 def lancedb_table_names(list_tables_result):
     """Normalize `LanceDBConnection.list_tables()` across API shapes.
 
@@ -68,11 +71,55 @@ def lexical_search(chunks, query, top_k, connection_factory=sqlite3.connect):
         results = []
         for rowid, score in rows:
             item = chunks[rowid - 1]
-            results.append({"text": item.get("text", ""), "filename": item.get("filename", ""),
+            results.append({"id": item.get("id"), "text": item.get("text", ""), "filename": item.get("filename", ""),
                             "source": item.get("source", ""), "chunk_index": item.get("chunk_index", 0),
                             "score": float(score), "mode": "lexical"})
         connection.close()
         return results
+
+def retrieval_score(result):
+    """Return the backend-native score without normalizing incomparable scales."""
+    return float(result.get("_distance", result.get("score", 0.0)))
+
+def rrf_fuse(lexical_results, dense_results, top_k, k=RRF_K):
+    """Fuse ranks and retain retriever-specific rank and score provenance."""
+    fused = {}
+    for retriever, results in (("lexical", lexical_results), ("dense", dense_results)):
+        for rank, result in enumerate(results, start=1):
+            chunk_id = result.get("id")
+            if not isinstance(chunk_id, str) or not chunk_id:
+                raise RuntimeError("Hybrid retrieval requires every result to have a chunk id.")
+
+            entry = fused.setdefault(chunk_id, {
+                "id": chunk_id,
+                "text": result.get("text", ""),
+                "filename": result.get("filename", ""),
+                "source": result.get("source", ""),
+                "chunk_index": result.get("chunk_index", 0),
+                "score": 0.0,
+                "hits": {},
+            })
+            # Preserve the first (best) rank if a backend returns a duplicate id.
+            if retriever in entry["hits"]:
+                continue
+            entry["score"] += 1.0 / (k + rank)
+            entry["hits"][retriever] = {"rank": rank, "score": retrieval_score(result)}
+
+    ranked = sorted(fused.values(), key=lambda item: (-item["score"], item["id"]))
+    return [{
+        "id": item["id"],
+        "text": item["text"],
+        "filename": item["filename"],
+        "source": item["source"],
+        "chunk_index": item["chunk_index"],
+        "score": item["score"],
+        "mode": "hybrid",
+        "provenance": {
+            "retrievers": [name for name in ("lexical", "dense") if name in item["hits"]],
+            "lexical": item["hits"].get("lexical"),
+            "dense": item["hits"].get("dense"),
+        },
+    } for item in ranked[:top_k]]
 
 def get_dvc_bin() -> str:
     """
@@ -223,22 +270,35 @@ def cmd_query(args):
         # measured on this Mac (AttributeError). to_arrow().to_pylist() is
         # the stable route since pyarrow is a hard lancedb dependency.
         search_results = lexical_search(table.to_arrow().to_pylist(), query_str, top_k)
-    else:
+    elif args.mode == "dense":
         model = get_embedding_model(model_name)
         query_vector = model.encode(query_str, show_progress_bar=False).tolist()
         search_results = table.search(query_vector).limit(top_k).to_list()
+    else:
+        chunks = table.to_arrow().to_pylist()
+        candidate_count = max(top_k, HYBRID_CANDIDATE_COUNT)
+        lexical_results = lexical_search(chunks, query_str, candidate_count)
+        # A hybrid query is invalid if dense retrieval cannot run; do not
+        # catch this and silently turn the result into lexical-only output.
+        model = get_embedding_model(model_name)
+        query_vector = model.encode(query_str, show_progress_bar=False).tolist()
+        dense_results = table.search(query_vector).limit(candidate_count).to_list()
+        search_results = rrf_fuse(lexical_results, dense_results, top_k)
 
     formatted_results = []
     for r in search_results:
-        score = r.get("_distance", 0.0)
-        formatted_results.append({
+        formatted = {
+            "id": r.get("id"),
             "text": r.get("text", ""),
             "filename": r.get("filename", ""),
             "source": r.get("source", ""),
             "chunk_index": r.get("chunk_index", 0),
-            "score": float(score),
+            "score": retrieval_score(r),
             "mode": r.get("mode", args.mode)
-        })
+        }
+        if "provenance" in r:
+            formatted["provenance"] = r["provenance"]
+        formatted_results.append(formatted)
 
     print(json.dumps({
         "status": "ok",
@@ -320,7 +380,7 @@ def main():
     p_query.add_argument("--collection", default="default")
     p_query.add_argument("--top-k", type=int, default=3)
     p_query.add_argument("--model", default="sentence-transformers/all-MiniLM-L6-v2")
-    p_query.add_argument("--mode", choices=("dense", "lexical"), default="dense")
+    p_query.add_argument("--mode", choices=("dense", "lexical", "hybrid"), default="dense")
 
     # dvc-commit subcommand
     p_dvc = subparsers.add_parser("dvc-commit")

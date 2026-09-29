@@ -269,15 +269,29 @@ export interface EvalMetric {
   timestamp_ms: number;
 }
 
+export type RetrievalMode = 'dense' | 'lexical' | 'hybrid';
+
+export interface RetrieverHit {
+  rank: number;
+  score: number;
+}
+
+export interface RetrievalProvenance {
+  retrievers: RetrievalMode[];
+  lexical?: RetrieverHit;
+  dense?: RetrieverHit;
+}
+
 export interface RagSearchResult {
   id?: string;
   text: string;
-  /** Dense: vector distance. Lexical: SQLite bm25() (lower, often negative, is better); branch on mode. */
+  /** Dense: vector distance. Lexical: SQLite bm25(). Hybrid: RRF (higher is better). */
   score: number;
   source?: string;
   filename?: string;
   chunk_index?: number;
-  mode: 'dense' | 'lexical';
+  mode: RetrievalMode;
+  provenance?: RetrievalProvenance;
 }
 
 export interface RagIndexStatus {
