@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Database, Search, FileText, Loader2, Play } from 'lucide-react';
 import { useRAG } from '../../hooks/useRAG';
 import { useTranslation } from '../../i18n/i18nContext';
+import type { RetrievalMode } from '../../types/ipc';
 
 const inputClass =
   'w-full px-3.5 py-2 rounded-md bg-surfaceRaised text-ink text-body placeholder:text-inkFaint border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary';
@@ -12,7 +13,7 @@ export const RagCard: React.FC = () => {
   const { t } = useTranslation();
   const [docPath, setDocPath] = useState('docs');
   const [searchQuery, setSearchQuery] = useState('');
-  const [retrievalMode, setRetrievalMode] = useState<'dense' | 'lexical'>('dense');
+  const [retrievalMode, setRetrievalMode] = useState<RetrievalMode>('dense');
   // Distinguishes "never searched yet" / "query edited since the last search"
   // from a search that actually ran and came back empty — searchQuery alone
   // went true as soon as the user typed anything, so the empty-results
@@ -136,9 +137,10 @@ export const RagCard: React.FC = () => {
             placeholder={t('rag.searchPlaceholder')}
             className={inputClass}
           />
-          <select aria-label={t('rag.modeLabel')} value={retrievalMode} onChange={(e) => setRetrievalMode(e.target.value as 'dense' | 'lexical')} className={inputClass}>
+          <select aria-label={t('rag.modeLabel')} value={retrievalMode} onChange={(e) => setRetrievalMode(e.target.value as RetrievalMode)} className={inputClass}>
             <option value="dense">{t('rag.modeDense')}</option>
             <option value="lexical">{t('rag.modeLexical')}</option>
+            <option value="hybrid">{t('rag.modeHybrid')}</option>
           </select>
           <button
             type="submit"
@@ -164,10 +166,25 @@ export const RagCard: React.FC = () => {
                   <span className="px-1.5 py-0.5 rounded bg-surface text-inkMuted text-[11px]">
                     {item.mode === 'lexical'
                       ? `${t('rag.score')} ${item.score.toExponential(2)}`
+                      : item.mode === 'hybrid'
+                      ? `${t('rag.rrfScore')} ${item.score.toFixed(4)}`
                       : `${t('rag.similarity')} ${(item.score * 100).toFixed(1)}%`}
                   </span>
                 </div>
                 <p className="text-body text-ink text-sm leading-relaxed">{item.text}</p>
+                {item.mode === 'hybrid' && item.provenance && (
+                  <div className="text-caption text-inkMuted">
+                    {t('rag.provenance', {
+                      retrievers: item.provenance.retrievers.join(', '),
+                      lexical: item.provenance.lexical
+                        ? `#${item.provenance.lexical.rank} (${item.provenance.lexical.score.toExponential(2)})`
+                        : t('rag.notHit'),
+                      dense: item.provenance.dense
+                        ? `#${item.provenance.dense.rank} (${item.provenance.dense.score.toFixed(4)})`
+                        : t('rag.notHit'),
+                    })}
+                  </div>
+                )}
               </div>
             ))}
           </div>

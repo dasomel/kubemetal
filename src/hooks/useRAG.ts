@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
-import type { RagIndexStatus, RagSearchResult } from '../types/ipc';
+import type { RagIndexStatus, RagSearchResult, RetrievalMode } from '../types/ipc';
 import { useTranslation } from '../i18n/i18nContext';
 
 export function useRAG(active: boolean = false) {
@@ -49,7 +49,7 @@ export function useRAG(active: boolean = false) {
     [fetchStatus, t],
   );
 
-  const search = useCallback(async (query: string, topK: number = 3, mode: 'dense' | 'lexical' = 'dense') => {
+  const search = useCallback(async (query: string, topK: number = 3, mode: RetrievalMode = 'dense') => {
     if (!query.trim()) return;
     setSearching(true);
     try {

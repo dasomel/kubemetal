@@ -287,11 +287,15 @@ export const translations: Record<Language, Record<string, string>> = {
     'rag.modeLabel': '검색 방식',
     'rag.modeDense': 'Dense 의미 검색',
     'rag.modeLexical': 'Lexical 키워드 검색',
+    'rag.modeHybrid': 'Hybrid RRF 검색',
     'rag.searchPlaceholder': '검색할 질의 입력 (예: Apple Silicon Metal 메모리 최적화...)',
     'rag.searchBtn': '검색',
     'rag.searchResultsHeader': '유사도 검색 결과 ({count}건)',
     'rag.similarity': '유사도:',
     'rag.score': 'BM25 점수:',
+    'rag.rrfScore': 'RRF 점수:',
+    'rag.provenance': '검색기: {retrievers} · Lexical {lexical} · Dense {dense}',
+    'rag.notHit': '미적중',
     'rag.noResults': '검색 결과가 없습니다.',
 
     // Pipeline Card - DVC
@@ -1095,11 +1099,15 @@ export const translations: Record<Language, Record<string, string>> = {
     'rag.modeLabel': 'Retrieval mode',
     'rag.modeDense': 'Dense semantic search',
     'rag.modeLexical': 'Lexical keyword search',
+    'rag.modeHybrid': 'Hybrid RRF search',
     'rag.searchPlaceholder': 'Enter search query (e.g. Apple Silicon Metal memory optimization...)',
     'rag.searchBtn': 'Search',
     'rag.searchResultsHeader': 'Similarity Search Results ({count})',
     'rag.similarity': 'Similarity:',
     'rag.score': 'BM25 score:',
+    'rag.rrfScore': 'RRF score:',
+    'rag.provenance': 'Retrievers: {retrievers} · Lexical {lexical} · Dense {dense}',
+    'rag.notHit': 'not hit',
     'rag.noResults': 'No search results found.',
 
     // Pipeline Card - DVC
