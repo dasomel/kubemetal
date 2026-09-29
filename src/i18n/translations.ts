@@ -1770,3 +1770,14 @@ export const translations: Record<Language, Record<string, string>> = {
     'errorBoundary.retryBtn': 'Retry',
   },
 };
+
+Object.assign(translations.ko, {
+  'rag.modeAuto': 'Auto 자동 라우팅',
+  'rag.resolved': 'resolved: {mode} ({rule})',
+});
+
+Object.assign(translations.en, {
+  'rag.modeAuto': 'Auto route',
+  'rag.resolved': 'resolved: {mode} ({rule})',
+});
+

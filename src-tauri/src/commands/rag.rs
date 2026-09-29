@@ -35,14 +35,17 @@ pub struct RagSearchResult {
     pub score: f64,
     pub mode: String,
     pub provenance: Option<RetrievalProvenance>,
+    pub resolved_mode: Option<String>,
+    pub rule: Option<String>,
 }
 
 fn validate_retrieval_mode(mode: Option<String>) -> Result<String, String> {
     match mode.as_deref().unwrap_or("dense") {
+        "auto" => Ok("auto".into()),
         "dense" => Ok("dense".into()),
         "lexical" => Ok("lexical".into()),
         "hybrid" => Ok("hybrid".into()),
-        _ => Err("Unsupported retrieval mode. Choose dense, lexical, or hybrid.".into()),
+        _ => Err("Unsupported retrieval mode. Choose auto, dense, lexical, or hybrid.".into()),
     }
 }
 
@@ -458,15 +461,33 @@ pub async fn query_rag(
         return Err(format!("Query error: {err_msg}"));
     }
 
+    let top_resolved_mode = res
+        .get("resolved_mode")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let top_rule = res
+        .get("rule")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
     let raw_results = res
         .get_mut("results")
         .and_then(serde_json::Value::as_array_mut)
         .map(std::mem::take)
         .ok_or_else(|| "Cannot read results array.".to_string())?;
 
-    let search_results: Vec<RagSearchResult> =
+    let mut search_results: Vec<RagSearchResult> =
         serde_json::from_value(serde_json::Value::Array(raw_results))
             .map_err(|e| format!("Failed to convert to RagSearchResult: {e}"))?;
+
+    for item in &mut search_results {
+        if item.resolved_mode.is_none() {
+            item.resolved_mode = top_resolved_mode.clone();
+        }
+        if item.rule.is_none() {
+            item.rule = top_rule.clone();
+        }
+    }
 
     Ok(search_results)
 }
@@ -479,6 +500,14 @@ mod retrieval_mode_tests {
     fn retrieval_mode_allowlist_and_default() {
         assert_eq!(validate_retrieval_mode(None).unwrap(), "dense");
         assert_eq!(
+            validate_retrieval_mode(Some("auto".into())).unwrap(),
+            "auto"
+        );
+        assert_eq!(
+            validate_retrieval_mode(Some("dense".into())).unwrap(),
+            "dense"
+        );
+        assert_eq!(
             validate_retrieval_mode(Some("lexical".into())).unwrap(),
             "lexical"
         );
@@ -486,9 +515,12 @@ mod retrieval_mode_tests {
             validate_retrieval_mode(Some("hybrid".into())).unwrap(),
             "hybrid"
         );
+        assert_eq!(retrieval_mode_args("auto"), ["--mode", "auto"]);
+        assert_eq!(retrieval_mode_args("dense"), ["--mode", "dense"]);
         assert_eq!(retrieval_mode_args("hybrid"), ["--mode", "hybrid"]);
         assert_eq!(retrieval_mode_args("lexical"), ["--mode", "lexical"]);
         assert!(validate_retrieval_mode(Some("dense;rm -rf /".into())).is_err());
+        assert!(validate_retrieval_mode(Some("invalid".into())).is_err());
     }
 }
 

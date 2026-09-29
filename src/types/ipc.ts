@@ -292,7 +292,7 @@ export interface EvalMetric {
   timestamp_ms: number;
 }
 
-export type RetrievalMode = 'dense' | 'lexical' | 'hybrid';
+export type RetrievalMode = 'auto' | 'dense' | 'lexical' | 'hybrid';
 
 export interface RetrieverHit {
   rank: number;
@@ -315,6 +315,8 @@ export interface RagSearchResult {
   chunk_index?: number;
   mode: RetrievalMode;
   provenance?: RetrievalProvenance;
+  resolved_mode?: RetrievalMode;
+  rule?: string;
 }
 
 export interface RagIndexStatus {
