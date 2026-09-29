@@ -67,7 +67,7 @@ fi
 # script intentionally does not use `set -e` (see header) — guard explicitly so a
 # verify failure here still stops before [1/3], instead of only being collected
 # into FAILED at the end alongside recoverable per-image failures.
-if ! bash "$SCRIPT_DIR/verify_sbom.sh"; then
+if ! AIRGAP_DIR="$AIRGAP_DIR" bash "$SCRIPT_DIR/verify_sbom.sh"; then
   echo "  !! 필수 SBOM 증거 검증에 실패했습니다 — 설치를 중단합니다." >&2
   exit 1
 fi

@@ -107,7 +107,7 @@ fetch_binary() {
   echo "     체크섬 검증 통과: ${expected}"
 }
 
-echo "[1/4] K3s & Kubescape 바이너리 수집..."
+echo "[1/5] K3s & Kubescape 바이너리 수집..."
 K3S_BASE="https://github.com/k3s-io/k3s/releases/download/v1.28.2%2Bk3s1"
 # Apple Silicon 전용 프로젝트다 — K3s는 Colima(vz)의 **arm64 리눅스 VM**에서 돈다.
 # 자산 `k3s`는 amd64라 이 VM에서 실행될 수 없다(실기기 확인 2026-07-25: 수집돼 있던
@@ -120,7 +120,7 @@ KS_BASE="https://github.com/kubescape/kubescape/releases/download/v3.0.0"
 fetch_binary "kubescape" "${KS_BASE}/kubescape-arm64-macos-latest" \
   bare "${KS_BASE}/kubescape-arm64-macos-latest.sha256"
 
-echo "[2/4] Helm 차트 오프라인 번들링..."
+echo "[2/5] Helm 차트 오프라인 번들링..."
 # CRD 차트가 본 차트의 선행 조건이다(D33 개정 2) — 이것 없이 본 차트만 받아두면 폐쇄망
 # 최초 설치가 `no matches for kind "Agent"`로 죽는다. colima는 수동 설치분 CRD가 남아
 # 있어 이 누락이 드러나지 않았다(narwhal 실측 2026-08-05).
@@ -137,7 +137,7 @@ elif ! helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent \
   FAILED+=("chart:kagent-0.9.12")
 fi
 
-echo "[3/4] 컨테이너 이미지 수집 및 .tar.gz 압축..."
+echo "[3/5] 컨테이너 이미지 수집 및 .tar.gz 압축..."
 # 매니페스트가 요구하는 이미지는 **매니페스트에서 직접 뽑는다**. 목록을 여기에 손으로
 # 적어두면 매니페스트가 올라갈 때 조용히 어긋난다 — 실제로 mlflow(v2.10.0 vs v3.14.0)·
 # seaweedfs(3.60 vs 4.40)가 구버전으로 굳어 있었고 prefect·curl은 아예 빠져 있어서,
@@ -237,7 +237,7 @@ if [ "$NEW_DIGESTS_LOCK_SHA" != "$OLD_DIGESTS_LOCK_SHA" ] && [ -d "${AIRGAP_DIR}
   rm -rf "${AIRGAP_DIR}/sbom"
 fi
 
-echo "[4/4] K8s 매니페스트 동기화..."
+echo "[4/5] K8s 매니페스트 동기화..."
 # CWD가 프로젝트 루트라는 보장이 없다 — 스크립트 위치 기준으로 해석한다.
 # 추가만 하면 소스에서 지워지거나 옮겨진 파일이 번들에 남아 설치 때 되살아난다
 # (kagent-values.yaml을 scripts/helm/으로 옮긴 뒤 실제로 재현됐다) — 매번 비우고 채운다.
