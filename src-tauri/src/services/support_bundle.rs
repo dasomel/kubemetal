@@ -20,6 +20,22 @@ use sysinfo::System;
 pub const SCHEMA_VERSION: u32 = 1;
 pub const MANIFEST_FILE: &str = "manifest.json";
 pub const MAX_SCANNABLE_BYTES: usize = 10 * 1024 * 1024; // 10 MiB limit
+pub const REDACTION_RULES_VERSION: u32 = 2;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RedactionInfo {
+    pub mode: String,
+    pub review_before_sharing: bool,
+    pub rules_version: u32,
+}
+
+fn redaction_info() -> RedactionInfo {
+    RedactionInfo {
+        mode: "best-effort".into(),
+        review_before_sharing: true,
+        rules_version: REDACTION_RULES_VERSION,
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManifestFileEntry {
@@ -37,6 +53,7 @@ pub struct ManifestOmittedEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SupportBundleManifest {
     pub schema_version: u32,
+    pub redaction: RedactionInfo,
     pub created_at: String,
     pub files: Vec<ManifestFileEntry>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -50,6 +67,7 @@ pub struct SupportBundleResult {
     pub files_count: usize,
     pub omitted_count: usize,
     pub manifest: SupportBundleManifest,
+    pub redaction: RedactionInfo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -334,6 +352,7 @@ fn generate_support_bundle_with_omissions(
     // 4. manifest.json 작성
     let manifest = SupportBundleManifest {
         schema_version: SCHEMA_VERSION,
+        redaction: redaction_info(),
         created_at,
         files,
         omitted,
@@ -348,6 +367,7 @@ fn generate_support_bundle_with_omissions(
         manifest_path: manifest_path.to_string_lossy().to_string(),
         files_count: manifest.files.len(),
         omitted_count: manifest.omitted.len(),
+        redaction: manifest.redaction.clone(),
         manifest,
     })
 }
@@ -612,6 +632,18 @@ mod tests {
         .unwrap();
 
         assert_eq!(result.manifest.files.len(), 3); // app_info.json, health_summary.json, logs/test.log
+        assert_eq!(result.redaction, result.manifest.redaction);
+        assert_eq!(result.redaction.mode, "best-effort");
+        assert!(result.redaction.review_before_sharing);
+        assert_eq!(result.redaction.rules_version, REDACTION_RULES_VERSION);
+        let on_disk: serde_json::Value =
+            serde_json::from_slice(&fs::read(&result.manifest_path).unwrap()).unwrap();
+        assert_eq!(on_disk["redaction"]["mode"], "best-effort");
+        assert_eq!(on_disk["redaction"]["review_before_sharing"], true);
+        assert_eq!(
+            on_disk["redaction"]["rules_version"],
+            REDACTION_RULES_VERSION
+        );
 
         let bundle_path = Path::new(&result.bundle_dir);
         for entry in &result.manifest.files {
