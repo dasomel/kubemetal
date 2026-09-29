@@ -68,6 +68,7 @@ Kubernetes-manageable accelerator resource has been demonstrated.
 
 - macOS 14+ (Apple Silicon)
 - Homebrew
+- syft (required to generate air-gap bundles with required SBOM evidence)
 - colima, kubectl — `brew install colima kubectl`
 - optional experimental runtime dependencies are documented and gated per backend; `krunkit` is not required for the default `vz` + host MLX path
 - Node 22+ / pnpm

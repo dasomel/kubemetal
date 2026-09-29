@@ -36,7 +36,6 @@ FAILED=()
 # 없는 경우만 그 규약을 빠져나가고 있었다. 확인되지 않은 값으로는 렌더를 거부하는
 # render.sh(D26)와 같은 태도다.
 #
-# 구버전 번들을 알면서 쓰려면 의도를 명시해야 한다 — 기본값이 아니라 옵트아웃이다.
 MANIFEST="${AIRGAP_DIR}/manifest.sha256"
 DIGESTS_LOCK="${AIRGAP_DIR}/digests.lock"
 echo "[0/3] 번들 무결성 검증..."
@@ -67,23 +66,17 @@ fi
 # script intentionally does not use `set -e` (see header) — guard explicitly so a
 # verify failure here still stops before [1/3], instead of only being collected
 # into FAILED at the end alongside recoverable per-image failures.
+if [ ! -f "$DIGESTS_LOCK" ]; then
+  echo "  !! digests.lock이 없어 필수 SBOM을 이미지 ID에 결속해 검증할 수 없습니다 — 설치를 중단합니다." >&2
+  exit 1
+fi
 if ! AIRGAP_DIR="$AIRGAP_DIR" bash "$SCRIPT_DIR/verify_sbom.sh"; then
   echo "  !! 필수 SBOM 증거 검증에 실패했습니다 — 설치를 중단합니다." >&2
   exit 1
 fi
 
-# legacy bundles predate digests.lock. Missing or malformed entries are otherwise a supply-chain
-# failure, not a warning: tag references alone cannot prove what docker load restored.
+# Tag references alone cannot prove what docker load restored; always verify image IDs.
 VERIFY_IMAGE_IDS=1
-if [ "${AIRGAP_ALLOW_UNLOCKED:-0}" = "1" ]; then
-  VERIFY_IMAGE_IDS=0
-  echo "  !! AIRGAP_ALLOW_UNLOCKED=1: digests.lock/image ID 검증을 건너뜁니다." >&2
-  echo "     경고: 잘못된 archive나 기존 daemon cache의 다른 이미지를 탐지할 수 없습니다." >&2
-elif [ ! -f "$DIGESTS_LOCK" ]; then
-  echo "  !! digests.lock이 없어 로드할 이미지의 image ID를 검증할 수 없습니다." >&2
-  echo "     설치를 중단합니다. 구버전 번들이 확실할 때만 AIRGAP_ALLOW_UNLOCKED=1로 재실행하세요." >&2
-  exit 1
-fi
 
 read_digest_lock_record() {
   local archive="$1" record
