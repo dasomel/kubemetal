@@ -76,5 +76,11 @@ class LexicalRetrievalTests(unittest.TestCase):
         self.assertIsNone(results[0]["provenance"]["lexical"])
 
 
+    def test_rrf_keeps_same_named_files_from_different_directories_apart(self):
+        a = {"id": "README.md_0", "source": "/a/README.md", "chunk_index": 0, "text": "a"}
+        b = {"id": "README.md_0", "source": "/b/README.md", "chunk_index": 0, "text": "b"}
+        results = rrf_fuse([a, b], [], 5)
+        self.assertEqual(sorted(r["text"] for r in results), ["a", "b"])
+
 if __name__ == "__main__":
     unittest.main()
