@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-dep-tauri-2-11-6",
+  "task": "Add the operational trace required for Dependabot PR #105 (tauri 2.11.5 -> 2.11.6 patch bump in src-tauri)",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Dependabot patch bump of tauri 2.11.5 -> 2.11.6 touches only src-tauri/Cargo.lock; no source, capability, or process/network boundary changes; this task adds only the trace file"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "behavior-contract check failed on PR #105: high-risk change (src-tauri/Cargo.lock) requires an operational trace change under .agents/evals/traces/",
+      "evidence": [
+        "ci:pr-105-behavior-contract"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added this trace file for the lockfile-only dependency bump; no source changes"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "summary": "CI verify and supply-chain jobs passed on the PR with the bumped tauri version",
+      "evidence": [
+        "ci:verify",
+        "ci:supply-chain"
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "summary": "App was not run on-device with tauri 2.11.6",
+      "scope": "CI build/test/supply-chain evidence only; on-device Tauri runtime behavior unverified",
+      "evidence": [
+        "ci:verify",
+        "ci:supply-chain"
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Tauri 2.11.6 patch bump documented and verified within CI scope"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified at CI level; on-device observation not performed"
+    }
+  ]
+}
