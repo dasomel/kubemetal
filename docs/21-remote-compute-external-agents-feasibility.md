@@ -85,10 +85,11 @@ docs/04-architecture.md` → 54, 57, 62행(§1.1 산문 + mermaid 노드명), �
   기본적으로 최소 권한/옵트인"이라는 D30의 태도는 Colab을 "Experimental, opt-in, 기본 비활성"으로
   두는 이슈의 completion criteria와 같은 방향.
 - **줄번호 재확인과 순서 주의**: `grep -n "^| D26 |\|^| D30 |" docs/03-mvp-design.md` 재실행 결과
-  D26은 643행, D30은 623행으로 위 인용과 일치한다. 다만 D30(2026-08-06 결정)이 D26(2026-07-26
+  D26은 643행, D30은 623행으로 위 인용과 일치한다. 다만 D30(2026-07-29 결정)이 D26(2026-07-26
   결정)보다 나중에 만들어졌는데도 registry 파일에서는 더 앞쪽(623행)에 있고 D26이 더 뒤쪽(643행)에
   있다 — 이 registry는 줄 순서가 결정 시각순이 아니라 각 항목이 최초 삽입된 위치 순이므로, "번호가
-  크거나 날짜가 늦은 결정일수록 줄번호도 크다"고 가정하면 안 된다. [measured-local]
+  크거나 날짜가 늦은 결정일수록 줄번호도 크다"고 가정하면 안 된다. [measured-local:
+  `grep -nE '^\| D(26|30) ' docs/03-mvp-design.md` → D30 623행, D26 643행; 날짜는 두 행의 본문 그대로]
 
 ### 완료 조건 체크리스트 — done-now / next-step / blocked
 
@@ -103,9 +104,9 @@ Phase A (공통 기반):
 
 Phase B~F (Colab agent/실행/evidence/UI): 전부 **blocked** — Phase A 공통 계약이 없는 상태에서 착수
 불가라는 이슈 자체의 의존순서(P0 foundation → P1 policy/security → P1 Colab impl)를 그대로 따름.
-어느 하위 체크박스도 코드/PR로 시작된 흔적이 없음 [measured-local: git log에 `colab` 관련 커밋 없음 —
-`git log --all --oneline -i --grep=colab` 결과는 이 세션에서 실행하지 않았으므로 **[unverified]**로
-남김. 코드 부재는 디렉터리 검색으로 확인(measured), 커밋 이력 전체 탐색은 미실행].
+어느 하위 체크박스도 코드/PR로 시작된 흔적이 없음 [measured-local: 2026-09-30에
+`git log --all --oneline -i --grep=colab` 실행 → 이 조사 노트의 커밋(79d9cbe) 하나뿐,
+`git grep -il colab -- src src-tauri scripts` 결과 없음].
 
 ## Issue #63 — External CLI Agent Integration (Apache Maka 참조)
 
