@@ -8,6 +8,7 @@ and DVC dataset versioning with SeaweedFS S3 remote.
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 import subprocess
@@ -17,6 +18,74 @@ from pathlib import Path
 
 RRF_K = 60
 HYBRID_CANDIDATE_COUNT = 50
+
+K8S_RESOURCE_NAMES = {
+    "pod", "pods", "service", "services", "svc", "deployment", "deployments",
+    "deploy", "daemonset", "daemonsets", "ds", "statefulset", "statefulsets",
+    "sts", "configmap", "configmaps", "cm", "secret", "secrets", "ingress",
+    "ingresses", "ing", "namespace", "namespaces", "ns", "node", "nodes",
+    "no", "persistentvolume", "persistentvolumes", "pv", "persistentvolumeclaim",
+    "persistentvolumeclaims", "pvc", "serviceaccount", "serviceaccounts", "sa",
+    "crd", "crds", "customresourcedefinition", "customresourcedefinitions",
+    "job", "jobs", "cronjob", "cronjobs", "cj", "networkpolicy", "networkpolicies",
+    "netpol", "endpointslice", "endpointslices", "endpoints", "ep",
+    "k8s", "kubectl", "kubelet", "k3s", "externalname",
+}
+
+_VERSION_RE = re.compile(
+    r"\b(v\d+(?:alpha\d+|beta\d+)?|\d+\.\d+(?:\.\d+)*[a-zA-Z0-9_\-]*|[0-9]+-?bit|bf16|fp16)\b",
+    re.IGNORECASE,
+)
+_CAMEL_CASE_RE = re.compile(r"\b[a-zA-Z]*[a-z][A-Z][a-zA-Z0-9]*\b")
+_QUOTED_RE = re.compile(r'["\'].+?["\']')
+
+
+def classify_query(query: str) -> tuple[str, str]:
+    """Deterministic, local, explainable rule classifier for RAG auto mode.
+
+    Maps identifier-like queries to 'lexical' and natural-language / semantic
+    queries to 'hybrid'. Returns (resolved_mode, rule_name).
+    """
+    if not query or not query.strip():
+        return ("lexical", "empty_query")
+
+    trimmed = query.strip()
+
+    # 1. Quoted phrases -> exact lexical match
+    if _QUOTED_RE.search(trimmed) or (trimmed.startswith(('"', "'")) and trimmed.endswith(('"', "'"))):
+        return ("lexical", "quoted_phrase")
+
+    # 2. Path separators (/ or \) -> filepath or URI identifier
+    if "/" in trimmed or "\\" in trimmed:
+        return ("lexical", "path_separator")
+
+    raw_tokens = trimmed.split()
+
+    # 3. Multi-word natural-language / semantic queries (> 3 tokens) without path/quotes
+    if len(raw_tokens) > 3:
+        return ("hybrid", "natural_language")
+
+    # 4. Version strings (v1.2.3, 0.34.0, v2, 4bit, bf16)
+    if _VERSION_RE.search(trimmed):
+        return ("lexical", "version_string")
+
+    # 5. Kubernetes resource names / kinds (for short 1-3 token queries)
+    words = [re.sub(r"^[^\w]+|[^\w]+$", "", t).lower() for t in raw_tokens]
+    if any(w in K8S_RESOURCE_NAMES for w in words if w):
+        return ("lexical", "k8s_resource")
+
+    # 6. Identifier symbols or casing: dot, underscore, or camelCase/PascalCase
+    if "_" in trimmed or "." in trimmed or _CAMEL_CASE_RE.search(trimmed):
+        return ("lexical", "symbol_or_casing")
+
+    # 7. Short 1-3 token queries with digits or non-alphanumeric symbols
+    has_digit_or_symbol = any(not (c.isalpha() or c.isspace()) for c in trimmed)
+    if has_digit_or_symbol:
+        return ("lexical", "short_token_with_digit_or_symbol")
+
+    # 8. Otherwise: 1-3 token semantic query without symbols/identifiers
+    return ("hybrid", "natural_language")
+
 
 def lancedb_table_names(list_tables_result):
     """Normalize `LanceDBConnection.list_tables()` across API shapes.
@@ -268,12 +337,18 @@ def cmd_query(args):
 
     table = db.open_table(collection)
 
-    if args.mode == "lexical":
+    if args.mode == "auto":
+        resolved_mode, rule_name = classify_query(query_str)
+    else:
+        resolved_mode = args.mode
+        rule_name = "explicit"
+
+    if resolved_mode == "lexical":
         # LanceTable has no .to_list() on the installed lancedb (0.34.0) -
         # measured on this Mac (AttributeError). to_arrow().to_pylist() is
         # the stable route since pyarrow is a hard lancedb dependency.
         search_results = lexical_search(table.to_arrow().to_pylist(), query_str, top_k)
-    elif args.mode == "dense":
+    elif resolved_mode == "dense":
         model = get_embedding_model(model_name)
         query_vector = model.encode(query_str, show_progress_bar=False).tolist()
         search_results = table.search(query_vector).limit(top_k).to_list()
@@ -297,7 +372,9 @@ def cmd_query(args):
             "source": r.get("source", ""),
             "chunk_index": r.get("chunk_index", 0),
             "score": retrieval_score(r),
-            "mode": r.get("mode", args.mode)
+            "mode": r.get("mode", resolved_mode),
+            "resolved_mode": resolved_mode,
+            "rule": rule_name,
         }
         if "provenance" in r:
             formatted["provenance"] = r["provenance"]
@@ -306,6 +383,8 @@ def cmd_query(args):
     print(json.dumps({
         "status": "ok",
         "query": query_str,
+        "resolved_mode": resolved_mode,
+        "rule": rule_name,
         "results": formatted_results
     }))
 
@@ -383,7 +462,7 @@ def main():
     p_query.add_argument("--collection", default="default")
     p_query.add_argument("--top-k", type=int, default=3)
     p_query.add_argument("--model", default="sentence-transformers/all-MiniLM-L6-v2")
-    p_query.add_argument("--mode", choices=("dense", "lexical", "hybrid"), default="dense")
+    p_query.add_argument("--mode", choices=("auto", "dense", "lexical", "hybrid"), default="dense")
 
     # dvc-commit subcommand
     p_dvc = subparsers.add_parser("dvc-commit")

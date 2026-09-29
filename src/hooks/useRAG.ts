@@ -49,7 +49,7 @@ export function useRAG(active: boolean = false) {
     [fetchStatus, t],
   );
 
-  const search = useCallback(async (query: string, topK: number = 3, mode: RetrievalMode = 'dense') => {
+  const search = useCallback(async (query: string, topK: number = 3, mode: RetrievalMode = 'auto') => {
     if (!query.trim()) return;
     setSearching(true);
     try {

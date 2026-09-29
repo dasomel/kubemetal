@@ -13,7 +13,7 @@ export const RagCard: React.FC = () => {
   const { t } = useTranslation();
   const [docPath, setDocPath] = useState('docs');
   const [searchQuery, setSearchQuery] = useState('');
-  const [retrievalMode, setRetrievalMode] = useState<RetrievalMode>('dense');
+  const [retrievalMode, setRetrievalMode] = useState<RetrievalMode>('auto');
   // Distinguishes "never searched yet" / "query edited since the last search"
   // from a search that actually ran and came back empty — searchQuery alone
   // went true as soon as the user typed anything, so the empty-results
@@ -138,6 +138,7 @@ export const RagCard: React.FC = () => {
             className={inputClass}
           />
           <select aria-label={t('rag.modeLabel')} value={retrievalMode} onChange={(e) => setRetrievalMode(e.target.value as RetrievalMode)} className={inputClass}>
+            <option value="auto">{t('rag.modeAuto')}</option>
             <option value="dense">{t('rag.modeDense')}</option>
             <option value="lexical">{t('rag.modeLexical')}</option>
             <option value="hybrid">{t('rag.modeHybrid')}</option>
@@ -151,6 +152,15 @@ export const RagCard: React.FC = () => {
             <span>{t('rag.searchBtn')}</span>
           </button>
         </form>
+
+        {searchResults.length > 0 && searchResults[0]?.resolved_mode && searchResults[0]?.rule && (
+          <div className="text-caption text-inkMuted">
+            {t('rag.resolved', {
+              mode: searchResults[0].resolved_mode,
+              rule: searchResults[0].rule,
+            })}
+          </div>
+        )}
 
         {/* 검색 결과 목록 */}
         {searchResults.length > 0 && (
