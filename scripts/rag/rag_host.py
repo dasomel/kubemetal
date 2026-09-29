@@ -90,7 +90,10 @@ def rrf_fuse(lexical_results, dense_results, top_k, k=RRF_K):
             if not isinstance(chunk_id, str) or not chunk_id:
                 raise RuntimeError("Hybrid retrieval requires every result to have a chunk id.")
 
-            entry = fused.setdefault(chunk_id, {
+            # Ingest ids use the basename only, so same-named files collide; fuse on
+            # the chunk's true identity (source path + index) instead.
+            key = (result.get("source", ""), result.get("chunk_index", 0), chunk_id)
+            entry = fused.setdefault(key, {
                 "id": chunk_id,
                 "text": result.get("text", ""),
                 "filename": result.get("filename", ""),
@@ -105,7 +108,7 @@ def rrf_fuse(lexical_results, dense_results, top_k, k=RRF_K):
             entry["score"] += 1.0 / (k + rank)
             entry["hits"][retriever] = {"rank": rank, "score": retrieval_score(result)}
 
-    ranked = sorted(fused.values(), key=lambda item: (-item["score"], item["id"]))
+    ranked = sorted(fused.values(), key=lambda item: (-item["score"], item["source"], item["chunk_index"], item["id"]))
     return [{
         "id": item["id"],
         "text": item["text"],
