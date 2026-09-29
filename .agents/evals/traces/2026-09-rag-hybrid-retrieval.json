@@ -3,14 +3,61 @@
   "consistencyMode": "strict",
   "traceId": "kubemetal-rag-hybrid-retrieval",
   "task": "Add a hybrid (lexical FTS5 + dense, RRF) retrieval mode to RAG for issue #38",
-  "changeContext": { "paths": ["src-tauri/**"] },
+  "changeContext": {
+    "paths": [
+      "src-tauri/**"
+    ]
+  },
   "events": [
-    {"id": "e1", "type": "scope_check", "summary": "Touched only rag_host.py, commands/rag.rs mode allowlist, RagCard UI/translations/ipc types; left query rewrite, auto mode, chunking, ingest format, mlx/deploy/health untouched; no Tauri capability or process/network boundary widened"},
-    {"id": "e2", "type": "reproduction", "summary": "Independent review found same-named files in different directories collided on the basename-only chunk id and were merged in fusion", "evidence": ["test:tests/rag/test_rag_lexical.py::test_rrf_keeps_same_named_files_from_different_directories_apart"]},
-    {"id": "e3", "type": "bug_fix", "summary": "Fusion keys on (source, chunk_index, id); a dense failure in hybrid surfaces as an error instead of degrading to lexical-only"},
-    {"id": "e4", "type": "regression_verification", "summary": "Python rag tests, cargo test rag, clippy -D warnings and tsc --noEmit passed outside the Codex sandbox", "evidence": ["test:tests/rag/test_rag_lexical.py", "test:cargo-test-rag", "ci:verify"]},
-    {"id": "e5", "type": "verification", "summary": "Hybrid query against real LanceDB/embedding model and in-app UI were not observed", "scope": "unit and static evidence only; on-device hybrid retrieval unverified", "evidence": ["test:tests/rag/test_rag_lexical.py"]},
-    {"id": "e6", "type": "completion_claim", "summary": "Hybrid retrieval mode implemented within verified unit-level scope"},
-    {"id": "e7", "type": "task_outcome", "state": "A", "summary": "Complete and verified at unit/static level; on-device observation not performed"}
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Touched only rag_host.py, commands/rag.rs mode allowlist, RagCard UI/translations/ipc types; left query rewrite, auto mode, chunking, ingest format, mlx/deploy/health untouched; no Tauri capability or process/network boundary widened"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Independent review found same-named files in different directories collided on the basename-only chunk id and were merged in fusion",
+      "evidence": [
+        "test:tests/rag/test_rag_lexical.py::test_rrf_keeps_same_named_files_from_different_directories_apart"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Fusion keys on (source, chunk_index, id); a dense failure in hybrid surfaces as an error instead of degrading to lexical-only"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "summary": "Python rag tests, cargo test rag, clippy -D warnings and tsc --noEmit passed outside the Codex sandbox",
+      "evidence": [
+        "test:tests/rag/test_rag_lexical.py",
+        "test:cargo-test-rag",
+        "ci:verify"
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "summary": "Hybrid query against real LanceDB/embedding model and in-app UI were not observed",
+      "scope": "unit and static evidence only; on-device hybrid retrieval unverified",
+      "evidence": [
+        "test:tests/rag/test_rag_lexical.py"
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Hybrid retrieval mode implemented within verified unit-level scope"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified at unit/static level; on-device observation not performed"
+    }
   ]
 }
