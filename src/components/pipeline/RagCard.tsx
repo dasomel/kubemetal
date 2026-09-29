@@ -13,15 +13,26 @@ export const RagCard: React.FC = () => {
   const [docPath, setDocPath] = useState('docs');
   const [searchQuery, setSearchQuery] = useState('');
   const [retrievalMode, setRetrievalMode] = useState<'dense' | 'lexical'>('dense');
+  // Distinguishes "never searched yet" / "query edited since the last search"
+  // from a search that actually ran and came back empty — searchQuery alone
+  // went true as soon as the user typed anything, so the empty-results
+  // message showed before any search had been submitted.
+  const [hasSearched, setHasSearched] = useState(false);
 
   const handleIndexSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     triggerIndex(docPath);
   };
 
+  const handleSearchQueryChange = (value: string) => {
+    setSearchQuery(value);
+    setHasSearched(false);
+  };
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
+      setHasSearched(true);
       search(searchQuery, 3, retrievalMode);
     }
   };
@@ -66,7 +77,7 @@ export const RagCard: React.FC = () => {
       <div className="p-3 rounded-lg bg-surfaceRaised mb-4 space-y-3">
         <h3 className="text-bodyStrong text-ink flex items-center gap-1.5">
           <FileText className="w-4 h-4 text-primary" />
-          <span>{t('rag.docIndexingTitle')}</span>
+          <span>{t('rag.indexingTitle')}</span>
         </h3>
 
         <form onSubmit={handleIndexSubmit} className="flex gap-2 items-end">
@@ -121,7 +132,7 @@ export const RagCard: React.FC = () => {
           <input
             type="text"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => handleSearchQueryChange(e.target.value)}
             placeholder={t('rag.searchPlaceholder')}
             className={inputClass}
           />
@@ -162,7 +173,7 @@ export const RagCard: React.FC = () => {
           </div>
         )}
 
-        {searchResults.length === 0 && searchQuery && !searching && (
+        {searchResults.length === 0 && hasSearched && !searching && (
           <div className="py-3 text-center text-inkFaint text-caption">
             {t('rag.noResults')}
           </div>
