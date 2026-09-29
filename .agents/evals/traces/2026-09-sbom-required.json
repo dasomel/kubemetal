@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-airgap-sbom-required-2026-09-29",
+  "task": "Make digest-linked SBOM evidence mandatory for air-gap bundle generation and installation (#98)",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/**",
+      "Makefile",
+      "docs/03-mvp-design.md",
+      "docs/build-target-map.md",
+      "docs/mistakes-log.md",
+      ".agents/evals/traces/2026-09-sbom-required.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Recorded owner decision D42: syft is required during bundle generation; complete digest-linked SPDX evidence is a generation, offline verification, and install gate. Existing archive identity checks and host/cluster boundaries remain intact."
+    },
+    {
+      "id": "e2",
+      "type": "bug_fix",
+      "summary": "Bundle download now preflights syft, generates and validates SBOMs before writing the success integrity manifest, and fails closed on missing, empty, incomplete, unparseable, or uncovered image evidence. Offline verification and installation reject absent manifests and digest/hash mismatches."
+    },
+    {
+      "id": "e3",
+      "type": "regression_verification",
+      "summary": "SBOM suite passed, including all 24 archive identity cases, syft missing, locked image coverage gap, empty/incomplete SPDX, tamper and digest mismatch, and missing-evidence install rejection.",
+      "evidence": [
+        "test:bash scripts/airgap/test_sbom.sh"
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "summary": "Digest-lock/install suite passed, including required evidence regeneration after digest changes using linux/arm64 archive fixtures.",
+      "evidence": [
+        "test:bash scripts/airgap/test_digest_lock.sh"
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "summary": "Touched shell scripts passed ShellCheck with sourced-file following; sbom.py passed Python bytecode compilation.",
+      "scope": "static checks only",
+      "evidence": [
+        "ci:shellcheck -x scripts/airgap/generate_sbom.sh scripts/airgap/verify_sbom.sh scripts/airgap/download_airgap_bundle.sh scripts/airgap/install_from_airgap.sh scripts/airgap/test_sbom.sh scripts/airgap/test_digest_lock.sh",
+        "ci:python3 -m py_compile scripts/airgap/sbom.py"
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "e6",
+      "type": "environment_constraint",
+      "summary": "make test was attempted; cargo test ran 300 tests with 294 passed, 1 ignored, and 5 failed. Four port-binding tests received Operation not permitted in the sandbox; one unrelated mlx lifecycle process-detection test failed. The Makefile stopped before later recipes."
+    },
+    {
+      "id": "e7",
+      "type": "environment_constraint",
+      "summary": "make verify-airgap was attempted and stopped at the new required SBOM precheck because the existing default bundle at /Users/m/.kubemetal/airgap has no sbom/manifest.json. The cluster startup probe did not run; no user bundle was modified."
+    },
+    {
+      "id": "e8",
+      "type": "verification_scope",
+      "summary": "A full real bundle generation with syft 1.52.0 and real image archives was not run in this task."
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "B",
+      "summary": "Implementation and focused air-gap regressions are complete and pass. Full make test and verify-airgap remain unverified because of sandbox test failures and the existing bundle's missing required SBOM; no full real bundle run was performed."
+    }
+  ]
+}

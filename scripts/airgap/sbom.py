@@ -62,10 +62,19 @@ def packages(path):
     document = read_json(path)
     require(isinstance(document, dict) and document.get("spdxVersion") in ("SPDX-2.2", "SPDX-2.3")
             and document.get("SPDXID") == "SPDXRef-DOCUMENT"
-            and isinstance(document.get("packages"), list), f"invalid SPDX JSON SBOM: {path}")
+            and document.get("dataLicense") == "CC0-1.0"
+            and isinstance(document.get("documentNamespace"), str) and document["documentNamespace"]
+            and isinstance(document.get("creationInfo"), dict)
+            and isinstance(document["creationInfo"].get("creators"), list)
+            and document["creationInfo"]["creators"]
+            and isinstance(document["creationInfo"].get("created"), str)
+            and isinstance(document.get("packages"), list) and document["packages"],
+            f"invalid or incomplete SPDX JSON SBOM: {path}")
     for package in document["packages"]:
-        require(isinstance(package, dict) and isinstance(package.get("name"), str)
-                and package["name"], f"invalid SPDX package: {path}")
+        require(isinstance(package, dict) and isinstance(package.get("SPDXID"), str)
+                and package["SPDXID"].startswith("SPDXRef-")
+                and isinstance(package.get("name"), str) and package["name"],
+                f"invalid or incomplete SPDX package: {path}")
     return document["packages"]
 
 
@@ -144,7 +153,7 @@ def publish(bundle, work):
     checksum_manifest = bundle / "manifest.sha256"
     updated = work / "manifest.sha256"
     if checksum_manifest.exists():
-        # D-b (#98): refreshing evidence must not re-baseline unrelated assets.
+        # D42: refreshing required evidence must not re-baseline unrelated assets.
         # Cost: preserve the transport manifest's old asset hashes verbatim.
         # Escape hatch: recollect assets via the existing downloader when needed.
         retained = []

@@ -50,6 +50,10 @@ set -euo pipefail
 [ -s "${2#docker-archive:}" ]
 [ "${SYFT_CHECK_FOR_APP_UPDATE:-}" = false ]
 printf 'syft\n' >> "$TEST_CALLS"
+if [ "${TEST_SYFT_INCOMPLETE:-0}" = 1 ]; then
+  printf '{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","packages":[]}\n'
+  exit 0
+fi
 if [ "${TEST_SYFT_EMPTY:-0}" = 1 ] && [ "$(wc -l < "$TEST_CALLS" | tr -d ' ')" -eq 2 ]; then exit 0; fi
 if [ "${TEST_SYFT_ERROR:-0}" = 1 ]; then exit 42; fi
 cat <<'JSON'
@@ -145,6 +149,13 @@ PY
 [ "$(wc -l < "$TEST_CALLS" | tr -d ' ')" -eq 2 ]
 echo 'PASS all locked images linked, SPDX hashes and informational GPL summary'
 
+# A digest lock image without a matching SBOM path must fail assembly.
+mkdir -p "$TEST_DIR/missing-image-sbom/sbom"
+first_sbom="$(image_archive_name example.invalid/demo0:1.0).spdx.json"
+cp "$AIRGAP_DIR/sbom/$first_sbom" "$TEST_DIR/missing-image-sbom/sbom/"
+printf '%s\t%s\n' example.invalid/demo0:1.0 "sbom/$first_sbom" > "$TEST_DIR/missing-image-sbom/paths"
+expect_failure 'one locked image without an SBOM' python3 "$SCRIPT_DIR/sbom.py" assemble "$AIRGAP_DIR/digests.lock" "$TEST_DIR/missing-image-sbom"
+
 # Regeneration after the downloader has hashed the evidence must not stale or
 # silently re-baseline hashes of unrelated assets.
 write_bundle_manifest
@@ -158,10 +169,15 @@ echo 'PASS regeneration and installer accept complete evidence'
 
 expect_failure 'requested syft missing' env PATH="$TEST_DIR/no-syft" /bin/bash "$SCRIPT_DIR/generate_sbom.sh"
 grep -qi syft "$TEST_DIR/failure.out"
+expect_failure 'bundle generation requires syft' env PATH="$TEST_DIR/no-syft" /bin/bash "$SCRIPT_DIR/download_airgap_bundle.sh"
+grep -qi syft "$TEST_DIR/failure.out"
 cp "$AIRGAP_DIR/sbom/manifest.json" "$TEST_DIR/valid-manifest"
 : > "$TEST_CALLS"
 expect_failure 'one empty SBOM' env TEST_SYFT_EMPTY=1 bash "$SCRIPT_DIR/generate_sbom.sh"
 grep -qi SBOM "$TEST_DIR/failure.out"
+cmp "$TEST_DIR/valid-manifest" "$AIRGAP_DIR/sbom/manifest.json"
+expect_failure 'incomplete SPDX document' env TEST_SYFT_INCOMPLETE=1 bash "$SCRIPT_DIR/generate_sbom.sh"
+grep -qi 'incomplete SPDX' "$TEST_DIR/failure.out"
 cmp "$TEST_DIR/valid-manifest" "$AIRGAP_DIR/sbom/manifest.json"
 expect_failure 'syft command error' env TEST_SYFT_ERROR=1 bash "$SCRIPT_DIR/generate_sbom.sh"
 
@@ -221,8 +237,8 @@ cp "$TEST_DIR/valid-lock" "$AIRGAP_DIR/digests.lock"
 
 rm -rf "$AIRGAP_DIR/sbom"
 write_bundle_manifest
-install_bundle > "$TEST_DIR/no-sbom.out" 2>&1
-grep -q 'SBOM 없음' "$TEST_DIR/no-sbom.out"
-grep -q '프로비저닝 성공' "$TEST_DIR/no-sbom.out"
-echo 'PASS absent optional SBOM is explicit and permits install'
+expect_failure 'installer rejects missing required SBOM before mutation' install_bundle
+[ ! -s "$TEST_CALLS" ]
+expect_failure 'offline verifier rejects missing required SBOM' verify
+echo 'PASS missing required SBOM blocks installation and offline verification'
 echo 'PASS airgap SBOM regression suite (stub syft; no real syft or image pulls)'

@@ -92,21 +92,24 @@ install-app: app ## .app 빌드 후 /Applications에 설치(기존본 교체)
 check: ## Rust 타입/컴파일 체크
 	cargo check --locked --manifest-path $(CARGO_MANIFEST)
 
-test: ## Rust 단위 테스트 (경로 방어·가드레일 포함)
+test: ## Rust·Python·Air-gap 회귀 테스트
 	cargo test --locked --manifest-path $(CARGO_MANIFEST) --lib
 	python3 -m unittest discover -s tests/rag -v
+	bash scripts/airgap/test_sbom.sh
+	bash scripts/airgap/test_digest_lock.sh
 
 test-e2e: ## 종합 E2E 자율 피드백 검증 스위트 실행 (합성데이터→파인튜닝→kagent진단→코딩패치)
 	./scripts/e2e/run_full_e2e_verification.sh
 
 # 호스트 네트워크를 건드리지 않고 "레지스트리 접근 0" 조건을 kubelet에 강제해 판정한다.
 verify-airgap: ## 폐쇄망 기동 가능성 검증 (imagePullPolicy: Never 프로브)
+	./scripts/airgap/verify_sbom.sh
 	./scripts/airgap/verify_offline_images.sh
 
-airgap-sbom: ## 기존 번들 이미지의 SPDX·digest·라이선스 증거 첨부 (선택 실행, syft 필요, pull 없음)
+airgap-sbom: ## 기존 번들 이미지의 필수 SPDX·digest·라이선스 증거 생성 (syft 필요, pull 없음)
 	./scripts/airgap/generate_sbom.sh
 
-verify-airgap-sbom: ## 첨부된 SBOM의 sha256·digest lock 검증 (오프라인, python3 필요)
+verify-airgap-sbom: ## 필수 SBOM의 sha256·digest lock 검증 (오프라인, python3 필요)
 	./scripts/airgap/verify_sbom.sh
 
 lint: ## rustfmt --check + clippy(-D warnings) + tsc + DESIGN.md 토큰 린트 + IPC 타입 대조

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Opt-in evidence for an existing bundle. Never pull or load images.
+# Required SBOM gate for an existing bundle. Never pull or load images.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,8 +15,7 @@ mkdir "$WORK/sbom"
 "$PYTHON" "$SCRIPT_DIR/sbom.py" lock "$AIRGAP_DIR/digests.lock" > "$WORK/lock"
 : > "$WORK/paths"
 
-# D-a (#98): syft is required only here; the cost is a separate operator step.
-# Escape hatch: omit this step, never claim a requested scan succeeded without it.
+# D42: syft is required for bundle success; manual regeneration uses this same gate.
 # Disable update/enrichment requests even if the user's syft config enables them.
 # https://oss.anchore.com/docs/reference/syft/configuration/
 export SYFT_CHECK_FOR_APP_UPDATE=false
