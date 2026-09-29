@@ -16,6 +16,8 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck source=scripts/airgap/lib.sh
 . "${SCRIPT_DIR}/lib.sh"
 AIRGAP_DIR="${AIRGAP_DIR:-${HOME}/.kubemetal/airgap}"
+# D42: bundle generation cannot succeed without the required SBOM tool.
+resolve_cli_path syft >/dev/null || exit 1
 mkdir -p "${AIRGAP_DIR}/charts" "${AIRGAP_DIR}/images" "${AIRGAP_DIR}/binaries" "${AIRGAP_DIR}/manifests"
 
 FAILED=()
@@ -231,7 +233,7 @@ fi
 NEW_DIGESTS_LOCK_SHA=""
 [ -f "$DIGESTS_LOCK" ] && NEW_DIGESTS_LOCK_SHA="$(sha256_of "$DIGESTS_LOCK")"
 if [ "$NEW_DIGESTS_LOCK_SHA" != "$OLD_DIGESTS_LOCK_SHA" ] && [ -d "${AIRGAP_DIR}/sbom" ]; then
-  echo "  -> digests.lock이 바뀌어 오래된 sbom/ 증거를 제거합니다 — 새로 붙이려면 'make airgap-sbom'을 다시 실행하세요."
+  echo "  -> digests.lock이 바뀌어 오래된 sbom/ 증거를 제거합니다 — 현재 digest로 다시 생성합니다."
   rm -rf "${AIRGAP_DIR}/sbom"
 fi
 
@@ -245,6 +247,19 @@ if ! cp "${PROJECT_ROOT}"/scripts/k8s/*.yaml "${AIRGAP_DIR}/manifests/"; then
 fi
 
 echo "[5/5] 번들 무결성 목록 생성..."
+# Only publish a completed bundle after every locked image has a validated SBOM.
+if [ ${#FAILED[@]} -eq 0 ]; then
+  if ! AIRGAP_DIR="$AIRGAP_DIR" bash "${SCRIPT_DIR}/generate_sbom.sh"; then
+    FAILED+=("required-sbom")
+  fi
+fi
+# SBOM generation may have failed after producing no usable evidence. Do not write a
+# success-shaped transport manifest for an incomplete bundle.
+if [ ${#FAILED[@]} -ne 0 ]; then
+  echo "실패 항목 ${#FAILED[@]}건: ${FAILED[*]}" >&2
+  echo "부분 수집 상태 — ${AIRGAP_DIR}" >&2
+  exit 1
+fi
 # 이송(외장 매체 → 폐쇄망) 중 손상·변조를 설치 시점에 잡기 위한 목록.
 # 경로는 AIRGAP_DIR 기준 상대경로여야 `shasum -c`가 그대로 검증할 수 있다.
 # 작성 중인 임시 파일은 **스캔 대상 밖**에 둔다 — AIRGAP_DIR 안에 두면 find가 그것까지

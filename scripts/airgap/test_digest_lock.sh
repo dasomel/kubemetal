@@ -15,8 +15,10 @@ mkdir -p "$SHIM_DIR" "$BUNDLE/images" "$BUNDLE/charts" "$BUNDLE/binaries"
 
 export TEST_DOCKER_STATE="${TEST_DIR}/docker-state"
 export TEST_DOCKER_LOG="${TEST_DIR}/docker.log"
-export TEST_SOURCE_REPO_DIGEST='example.invalid/demo@sha256:registry-provenance'
-export TEST_SOURCE_IMAGE_ID='sha256:expected-image-id'
+TEST_SOURCE_REPO_DIGEST="example.invalid/demo@sha256:$(printf 'a%.0s' $(seq 1 64))"
+TEST_SOURCE_IMAGE_ID="sha256:$(python3 -c 'import hashlib,json; f="".join(hashlib.sha256(str(i).encode()).hexdigest() for i in range(128)); print(hashlib.sha256(json.dumps({"architecture":"arm64","os":"linux","rootfs":{"type":"layers","diff_ids":[]},"marker":"source","filler":f},separators=(",", ":")).encode()).hexdigest())')"
+TEST_CHANGED_IMAGE_ID="sha256:$(python3 -c 'import hashlib,json; f="".join(hashlib.sha256(str(i).encode()).hexdigest() for i in range(128)); print(hashlib.sha256(json.dumps({"architecture":"arm64","os":"linux","rootfs":{"type":"layers","diff_ids":[]},"marker":"changed","filler":f},separators=(",", ":")).encode()).hexdigest())')"
+export TEST_SOURCE_REPO_DIGEST TEST_SOURCE_IMAGE_ID TEST_CHANGED_IMAGE_ID
 
 cat > "${SHIM_DIR}/docker" <<'EOF'
 #!/usr/bin/env bash
@@ -53,7 +55,16 @@ case "$command" in
     ;;
   load)
     if [ "${1:-}" = -i ]; then cat "$2" > "${TEST_DOCKER_STATE}.archive"; else cat > "${TEST_DOCKER_STATE}.archive"; fi
-    sed -n 's/^IMAGE_ID=//p' "${TEST_DOCKER_STATE}.archive" | head -n 1 > "$TEST_DOCKER_STATE"
+    python3 - "${TEST_DOCKER_STATE}.archive" > "$TEST_DOCKER_STATE" <<'PY'
+import hashlib
+import json
+import sys
+import tarfile
+with tarfile.open(sys.argv[1]) as archive:
+    manifest = json.load(archive.extractfile("manifest.json"))
+    config = archive.extractfile(manifest[0]["Config"]).read()
+print("sha256:" + hashlib.sha256(config).hexdigest())
+PY
     printf 'docker-load\n' >> "$TEST_DOCKER_LOG"
     printf 'Loaded image: example.invalid/demo:1.0\n'
     ;;
@@ -61,7 +72,25 @@ case "$command" in
     printf 'docker-pull\n' >> "$TEST_DOCKER_LOG"
     ;;
   save)
-    printf 'IMAGE_ID=%s\n' "$TEST_SOURCE_IMAGE_ID"
+    variant=source
+    [ "${TEST_PREEXISTING_ID:-$TEST_SOURCE_IMAGE_ID}" = "$TEST_CHANGED_IMAGE_ID" ] && variant=changed
+    python3 - "$variant" "${@: -1}" <<'PY'
+import hashlib
+import io
+import json
+import sys
+import tarfile
+variant, image = sys.argv[1:]
+filler = "".join(hashlib.sha256(str(i).encode()).hexdigest() for i in range(128))
+config = json.dumps({"architecture": "arm64", "os": "linux", "rootfs": {"type": "layers", "diff_ids": []}, "marker": variant, "filler": filler}, separators=(",", ":")).encode()
+config_path = hashlib.sha256(config).hexdigest() + ".json"
+manifest = json.dumps([{"Config": config_path, "RepoTags": [image], "Layers": []}]).encode()
+with tarfile.open(fileobj=sys.stdout.buffer, mode="w|", format=tarfile.USTAR_FORMAT) as archive:
+    for name, data in ((config_path, config), ("manifest.json", manifest)):
+        member = tarfile.TarInfo(name)
+        member.size = len(data)
+        archive.addfile(member, io.BytesIO(data))
+PY
     ;;
   *)
     echo "unexpected docker invocation: ${command} $*" >&2
@@ -86,6 +115,15 @@ case " $* " in
 esac
 EOF
 
+cat > "${SHIM_DIR}/syft" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$1" = scan ] && [[ "$2" == docker-archive:* ]] && [ -s "${2#docker-archive:}" ]
+cat <<'JSON'
+{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"fixture","dataLicense":"CC0-1.0","documentNamespace":"https://example.invalid/test","creationInfo":{"creators":["Tool: syft-test"],"created":"2026-09-29T00:00:00Z"},"packages":[{"SPDXID":"SPDXRef-a","name":"fixture","licenseDeclared":"MIT"}]}
+JSON
+EOF
+
 cat > "${SHIM_DIR}/helm" <<'EOF'
 #!/usr/bin/env bash
 printf 'helm %s\n' "$*" >> "$TEST_PROVISION_LOG"
@@ -96,7 +134,7 @@ cat > "${SHIM_DIR}/kubectl" <<'EOF'
 printf 'kubectl %s\n' "$*" >> "$TEST_PROVISION_LOG"
 EOF
 
-chmod +x "${SHIM_DIR}/docker" "${SHIM_DIR}/curl" "${SHIM_DIR}/helm" "${SHIM_DIR}/kubectl"
+chmod +x "${SHIM_DIR}/docker" "${SHIM_DIR}/curl" "${SHIM_DIR}/syft" "${SHIM_DIR}/helm" "${SHIM_DIR}/kubectl"
 export PATH="${SHIM_DIR}:${PATH}"
 export TEST_PROVISION_LOG="${TEST_DIR}/provision.log"
 
@@ -111,12 +149,28 @@ cp "$payload" "$BUNDLE/charts/kagent-crds-0.9.12.tgz"
 cp "$payload" "$BUNDLE/charts/kagent-0.9.12.tgz"
 
 archive_for() {
-  local image="$1" image_id="$2" archive
+  local image="$1" variant_id="$2" archive variant
   archive="${BUNDLE}/images/$(image_archive_name "$image").tar.gz"
-  {
-    printf 'IMAGE_ID=%s\n' "$image_id"
-    cat "$payload"
-  } | gzip > "$archive"
+  variant=source
+  [ "$variant_id" = "$TEST_CHANGED_IMAGE_ID" ] && variant=changed
+  [ "$variant_id" = 'sha256:tampered-image-id' ] && variant=tampered
+  python3 - "$image" "$variant" <<'PY' | gzip > "$archive"
+import hashlib
+import io
+import json
+import sys
+import tarfile
+image, variant = sys.argv[1:]
+filler = "".join(hashlib.sha256(str(i).encode()).hexdigest() for i in range(128))
+config = json.dumps({"architecture": "arm64", "os": "linux", "rootfs": {"type": "layers", "diff_ids": []}, "marker": variant, "filler": filler}, separators=(",", ":")).encode()
+config_path = hashlib.sha256(config).hexdigest() + ".json"
+manifest = json.dumps([{"Config": config_path, "RepoTags": [image], "Layers": []}]).encode()
+with tarfile.open(fileobj=sys.stdout.buffer, mode="w|", format=tarfile.USTAR_FORMAT) as archive:
+    for name, data in ((config_path, config), ("manifest.json", manifest)):
+        member = tarfile.TarInfo(name)
+        member.size = len(data)
+        archive.addfile(member, io.BytesIO(data))
+PY
 }
 
 records="${TEST_DIR}/records"
@@ -137,7 +191,10 @@ write_digest_lock "$records" "${BUNDLE}/digests.lock"
 
 # 5c022a1: exercise the downloader itself with every image archive cached. It
 # must preserve all three lock fields and never re-pull an image to invent data.
-AIRGAP_DIR="$BUNDLE" "${SCRIPT_DIR}/download_airgap_bundle.sh" > "${TEST_DIR}/download.out" 2>&1
+if ! AIRGAP_DIR="$BUNDLE" "${SCRIPT_DIR}/download_airgap_bundle.sh" > "${TEST_DIR}/download.out" 2>&1; then
+  cat "${TEST_DIR}/download.out" >&2
+  exit 1
+fi
 grep -q '이미 보유:' "${TEST_DIR}/download.out"
 grep -qx "${first_image} ${TEST_SOURCE_REPO_DIGEST} ${TEST_SOURCE_IMAGE_ID}" "${BUNDLE}/digests.lock"
 if [ -f "$TEST_DOCKER_LOG" ] && grep -q docker-pull "$TEST_DOCKER_LOG"; then
@@ -176,7 +233,7 @@ if AIRGAP_DIR="$BUNDLE" KUBE_CONTEXT=test "${SCRIPT_DIR}/install_from_airgap.sh"
   echo 'expected malformed lock rejection, but install succeeded' >&2
   exit 1
 fi
-grep -q 'digests.lock 항목이 없거나 형식이 잘못되었습니다' "${TEST_DIR}/malformed.out"
+grep -q 'SBOM 증거 검증에 실패했습니다' "${TEST_DIR}/malformed.out"
 if [ -e "$TEST_DOCKER_LOG" ]; then
   echo 'malformed lock reached docker load' >&2
   exit 1
@@ -230,13 +287,14 @@ cp "$payload" "$STALE_DIR/charts/kagent-crds-0.9.12.tgz"
 cp "$payload" "$STALE_DIR/charts/kagent-0.9.12.tgz"
 
 rm -f "$TEST_DOCKER_STATE" "$TEST_DOCKER_LOG" "$TEST_PROVISION_LOG"
-AIRGAP_DIR="$STALE_DIR" TEST_PREEXISTING_ID="sha256:$(printf 'a%.0s' $(seq 1 64))" \
+AIRGAP_DIR="$STALE_DIR" TEST_PREEXISTING_ID="$TEST_SOURCE_IMAGE_ID" \
   "${SCRIPT_DIR}/download_airgap_bundle.sh" > "${TEST_DIR}/stale-run1.out" 2>&1
 grep -q '완료: 모든 자원 수집 성공' "${TEST_DIR}/stale-run1.out" || {
   cat "${TEST_DIR}/stale-run1.out" >&2
   echo 'initial stale-sbom fixture collection failed' >&2
   exit 1
 }
+AIRGAP_DIR="$STALE_DIR" bash "${SCRIPT_DIR}/verify_sbom.sh" >/dev/null
 
 # Fabricate SBOM evidence for this state, as `make airgap-sbom` would have, then
 # fold it into manifest.sha256 the same way the downloader does at the end of a run.
@@ -255,7 +313,7 @@ grep -q './sbom/manifest.json' "${STALE_DIR}/manifest.sha256"
 rm -f "$TEST_DOCKER_STATE" "$TEST_DOCKER_LOG" "$TEST_PROVISION_LOG"
 rm -rf "${STALE_DIR}/images"
 mkdir -p "${STALE_DIR}/images"
-AIRGAP_DIR="$STALE_DIR" TEST_PREEXISTING_ID="sha256:$(printf 'b%.0s' $(seq 1 64))" \
+AIRGAP_DIR="$STALE_DIR" TEST_PREEXISTING_ID="$TEST_CHANGED_IMAGE_ID" \
   "${SCRIPT_DIR}/download_airgap_bundle.sh" > "${TEST_DIR}/stale-run2.out" 2>&1
 grep -q '완료: 모든 자원 수집 성공' "${TEST_DIR}/stale-run2.out" || {
   cat "${TEST_DIR}/stale-run2.out" >&2
@@ -263,13 +321,14 @@ grep -q '완료: 모든 자원 수집 성공' "${TEST_DIR}/stale-run2.out" || {
   exit 1
 }
 grep -qi 'sbom' "${TEST_DIR}/stale-run2.out"
-grep -qi 'airgap-sbom' "${TEST_DIR}/stale-run2.out"
-if [ -d "${STALE_DIR}/sbom" ]; then
-  echo 'stale sbom/ evidence survived a digest change' >&2
+grep -q '현재 digest로 다시 생성합니다' "${TEST_DIR}/stale-run2.out"
+if [ ! -f "${STALE_DIR}/sbom/manifest.json" ]; then
+  echo 'required SBOM evidence was not regenerated after digest change' >&2
   exit 1
 fi
-if grep -q './sbom/' "${STALE_DIR}/manifest.sha256"; then
-  echo 'manifest.sha256 still references removed sbom/ evidence' >&2
+AIRGAP_DIR="$STALE_DIR" bash "${SCRIPT_DIR}/verify_sbom.sh" >/dev/null
+if ! grep -q './sbom/manifest.json' "${STALE_DIR}/manifest.sha256"; then
+  echo 'manifest.sha256 does not cover regenerated SBOM evidence' >&2
   exit 1
 fi
-echo 'PASS re-collecting with changed digests removes stale sbom/ evidence and prompts regeneration'
+echo 'PASS re-collecting with changed digests regenerates and hashes required SBOM evidence'

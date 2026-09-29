@@ -8,16 +8,16 @@ gate is split the way it is (offline-vs-network, verify-vs-release).
 | `make` target | Underlying command(s) | Run by CI | Network required |
 |---|---|---|---|
 | `check` | `cargo check` | — | no |
-| `test` | `cargo test` | `ci.yml` → `make verify` | no |
+| `test` | `cargo test`, Python RAG unittest, `test_sbom.sh`, `test_digest_lock.sh` | `ci.yml` → `make verify` | no |
 | `lint` | `cargo fmt --check`, `cargo clippy -D warnings`, `tsc --noEmit`, `design.md lint`, `scripts/ci/check_ipc_types.py` | `ci.yml` → `make verify` | no |
 | `license-check` | `scripts/release/check_licenses.sh --self-test` + (no args) | `ci.yml` → `make verify`; `release.yml` (direct, not via `make`) | no (lockfile only) |
 | `dependency-diff` | `scripts/release/gen_dependency_diff.sh` | — (manual review tool, issue #9) | yes (`git worktree` + `pnpm install`) |
 | `vuln-check` | `trivy fs --scanners vuln --severity HIGH,CRITICAL` | `release.yml` (direct, not via `make`) | yes (trivy vulnerability DB) |
 | `supply-chain-check` | `cargo deny --config deny.toml check advisories sources` | `ci.yml` → `make supply-chain-check` | yes (advisory DB) |
-| `verify` | `test` + `lint` + `license-check` + `pnpm build` | `ci.yml` (top-level job) | no |
-| `verify-airgap` | offline `imagePullPolicy: Never` startup probe (D25) | — (manual, needs a running cluster) | no |
-| `airgap-sbom` | `scripts/airgap/generate_sbom.sh` → syft SPDX JSON + digest manifest + license summary | — (opt-in bundle evidence, issue #98) | no (existing bundle archives; syft + python3 required) |
-| `verify-airgap-sbom` | `scripts/airgap/verify_sbom.sh` → SBOM sha256 + complete `digests.lock` coverage | — (also called by offline installer when evidence is present) | no (python3 only) |
+| `verify` | `test` (Rust + Python + air-gap SBOM/digest-lock regressions) + `lint` + `license-check` + `pnpm build` | `ci.yml` (top-level job) | no |
+| `verify-airgap` | `make verify-airgap-sbom` then offline `imagePullPolicy: Never` startup probe (D25) | — (manual, needs a running cluster and collected bundle) | no |
+| `airgap-sbom` | `scripts/airgap/generate_sbom.sh` → syft SPDX JSON + digest manifest + license summary | — (required bundle evidence, issue #98) | no (existing bundle archives; syft + python3 required) |
+| `verify-airgap-sbom` | `scripts/airgap/verify_sbom.sh` → SBOM sha256 + complete `digests.lock` coverage | — (required by offline installer) | no (python3 only) |
 | `build` / `bin` / `app` | `pnpm tauri build` variants | `release.yml` (`pnpm tauri build --bundles app` directly, not via `make`) | no (build itself); yes (`cargo`/`pnpm install` fetch on a cold cache) |
 
 ## Why some gates run outside `make`
@@ -44,12 +44,11 @@ the release-specific staging sequence.
 
 ## Air-gap image SBOM evidence (issue #98)
 
-After collecting a bundle, run `AIRGAP_DIR=/path/to/bundle make airgap-sbom`
-(default: `~/.kubemetal/airgap`). This is a separate opt-in step: syft is **not** a
-bundle-download or installation dependency. Requesting generation without syft fails
-with a diagnostic; no tool is installed automatically. Python 3's standard library
-handles JSON and verification. The offline installer needs Python only when an SBOM
-manifest is present.
+Bundle generation requires syft and runs `generate_sbom.sh` before reporting success.
+`AIRGAP_DIR=/path/to/bundle make airgap-sbom` (default:
+`~/.kubemetal/airgap`) can regenerate evidence for an existing bundle. Generation
+without syft fails with a diagnostic; no tool is installed automatically. Python 3's
+standard library handles JSON and offline verification.
 
 The image set comes only from that bundle's `digests.lock`, not another maintained
 image list. Each single-image `docker save` archive (`images/*.tar[.gz]`) has its config
@@ -69,7 +68,7 @@ the same bundle. A compressed source needs temporary space for one uncompressed 
 
 If re-running `download_airgap_bundle.sh` actually changes `digests.lock` (an image
 was re-collected with a different digest), the downloader deletes any existing `sbom/`
-evidence itself and prints that `make airgap-sbom` must be re-run — stale SBOM evidence
+evidence itself, then regenerates it against the new digests — stale SBOM evidence
 tied to the old digests would otherwise get silently re-hashed into `manifest.sha256`
 and only fail at install time ("SBOM digest differs"). **Do not manually delete `sbom/`
 after generating it without also regenerating it or removing its entries from
@@ -77,13 +76,14 @@ after generating it without also regenerating it or removing its entries from
 a hand-deleted `sbom/` fails installation instead of being treated as "no SBOM".
 
 `AIRGAP_DIR=/path/to/bundle make verify-airgap-sbom` checks every locked image's SBOM
-hash and both digest fields offline, rejecting missing/empty/invalid SPDX files,
-duplicate entries and incomplete coverage. `install_from_airgap.sh` does this before
-loading images whenever `sbom/manifest.json` exists. With no manifest it explicitly
-prints `SBOM 없음` and continues. Existing bundle-integrity checks remain in force.
-Present but invalid SBOM evidence fails even with the legacy integrity opt-outs.
+hash and both digest fields offline, rejecting missing/empty/incomplete/invalid SPDX
+files, duplicate entries and incomplete coverage. `install_from_airgap.sh` requires
+this check before loading images; a missing manifest fails closed. Existing
+bundle-integrity checks remain in force. Invalid or missing SBOM evidence fails even
+with the legacy integrity opt-outs.
 
-This is evidence, **not** a vulnerability/license or release gate. `licenses.json`
+SBOM presence and digest binding are required bundle gates; license contents are not
+policy-gated. `licenses.json`
 counts one license expression per package per image (concluded license, then declared,
 otherwise `NOASSERTION`), retaining compound expressions and flagging GPL/LGPL/AGPL.
 The `gpl_family` flag is a regex heuristic (`gpl_family_note` in the output) and can
