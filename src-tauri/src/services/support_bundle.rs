@@ -6,9 +6,7 @@
 //! 자동 redaction하며, 바이너리/비-UTF-8 등 검사 불가능한 파일은 fail-closed로 제외하고
 //! `manifest.json`에 `omitted: <reason>`으로 기록한다.
 
-#[cfg(test)]
-use std::fs::File;
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File, OpenOptions};
 #[cfg(test)]
 use std::io::BufReader;
 use std::io::{Read, Seek as _, SeekFrom, Write as _};
@@ -118,315 +116,8 @@ pub fn sha256_file(path: &Path) -> Result<String, String> {
     Ok(hex)
 }
 
-/// kubeconfig 관련 민감 데이터(client-key-data 등) 마스킹
-fn redact_kubeconfig_fields(line: &str) -> String {
-    const KUBE_KEYS: &[&str] = &[
-        "client-key-data",
-        "client-certificate-data",
-        "certificate-authority-data",
-    ];
-    let mut out = line.to_string();
-    for key in KUBE_KEYS {
-        let colon_pattern = format!("{key}:");
-        if let Some(pos) = out.find(&colon_pattern) {
-            let after_colon = &out[pos + colon_pattern.len()..];
-            let trimmed = after_colon.trim_start();
-            let leading_spaces = &after_colon[..after_colon.len() - trimmed.len()];
-            if !trimmed.is_empty() && !trimmed.starts_with("[REDACTED]") {
-                let val_len = trimmed
-                    .find(|c: char| c.is_whitespace() || c == ',' || c == ';')
-                    .unwrap_or(trimmed.len());
-                let rest = &trimmed[val_len..];
-                out = format!(
-                    "{}{}[REDACTED]{}",
-                    &out[..pos + colon_pattern.len()],
-                    leading_spaces,
-                    rest
-                );
-            }
-        }
-        let json_pattern = format!("\"{key}\"");
-        if let Some(pos) = out.find(&json_pattern) {
-            if let Some(colon_pos) = out[pos..].find(':') {
-                let abs_colon = pos + colon_pos;
-                let rest = &out[abs_colon + 1..];
-                if let Some(first_quote) = rest.find('"') {
-                    let after_first_quote = &rest[first_quote + 1..];
-                    if let Some(second_quote) = after_first_quote.find('"') {
-                        let before = &out[..abs_colon + 1 + first_quote + 1];
-                        let after = &after_first_quote[second_quote..];
-                        out = format!("{before}[REDACTED]{after}");
-                    }
-                }
-            }
-        }
-    }
-    out
-}
-
-/// Authorization 헤더 마스킹
-fn redact_authorization_headers(line: &str) -> String {
-    let lower = line.to_lowercase();
-    if !lower.contains("authorization") {
-        return line.to_string();
-    }
-    let mut out = line.to_string();
-    for json_key in &["\"authorization\"", "\"Authorization\""] {
-        if let Some(pos) = out.find(json_key) {
-            if let Some(colon_pos) = out[pos..].find(':') {
-                let abs_colon = pos + colon_pos;
-                let rest = &out[abs_colon + 1..];
-                if let Some(first_quote) = rest.find('"') {
-                    let after_first_quote = &rest[first_quote + 1..];
-                    if let Some(second_quote) = after_first_quote.find('"') {
-                        let before = &out[..abs_colon + 1 + first_quote + 1];
-                        let after = &after_first_quote[second_quote..];
-                        out = format!("{before}[REDACTED]{after}");
-                    }
-                }
-            }
-        }
-    }
-    for header in &["authorization:", "Authorization:"] {
-        if let Some(pos) = out.find(header) {
-            let after = &out[pos + header.len()..];
-            let trimmed = after.trim_start();
-            let leading = &after[..after.len() - trimmed.len()];
-            if let Some(rest) = trimmed
-                .strip_prefix("Bearer ")
-                .or_else(|| trimmed.strip_prefix("bearer "))
-            {
-                let trimmed_token = rest.trim_start();
-                let end = trimmed_token
-                    .find(|c: char| c.is_whitespace() || c == '"' || c == '\'')
-                    .unwrap_or(trimmed_token.len());
-                let remaining = &trimmed_token[end..];
-                out = format!(
-                    "{}{}Bearer [REDACTED]{}",
-                    &out[..pos + header.len()],
-                    leading,
-                    remaining
-                );
-            } else if let Some(rest) = trimmed
-                .strip_prefix("Basic ")
-                .or_else(|| trimmed.strip_prefix("basic "))
-            {
-                let trimmed_token = rest.trim_start();
-                let end = trimmed_token
-                    .find(|c: char| c.is_whitespace() || c == '"' || c == '\'')
-                    .unwrap_or(trimmed_token.len());
-                let remaining = &trimmed_token[end..];
-                out = format!(
-                    "{}{}Basic [REDACTED]{}",
-                    &out[..pos + header.len()],
-                    leading,
-                    remaining
-                );
-            } else if !trimmed.is_empty() && !trimmed.starts_with("[REDACTED]") {
-                let end = trimmed
-                    .find(|c: char| c.is_whitespace() || c == '"' || c == '\'')
-                    .unwrap_or(trimmed.len());
-                let remaining = &trimmed[end..];
-                out = format!(
-                    "{}{}[REDACTED]{}",
-                    &out[..pos + header.len()],
-                    leading,
-                    remaining
-                );
-            }
-        }
-    }
-    out
-}
-
-/// Bearer 토큰 마스킹
-fn redact_bearer_tokens(line: &str) -> String {
-    let mut out = line.to_string();
-    let mut start_idx = 0;
-    while let Some(found) = out[start_idx..]
-        .find("Bearer ")
-        .or_else(|| out[start_idx..].find("bearer "))
-    {
-        let abs_pos = start_idx + found;
-        let token_start = abs_pos + "Bearer ".len();
-        let rest = &out[token_start..];
-        let trimmed = rest.trim_start();
-        let leading_len = rest.len() - trimmed.len();
-        if trimmed.starts_with("[REDACTED]") {
-            start_idx = token_start + "[REDACTED]".len();
-            continue;
-        }
-        let token_len = trimmed
-            .find(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ',' || c == ';')
-            .unwrap_or(trimmed.len());
-        if token_len > 0 {
-            let before = &out[..token_start];
-            let leading = &rest[..leading_len];
-            let after = &trimmed[token_len..];
-            let new_out = format!("{before}{leading}[REDACTED]{after}");
-            start_idx = token_start + leading_len + "[REDACTED]".len();
-            out = new_out;
-        } else {
-            start_idx = token_start;
-        }
-    }
-    out
-}
-
-/// 민감 키-값(API 키, 패스워드, 토큰 등) 마스킹
-fn redact_sensitive_key_values(line: &str) -> String {
-    const KEYS: &[&str] = &[
-        "api_key",
-        "apiKey",
-        "apikey",
-        "api-key",
-        "x-api-key",
-        "password",
-        "passwd",
-        "pwd",
-        "client_secret",
-        "secret_key",
-        "secret",
-        "access_token",
-        "refresh_token",
-        "auth_token",
-        "id_token",
-        "token",
-        "private_key",
-        "aws_secret_access_key",
-        "aws_access_key_id",
-        "github_token",
-    ];
-    let mut out = line.to_string();
-    for key in KEYS {
-        let json_key = format!("\"{key}\"");
-        let mut cursor = 0;
-        while let Some(offset) = out[cursor..].find(&json_key) {
-            let pos = cursor + offset + json_key.len();
-            let rest = out[pos..].trim_start();
-            if let Some(after_colon) = rest.strip_prefix(':') {
-                let value = after_colon.trim_start();
-                if let Some(inside) = value.strip_prefix('"') {
-                    let mut escaped = false;
-                    let end = inside.char_indices().find_map(|(i, ch)| {
-                        if escaped {
-                            escaped = false;
-                            None
-                        } else if ch == '\\' {
-                            escaped = true;
-                            None
-                        } else if ch == '"' {
-                            Some(i)
-                        } else {
-                            None
-                        }
-                    });
-                    if let Some(end) = end {
-                        let start = out.len() - inside.len();
-                        if end > 0 && &inside[..end] != "[REDACTED]" {
-                            out.replace_range(start..start + end, "[REDACTED]");
-                        }
-                    }
-                }
-            }
-            cursor = pos;
-        }
-
-        for delimiter in [':', '='] {
-            let pattern = format!("{key}{delimiter}");
-            let mut cursor = 0;
-            while let Some(offset) = out[cursor..]
-                .to_ascii_lowercase()
-                .find(&pattern.to_ascii_lowercase())
-            {
-                let pos = cursor + offset;
-                let end_key = pos + pattern.len();
-                let boundary = pos == 0
-                    || out.as_bytes()[pos - 1].is_ascii_whitespace()
-                    || out.as_bytes()[pos - 1] == b'&';
-                if !boundary {
-                    cursor = end_key;
-                    continue;
-                }
-                let value = out[end_key..].trim_start();
-                let start = out.len() - value.len();
-                let end = value
-                    .find(|c: char| c.is_whitespace() || c == ',' || c == ';' || c == '&')
-                    .unwrap_or(value.len());
-                if end > 0 && &value[..end] != "[REDACTED]" {
-                    out.replace_range(start..start + end, "[REDACTED]");
-                }
-                cursor = (start + if end > 0 { "[REDACTED]".len() } else { 0 }).min(out.len());
-            }
-        }
-    }
-    out
-}
-
-/// 접두사 기반 독립 토큰 마스킹 (sk-, ghp_, glpat-, hf_)
-fn redact_prefixed_tokens(line: &str) -> String {
-    const PREFIXES: &[&str] = &[
-        "sk-ant-",
-        "sk-",
-        "github_pat_",
-        "ghp_",
-        "gho_",
-        "glpat-",
-        "hf_",
-        "AKIA",
-    ];
-    let mut out = line.to_string();
-    for prefix in PREFIXES {
-        let mut start_idx = 0;
-        while let Some(found) = out[start_idx..].find(prefix) {
-            let abs_pos = start_idx + found;
-            let token_chars = &out[abs_pos..];
-            let token_len = token_chars
-                .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                .unwrap_or(token_chars.len());
-            if token_len >= 10 && &token_chars[..token_len] != "[REDACTED]" {
-                let before = &out[..abs_pos];
-                let after = &out[abs_pos + token_len..];
-                let new_out = format!("{before}[REDACTED]{after}");
-                start_idx = abs_pos + "[REDACTED]".len();
-                out = new_out;
-            } else {
-                start_idx = abs_pos + prefix.len();
-            }
-        }
-    }
-    out
-}
-
-/// 단일 라인 문자열에 대한 모든 redaction 적용
-pub fn redact_line(line: &str) -> String {
-    let s = redact_kubeconfig_fields(line);
-    let s = redact_authorization_headers(&s);
-    let s = redact_bearer_tokens(&s);
-    let s = redact_sensitive_key_values(&s);
-    redact_url_userinfo(&redact_prefixed_tokens(&s))
-}
-
-fn redact_url_userinfo(line: &str) -> String {
-    let mut out = line.to_string();
-    for scheme in ["https://", "http://"] {
-        let mut cursor = 0;
-        while let Some(offset) = out[cursor..].find(scheme) {
-            let start = cursor + offset + scheme.len();
-            let authority = &out[start..];
-            let end = authority
-                .find(|c: char| c.is_whitespace() || c == '/' || c == '?' || c == '#')
-                .unwrap_or(authority.len());
-            if let Some(at) = authority[..end].rfind('@') {
-                out.replace_range(start..start + at, "[REDACTED]");
-                cursor = start + "[REDACTED]@".len();
-            } else {
-                cursor = start + end;
-            }
-        }
-    }
-    out
-}
+mod redact;
+pub use redact::redact_text;
 
 fn write_bundle_file(path: &Path, bytes: &[u8]) -> Result<ManifestFileEntry, String> {
     let mut file = OpenOptions::new()
@@ -451,67 +142,6 @@ fn write_bundle_file(path: &Path, bytes: &[u8]) -> Result<ManifestFileEntry, Str
         sha256: sha256_digest(&written),
         bytes: written.len() as u64,
     })
-}
-
-/// 전체 텍스트 redaction 및 사용자 홈 경로 `~` 치환
-pub fn redact_text(text: &str, home: Option<&Path>) -> String {
-    let mut result = String::with_capacity(text.len());
-    let mut yaml_indent = None;
-    let mut in_pem = false;
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        let indent = line.len() - trimmed.len();
-        if in_pem {
-            if trimmed.starts_with("-----END ") {
-                in_pem = false;
-            }
-            result.push_str("[REDACTED]\n");
-            continue;
-        }
-        if trimmed.starts_with("-----BEGIN ") {
-            in_pem = !trimmed.contains("-----END ");
-            result.push_str("[REDACTED]\n");
-            continue;
-        }
-        if let Some(block_indent) = yaml_indent {
-            if trimmed.is_empty() || indent > block_indent {
-                result.push_str("[REDACTED]\n");
-                continue;
-            }
-            yaml_indent = None;
-        }
-        if [
-            "client-key-data",
-            "client-certificate-data",
-            "certificate-authority-data",
-        ]
-        .iter()
-        .any(|key| {
-            trimmed.starts_with(&format!("{key}:"))
-                && trimmed.split_once(':').is_some_and(|(_, value)| {
-                    matches!(value.trim(), "|" | "|-" | "|+" | ">" | ">-" | ">+")
-                })
-        }) {
-            yaml_indent = Some(indent);
-        }
-        let redacted = redact_line(line);
-        result.push_str(&redacted);
-        result.push('\n');
-    }
-    if !text.ends_with('\n') && result.ends_with('\n') {
-        result.pop();
-    }
-
-    if let Some(home) = home {
-        let home_str = home.to_string_lossy();
-        if !home_str.is_empty() && home_str != "/" {
-            let escaped_home = home_str.replace('/', "\\/");
-            let mut replaced = result.replace(&escaped_home, "~");
-            replaced = replaced.replace(home_str.as_ref(), "~");
-            return replaced;
-        }
-    }
-    result
 }
 
 /// 앱 및 OS 환경 정보 수집
@@ -561,6 +191,16 @@ fn generate_support_bundle_with_omissions(
     mut omitted: Vec<ManifestOmittedEntry>,
 ) -> Result<SupportBundleResult, String> {
     let (created_at, dir_timestamp) = format_bundle_timestamps()?;
+    // D1: Refuse a linked root outside app data. This aborts the bundle; callers can retry
+    // after removing the link, rather than accepting a write outside the configured root.
+    if let Ok(metadata) = fs::symlink_metadata(target_base_dir) {
+        if metadata.file_type().is_symlink() {
+            return Err(format!(
+                "Omitted support bundle: bundle root {} is a symlink",
+                target_base_dir.display()
+            ));
+        }
+    }
     fs::create_dir_all(target_base_dir).map_err(|e| {
         format!(
             "Failed to create bundle base {}: {e}",
@@ -619,7 +259,18 @@ fn generate_support_bundle_with_omissions(
             });
             continue;
         }
-        match fs::read(&src_path) {
+        // D2: Bound source reads even when files grow after metadata. Large logs are omitted;
+        // the manifest gives users a route to inspect them separately.
+        let raw = File::open(&src_path).and_then(|file| {
+            if file.metadata()?.len() > MAX_SCANNABLE_BYTES as u64 {
+                return Err(std::io::Error::other("File exceeds maximum scannable size"));
+            }
+            let mut bytes = Vec::new();
+            file.take((MAX_SCANNABLE_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)?;
+            Ok(bytes)
+        });
+        match raw {
             Err(e) => {
                 omitted.push(ManifestOmittedEntry {
                     path: dest_rel_path,
@@ -741,6 +392,19 @@ fn collect_log_sources(logs_dir: &Path) -> (Vec<(String, PathBuf)>, Vec<Manifest
     (sources, omitted)
 }
 
+fn collect_home_logs(home: Option<&Path>) -> (Vec<(String, PathBuf)>, Vec<ManifestOmittedEntry>) {
+    match home {
+        Some(home) => collect_log_sources(&home.join(".kubemetal").join("logs")),
+        None => (
+            Vec::new(),
+            vec![ManifestOmittedEntry {
+                path: "logs/".to_string(),
+                omitted: "HOME is unavailable; log directory cannot be located".to_string(),
+            }],
+        ),
+    }
+}
+
 /// Tauri 커맨드용 비동기 래퍼
 pub async fn create_support_bundle_impl(
     app: &tauri::AppHandle,
@@ -780,10 +444,7 @@ pub async fn create_support_bundle_impl(
     let home = std::env::var_os("HOME").map(PathBuf::from);
 
     tokio::task::spawn_blocking(move || {
-        let (log_sources, omitted) = home
-            .as_ref()
-            .map(|h| collect_log_sources(&h.join(".kubemetal").join("logs")))
-            .unwrap_or_default();
+        let (log_sources, omitted) = collect_home_logs(home.as_deref());
         generate_support_bundle_with_omissions(
             &target_base_dir,
             home.as_deref(),
@@ -843,112 +504,6 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("kubemetal-test-{name}-{nanos}"));
         fs::create_dir_all(&dir).unwrap();
         dir
-    }
-
-    #[test]
-    fn test_redact_bearer_token() {
-        let input = "2026-09-29 12:00:00 Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.secret-token-123\ncurl -H 'Bearer ghp_1234567890abcdef' http://127.0.0.1:8080";
-        let redacted = redact_text(input, None);
-        assert!(!redacted.contains("eyJhbGciOiJIUzI1NiJ9.secret-token-123"));
-        assert!(!redacted.contains("ghp_1234567890abcdef"));
-        assert!(redacted.contains("Bearer [REDACTED]"));
-    }
-
-    #[test]
-    fn test_redact_kubeconfig_key_data() {
-        let yaml_input = r#"apiVersion: v1
-clusters:
-- cluster:
-    certificate-authority-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCg==
-  name: colima
-users:
-- name: colima
-  user:
-    client-certificate-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCg==
-    client-key-data: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo=
-"#;
-        let redacted_yaml = redact_text(yaml_input, None);
-        assert!(!redacted_yaml.contains("LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCg=="));
-        assert!(!redacted_yaml.contains("LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo="));
-        assert!(redacted_yaml.contains("certificate-authority-data: [REDACTED]"));
-        assert!(redacted_yaml.contains("client-certificate-data: [REDACTED]"));
-        assert!(redacted_yaml.contains("client-key-data: [REDACTED]"));
-
-        let json_input = r#"{"client-key-data": "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo="}"#;
-        let redacted_json = redact_text(json_input, None);
-        assert!(!redacted_json.contains("LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo="));
-        assert!(redacted_json.contains("\"client-key-data\": \"[REDACTED]\""));
-    }
-
-    #[test]
-    fn test_redact_home_path() {
-        let home = Path::new("/Users/developer");
-        let input = "Model loaded from /Users/developer/.kubemetal/models/qwen2.5\nEscaped: \\/Users\\/developer\\/adapters";
-        let redacted = redact_text(input, Some(home));
-        assert!(!redacted.contains("/Users/developer"));
-        assert!(redacted.contains("~/.kubemetal/models/qwen2.5"));
-        assert!(redacted.contains("~\\/adapters"));
-    }
-
-    #[test]
-    fn test_redact_api_keys_and_tokens() {
-        let input = r#"
-api_key: sk-1234567890abcdef12345
-export HF_TOKEN=hf_abcdef1234567890
-{"password": "super-secret-pass", "normal_field": "keep-me"}
-"#;
-        let redacted = redact_text(input, None);
-        assert!(!redacted.contains("sk-1234567890abcdef12345"));
-        assert!(!redacted.contains("hf_abcdef1234567890"));
-        assert!(!redacted.contains("super-secret-pass"));
-        assert!(redacted.contains("keep-me"));
-        assert!(redacted.contains("[REDACTED]"));
-    }
-
-    #[test]
-    fn test_redact_multiline_yaml_pem_and_url_userinfo() {
-        let input = "client-key-data: |\n  first-secret-line\n  second-secret-line\nname: visible\n-----BEGIN PRIVATE KEY-----\npem-secret-line\n-----END PRIVATE KEY-----\nurl=https://user:password@host/path";
-        let redacted = redact_text(input, None);
-        for secret in [
-            "first-secret-line",
-            "second-secret-line",
-            "pem-secret-line",
-            "user:password",
-        ] {
-            assert!(!redacted.contains(secret), "leaked {secret}");
-        }
-        assert!(redacted.contains("name: visible"));
-        assert!(redacted.contains("host/path"));
-    }
-
-    #[test]
-    fn test_redact_multiple_env_secrets_on_one_line() {
-        let input = "AWS_SECRET_ACCESS_KEY=alpha123 AWS_ACCESS_KEY_ID=AKIA1234567890123456 GITHUB_TOKEN=github_pat_1234567890 ghp_1234567890 gho_1234567890 hf_1234567890 password=first password=second";
-        let redacted = redact_text(input, None);
-        for secret in [
-            "alpha123",
-            "AKIA1234567890123456",
-            "github_pat_1234567890",
-            "ghp_1234567890",
-            "gho_1234567890",
-            "hf_1234567890",
-            "first",
-            "second",
-        ] {
-            assert!(!redacted.contains(secret), "leaked {secret}");
-        }
-    }
-
-    #[test]
-    fn test_redacted_json_remains_valid() {
-        let redacted = redact_text(
-            r#"{"password":"secret","password":"second","normal":"keep"}"#,
-            None,
-        );
-        let value: serde_json::Value = serde_json::from_str(&redacted).unwrap();
-        assert_eq!(value["normal"], "keep");
-        assert!(!redacted.contains("secret"));
-        assert!(!redacted.contains("second"));
     }
 
     #[test]
@@ -1125,5 +680,69 @@ export HF_TOKEN=hf_abcdef1234567890
 
         fs::remove_dir_all(&temp_dir).ok();
         fs::remove_dir_all(&source_dir).ok();
+    }
+
+    #[test]
+    fn test_oversized_source_is_omitted_before_reading() {
+        let base = create_test_temp_dir("oversized");
+        let source = base.join("oversized.log");
+        let file = File::create(&source).unwrap();
+        file.set_len((MAX_SCANNABLE_BYTES + 1) as u64).unwrap();
+        let result = generate_support_bundle(
+            &base,
+            None,
+            None,
+            AppOsVersionInfo {
+                app_name: "KubeMetal".into(),
+                app_version: "0.2.0".into(),
+                os: "macos".into(),
+                os_version: None,
+                kernel_version: None,
+                arch: "aarch64".into(),
+            },
+            vec![("logs/oversized.log".into(), source)],
+        )
+        .unwrap();
+        assert!(result.manifest.omitted[0]
+            .omitted
+            .contains("maximum scannable size"));
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn test_missing_home_is_recorded() {
+        let (sources, omitted) = collect_home_logs(None);
+        assert!(sources.is_empty());
+        assert_eq!(omitted[0].path, "logs/");
+        assert!(omitted[0].omitted.contains("HOME is unavailable"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_bundle_root_symlink_is_refused() {
+        let base = create_test_temp_dir("root-link");
+        let outside = base.join("outside");
+        fs::create_dir(&outside).unwrap();
+        let root = base.join("support-bundles");
+        std::os::unix::fs::symlink(&outside, &root).unwrap();
+        let error = generate_support_bundle(
+            &root,
+            None,
+            None,
+            AppOsVersionInfo {
+                app_name: "KubeMetal".into(),
+                app_version: "0.2.0".into(),
+                os: "macos".into(),
+                os_version: None,
+                kernel_version: None,
+                arch: "aarch64".into(),
+            },
+            vec![],
+        )
+        .unwrap_err();
+        assert!(error.contains("Omitted support bundle"));
+        assert!(error.contains("symlink"));
+        assert_eq!(fs::read_dir(outside).unwrap().count(), 0);
+        fs::remove_dir_all(base).unwrap();
     }
 }
