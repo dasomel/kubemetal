@@ -449,6 +449,13 @@ export const translations: Record<Language, Record<string, string>> = {
     'mlx.lockedGuardrail': 'MLX 환경 설치 후 가드레일이 활성화됩니다',
     'mlx.lockedServing': 'MLX 환경 설치 후 모델 서빙을 이용할 수 있습니다',
 
+    // MLX Studio Sub-tabs (#122)
+    'mlx.subtabEnv': '환경·진단',
+    'mlx.subtabRuntime': '추론 런타임',
+    'mlx.subtabTraining': '학습',
+    'mlx.subtabServing': '서빙·채팅',
+    'mlx.subtabsAriaLabel': 'MLX 스튜디오 서브탭',
+
     // Access Console
     'access.title': '접근 콘솔',
     'access.subtitle': '로컬 단일 사용자 SSO — 서비스별 크리덴셜 자동 확인과 원클릭 인증 접근을 제공합니다.',
@@ -1330,6 +1337,13 @@ export const translations: Record<Language, Record<string, string>> = {
     'mlx.lockedFinetune': 'Fine-tuning is available after installing the MLX environment',
     'mlx.lockedGuardrail': 'Guardrails are activated after installing the MLX environment',
     'mlx.lockedServing': 'Model serving is available after installing the MLX environment',
+
+    // MLX Studio Sub-tabs (#122)
+    'mlx.subtabEnv': 'Environment',
+    'mlx.subtabRuntime': 'Runtime',
+    'mlx.subtabTraining': 'Training',
+    'mlx.subtabServing': 'Serving & Chat',
+    'mlx.subtabsAriaLabel': 'MLX Studio sub-tabs',
 
     // Access Console
     'access.title': 'Access Console',
