@@ -15,6 +15,20 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
+def lancedb_table_names(list_tables_result):
+    """Normalize `LanceDBConnection.list_tables()` across API shapes.
+
+    Older lancedb returned a plain list[str]. The installed 0.34.0 returns a
+    pydantic `ListTablesResponse` with a `.tables` list[str] attribute; `in`
+    against the response object itself is always False (it has no matching
+    `__contains__`), so every query silently reported "collection not found"
+    regardless of what was actually indexed (measured on this Mac). Prefer
+    `.tables` when present so this keeps working across either shape instead
+    of assuming one.
+    """
+    tables = getattr(list_tables_result, "tables", list_tables_result)
+    return list(tables)
+
 def ensure_fts5(connection_factory=sqlite3.connect):
     """Fail explicitly when this Python build lacks SQLite FTS5."""
     try:
@@ -167,7 +181,7 @@ def cmd_index(args):
     db_path.mkdir(parents=True, exist_ok=True)
     db = lancedb.connect(str(db_path))
 
-    existing_tables = db.list_tables()
+    existing_tables = lancedb_table_names(db.list_tables())
     mode = "overwrite" if collection in existing_tables else "create"
     table = db.create_table(collection, data=chunks_data, mode=mode)
 
@@ -197,7 +211,7 @@ def cmd_query(args):
         sys.exit(1)
 
     db = lancedb.connect(str(db_path))
-    existing_tables = db.list_tables()
+    existing_tables = lancedb_table_names(db.list_tables())
     if collection not in existing_tables:
         print(json.dumps({"status": "error", "error": f"컬렉션 '{collection}'을 찾을 수 없습니다."}))
         sys.exit(1)
@@ -205,7 +219,10 @@ def cmd_query(args):
     table = db.open_table(collection)
 
     if args.mode == "lexical":
-        search_results = lexical_search(table.to_list(), query_str, top_k)
+        # LanceTable has no .to_list() on the installed lancedb (0.34.0) -
+        # measured on this Mac (AttributeError). to_arrow().to_pylist() is
+        # the stable route since pyarrow is a hard lancedb dependency.
+        search_results = lexical_search(table.to_arrow().to_pylist(), query_str, top_k)
     else:
         model = get_embedding_model(model_name)
         query_vector = model.encode(query_str, show_progress_bar=False).tolist()
