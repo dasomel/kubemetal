@@ -3,6 +3,42 @@
 use std::path::Path;
 
 const MASK: &str = "[REDACTED]";
+const MAX_LINE_BYTES: usize = 64 * 1024;
+
+fn redact_json(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(fields) => {
+            for (key, value) in fields {
+                if sensitive_key(key) {
+                    *value = serde_json::Value::String(MASK.into());
+                } else {
+                    redact_json(value);
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            let mut mask_next = false;
+            for item in items {
+                if mask_next {
+                    *item = serde_json::Value::String(MASK.into());
+                    mask_next = false;
+                } else if let Some(arg) = item.as_str() {
+                    if let Some(key) = arg.strip_prefix("--") {
+                        if let Some((key, _)) = key.split_once('=') {
+                            if sensitive_key(key) {
+                                *item = serde_json::Value::String(format!("--{key}={MASK}"));
+                            }
+                        } else if sensitive_key(key) {
+                            mask_next = true;
+                        }
+                    }
+                }
+                redact_json(item);
+            }
+        }
+        _ => {}
+    }
+}
 
 fn sensitive_key(key: &str) -> bool {
     let normalized: String = key
@@ -23,6 +59,10 @@ fn sensitive_key(key: &str) -> bool {
         "certificateauthoritydata",
         "authorization",
         "cookie",
+        "passphrase",
+        "dockerconfigjson",
+        "signingkey",
+        "encryptionkey",
     ]
     .iter()
     .any(|term| normalized.contains(term))
@@ -35,7 +75,14 @@ fn sensitive_key(key: &str) -> bool {
                     || !key.as_bytes()[end].is_ascii_alphanumeric()
                     || key.as_bytes()[end].is_ascii_uppercase()
             })
-        || normalized == "pwd"
+        || matches!(
+            normalized.as_str(),
+            "pwd" | "pass" | "auth" | "session" | "xamzsignature"
+        )
+        || normalized.ends_with("pass")
+        || (normalized.ends_with("key")
+            && !["monkey", "keyboardkey", "hotkey", "sortkey", "primarykey"]
+                .contains(&normalized.as_str()))
 }
 
 fn is_key_char(b: u8) -> bool {
@@ -90,8 +137,8 @@ fn replace_sensitive_values(line: &str) -> (String, bool) {
             continue;
         }
         let key = &line[key_start..end];
-        let header =
-            key.eq_ignore_ascii_case("authorization") || key.eq_ignore_ascii_case("cookie");
+        let header = key.to_ascii_lowercase().ends_with("authorization")
+            || key.eq_ignore_ascii_case("cookie");
         let mut sep = end;
         if quoted {
             if sep >= bytes.len() || bytes[sep] != bytes[i] {
@@ -160,45 +207,48 @@ fn replace_sensitive_values(line: &str) -> (String, bool) {
 }
 
 fn replace_bearer(line: &str) -> (String, bool) {
-    let mut out = line.to_string();
+    let lower = line.to_ascii_lowercase();
+    let bytes = line.as_bytes();
+    let mut out = String::with_capacity(line.len());
     let mut cursor = 0;
+    let mut copied = 0;
     let mut continuation = false;
-    while cursor < out.len() {
-        let lower = out[cursor..].to_ascii_lowercase();
-        let Some(offset) = lower.find("bearer") else {
+    while cursor < line.len() {
+        let Some(offset) = lower[cursor..].find("bearer") else {
             break;
         };
         let start = cursor + offset;
         let end = start + 6;
-        if (start > 0 && is_word_char(out.as_bytes()[start - 1]))
-            || end == out.len()
-            || !out.as_bytes()[end].is_ascii_whitespace()
+        if (start > 0 && is_word_char(bytes[start - 1]))
+            || end == line.len()
+            || !bytes[end].is_ascii_whitespace()
         {
             cursor = end;
             continue;
         }
         let mut value = end;
-        while value < out.len() && out.as_bytes()[value].is_ascii_whitespace() {
+        while value < line.len() && bytes[value].is_ascii_whitespace() {
             value += 1;
         }
-        if value == out.len() {
+        if value == line.len() {
             continuation = true;
             break;
         }
         let mut stop = value;
-        while stop < out.len()
-            && !out.as_bytes()[stop].is_ascii_whitespace()
-            && !matches!(out.as_bytes()[stop], b'"' | b'\'' | b',' | b';')
+        while stop < line.len()
+            && !bytes[stop].is_ascii_whitespace()
+            && !matches!(bytes[stop], b'"' | b'\'' | b',' | b';')
         {
             stop += 1;
         }
-        if &out[value..stop] != MASK {
-            out.replace_range(value..stop, MASK);
-            cursor = value + MASK.len();
-        } else {
-            cursor = stop;
+        if &line[value..stop] != MASK {
+            out.push_str(&line[copied..value]);
+            out.push_str(MASK);
+            copied = stop;
         }
+        cursor = stop.max(end);
     }
+    out.push_str(&line[copied..]);
     (out, continuation)
 }
 
@@ -223,11 +273,9 @@ fn replace_url_userinfo(line: &str) -> String {
             .find(|c: char| c.is_whitespace() || matches!(c, '/' | '?' | '#' | '"' | '\''))
             .unwrap_or(authority.len());
         if let Some(at) = authority[..end].rfind('@') {
-            if authority[..at].contains(':') {
-                out.replace_range(start..start + at, MASK);
-                cursor = start + MASK.len() + 1;
-                continue;
-            }
+            out.replace_range(start..start + at, MASK);
+            cursor = start + MASK.len() + 1;
+            continue;
         }
         cursor = start + end;
     }
@@ -246,6 +294,9 @@ fn standalone_token(token: &str) -> bool {
         "xoxp-",
         "sk-",
         "glpat-",
+        "sk_live_",
+        "npm_",
+        "aiza",
     ];
     if prefixed
         .iter()
@@ -254,7 +305,7 @@ fn standalone_token(token: &str) -> bool {
         return true;
     }
     if token.len() == 20
-        && token.starts_with("AKIA")
+        && (token.starts_with("AKIA") || token.starts_with("ASIA"))
         && token[4..]
             .bytes()
             .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
@@ -283,7 +334,7 @@ fn replace_standalone_tokens(line: &str) -> String {
             continue;
         }
         let start = i;
-        while i < bytes.len() && (is_word_char(bytes[i]) || matches!(bytes[i], b'.' | b'=')) {
+        while i < bytes.len() && (is_word_char(bytes[i]) || bytes[i] == b'.') {
             i += 1;
         }
         if standalone_token(&line[start..i]) {
@@ -324,12 +375,13 @@ fn replace_home(text: &str, home: &Path) -> String {
     }
     let mut out = text.to_string();
     for needle in [home.to_string(), home.replace('/', "\\/")] {
+        let lower = out.to_ascii_lowercase();
+        let needle_lower = needle.to_ascii_lowercase();
+        let mut replaced = String::with_capacity(out.len());
         let mut cursor = 0;
+        let mut copied = 0;
         while cursor < out.len() {
-            let Some(offset) = out[cursor..]
-                .to_ascii_lowercase()
-                .find(&needle.to_ascii_lowercase())
-            else {
+            let Some(offset) = lower[cursor..].find(&needle_lower) else {
                 break;
             };
             let start = cursor + offset;
@@ -337,12 +389,14 @@ fn replace_home(text: &str, home: &Path) -> String {
             let boundary =
                 end == out.len() || out.as_bytes()[end] == b'/' || out[end..].starts_with("\\/");
             if boundary {
-                out.replace_range(start..end, "~");
-                cursor = start + 1;
-            } else {
-                cursor = end;
+                replaced.push_str(&out[copied..start]);
+                replaced.push('~');
+                copied = end;
             }
+            cursor = end;
         }
+        replaced.push_str(&out[copied..]);
+        out = replaced;
     }
     out
 }
@@ -353,6 +407,13 @@ pub fn redact_text(text: &str, home: Option<&Path>) -> String {
     let mut block_indent = None;
     for line in text.split_inclusive('\n') {
         let bare = line.strip_suffix('\n').unwrap_or(line);
+        if bare.len() > MAX_LINE_BYTES {
+            result.push_str("[REDACTED:oversized-line]");
+            if line.ends_with('\n') {
+                result.push('\n');
+            }
+            continue;
+        }
         let trimmed = bare.trim_start();
         let indent = bare.len() - trimmed.len();
         if let Some(parent_indent) = block_indent {
@@ -365,7 +426,18 @@ pub fn redact_text(text: &str, home: Option<&Path>) -> String {
             }
             block_indent = None;
         }
-        let (redacted, key_continuation) = replace_sensitive_values(bare);
+        let json = if trimmed.starts_with(['{', '[']) {
+            serde_json::from_str::<serde_json::Value>(bare)
+                .ok()
+                .map(|mut value| {
+                    redact_json(&mut value);
+                    value.to_string()
+                })
+        } else {
+            None
+        };
+        let source = json.as_deref().unwrap_or(bare);
+        let (redacted, key_continuation) = replace_sensitive_values(source);
         let (redacted, bearer_continuation) = replace_bearer(&redacted);
         if key_continuation || bearer_continuation {
             block_indent = Some(indent);
@@ -384,6 +456,66 @@ pub fn redact_text(text: &str, home: Option<&Path>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn test_new_secret_shapes() {
+        let cases = [
+            r#"{"auth":"SECRETMIX"}"#,
+            "tls.key: SECRETMIX",
+            r#"{"tls.key":"SECRETMIX"}"#,
+            ".dockerconfigjson: SECRETMIX",
+            "passphrase: SECRETMIX",
+            "DB_PASS=SECRETMIX",
+            "export PASS=SECRETMIX",
+            "session=SECRETMIX",
+            "signing_key: SECRETMIX",
+            "encryption_key=SECRETMIX",
+            r#"["--token","SECRETMIX"]"#,
+            r#"["--token=SECRETMIX"]"#,
+            r#"["--password","SECRETMIX"]"#,
+            r#"{"credentials":{"pass":"SECRETMIX"}}"#,
+            r#"{"secret":["SECRETMIX"]}"#,
+            "id=eyJabc.SECRETMIX.sig",
+            "Proxy-Authorization: Basic SECRETMIX",
+            "ASIASECRETMIX1234567",
+            "sk_live_SECRETMIX123456",
+            "AIzaSECRETMIX123456",
+            "npm_SECRETMIX123456",
+            "X-Amz-Signature=SECRETMIX",
+            "https://SECRETMIX@host",
+        ];
+        for input in cases {
+            let output = redact_text(input, None);
+            assert!(
+                !output.contains("SECRETMIX"),
+                "leaked from {input}: {output}"
+            );
+            if input.starts_with(['{', '[']) {
+                serde_json::from_str::<serde_json::Value>(&output).unwrap();
+            }
+        }
+        for input in [
+            r#"{"token":null}"#,
+            r#"{"password":123}"#,
+            r#"{"auth":true}"#,
+        ] {
+            serde_json::from_str::<serde_json::Value>(&redact_text(input, None)).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_oversized_line_cost_is_bounded() {
+        for input in [
+            "bearer x ".repeat(240_000),
+            "/Users/developer/models ".repeat(60_000),
+        ] {
+            let start = Instant::now();
+            let output = redact_text(&input, Some(Path::new("/Users/developer")));
+            assert_eq!(output, "[REDACTED:oversized-line]");
+            assert!(start.elapsed().as_secs() < 5);
+        }
+    }
 
     #[test]
     fn test_redact_bearer_token() {
@@ -469,7 +601,8 @@ users:
         let json_input = r#"{"client-key-data": "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo="}"#;
         let redacted_json = redact_text(json_input, None);
         assert!(!redacted_json.contains("LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQo="));
-        assert!(redacted_json.contains("\"client-key-data\": \"[REDACTED]\""));
+        let value: serde_json::Value = serde_json::from_str(&redacted_json).unwrap();
+        assert_eq!(value["client-key-data"], MASK);
     }
 
     #[test]
