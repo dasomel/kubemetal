@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-header-version-single-source",
+  "task": "Derive the header app version from package.json and add a CI check for version and react/react-dom divergence",
+  "changeContext": {
+    "paths": [
+      "scripts/ci/**",
+      ".agents/evals/traces/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Touched Header.tsx, vite.config.ts define, vite-env.d.ts, Makefile lint wiring, new scripts/ci/check_versions.py and docs/mistakes-log.md; no Tauri capability, IPC, workflow, or process/network boundary changed; PR #110/#112 files untouched"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Header showed v0.1.0 while package.json and Cargo.toml were 0.2.0; check_versions.py fails when Cargo.toml version or the react-dom lock version is temporarily changed",
+      "evidence": [
+        "ci:check_versions-negative-cargo",
+        "ci:check_versions-negative-react-dom"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Header renders __APP_VERSION__ defined by vite from package.json; no hardcoded literal remains"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "summary": "tsc --noEmit, vite build (bundle contains 0.2.0) and check_versions.py passed",
+      "evidence": [
+        "test:tsc-noEmit",
+        "ci:check_versions"
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "summary": "The running Tauri app was not launched; header text observed only via built bundle content",
+      "scope": "static and build evidence only; in-app rendering unverified",
+      "evidence": [
+        "test:vite-build"
+      ],
+      "status": "passed"
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Header version single-sourced and divergence guarded within verified static scope"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified at static/build level; running app not observed"
+    }
+  ]
+}

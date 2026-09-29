@@ -16,7 +16,7 @@ export const Header: React.FC = () => {
         <div>
           <h1 className="text-display text-ink flex items-center gap-2">
             {t('header.title')}
-            <span className="text-caption font-normal text-inkFaint">v0.1.0</span>
+            <span className="text-caption font-normal text-inkFaint">v{__APP_VERSION__}</span>
           </h1>
           <p className="text-caption text-inkMuted">
             {t('header.subtitle')}

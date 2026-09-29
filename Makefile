@@ -116,6 +116,8 @@ lint: ## rustfmt --check + clippy(-D warnings) + tsc + DESIGN.md 토큰 린트 +
 	npx @google/design.md lint DESIGN.md
 	# invoke<T>의 T는 검증되지 않는 주장이라 tsc가 못 잡는다 — Rust 반환 타입과 대조한다.
 	python3 scripts/ci/check_ipc_types.py
+	# 앱 버전(package.json/Cargo/tauri.conf)과 react/react-dom 락 버전 일치 대조.
+	python3 scripts/ci/check_versions.py
 
 # NOTICE의 "금지 라이선스 없음" 주장이 lockfile과 어긋나면 여기서 깨진다(이슈 #9).
 license-check: ## 번들 의존성 라이선스 정책 게이트 (self-test 포함)
