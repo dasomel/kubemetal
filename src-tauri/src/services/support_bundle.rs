@@ -6,11 +6,12 @@
 //! 자동 redaction하며, 바이너리/비-UTF-8 등 검사 불가능한 파일은 fail-closed로 제외하고
 //! `manifest.json`에 `omitted: <reason>`으로 기록한다.
 
-use std::fs;
 #[cfg(test)]
 use std::fs::File;
+use std::fs::{self, OpenOptions};
 #[cfg(test)]
-use std::io::{BufReader, Read};
+use std::io::BufReader;
+use std::io::{Read, Seek as _, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -292,78 +293,70 @@ fn redact_sensitive_key_values(line: &str) -> String {
         "id_token",
         "token",
         "private_key",
+        "aws_secret_access_key",
+        "aws_access_key_id",
+        "github_token",
     ];
-
     let mut out = line.to_string();
     for key in KEYS {
-        // 1. JSON 형식: "key": "..."
         let json_key = format!("\"{key}\"");
-        if let Some(pos) = out.find(&json_key) {
-            if let Some(colon_pos) = out[pos..].find(':') {
-                let abs_colon = pos + colon_pos;
-                let rest = &out[abs_colon + 1..];
-                let trimmed = rest.trim_start();
-                let leading = &rest[..rest.len() - trimmed.len()];
-                if let Some(inside) = trimmed.strip_prefix('"') {
-                    if let Some(end_quote) = inside.find('"') {
-                        let val = &inside[..end_quote];
-                        if val != "[REDACTED]" && !val.is_empty() {
-                            let before = &out[..abs_colon + 1];
-                            let after = &inside[end_quote..];
-                            out = format!("{before}{leading}\"[REDACTED]\"{after}");
+        let mut cursor = 0;
+        while let Some(offset) = out[cursor..].find(&json_key) {
+            let pos = cursor + offset + json_key.len();
+            let rest = out[pos..].trim_start();
+            if let Some(after_colon) = rest.strip_prefix(':') {
+                let value = after_colon.trim_start();
+                if let Some(inside) = value.strip_prefix('"') {
+                    let mut escaped = false;
+                    let end = inside.char_indices().find_map(|(i, ch)| {
+                        if escaped {
+                            escaped = false;
+                            None
+                        } else if ch == '\\' {
+                            escaped = true;
+                            None
+                        } else if ch == '"' {
+                            Some(i)
+                        } else {
+                            None
+                        }
+                    });
+                    if let Some(end) = end {
+                        let start = out.len() - inside.len();
+                        if end > 0 && &inside[..end] != "[REDACTED]" {
+                            out.replace_range(start..start + end, "[REDACTED]");
                         }
                     }
                 }
             }
+            cursor = pos;
         }
 
-        // 2. YAML 형식: key: ...
-        let yaml_key = format!("{key}:");
-        let lower = out.to_lowercase();
-        if let Some(pos) = lower.find(&yaml_key) {
-            let is_boundary = pos == 0 || out.as_bytes()[pos - 1].is_ascii_whitespace();
-            if is_boundary {
-                let after = &out[pos + yaml_key.len()..];
-                let trimmed = after.trim_start();
-                let leading = &after[..after.len() - trimmed.len()];
-                if !trimmed.is_empty() && !trimmed.starts_with("[REDACTED]") {
-                    let end = trimmed
-                        .find(|c: char| c.is_whitespace() || c == ',' || c == ';')
-                        .unwrap_or(trimmed.len());
-                    let remaining = &trimmed[end..];
-                    out = format!(
-                        "{}{}[REDACTED]{}",
-                        &out[..pos + yaml_key.len()],
-                        leading,
-                        remaining
-                    );
+        for delimiter in [':', '='] {
+            let pattern = format!("{key}{delimiter}");
+            let mut cursor = 0;
+            while let Some(offset) = out[cursor..]
+                .to_ascii_lowercase()
+                .find(&pattern.to_ascii_lowercase())
+            {
+                let pos = cursor + offset;
+                let end_key = pos + pattern.len();
+                let boundary = pos == 0
+                    || out.as_bytes()[pos - 1].is_ascii_whitespace()
+                    || out.as_bytes()[pos - 1] == b'&';
+                if !boundary {
+                    cursor = end_key;
+                    continue;
                 }
-            }
-        }
-
-        // 3. ENV / Assignment 형식: KEY=...
-        let env_key = format!("{key}=");
-        let lower = out.to_lowercase();
-        if let Some(pos) = lower.find(&env_key) {
-            let is_boundary = pos == 0
-                || out.as_bytes()[pos - 1].is_ascii_whitespace()
-                || out.as_bytes()[pos - 1] == b'&';
-            if is_boundary {
-                let after = &out[pos + env_key.len()..];
-                let trimmed = after.trim_start();
-                let leading = &after[..after.len() - trimmed.len()];
-                if !trimmed.is_empty() && !trimmed.starts_with("[REDACTED]") {
-                    let end = trimmed
-                        .find(|c: char| c.is_whitespace() || c == '&' || c == ';')
-                        .unwrap_or(trimmed.len());
-                    let remaining = &trimmed[end..];
-                    out = format!(
-                        "{}{}[REDACTED]{}",
-                        &out[..pos + env_key.len()],
-                        leading,
-                        remaining
-                    );
+                let value = out[end_key..].trim_start();
+                let start = out.len() - value.len();
+                let end = value
+                    .find(|c: char| c.is_whitespace() || c == ',' || c == ';' || c == '&')
+                    .unwrap_or(value.len());
+                if end > 0 && &value[..end] != "[REDACTED]" {
+                    out.replace_range(start..start + end, "[REDACTED]");
                 }
+                cursor = (start + if end > 0 { "[REDACTED]".len() } else { 0 }).min(out.len());
             }
         }
     }
@@ -372,7 +365,16 @@ fn redact_sensitive_key_values(line: &str) -> String {
 
 /// 접두사 기반 독립 토큰 마스킹 (sk-, ghp_, glpat-, hf_)
 fn redact_prefixed_tokens(line: &str) -> String {
-    const PREFIXES: &[&str] = &["sk-ant-", "sk-", "ghp_", "glpat-", "hf_"];
+    const PREFIXES: &[&str] = &[
+        "sk-ant-",
+        "sk-",
+        "github_pat_",
+        "ghp_",
+        "gho_",
+        "glpat-",
+        "hf_",
+        "AKIA",
+    ];
     let mut out = line.to_string();
     for prefix in PREFIXES {
         let mut start_idx = 0;
@@ -402,13 +404,96 @@ pub fn redact_line(line: &str) -> String {
     let s = redact_authorization_headers(&s);
     let s = redact_bearer_tokens(&s);
     let s = redact_sensitive_key_values(&s);
-    redact_prefixed_tokens(&s)
+    redact_url_userinfo(&redact_prefixed_tokens(&s))
+}
+
+fn redact_url_userinfo(line: &str) -> String {
+    let mut out = line.to_string();
+    for scheme in ["https://", "http://"] {
+        let mut cursor = 0;
+        while let Some(offset) = out[cursor..].find(scheme) {
+            let start = cursor + offset + scheme.len();
+            let authority = &out[start..];
+            let end = authority
+                .find(|c: char| c.is_whitespace() || c == '/' || c == '?' || c == '#')
+                .unwrap_or(authority.len());
+            if let Some(at) = authority[..end].rfind('@') {
+                out.replace_range(start..start + at, "[REDACTED]");
+                cursor = start + "[REDACTED]@".len();
+            } else {
+                cursor = start + end;
+            }
+        }
+    }
+    out
+}
+
+fn write_bundle_file(path: &Path, bytes: &[u8]) -> Result<ManifestFileEntry, String> {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|e| format!("Failed to create {}: {e}", path.display()))?;
+    file.write_all(bytes)
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| format!("Failed to seek {}: {e}", path.display()))?;
+    let mut written = Vec::new();
+    file.read_to_end(&mut written)
+        .map_err(|e| format!("Failed to verify {}: {e}", path.display()))?;
+    Ok(ManifestFileEntry {
+        path: path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string(),
+        sha256: sha256_digest(&written),
+        bytes: written.len() as u64,
+    })
 }
 
 /// 전체 텍스트 redaction 및 사용자 홈 경로 `~` 치환
 pub fn redact_text(text: &str, home: Option<&Path>) -> String {
     let mut result = String::with_capacity(text.len());
+    let mut yaml_indent = None;
+    let mut in_pem = false;
     for line in text.lines() {
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        if in_pem {
+            if trimmed.starts_with("-----END ") {
+                in_pem = false;
+            }
+            result.push_str("[REDACTED]\n");
+            continue;
+        }
+        if trimmed.starts_with("-----BEGIN ") {
+            in_pem = !trimmed.contains("-----END ");
+            result.push_str("[REDACTED]\n");
+            continue;
+        }
+        if let Some(block_indent) = yaml_indent {
+            if trimmed.is_empty() || indent > block_indent {
+                result.push_str("[REDACTED]\n");
+                continue;
+            }
+            yaml_indent = None;
+        }
+        if [
+            "client-key-data",
+            "client-certificate-data",
+            "certificate-authority-data",
+        ]
+        .iter()
+        .any(|key| {
+            trimmed.starts_with(&format!("{key}:"))
+                && trimmed.split_once(':').is_some_and(|(_, value)| {
+                    matches!(value.trim(), "|" | "|-" | "|+" | ">" | ">-" | ">+")
+                })
+        }) {
+            yaml_indent = Some(indent);
+        }
         let redacted = redact_line(line);
         result.push_str(&redacted);
         result.push('\n');
@@ -449,6 +534,7 @@ pub fn collect_app_os_version_info(app: Option<&tauri::AppHandle>) -> AppOsVersi
 }
 
 /// 서포트 번들 생성 (동기/스레드 블로킹 구현)
+#[cfg(test)]
 pub fn generate_support_bundle(
     target_base_dir: &Path,
     home: Option<&Path>,
@@ -456,27 +542,61 @@ pub fn generate_support_bundle(
     app_info: AppOsVersionInfo,
     log_sources: Vec<(String, PathBuf)>,
 ) -> Result<SupportBundleResult, String> {
+    generate_support_bundle_with_omissions(
+        target_base_dir,
+        home,
+        health_summary_json,
+        app_info,
+        log_sources,
+        Vec::new(),
+    )
+}
+
+fn generate_support_bundle_with_omissions(
+    target_base_dir: &Path,
+    home: Option<&Path>,
+    health_summary_json: Option<String>,
+    app_info: AppOsVersionInfo,
+    log_sources: Vec<(String, PathBuf)>,
+    mut omitted: Vec<ManifestOmittedEntry>,
+) -> Result<SupportBundleResult, String> {
     let (created_at, dir_timestamp) = format_bundle_timestamps()?;
-    let bundle_dir_name = format!("support-bundle-{dir_timestamp}");
-    let bundle_dir = target_base_dir.join(&bundle_dir_name);
-    fs::create_dir_all(&bundle_dir)
-        .map_err(|e| format!("Failed to create bundle dir {}: {e}", bundle_dir.display()))?;
+    fs::create_dir_all(target_base_dir).map_err(|e| {
+        format!(
+            "Failed to create bundle base {}: {e}",
+            target_base_dir.display()
+        )
+    })?;
+    let bundle_dir = (0..1000)
+        .find_map(|suffix| {
+            let name = if suffix == 0 {
+                format!("support-bundle-{dir_timestamp}")
+            } else {
+                format!("support-bundle-{dir_timestamp}-{suffix}")
+            };
+            let path = target_base_dir.join(name);
+            match fs::create_dir(&path) {
+                Ok(()) => Some(Ok(path)),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => None,
+                Err(e) => Some(Err(format!(
+                    "Failed to create bundle dir {}: {e}",
+                    path.display()
+                ))),
+            }
+        })
+        .unwrap_or_else(|| Err("No unused support bundle directory name".to_string()))?;
 
     let mut files = Vec::new();
-    let mut omitted = Vec::new();
 
     // 1. app_info.json 작성
     let app_info_str = serde_json::to_string_pretty(&app_info)
         .map_err(|e| format!("Failed to serialize app info: {e}"))?;
     let app_info_redacted = redact_text(&app_info_str, home);
     let app_info_path = bundle_dir.join("app_info.json");
-    fs::write(&app_info_path, app_info_redacted.as_bytes())
-        .map_err(|e| format!("Failed to write app_info.json: {e}"))?;
-    files.push(ManifestFileEntry {
-        path: "app_info.json".to_string(),
-        sha256: sha256_digest(app_info_redacted.as_bytes()),
-        bytes: app_info_redacted.len() as u64,
-    });
+    files.push(write_bundle_file(
+        &app_info_path,
+        app_info_redacted.as_bytes(),
+    )?);
 
     // 2. health_summary.json 작성 (실패 시에도 가짜 상태 대신 에러 기록)
     let health_str = health_summary_json.unwrap_or_else(|| {
@@ -488,13 +608,7 @@ pub fn generate_support_bundle(
     });
     let health_redacted = redact_text(&health_str, home);
     let health_path = bundle_dir.join("health_summary.json");
-    fs::write(&health_path, health_redacted.as_bytes())
-        .map_err(|e| format!("Failed to write health_summary.json: {e}"))?;
-    files.push(ManifestFileEntry {
-        path: "health_summary.json".to_string(),
-        sha256: sha256_digest(health_redacted.as_bytes()),
-        bytes: health_redacted.len() as u64,
-    });
+    files.push(write_bundle_file(&health_path, health_redacted.as_bytes())?);
 
     // 3. 로그 소스 수집 및 redaction (fail-closed 검증)
     for (dest_rel_path, src_path) in log_sources {
@@ -521,19 +635,43 @@ pub fn generate_support_bundle(
                 }
                 Ok(text) => {
                     let redacted = redact_text(text, home);
+                    if !Path::new(&dest_rel_path)
+                        .components()
+                        .all(|part| matches!(part, std::path::Component::Normal(_)))
+                    {
+                        return Err(format!("Invalid bundle path: {dest_rel_path}"));
+                    }
                     let dest_path = bundle_dir.join(&dest_rel_path);
                     if let Some(parent) = dest_path.parent() {
-                        fs::create_dir_all(parent).map_err(|e| {
-                            format!("Failed to create directory {}: {e}", parent.display())
-                        })?;
+                        if parent != bundle_dir {
+                            match fs::create_dir(parent) {
+                                Ok(()) => {}
+                                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                                    let metadata = fs::symlink_metadata(parent).map_err(|e| {
+                                        format!(
+                                            "Failed to inspect directory {}: {e}",
+                                            parent.display()
+                                        )
+                                    })?;
+                                    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                                        return Err(format!(
+                                            "Unsafe directory {}",
+                                            parent.display()
+                                        ));
+                                    }
+                                }
+                                Err(e) => {
+                                    return Err(format!(
+                                        "Failed to create directory {}: {e}",
+                                        parent.display()
+                                    ))
+                                }
+                            }
+                        }
                     }
-                    fs::write(&dest_path, redacted.as_bytes())
-                        .map_err(|e| format!("Failed to write {}: {e}", dest_path.display()))?;
-                    files.push(ManifestFileEntry {
-                        path: dest_rel_path,
-                        sha256: sha256_digest(redacted.as_bytes()),
-                        bytes: redacted.len() as u64,
-                    });
+                    let mut entry = write_bundle_file(&dest_path, redacted.as_bytes())?;
+                    entry.path = dest_rel_path;
+                    files.push(entry);
                 }
             },
         }
@@ -552,8 +690,7 @@ pub fn generate_support_bundle(
     let manifest_bytes = serde_json::to_vec_pretty(&manifest)
         .map_err(|e| format!("Failed to serialize manifest: {e}"))?;
     let manifest_path = bundle_dir.join(MANIFEST_FILE);
-    fs::write(&manifest_path, manifest_bytes)
-        .map_err(|e| format!("Failed to write manifest.json: {e}"))?;
+    write_bundle_file(&manifest_path, &manifest_bytes)?;
 
     Ok(SupportBundleResult {
         bundle_dir: bundle_dir.to_string_lossy().to_string(),
@@ -562,6 +699,46 @@ pub fn generate_support_bundle(
         omitted_count: manifest.omitted.len(),
         manifest,
     })
+}
+
+fn collect_log_sources(logs_dir: &Path) -> (Vec<(String, PathBuf)>, Vec<ManifestOmittedEntry>) {
+    let mut sources = Vec::new();
+    let mut omitted = Vec::new();
+    match fs::read_dir(logs_dir) {
+        Err(e) => omitted.push(ManifestOmittedEntry {
+            path: "logs/".to_string(),
+            omitted: format!("Failed to open log directory: {e}"),
+        }),
+        Ok(entries) => {
+            for entry in entries {
+                match entry {
+                    Err(e) => omitted.push(ManifestOmittedEntry {
+                        path: "logs/".to_string(),
+                        omitted: format!("Failed to read log directory entry: {e}"),
+                    }),
+                    Ok(entry) => {
+                        let path = entry.path();
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        match entry.file_type() {
+                            Ok(kind) if kind.is_file() => {
+                                sources.push((format!("logs/{name}"), path))
+                            }
+                            Ok(kind) if kind.is_symlink() => omitted.push(ManifestOmittedEntry {
+                                path: format!("logs/{name}"),
+                                omitted: "Symlink log entry cannot be safely scanned".to_string(),
+                            }),
+                            Ok(_) => {}
+                            Err(e) => omitted.push(ManifestOmittedEntry {
+                                path: format!("logs/{name}"),
+                                omitted: format!("Failed to inspect log entry: {e}"),
+                            }),
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (sources, omitted)
 }
 
 /// Tauri 커맨드용 비동기 래퍼
@@ -602,30 +779,18 @@ pub async fn create_support_bundle_impl(
 
     let home = std::env::var_os("HOME").map(PathBuf::from);
 
-    let mut log_sources = Vec::new();
-    if let Some(ref h) = home {
-        let logs_dir = h.join(".kubemetal").join("logs");
-        if logs_dir.is_dir() {
-            if let Ok(entries) = fs::read_dir(&logs_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_file() {
-                        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                            log_sources.push((format!("logs/{file_name}"), path));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     tokio::task::spawn_blocking(move || {
-        generate_support_bundle(
+        let (log_sources, omitted) = home
+            .as_ref()
+            .map(|h| collect_log_sources(&h.join(".kubemetal").join("logs")))
+            .unwrap_or_default();
+        generate_support_bundle_with_omissions(
             &target_base_dir,
             home.as_deref(),
             health_summary_json,
             app_info,
             log_sources,
+            omitted,
         )
     })
     .await
@@ -738,6 +903,118 @@ export HF_TOKEN=hf_abcdef1234567890
         assert!(!redacted.contains("super-secret-pass"));
         assert!(redacted.contains("keep-me"));
         assert!(redacted.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn test_redact_multiline_yaml_pem_and_url_userinfo() {
+        let input = "client-key-data: |\n  first-secret-line\n  second-secret-line\nname: visible\n-----BEGIN PRIVATE KEY-----\npem-secret-line\n-----END PRIVATE KEY-----\nurl=https://user:password@host/path";
+        let redacted = redact_text(input, None);
+        for secret in [
+            "first-secret-line",
+            "second-secret-line",
+            "pem-secret-line",
+            "user:password",
+        ] {
+            assert!(!redacted.contains(secret), "leaked {secret}");
+        }
+        assert!(redacted.contains("name: visible"));
+        assert!(redacted.contains("host/path"));
+    }
+
+    #[test]
+    fn test_redact_multiple_env_secrets_on_one_line() {
+        let input = "AWS_SECRET_ACCESS_KEY=alpha123 AWS_ACCESS_KEY_ID=AKIA1234567890123456 GITHUB_TOKEN=github_pat_1234567890 ghp_1234567890 gho_1234567890 hf_1234567890 password=first password=second";
+        let redacted = redact_text(input, None);
+        for secret in [
+            "alpha123",
+            "AKIA1234567890123456",
+            "github_pat_1234567890",
+            "ghp_1234567890",
+            "gho_1234567890",
+            "hf_1234567890",
+            "first",
+            "second",
+        ] {
+            assert!(!redacted.contains(secret), "leaked {secret}");
+        }
+    }
+
+    #[test]
+    fn test_redacted_json_remains_valid() {
+        let redacted = redact_text(
+            r#"{"password":"secret","password":"second","normal":"keep"}"#,
+            None,
+        );
+        let value: serde_json::Value = serde_json::from_str(&redacted).unwrap();
+        assert_eq!(value["normal"], "keep");
+        assert!(!redacted.contains("secret"));
+        assert!(!redacted.contains("second"));
+    }
+
+    #[test]
+    fn test_existing_bundle_name_and_symlink_are_not_followed() {
+        let base = create_test_temp_dir("bundle-boundary");
+        let outside = base.join("outside.json");
+        fs::write(&outside, "untouched").unwrap();
+        let (_, stamp) = format_bundle_timestamps().unwrap();
+        let planted = base.join(format!("support-bundle-{stamp}"));
+        fs::create_dir(&planted).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, planted.join("app_info.json")).unwrap();
+        let info = AppOsVersionInfo {
+            app_name: "KubeMetal".into(),
+            app_version: "0.2.0".into(),
+            os: "macos".into(),
+            os_version: None,
+            kernel_version: None,
+            arch: "aarch64".into(),
+        };
+        let result = generate_support_bundle(&base, None, None, info, vec![]).unwrap();
+        assert_ne!(Path::new(&result.bundle_dir), planted);
+        assert_eq!(fs::read_to_string(outside).unwrap(), "untouched");
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_output_file_creation_rejects_symlink() {
+        let base = create_test_temp_dir("output-symlink");
+        let outside = base.join("outside.json");
+        fs::write(&outside, "untouched").unwrap();
+        let planted = base.join("app_info.json");
+        std::os::unix::fs::symlink(&outside, &planted).unwrap();
+        assert!(write_bundle_file(&planted, b"replacement").is_err());
+        assert_eq!(fs::read_to_string(outside).unwrap(), "untouched");
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn test_log_directory_open_failure_is_recorded() {
+        let base = create_test_temp_dir("log-open-failure");
+        let logs = base.join("logs");
+        fs::write(&logs, "not a directory").unwrap();
+        let (sources, omitted) = collect_log_sources(&logs);
+        assert!(sources.is_empty());
+        assert_eq!(omitted.len(), 1);
+        assert!(omitted[0].omitted.contains("Failed to open log directory"));
+        let info = AppOsVersionInfo {
+            app_name: "KubeMetal".into(),
+            app_version: "0.2.0".into(),
+            os: "macos".into(),
+            os_version: None,
+            kernel_version: None,
+            arch: "aarch64".into(),
+        };
+        let result =
+            generate_support_bundle_with_omissions(&base, None, None, info, sources, omitted)
+                .unwrap();
+        assert_eq!(result.omitted_count, 1);
+        let manifest: SupportBundleManifest =
+            serde_json::from_slice(&fs::read(result.manifest_path).unwrap()).unwrap();
+        assert!(manifest.omitted[0]
+            .omitted
+            .contains("Failed to open log directory"));
+        fs::remove_dir_all(base).unwrap();
     }
 
     #[test]
