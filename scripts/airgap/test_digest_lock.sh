@@ -268,12 +268,36 @@ if [ -e "$TEST_DOCKER_LOG" ]; then
 fi
 echo 'PASS install rejects stale daemon cache before load'
 
-rm -f "$TEST_DOCKER_STATE" "$TEST_PROVISION_LOG"
-AIRGAP_ALLOW_UNLOCKED=1 TEST_PREEXISTING_ID='sha256:stale-cache-id' AIRGAP_DIR="$BUNDLE" KUBE_CONTEXT=test \
-  "${SCRIPT_DIR}/install_from_airgap.sh" > "${TEST_DIR}/opt-out.out" 2>&1
-grep -q 'AIRGAP_ALLOW_UNLOCKED=1' "${TEST_DIR}/opt-out.out"
-grep -q '프로비저닝 성공' "${TEST_DIR}/opt-out.out"
-echo 'PASS explicit unlocked opt-out permits the intentionally unverified install'
+rm -f "$TEST_DOCKER_STATE" "$TEST_DOCKER_LOG" "$TEST_PROVISION_LOG"
+legacy_flag="AIRGAP""_ALLOW_UNLOCKED"
+if env "$legacy_flag=1" TEST_PREEXISTING_ID='sha256:stale-cache-id' AIRGAP_DIR="$BUNDLE" KUBE_CONTEXT=test \
+  "${SCRIPT_DIR}/install_from_airgap.sh" > "${TEST_DIR}/former-opt-out.out" 2>&1; then
+  echo 'expected former environment opt-out to reject stale daemon cache, but install succeeded' >&2
+  exit 1
+fi
+grep -q 'load 전 daemon cache image ID 불일치' "${TEST_DIR}/former-opt-out.out"
+if [ -e "$TEST_DOCKER_LOG" ] || [ -e "$TEST_PROVISION_LOG" ]; then
+  echo 'former environment opt-out reached image load or provisioning' >&2
+  exit 1
+fi
+echo 'PASS former environment opt-out cannot bypass stale-cache image ID verification'
+
+rm -f "$TEST_DOCKER_STATE" "$TEST_DOCKER_LOG" "$TEST_PROVISION_LOG"
+mv "${BUNDLE}/digests.lock" "${TEST_DIR}/digests.lock.saved"
+write_manifest
+if env "$legacy_flag=1" TEST_PREEXISTING_ID='sha256:stale-cache-id' AIRGAP_DIR="$BUNDLE" KUBE_CONTEXT=test \
+  "${SCRIPT_DIR}/install_from_airgap.sh" > "${TEST_DIR}/missing-lock.out" 2>&1; then
+  echo 'expected missing digest lock rejection, but install succeeded' >&2
+  exit 1
+fi
+grep -q 'digests.lock이 없어 필수 SBOM을 이미지 ID에 결속해 검증할 수 없습니다' "${TEST_DIR}/missing-lock.out"
+if [ -e "$TEST_DOCKER_LOG" ] || [ -e "$TEST_PROVISION_LOG" ]; then
+  echo 'missing digest lock reached image load or provisioning' >&2
+  exit 1
+fi
+mv "${TEST_DIR}/digests.lock.saved" "${BUNDLE}/digests.lock"
+write_manifest
+echo 'PASS missing digest lock fails closed even with the former environment opt-out'
 
 # Re-collecting a bundle whose digests actually changed must not let stale sbom/
 # evidence ride along into the new manifest.sha256 (#98 follow-up): it would only

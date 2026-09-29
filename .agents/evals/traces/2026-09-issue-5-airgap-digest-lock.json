@@ -26,7 +26,7 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "digests.lock now records image:tag, RepoDigest-or-unverified, and image ID; installer verifies the loaded image ID, refuses a stale daemon tag, fails closed on missing or malformed lock, loud AIRGAP_ALLOW_UNLOCKED=1 opt-out; downloader preserves lock lines on cache reuse"
+      "summary": "digests.lock now records image:tag, RepoDigest-or-unverified, and image ID; installer verifies the loaded image ID, refuses a stale daemon tag, fails closed on missing or malformed lock, and an unlocked-install exception that was later removed by D42; downloader preserves lock lines on cache reuse"
     },
     {
       "id": "e4",

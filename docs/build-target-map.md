@@ -47,8 +47,8 @@ the release-specific staging sequence.
 Bundle generation requires syft and runs `generate_sbom.sh` before reporting success.
 `AIRGAP_DIR=/path/to/bundle make airgap-sbom` (default:
 `~/.kubemetal/airgap`) can regenerate evidence for an existing bundle. Generation
-without syft fails with a diagnostic; no tool is installed automatically. Python 3's
-standard library handles JSON and offline verification.
+without syft fails with a diagnostic; install the required tool with `brew install syft`.
+No tool is installed automatically. Python 3's standard library handles JSON and offline verification.
 
 The image set comes only from that bundle's `digests.lock`, not another maintained
 image list. Each single-image `docker save` archive (`images/*.tar[.gz]`) has its config
@@ -88,14 +88,17 @@ counts one license expression per package per image (concluded license, then dec
 otherwise `NOASSERTION`), retaining compound expressions and flagging GPL/LGPL/AGPL.
 The `gpl_family` flag is a regex heuristic (`gpl_family_note` in the output) and can
 miss unusual spellings it doesn't anticipate. Unknown licenses and GPL-family matches
-do not reject an image. The summary is derived information, not a legal conclusion. Hashes detect inconsistency, not authenticity;
-signing/attestation remains outside #98. The inventory does not cover Helm chart
+do not reject an image. The summary is derived information, not a legal conclusion. SBOM content is
+checksum-bound to the manifest, not cryptographically bound to the image; `manifest.sha256` is
+unsigned. Syft 1.52.0's SPDX root-package checksum for an offline OCI fixture identified its OCI
+manifest digest, which did not match the locked image config ID, so the verifier does not claim
+image-content binding. Signing is tracked in #22. The inventory does not cover Helm chart
 contents or packages a container downloads after starting.
 
 Regression evidence: `bash scripts/airgap/test_sbom.sh` uses real local tar fixtures
 and a PATH syft stub, including absent syft, empty output, tampering and installer
-ordering. **Actual syft execution is unverified on this machine** (syft is absent;
-no installation or image pull was performed).
+ordering. Syft 1.52.0 was also run against a locally created offline OCI layout to inspect
+its SPDX image metadata; no Docker daemon, image pull, or full bundle generation was used.
 
 ## Remaining scope outside this map
 

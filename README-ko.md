@@ -12,6 +12,8 @@ KubeMetal은 Apple Silicon Mac에서 Kubernetes 및 하이브리드 MLOps 워크
 
 ## 빠른 시작
 
+폐쇄망 번들 생성에는 필수 SBOM 증거를 만들기 위한 `syft`가 필요합니다 (`brew install syft`).
+
 ```bash
 # 의존성 설치
 pnpm install
