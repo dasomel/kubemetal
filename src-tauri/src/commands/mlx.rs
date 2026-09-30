@@ -1129,6 +1129,20 @@ pub(crate) fn resolve_signal_target(pid: u32, use_process_group: bool) -> Option
     }
 }
 
+fn resolve_training_signal_target(pid: u32, group_is_alive: bool) -> Option<i32> {
+    if pid == 0 {
+        None
+    } else if group_is_alive {
+        Some(-(pid as i32))
+    } else {
+        Some(pid as i32)
+    }
+}
+
+fn marker_start_time_matches(expected: Option<u64>, actual: Option<u64>) -> bool {
+    expected.is_some() && expected == actual
+}
+
 /// SIGTERM 전송 후 1초 대기하고, 남아 있는 대상은 명령줄을 다시 검증한 뒤 SIGKILL 한다.
 /// `use_process_group`이면 시그널을 `-pid`(프로세스 그룹)로 보낸다 — 학습 래퍼는
 /// `.process_group(0)`으로 기동되어 자신이 그룹 리더이므로, 그룹으로 보내야 내부에서
@@ -1150,11 +1164,31 @@ fn may_kill_surviving_training_group(use_process_group: bool, leader_is_alive: b
 /// SIGTERM 뒤의 대기만 blocking worker에서 수행한다. 학습은 `-pgid`에 signal 0을 보내
 /// 리더가 아닌 남은 자식도 확인한다. SIGKILL 직전에는 PID의 명령줄을 다시 읽어 PID 재사용으로
 /// 무관한 프로세스(또는 그룹)를 종료하지 않게 한다.
-pub(crate) async fn terminate_pid(pid: u32, use_process_group: bool) -> Result<(), String> {
+pub(crate) async fn terminate_pid(
+    pid: u32,
+    use_process_group: bool,
+    expected_start_time: Option<u64>,
+) -> Result<(), String> {
     let target = match resolve_signal_target(pid, use_process_group) {
         Some(t) => t,
         None => return Ok(()),
     };
+    let target = if use_process_group {
+        resolve_training_signal_target(pid, signal_target_is_alive(target))
+            .ok_or_else(|| format!("Invalid training PID {pid}"))?
+    } else {
+        target
+    };
+    if expected_start_time.is_some()
+        && !marker_start_time_matches(
+            expected_start_time,
+            crate::services::process::process_start_time(pid),
+        )
+    {
+        return Err(format!(
+            "Refusing to signal process {pid}: process start time differs from its marker."
+        ));
+    }
     let target_survives = tokio::task::spawn_blocking(move || -> Result<bool, String> {
         let term_result = unsafe { libc::kill(target, libc::SIGTERM) };
         if term_result != 0 {
@@ -1171,6 +1205,17 @@ pub(crate) async fn terminate_pid(pid: u32, use_process_group: bool) -> Result<(
     .map_err(|e| format!("Failed to wait for process termination: {e}"))??;
     if !target_survives {
         return Ok(());
+    }
+
+    if expected_start_time.is_some()
+        && !marker_start_time_matches(
+            expected_start_time,
+            crate::services::process::process_start_time(pid),
+        )
+    {
+        return Err(format!(
+            "Refusing to SIGKILL process {pid}: process start time differs from its marker."
+        ));
     }
 
     match crate::services::process::get_process_cmdline(pid).await {
@@ -1296,7 +1341,7 @@ pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bo
         }
     }
 
-    if let Err(error) = terminate_pid(pid, is_training).await {
+    if let Err(error) = terminate_pid(pid, is_training, None).await {
         // 시그널 전송이 실패했으니 위에서 낙관적으로 쓴 "killed"를 되돌린다 — 프로세스가
         // 여전히 살아있을 수 있는데 종료된 것으로 보여주면 안 된다(D22).
         let mut guard = state.training.lock().map_err(|e| e.to_string())?;
@@ -1580,7 +1625,7 @@ pub async fn stop_model_serving(state: State<'_, MlxState>) -> Result<String, St
         return Err("Serving process is still starting; nothing to stop yet.".into());
     }
 
-    terminate_pid(pid, false).await?;
+    terminate_pid(pid, false, None).await?;
 
     // Child 소유권은 run_serving_reader가 갖고 있으므로 여기서는 상태만 비운다.
     // reaper가 실제 종료를 감지하고 last_serving_error를 남기지 않는다(사용자 의도 종료).
@@ -1779,6 +1824,20 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn orphan_termination_requires_matching_process_start_time() {
+        assert!(marker_start_time_matches(Some(42), Some(42)));
+        assert!(!marker_start_time_matches(Some(42), Some(43)));
+        assert!(!marker_start_time_matches(None, Some(42)));
+    }
+
+    #[test]
+    fn training_termination_falls_back_to_pid_when_no_process_group_exists() {
+        assert_eq!(resolve_training_signal_target(123, false), Some(123));
+        assert_eq!(resolve_training_signal_target(123, true), Some(-123));
+        assert_eq!(resolve_training_signal_target(0, false), None);
+    }
 
     #[test]
     fn tracked_mlx_process_decision_allows_only_current_training_or_serving_pid() {
@@ -2639,7 +2698,7 @@ mod tests {
     #[tokio::test]
     async fn terminate_pid_noop_on_zero() {
         // PID 0은 시그널 전송이나 sleep 대기 없이 즉시 no-op으로 반환되어야 한다.
-        assert!(terminate_pid(0, false).await.is_ok());
-        assert!(terminate_pid(0, true).await.is_ok());
+        assert!(terminate_pid(0, false, None).await.is_ok());
+        assert!(terminate_pid(0, true, None).await.is_ok());
     }
 }

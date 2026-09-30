@@ -69,16 +69,67 @@ async fn scan_detects_live_pid_marker() {
 }
 
 #[tokio::test]
+async fn scan_skips_marker_owned_by_another_live_kubemetal_instance() {
+    let dir = make_temp_dir("other-live-owner");
+    let mut owner = std::process::Command::new("/bin/sleep")
+        .arg("5")
+        .spawn()
+        .expect("spawn owner process");
+    let pid = std::process::id();
+    let owner_pid = owner.id();
+    let start_time = crate::services::process::process_start_time(pid).unwrap();
+    let marker = dir.join(format!("serving-{pid}.pid"));
+    std::fs::write(
+        &marker,
+        format!("pid={pid}\nowner_pid={owner_pid}\nstart_time={start_time}\n"),
+    )
+    .unwrap();
+
+    let scan = scan_orphaned_mlx_processes(&dir, &[]).await.unwrap();
+    let _ = owner.kill();
+    let _ = owner.wait();
+    assert!(scan.orphans.is_empty());
+    assert!(
+        scan.unreadable.is_empty(),
+        "live app ownership is recognized, not treated as a malformed marker"
+    );
+    assert!(
+        marker.exists(),
+        "a live other app owner keeps its marker intact"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
 async fn scan_removes_marker_for_non_mlx_live_process_and_excludes_from_orphans() {
     let dir = make_temp_dir("non-mlx-live");
-    let pid = std::process::id(); // cargo test 프로세스 (MLX 아님)
+    let mut child = std::process::Command::new("/bin/sleep")
+        .arg("5")
+        .spawn()
+        .expect("spawn non-MLX process");
+    let pid = child.id();
     let marker_file = dir.join(format!("training-{pid}.pid"));
     std::fs::write(&marker_file, pid.to_string()).unwrap();
 
     let result = scan_orphaned_mlx_processes(&dir, &[]).await.unwrap();
-    assert!(result.orphans.is_empty(), "Non-MLX process excluded");
+    let _ = child.kill();
+    let _ = child.wait();
     assert!(result.unreadable.is_empty());
-    assert!(!marker_file.exists(), "Marker must be cleaned up");
+    if let Some(orphan) = result.orphans.first() {
+        assert!(
+            !orphan.verified,
+            "when process inspection is unavailable, report uncertainty"
+        );
+        assert!(
+            marker_file.exists(),
+            "unverifiable identity must not delete the marker"
+        );
+    } else {
+        assert!(
+            !marker_file.exists(),
+            "confirmed non-MLX PID reuse cleans up its marker"
+        );
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -169,6 +220,15 @@ fn classify_cmdline_identifies_valid_mlx_processes() {
     );
 }
 
+#[test]
+fn classify_cmdline_accepts_python_paths_with_spaces() {
+    let cmd = "\"/Users/test user/MLX venv/bin/python\" -m mlx_lm server --host 127.0.0.1";
+    assert_eq!(
+        classify_mlx_cmdline(Some(cmd)),
+        CmdlineVerification::Mlx(cmd.into())
+    );
+}
+
 /// 실측 argv 형태(2026-09-28, GitHub #13 HIGH-1): `~/.kubemetal/venv/bin/python3` 및
 /// macOS CommandLineTools `/usr/bin/python3` 모두 spawn ~1.5초 후 `ps -o command=`에서
 /// 대문자 `Python` basename의 프레임워크 재실행(re-exec) 경로로 관측됐다. 이 정확한 경로에
@@ -239,6 +299,7 @@ fn orphan_termination_allows_pid_in_fresh_orphan_scan() {
             kind: "training".into(),
             cmdline: "python -m mlx_lm.lora".into(),
             verified: true,
+            start_time: Some(1),
         }],
         unreadable: vec![],
     };
@@ -267,6 +328,7 @@ fn orphan_termination_refuses_session_tracked_pid() {
             kind: "serving".into(),
             cmdline: "python -m mlx_lm server".into(),
             verified: true,
+            start_time: Some(1),
         }],
         unreadable: vec![],
     };

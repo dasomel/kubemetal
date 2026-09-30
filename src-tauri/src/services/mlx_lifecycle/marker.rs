@@ -19,6 +19,59 @@ pub struct OrphanedProcessInfo {
     /// "확인 불가" 자리표시자이며, UI는 이 PID에 대한 종료 요청을 거부해야 한다 —
     /// `terminate_orphaned_mlx_process`가 재검증 단계에서 항상 거부하기 때문이다.
     pub verified: bool,
+    /// Unix start time captured by the marker; absent for legacy PID-only markers.
+    pub start_time: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MarkerRecord {
+    owner_pid: Option<u32>,
+    start_time: Option<u64>,
+}
+
+fn parse_marker_record(content: &str) -> Result<MarkerRecord, String> {
+    if !content.contains('=') {
+        content
+            .trim()
+            .parse::<i64>()
+            .map_err(|e| format!("Failed to parse PID content: {e}"))?;
+        return Ok(MarkerRecord {
+            owner_pid: None,
+            start_time: None,
+        });
+    }
+    let mut owner_pid = None;
+    let mut start_time = None;
+    for field in content.lines().flat_map(|line| line.split_whitespace()) {
+        let (key, value) = field
+            .split_once('=')
+            .ok_or_else(|| "Malformed marker record".to_string())?;
+        match key {
+            "pid" => {}
+            "owner_pid" => {
+                owner_pid = Some(
+                    value
+                        .parse()
+                        .map_err(|_| "Invalid marker owner PID".to_string())?,
+                )
+            }
+            "start_time" => {
+                start_time = Some(
+                    value
+                        .parse()
+                        .map_err(|_| "Invalid marker process start time".to_string())?,
+                )
+            }
+            _ => return Err(format!("Unknown marker field {key}")),
+        }
+    }
+    if owner_pid.is_none() || start_time.is_none() {
+        return Err("Marker is missing owner_pid or start_time".to_string());
+    }
+    Ok(MarkerRecord {
+        owner_pid,
+        start_time,
+    })
 }
 
 /// 읽거나 검증할 수 없는 marker 파일 정보.
@@ -70,14 +123,19 @@ pub async fn write_pid_marker(base_dir: &Path, kind: &str, pid: u32) -> Result<P
     let target_path = pid_marker_path(base_dir, kind, pid);
     let tmp_path = dir.join(format!(".tmp-{kind}-{pid}-{}", std::process::id()));
 
-    tokio::fs::write(&tmp_path, pid.to_string())
-        .await
-        .map_err(|e| {
-            format!(
-                "Failed to write temporary marker {}: {e}",
-                tmp_path.display()
-            )
-        })?;
+    // D-MLX-OWNER-1 (#124): bind a marker to app ownership and process birth; this costs one sysinfo
+    // process refresh per marker write, and legacy records remain visible but cannot be terminated.
+    let start_time = crate::services::process::process_start_time(pid).ok_or_else(|| {
+        format!("Cannot determine start time for MLX process {pid}; marker not written")
+    })?;
+    let owner_pid = std::process::id();
+    let marker = format!("pid={pid}\nowner_pid={owner_pid}\nstart_time={start_time}\n");
+    tokio::fs::write(&tmp_path, marker).await.map_err(|e| {
+        format!(
+            "Failed to write temporary marker {}: {e}",
+            tmp_path.display()
+        )
+    })?;
 
     tokio::fs::rename(&tmp_path, &target_path)
         .await
@@ -124,8 +182,16 @@ pub fn classify_mlx_cmdline(raw_cmdline: Option<&str>) -> CmdlineVerification {
         return CmdlineVerification::Unverifiable;
     }
 
-    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
-    let executable_path = Path::new(tokens[0]);
+    let (executable_arg, module_arg) = trimmed
+        .split_once(" -m ")
+        .map(|(executable, module)| (executable, Some(module)))
+        .unwrap_or_else(|| {
+            (
+                trimmed.split_once(' ').map_or(trimmed, |(first, _)| first),
+                None,
+            )
+        });
+    let executable_path = Path::new(executable_arg.trim_matches(['"', '\'']));
     let executable = executable_path
         .file_name()
         .and_then(|name| name.to_str())
@@ -146,23 +212,17 @@ pub fn classify_mlx_cmdline(raw_cmdline: Option<&str>) -> CmdlineVerification {
         return CmdlineVerification::NotMlx;
     }
 
-    for (i, token) in tokens.iter().enumerate().skip(1) {
-        if *token == "-m" {
-            if let Some(next) = tokens.get(i + 1) {
-                if *next == "mlx_lm"
-                    || next.starts_with("mlx_lm.")
-                    || *next == "mlx_vlm"
-                    || next.starts_with("mlx_vlm.")
-                {
-                    return CmdlineVerification::Mlx(trimmed.to_string());
-                }
-            }
-        }
-
-        let path = Path::new(token);
-        if path.ends_with(Path::new("scripts/mlx/finetune_wrapper.py")) {
+    if let Some(module_arg) = module_arg {
+        let module = module_arg.split_whitespace().next().unwrap_or_default();
+        if ["mlx_lm", "mlx_vlm"]
+            .iter()
+            .any(|prefix| module == *prefix || module.starts_with(&format!("{prefix}.")))
+        {
             return CmdlineVerification::Mlx(trimmed.to_string());
         }
+    }
+    if trimmed.contains("scripts/mlx/finetune_wrapper.py") {
+        return CmdlineVerification::Mlx(trimmed.to_string());
     }
 
     CmdlineVerification::NotMlx
@@ -249,8 +309,22 @@ pub async fn scan_orphaned_mlx_processes(
             }
         };
 
-        let parsed_pid: i64 = match content.trim().parse() {
-            Ok(p) => p,
+        let record = match parse_marker_record(&content) {
+            Ok(record) => record,
+            Err(e) => {
+                unreadable.push(UnreadableMarker {
+                    path: entry_path.display().to_string(),
+                    error: format!("Failed to parse marker content: {e}"),
+                });
+                continue;
+            }
+        };
+        let pid_value = content
+            .lines()
+            .find_map(|line| line.strip_prefix("pid="))
+            .unwrap_or_else(|| content.trim());
+        let parsed_pid: i64 = match pid_value.parse() {
+            Ok(pid) => pid,
             Err(e) => {
                 unreadable.push(UnreadableMarker {
                     path: entry_path.display().to_string(),
@@ -283,6 +357,17 @@ pub async fn scan_orphaned_mlx_processes(
         }
 
         if crate::services::process::pid_is_alive(pid) {
+            if record.owner_pid.is_some_and(|owner| {
+                owner != std::process::id() && crate::services::process::pid_is_alive(owner)
+            }) {
+                continue;
+            }
+            if let Some(expected) = record.start_time {
+                if crate::services::process::process_start_time(pid) != Some(expected) {
+                    unreadable.push(UnreadableMarker { path: entry_path.display().to_string(), error: format!("Process {pid} start time differs from marker; refusing stale PID identity") });
+                    continue;
+                }
+            }
             let raw_cmdline = crate::services::process::get_process_cmdline(pid)
                 .await
                 .ok();
@@ -293,6 +378,7 @@ pub async fn scan_orphaned_mlx_processes(
                         kind: kind.to_string(),
                         cmdline,
                         verified: true,
+                        start_time: record.start_time,
                     });
                 }
                 CmdlineVerification::NotMlx => {
@@ -305,6 +391,7 @@ pub async fn scan_orphaned_mlx_processes(
                         kind: kind.to_string(),
                         cmdline: "확인 불가".to_string(),
                         verified: false,
+                        start_time: record.start_time,
                     });
                 }
             }

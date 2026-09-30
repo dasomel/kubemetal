@@ -95,6 +95,17 @@ pub fn pid_is_alive(pid: u32) -> bool {
     result == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
+/// Returns sysinfo's process start time (Unix seconds) for PID identity checks.
+pub fn process_start_time(pid: u32) -> Option<u64> {
+    if pid == 0 || pid > i32::MAX as u32 {
+        return None;
+    }
+    let mut system = sysinfo::System::new();
+    let pid = sysinfo::Pid::from_u32(pid);
+    system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+    system.process(pid).map(sysinfo::Process::start_time)
+}
+
 /// pid에 대한 프로세스 전체 명령줄(args)을 조회한다.
 /// macOS `ps -p <pid> -o command=`를 `external_command`로 호출하여 비동기로 조회한다(D5/D22).
 pub async fn get_process_cmdline(pid: u32) -> Result<String, String> {

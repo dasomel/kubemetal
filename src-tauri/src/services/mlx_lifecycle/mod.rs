@@ -114,7 +114,10 @@ pub async fn terminate_orphaned_mlx_process(
     }
     let use_process_group = orphan.kind == "training";
 
-    crate::commands::mlx::terminate_pid(pid, use_process_group).await?;
+    let start_time = orphan.start_time.ok_or_else(|| {
+        format!("Process {pid} has a legacy PID-only marker; its start time cannot be verified, so it was not terminated.")
+    })?;
+    crate::commands::mlx::terminate_pid(pid, use_process_group, Some(start_time)).await?;
 
     let exited = tokio::task::spawn_blocking(move || {
         wait_for_process_exit(
