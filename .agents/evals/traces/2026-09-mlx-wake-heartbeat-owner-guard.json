@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-mlx-wake-heartbeat-owner-guard-2026-09",
+  "task": "Harden MLX orphan marker ownership and process identity, and reconcile MLX state after system sleep/wake",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "docs/02-requirements.md",
+      ".agents/evals/traces/2026-09-mlx-wake-heartbeat-owner-guard.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Backend MLX lifecycle only: owner and start-time marker identity, wake heartbeat and Rust IPC documentation. No frontend, health, RAG, airgap, support-bundle, hardware soak, or live process termination work."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Regression cases cover another live app owner retaining its marker, process start-time mismatch refusing identity, whitespace in a venv path, and injected wall-clock progress diverging from monotonic progress. The live-owner test also requires no malformed-marker report."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "New markers record MLX PID, owning app PID, and sysinfo process start time. Scans skip markers owned by another live app, reject start-time mismatches, and refuse termination for legacy PID-only markers. SIGTERM and SIGKILL paths compare process start time; training falls back to the PID when no process group exists. A wall/monotonic heartbeat marks training and serving slots separately for re-verification, rescans MLX markers, and emits mlx-lifecycle-wake. The next status request verifies training's MLX command line and serving's /v1/models health before clearing each flag."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Lifecycle regressions and fake-clock wake detector tests passed.",
+      "scope": "Rust unit tests for MLX lifecycle marker ownership, identity policy, command-line parsing, and injected-clock sleep detection",
+      "evidence": [
+        "test:services::mlx_lifecycle::tests::scan_skips_marker_owned_by_another_live_kubemetal_instance",
+        "test:commands::mlx::tests::orphan_termination_requires_matching_process_start_time",
+        "test:commands::mlx::tests::training_termination_falls_back_to_pid_when_no_process_group_exists",
+        "test:services::mlx_lifecycle::tests::classify_cmdline_accepts_python_paths_with_spaces",
+        "test:services::mlx_lifecycle::wake::tests::detects_wall_clock_jump_without_matching_monotonic_progress",
+        "test:services::mlx_lifecycle::wake::tests::ordinary_clock_drift_does_not_look_like_sleep"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "cargo fmt --check, cargo clippy -- -D warnings, targeted cargo test mlx_lifecycle, full cargo test, trace requirement/evidence validators, and the behavior gate passed. Sleep/wake and marker-termination runtime behavior was not exercised on device.",
+      "scope": "Rust build/lint and unit-test scope plus local Agent Behavior CI trace gates; fake clock only, no real sleep/wake or process kill",
+      "evidence": [
+        "ci:cargo-fmt-check",
+        "ci:cargo-clippy-warnings-denied",
+        "test:cargo-test-mlx_lifecycle",
+        "test:cargo-test",
+        "ci:check-agent-trace-requirement",
+        "ci:check-agent-trace-evidence",
+        "ci:agent-behavior-gate"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Issues #124 and #13 requested backend work is implemented and verified at the stated unit/build/trace-gate scope; real device sleep/wake, server health re-verification, and process signaling remain unobserved here.",
+      "evidence": ["e4", "e5"]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete within the verified backend scope; no real sleep/wake or MLX process termination was performed."
+    }
+  ]
+}

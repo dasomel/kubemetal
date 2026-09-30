@@ -4,6 +4,7 @@ pub mod admission;
 pub mod marker;
 pub mod reconcile;
 mod session;
+pub mod wake;
 
 #[cfg(test)]
 mod tests;

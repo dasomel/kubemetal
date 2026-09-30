@@ -121,6 +121,10 @@ pub struct MlxStatus {
     pub training: Option<TrainingStatus>,
     pub serving: Option<ServingStatus>,
     pub last_serving_error: Option<String>,
+    /// A post-wake process identity check is still pending for this slot.
+    pub training_needs_reverification: bool,
+    /// A post-wake process and `/v1/models` health check is still pending for this slot.
+    pub serving_needs_reverification: bool,
 }
 
 #[derive(Default)]
@@ -131,6 +135,8 @@ pub struct MlxState {
     pub training: Mutex<Option<TrainingStatus>>,
     pub serving: Mutex<Option<ServingStatus>>,
     pub last_serving_error: Mutex<Option<String>>,
+    pub training_needs_reverification: AtomicBool,
+    pub serving_needs_reverification: AtomicBool,
     /// 헬스체크를 통과한 마지막 서빙 구성(이슈 #12) — `revert_to_last_serving`이 되돌릴
     /// 대상. 스폰 성공만으로는 채우지 않는다: 모델 로드 실패로 죽는 프로세스를 "성공"으로
     /// 남기면 되돌리기가 똑같이 죽는 구성으로 되돌아간다(D22).
@@ -1106,12 +1112,58 @@ pub async fn get_mlx_status(state: State<'_, MlxState>) -> Result<MlxStatus, Str
         .map_err(|e| e.to_string())?
         .clone();
 
+    let training_needs_reverification =
+        if state.training_needs_reverification.load(Ordering::SeqCst) {
+            let verified = match training.as_ref() {
+                None => true,
+                Some(training) if services::process::pid_is_alive(training.pid) => {
+                    services::process::get_process_cmdline(training.pid)
+                        .await
+                        .is_ok_and(|cmdline| {
+                            matches!(
+                                services::mlx_lifecycle::classify_mlx_cmdline(Some(&cmdline)),
+                                services::mlx_lifecycle::CmdlineVerification::Mlx(_)
+                            )
+                        })
+                }
+                Some(_) => false,
+            };
+            if verified {
+                state
+                    .training_needs_reverification
+                    .store(false, Ordering::SeqCst);
+            }
+            !verified
+        } else {
+            false
+        };
+    let serving_needs_reverification = if state.serving_needs_reverification.load(Ordering::SeqCst)
+    {
+        let verified = match serving.as_ref() {
+            None => true,
+            Some(serving) if services::process::pid_is_alive(serving.pid) => {
+                is_serving_healthy(&format!("http://127.0.0.1:{}/v1", serving.port)).await
+            }
+            Some(_) => false,
+        };
+        if verified {
+            state
+                .serving_needs_reverification
+                .store(false, Ordering::SeqCst);
+        }
+        !verified
+    } else {
+        false
+    };
+
     Ok(MlxStatus {
         env,
         env_setup,
         training,
         serving,
         last_serving_error,
+        training_needs_reverification,
+        serving_needs_reverification,
     })
 }
 
