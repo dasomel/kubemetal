@@ -18,7 +18,7 @@
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Prior RAG implementation lacked an explainable adaptive router between dense, lexical, and hybrid modes, requiring manual selector choice and risking semantic failure or dense crash on exact identifiers",
+      "summary": "Prior RAG search required the user to pick dense, lexical, or hybrid by hand; issue #38 asks for an explainable adaptive router. No failure of dense retrieval on exact identifiers was reproduced here, so none is claimed",
       "evidence": [
         "test:tests/rag/test_rag_classifier.py::test_classifier_rule_table",
         "runtime:issue-38-comments"
@@ -26,18 +26,21 @@
     },
     {
       "id": "e3",
-      "type": "bug_fix",
-      "summary": "Implemented deterministic local rule classifier (classify_query) mapping identifier-like queries to lexical and natural-language queries to hybrid, reporting resolved_mode and rule on every result set, failing loud when dense fails in hybrid, and adding auto to Rust allowlist, IPC types, translations, and RagCard UI selector with resolved info line"
+      "type": "change",
+      "summary": "Implemented deterministic local rule classifier (classify_query) mapping identifier-like queries to lexical and natural-language queries to hybrid; review round tightened it (sentence punctuation and apostrophes are not symbols, interrogative lead stays hybrid) and moved resolved_mode/rule to the top level of the query_rag response (RagQueryResponse) so zero-hit searches still show routing; hybrid still fails loud when dense fails; auto added to the Rust allowlist, IPC types, translations, and the RagCard selector"
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "summary": "Python rag tests (17 passed), cargo fmt --check, cargo clippy -D warnings, cargo test rag, tsc --noEmit, and make lint passed cleanly",
+      "summary": "Ran: python3 -m unittest discover -s tests/rag (18 passed), cargo fmt --check, cargo clippy -- -D warnings, cargo test rag (2 passed), pnpm exec tsc --noEmit, make lint. make verify was not run",
       "evidence": [
-        "test:tests/rag/test_rag_classifier.py",
-        "test:cargo-test-rag",
-        "ci:verify"
+        "test:python-unittest-tests-rag-18-passed",
+        "test:cargo-test-rag-2-passed",
+        "test:cargo-fmt-check-clean",
+        "test:cargo-clippy-D-warnings-clean",
+        "ci:tsc-noemit-clean",
+        "ci:make-lint-clean"
       ]
     },
     {

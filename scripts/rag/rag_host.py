@@ -37,7 +37,15 @@ _VERSION_RE = re.compile(
     re.IGNORECASE,
 )
 _CAMEL_CASE_RE = re.compile(r"\b[a-zA-Z]*[a-z][A-Z][a-zA-Z0-9]*\b")
-_QUOTED_RE = re.compile(r'["\'].+?["\']')
+# Only double quotes (anywhere) or a whole query wrapped in paired single quotes count as a
+# quoted phrase; an apostrophe inside "don't ... it's" is just an apostrophe.
+_QUOTED_RE = re.compile(r'"[^"]+"|\'[^\']+\'')
+# Sentence punctuation and wrappers at a token's edge are prose, not identifier symbols.
+_EDGE_PUNCT = "?!:;.,()[]{}\"'`"
+_QUESTION_LEADS = {
+    "what", "why", "how", "when", "where", "which", "who", "whom", "whose",
+    "is", "are", "does", "do", "did", "can", "should", "explain", "describe",
+}
 
 
 def classify_query(query: str) -> tuple[str, str]:
@@ -52,10 +60,10 @@ def classify_query(query: str) -> tuple[str, str]:
     trimmed = query.strip()
 
     # 1. Quoted phrases -> exact lexical match
-    if _QUOTED_RE.search(trimmed) or (trimmed.startswith(('"', "'")) and trimmed.endswith(('"', "'"))):
+    if _QUOTED_RE.fullmatch(trimmed) or ('"' in trimmed and _QUOTED_RE.search(trimmed)):
         return ("lexical", "quoted_phrase")
 
-    # 2. Path separators (/ or \) -> filepath or URI identifier
+    # 2. Path separators (/ or \\) -> filepath or URI identifier
     if "/" in trimmed or "\\" in trimmed:
         return ("lexical", "path_separator")
 
@@ -65,25 +73,31 @@ def classify_query(query: str) -> tuple[str, str]:
     if len(raw_tokens) > 3:
         return ("hybrid", "natural_language")
 
+    # Edge-stripped tokens: "Error:" / "배포?" / "refused." lose their sentence punctuation.
+    stripped = [t.strip(_EDGE_PUNCT) for t in raw_tokens]
+
     # 4. Version strings (v1.2.3, 0.34.0, v2, 4bit, bf16)
     if _VERSION_RE.search(trimmed):
         return ("lexical", "version_string")
 
     # 5. Kubernetes resource names / kinds (for short 1-3 token queries)
-    words = [re.sub(r"^[^\w]+|[^\w]+$", "", t).lower() for t in raw_tokens]
-    if any(w in K8S_RESOURCE_NAMES for w in words if w):
+    if any(w.lower() in K8S_RESOURCE_NAMES for w in stripped if w):
         return ("lexical", "k8s_resource")
 
-    # 6. Identifier symbols or casing: dot, underscore, or camelCase/PascalCase
-    if "_" in trimmed or "." in trimmed or _CAMEL_CASE_RE.search(trimmed):
+    # 6. A leading interrogative is a question even when it names an id ("what is D26").
+    if stripped and stripped[0].lower() in _QUESTION_LEADS:
+        return ("hybrid", "natural_language")
+
+    # 7. Identifier symbols or casing: underscore, in-word dot, or camelCase/PascalCase
+    if any("_" in t or "." in t or _CAMEL_CASE_RE.search(t) for t in stripped):
         return ("lexical", "symbol_or_casing")
 
-    # 7. Short 1-3 token queries with digits or non-alphanumeric symbols
-    has_digit_or_symbol = any(not (c.isalpha() or c.isspace()) for c in trimmed)
-    if has_digit_or_symbol:
+    # 8. Short 1-3 token queries with a digit or a symbol inside a token (D26, k=60,
+    # mlflow-deployment, @theme). Apostrophes are prose; edge punctuation was stripped above.
+    if any(c.isdigit() or not (c.isalpha() or c == "'" or c == "\u2019") for t in stripped for c in t):
         return ("lexical", "short_token_with_digit_or_symbol")
 
-    # 8. Otherwise: 1-3 token semantic query without symbols/identifiers
+    # 9. Otherwise: 1-3 token semantic query without symbols/identifiers
     return ("hybrid", "natural_language")
 
 

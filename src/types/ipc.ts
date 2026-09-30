@@ -315,8 +315,12 @@ export interface RagSearchResult {
   chunk_index?: number;
   mode: RetrievalMode;
   provenance?: RetrievalProvenance;
-  resolved_mode?: RetrievalMode;
-  rule?: string;
+}
+
+export interface RagQueryResponse {
+  resolved_mode: RetrievalMode;
+  rule: string;
+  results: RagSearchResult[];
 }
 
 export interface RagIndexStatus {

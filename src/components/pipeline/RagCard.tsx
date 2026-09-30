@@ -9,7 +9,7 @@ const inputClass =
 const labelClass = 'text-label uppercase text-inkFaint mb-1 block';
 
 export const RagCard: React.FC = () => {
-  const { status, indexing, searching, searchResults, triggerIndex, search } = useRAG(true);
+  const { status, indexing, searching, searchResults, routing, triggerIndex, search } = useRAG(true);
   const { t } = useTranslation();
   const [docPath, setDocPath] = useState('docs');
   const [searchQuery, setSearchQuery] = useState('');
@@ -153,11 +153,11 @@ export const RagCard: React.FC = () => {
           </button>
         </form>
 
-        {searchResults.length > 0 && searchResults[0]?.resolved_mode && searchResults[0]?.rule && (
+        {hasSearched && routing && (
           <div className="text-caption text-inkMuted">
             {t('rag.resolved', {
-              mode: searchResults[0].resolved_mode,
-              rule: searchResults[0].rule,
+              mode: routing.resolved_mode,
+              rule: routing.rule,
             })}
           </div>
         )}

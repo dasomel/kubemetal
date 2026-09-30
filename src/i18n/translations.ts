@@ -335,6 +335,8 @@ export const translations: Record<Language, Record<string, string>> = {
     'rag.modeDense': 'Dense 의미 검색',
     'rag.modeLexical': 'Lexical 키워드 검색',
     'rag.modeHybrid': 'Hybrid RRF 검색',
+    'rag.modeAuto': 'Auto 자동 라우팅',
+    'rag.resolved': '적용된 검색: {mode} (규칙: {rule})',
     'rag.searchPlaceholder': '검색할 질의 입력 (예: Apple Silicon Metal 메모리 최적화...)',
     'rag.searchBtn': '검색',
     'rag.searchResultsHeader': '유사도 검색 결과 ({count}건)',
@@ -1217,6 +1219,8 @@ export const translations: Record<Language, Record<string, string>> = {
     'rag.modeDense': 'Dense semantic search',
     'rag.modeLexical': 'Lexical keyword search',
     'rag.modeHybrid': 'Hybrid RRF search',
+    'rag.modeAuto': 'Auto route',
+    'rag.resolved': 'resolved: {mode} ({rule})',
     'rag.searchPlaceholder': 'Enter search query (e.g. Apple Silicon Metal memory optimization...)',
     'rag.searchBtn': 'Search',
     'rag.searchResultsHeader': 'Similarity Search Results ({count})',
@@ -1770,14 +1774,3 @@ export const translations: Record<Language, Record<string, string>> = {
     'errorBoundary.retryBtn': 'Retry',
   },
 };
-
-Object.assign(translations.ko, {
-  'rag.modeAuto': 'Auto 자동 라우팅',
-  'rag.resolved': 'resolved: {mode} ({rule})',
-});
-
-Object.assign(translations.en, {
-  'rag.modeAuto': 'Auto route',
-  'rag.resolved': 'resolved: {mode} ({rule})',
-});
-

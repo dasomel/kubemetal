@@ -18,7 +18,7 @@ import {
   Check,
   ImagePlus,
 } from 'lucide-react';
-import type { RagSearchResult, MlxRuntime } from '../../types/ipc';
+import type { RagQueryResponse, RagSearchResult, MlxRuntime } from '../../types/ipc';
 import { useTranslation } from '../../i18n/i18nContext';
 
 /**
@@ -225,7 +225,7 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
     if (ragEnabled) {
       setRagSearching(true);
       try {
-        const results = await invoke<RagSearchResult[]>('query_rag', {
+        const { results } = await invoke<RagQueryResponse>('query_rag', {
           query: textToSend.trim(),
           topK: ragTopK,
         });
