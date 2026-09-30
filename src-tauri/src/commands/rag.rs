@@ -35,8 +35,19 @@ pub struct RagSearchResult {
     pub score: f64,
     pub mode: String,
     pub provenance: Option<RetrievalProvenance>,
-    pub resolved_mode: Option<String>,
-    pub rule: Option<String>,
+}
+
+/// Routing is reported at the top level, not per hit, so a zero-hit search still shows
+/// which mode/rule ran.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RagQueryResponse {
+    pub resolved_mode: String,
+    pub rule: String,
+    pub results: Vec<RagSearchResult>,
+}
+
+fn parse_query_response(res: serde_json::Value) -> Result<RagQueryResponse, String> {
+    serde_json::from_value(res).map_err(|e| format!("Failed to convert to RagQueryResponse: {e}"))
 }
 
 fn validate_retrieval_mode(mode: Option<String>) -> Result<String, String> {
@@ -396,7 +407,7 @@ pub async fn query_rag(
     top_k: Option<u32>,
     embedding_model: Option<String>,
     mode: Option<String>,
-) -> Result<Vec<RagSearchResult>, String> {
+) -> Result<RagQueryResponse, String> {
     if query.trim().is_empty() {
         return Err("Query text cannot be empty.".into());
     }
@@ -450,7 +461,7 @@ pub async fn query_rag(
         ));
     }
 
-    let mut res: serde_json::Value = serde_json::from_str(&stdout_str)
+    let res: serde_json::Value = serde_json::from_str(&stdout_str)
         .map_err(|e| format!("JSON parse failed ({e}): {stdout_str}"))?;
 
     if res.get("status").and_then(|v| v.as_str()) != Some("ok") {
@@ -461,40 +472,12 @@ pub async fn query_rag(
         return Err(format!("Query error: {err_msg}"));
     }
 
-    let top_resolved_mode = res
-        .get("resolved_mode")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    let top_rule = res
-        .get("rule")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
-    let raw_results = res
-        .get_mut("results")
-        .and_then(serde_json::Value::as_array_mut)
-        .map(std::mem::take)
-        .ok_or_else(|| "Cannot read results array.".to_string())?;
-
-    let mut search_results: Vec<RagSearchResult> =
-        serde_json::from_value(serde_json::Value::Array(raw_results))
-            .map_err(|e| format!("Failed to convert to RagSearchResult: {e}"))?;
-
-    for item in &mut search_results {
-        if item.resolved_mode.is_none() {
-            item.resolved_mode = top_resolved_mode.clone();
-        }
-        if item.rule.is_none() {
-            item.rule = top_rule.clone();
-        }
-    }
-
-    Ok(search_results)
+    parse_query_response(res)
 }
 
 #[cfg(test)]
 mod retrieval_mode_tests {
-    use super::{retrieval_mode_args, validate_retrieval_mode};
+    use super::{parse_query_response, retrieval_mode_args, validate_retrieval_mode};
 
     #[test]
     fn retrieval_mode_allowlist_and_default() {
@@ -521,6 +504,33 @@ mod retrieval_mode_tests {
         assert_eq!(retrieval_mode_args("lexical"), ["--mode", "lexical"]);
         assert!(validate_retrieval_mode(Some("dense;rm -rf /".into())).is_err());
         assert!(validate_retrieval_mode(Some("invalid".into())).is_err());
+    }
+
+    #[test]
+    fn query_response_carries_routing_at_top_level_even_with_zero_hits() {
+        let empty = parse_query_response(serde_json::json!({
+            "status": "ok", "query": "x", "resolved_mode": "lexical",
+            "rule": "symbol_or_casing", "results": []
+        }))
+        .unwrap();
+        assert_eq!(empty.resolved_mode, "lexical");
+        assert_eq!(empty.rule, "symbol_or_casing");
+        assert!(empty.results.is_empty());
+
+        // Per-hit routing fields emitted by rag_host.py are tolerated but not part of the shape.
+        let hit = parse_query_response(serde_json::json!({
+            "resolved_mode": "hybrid", "rule": "natural_language",
+            "results": [{"id": null, "text": "t", "filename": "f", "source": "s",
+                "chunk_index": 0, "score": 0.5, "mode": "hybrid",
+                "resolved_mode": "hybrid", "rule": "natural_language"}]
+        }))
+        .unwrap();
+        let out = serde_json::to_value(&hit).unwrap();
+        assert_eq!(out["resolved_mode"], "hybrid");
+        assert_eq!(out["rule"], "natural_language");
+        assert!(out["results"][0].get("rule").is_none());
+
+        assert!(parse_query_response(serde_json::json!({"results": []})).is_err());
     }
 }
 

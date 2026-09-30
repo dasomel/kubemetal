@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
-import type { RagIndexStatus, RagSearchResult, RetrievalMode } from '../types/ipc';
+import type { RagIndexStatus, RagQueryResponse, RagSearchResult, RetrievalMode } from '../types/ipc';
 import { useTranslation } from '../i18n/i18nContext';
 
 export function useRAG(active: boolean = false) {
@@ -11,6 +11,7 @@ export function useRAG(active: boolean = false) {
   const [indexing, setIndexing] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<RagSearchResult[]>([]);
+  const [routing, setRouting] = useState<{ resolved_mode: RetrievalMode; rule: string } | null>(null);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -53,8 +54,9 @@ export function useRAG(active: boolean = false) {
     if (!query.trim()) return;
     setSearching(true);
     try {
-      const res = await invoke<RagSearchResult[]>('query_rag', { query, topK, mode });
-      setSearchResults(res);
+      const res = await invoke<RagQueryResponse>('query_rag', { query, topK, mode });
+      setSearchResults(res.results);
+      setRouting({ resolved_mode: res.resolved_mode, rule: res.rule });
     } catch (err) {
       await message(t('rag.toast.searchFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
     } finally {
@@ -81,6 +83,7 @@ export function useRAG(active: boolean = false) {
     indexing,
     searching,
     searchResults,
+    routing,
     setupEnv,
     triggerIndex,
     search,

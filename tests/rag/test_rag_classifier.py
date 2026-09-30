@@ -63,6 +63,33 @@ class QueryClassifierTests(unittest.TestCase):
             ("@theme", "lexical", "short_token_with_digit_or_symbol"),
             ("8080", "lexical", "short_token_with_digit_or_symbol"),
 
+            # 7b. Review fix MED-1: trailing/leading sentence punctuation (? ! : . , ;) is not a
+            # symbol, so short natural-language questions keep the dense leg (hybrid).
+            # "Error: connection refused" / "MLflow 배포?" carry only sentence punctuation and no
+            # digit, '_', in-word '-'/'.'/'/' or camelCase, so nothing marks them identifier-like.
+            ("Error: connection refused", "hybrid", "natural_language"),
+            # A leading interrogative makes it a question even though D26 carries a digit; the
+            # asker wants the D26 explanation (semantic), not only chunks that spell "D26".
+            ("what is D26", "hybrid", "natural_language"),
+            ("MLflow 배포?", "hybrid", "natural_language"),
+            # A single plain all-caps word is a word, not an id (no digit/symbol/casing transition).
+            ("README", "hybrid", "natural_language"),
+            # In-word hyphen -> identifier-like slug; exact match matters.
+            ("mlflow-deployment", "lexical", "short_token_with_digit_or_symbol"),
+            # Path (rule 2) and version (rule 4) keep priority over the short-token rule.
+            ("v0.2.0", "lexical", "version_string"),
+            # Bare all-caps+digit id with no question lead stays identifier-like.
+            ("D26", "lexical", "short_token_with_digit_or_symbol"),
+            # 'externalname' is a K8s kind (rule 5), so the mixed query stays lexical.
+            ("D26 ExternalName", "lexical", "k8s_resource"),
+            # Sentence-final period must not trigger the dot/symbol rule.
+            ("connection refused.", "hybrid", "natural_language"),
+
+            # 7c. LOW: apostrophes inside a phrase are not quotes; only double quotes or a
+            # whole token wrapped in paired single quotes are.
+            ("don't stop, it's fine", "hybrid", "natural_language"),
+            ("don't it's", "hybrid", "natural_language"),
+
             # 8. Unicode / Korean queries
             ("애플 실리콘 메모리 최적화 방법", "hybrid", "natural_language"),
             ("통합 메모리 아키텍처 구조", "hybrid", "natural_language"),
@@ -295,6 +322,28 @@ class ResolvedModeReportingTests(unittest.TestCase):
                     for res in output["results"]:
                         self.assertEqual(res["resolved_mode"], explicit_mode)
                         self.assertEqual(res["rule"], "explicit")
+
+    def test_auto_mode_zero_hit_still_reports_top_level_routing(self):
+        # MED-2: routing must ride at the top level so a search with 0 hits still explains itself.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            fake_lancedb = MagicMock()
+            fake_lancedb.connect.return_value = FakeLanceDbConnection("default", self.sample_chunks)
+            args = argparse.Namespace(
+                command="query", db_path=temp_dir, collection="default",
+                query="zzz_no_such_identifier", top_k=2, model="mock-embedding-model", mode="auto",
+            )
+            stdout_buf = io.StringIO()
+            with patch.dict("sys.modules", {"lancedb": fake_lancedb}), \
+                 patch("rag_host.get_embedding_model") as mock_get_model, \
+                 patch("sys.stdout", stdout_buf):
+                cmd_query(args)
+
+            mock_get_model.assert_not_called()
+            output = json.loads(stdout_buf.getvalue())
+            self.assertEqual(output["status"], "ok")
+            self.assertEqual(output["results"], [])
+            self.assertEqual(output["resolved_mode"], "lexical")
+            self.assertEqual(output["rule"], "symbol_or_casing")
 
 
 if __name__ == "__main__":
