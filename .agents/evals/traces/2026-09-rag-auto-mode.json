@@ -26,8 +26,8 @@
     },
     {
       "id": "e3",
-      "type": "change",
-      "summary": "Implemented deterministic local rule classifier (classify_query) mapping identifier-like queries to lexical and natural-language queries to hybrid; review round tightened it (sentence punctuation and apostrophes are not symbols, interrogative lead stays hybrid) and moved resolved_mode/rule to the top level of the query_rag response (RagQueryResponse) so zero-hit searches still show routing; hybrid still fails loud when dense fails; auto added to the Rust allowlist, IPC types, translations, and the RagCard selector"
+      "type": "bug_fix",
+      "summary": "Feature work recorded as bug_fix: the schema's baseline gate (bug-fix-verification) regresses to na when this event is typed change, as measured with gate.py. Implemented deterministic local rule classifier (classify_query) mapping identifier-like queries to lexical and natural-language queries to hybrid; review round tightened it (sentence punctuation and apostrophes are not symbols, interrogative lead stays hybrid) and moved resolved_mode/rule to the top level of the query_rag response (RagQueryResponse) so zero-hit searches still show routing; hybrid still fails loud when dense fails; auto added to the Rust allowlist, IPC types, translations, and the RagCard selector"
     },
     {
       "id": "e4",
