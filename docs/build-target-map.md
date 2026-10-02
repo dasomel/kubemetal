@@ -8,7 +8,7 @@ gate is split the way it is (offline-vs-network, verify-vs-release).
 | `make` target | Underlying command(s) | Run by CI | Network required |
 |---|---|---|---|
 | `check` | `cargo check` | — | no |
-| `test` | `cargo test`, Python RAG unittest, `test_sbom.sh`, `test_digest_lock.sh` | `ci.yml` → `make verify` | no |
+| `test` | `cargo test`, Python RAG/MLX unittest, `test_sbom.sh`, `test_digest_lock.sh` | `ci.yml` → `make verify` | no |
 | `lint` | `cargo fmt --check`, `cargo clippy -D warnings`, `tsc --noEmit`, `design.md lint`, `scripts/ci/check_ipc_types.py` | `ci.yml` → `make verify` | no |
 | `license-check` | `scripts/release/check_licenses.sh --self-test` + (no args) | `ci.yml` → `make verify`; `release.yml` (direct, not via `make`) | no (lockfile only) |
 | `dependency-diff` | `scripts/release/gen_dependency_diff.sh` | — (manual review tool, issue #9) | yes (`git worktree` + `pnpm install`) |
