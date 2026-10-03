@@ -84,6 +84,10 @@ pub fn run() {
         .manage(PrefectState::default())
         .manage(RagState::default())
         .manage(DataIngestState::default())
+        .setup(|app| {
+            crate::services::mlx_lifecycle::wake::spawn_heartbeat(app.handle().clone());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_system_metrics,
             get_hardware_spec,

@@ -4,15 +4,18 @@ pub mod admission;
 pub mod marker;
 pub mod reconcile;
 mod session;
+pub mod wake;
 
 #[cfg(test)]
 mod tests;
 
 #[allow(unused_imports)]
 pub use admission::{in_progress_rejection_message, is_non_terminal_training_status};
+#[cfg(test)]
+pub use marker::classify_mlx_cmdline;
 #[allow(unused_imports)]
 pub use marker::{
-    classify_mlx_cmdline, marker_dir, pid_marker_path, remove_pid_marker,
+    inspect_mlx_process, marker_dir, pid_marker_path, remove_pid_marker,
     scan_orphaned_mlx_processes, write_pid_marker, CmdlineVerification, OrphanScan,
     OrphanedProcessInfo, UnreadableMarker,
 };
@@ -101,20 +104,17 @@ pub async fn terminate_orphaned_mlx_process(
     let orphan = orphan_termination_candidate(&scan, &tracked_pids, pid).ok_or_else(|| {
         format!("Process {pid} is no longer an orphaned MLX process and was not terminated.")
     })?;
-    let cmdline = crate::services::process::get_process_cmdline(pid)
-        .await
-        .map_err(|e| format!("Process {pid} is no longer an orphaned MLX process: {e}"))?;
-    if !matches!(
-        classify_mlx_cmdline(Some(&cmdline)),
-        CmdlineVerification::Mlx(_)
-    ) {
+    if !matches!(inspect_mlx_process(pid).await, CmdlineVerification::Mlx(_)) {
         return Err(format!(
             "Process {pid} is no longer an orphaned MLX process and was not terminated."
         ));
     }
     let use_process_group = orphan.kind == "training";
 
-    crate::commands::mlx::terminate_pid(pid, use_process_group).await?;
+    let start_time = orphan.start_time.ok_or_else(|| {
+        format!("Process {pid} has a legacy PID-only marker; its start time cannot be verified, so it was not terminated.")
+    })?;
+    crate::commands::mlx::terminate_pid(pid, use_process_group, Some(start_time)).await?;
 
     let exited = tokio::task::spawn_blocking(move || {
         wait_for_process_exit(

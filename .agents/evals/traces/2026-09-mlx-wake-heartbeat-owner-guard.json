@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-mlx-wake-heartbeat-owner-guard-2026-09",
+  "task": "Harden MLX orphan marker ownership and process identity, and reconcile MLX state after system sleep/wake",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "docs/02-requirements.md",
+      ".agents/evals/traces/2026-09-mlx-wake-heartbeat-owner-guard.json",
+      "docs/03-mvp-design.md",
+      "docs/04-architecture.md",
+      "docs/mistakes-log.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "MLX lifecycle safety and backend wake heartbeat: owner/start-time markers, native argv classification, surviving training-group witnesses, and owning documentation. Native orphan recovery is exercised only on a local test-owned MLX server; no real sleep/wake or cluster mutation."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Review follow-up reproduced classifier failures for wrapper .py.backup and argument spoofing, spaced wrapper paths, and a real disposable macOS training group whose leader exits TERM but child ignores it; the prior start-time guard rejected surviving-group cleanup."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "New markers record MLX PID, owning app PID, and sysinfo process start time. Scans skip markers owned by another live app, reject start-time mismatches, and refuse termination for legacy PID-only markers. SIGTERM and SIGKILL paths compare process start time; training falls back to the PID when no process group exists. A wall/monotonic heartbeat marks training and serving slots separately for re-verification, rescans MLX markers, and emits mlx-lifecycle-wake. The next status request verifies training's MLX command line and serving's /v1/models health before clearing each flag. Review follow-up snapshots group member birth times before TERM and requires matching birth time, PGID and MLX argv before allowing group KILL after leader exit, with a final synchronous identity check immediately before signals. Wrapper matching checks the script path rather than arbitrary substrings. Process authorization now reads sysinfo native argv with explicit with_cmd Always; ps flattened text is used only by legacy diagnostic tests. All sysinfo inspection in async paths runs on blocking workers."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "Lifecycle and fake-clock tests plus real macOS disposable process-group regressions passed: matching child is killed after leader exit; mismatched marker birth refuses TERM; an unverified surviving sleep child refuses KILL. Structured argv and a real unrelated report process carrying a wrapper argument are distinguished correctly.",
+      "scope": "Rust unit tests and disposable macOS process signaling; no actual MLX model/GPU computation",
+      "evidence": [
+        "test:services::mlx_lifecycle::tests::scan_skips_marker_owned_by_another_live_kubemetal_instance",
+        "test:commands::mlx::tests::orphan_termination_requires_matching_process_start_time",
+        "test:commands::mlx::tests::training_termination_falls_back_to_pid_when_no_process_group_exists",
+        "test:services::mlx_lifecycle::tests::classify_cmdline_accepts_python_paths_with_spaces",
+        "test:services::mlx_lifecycle::wake::tests::detects_wall_clock_jump_without_matching_monotonic_progress",
+        "test:services::mlx_lifecycle::wake::tests::ordinary_clock_drift_does_not_look_like_sleep",
+        "test:commands::mlx::tests::orphan_training_stop_kills_verified_child_after_leader_exits",
+        "test:commands::mlx::tests::orphan_training_stop_refuses_unverified_surviving_child",
+        "test:services::mlx_lifecycle::tests::classify_cmdline_accepts_exact_wrapper_paths_with_spaces",
+        "test:services::mlx_lifecycle::tests::structured_argv_distinguishes_wrapper_path_from_report_argument",
+        "test:services::mlx_lifecycle::tests::scan_rejects_real_report_process_with_wrapper_argument"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Full make verify passed: 326 Rust tests passed, one existing ignored; RAG 18 and MLX four Python tests, airgap regressions, fmt/clippy, TypeScript, IPC, design/version/license checks and web build passed. Wake detection uses fake-clock evidence; real device sleep/wake remains unobserved.",
+      "scope": "Rust build/lint/unit scope; fake-clock wake only, disposable macOS process signaling",
+      "evidence": [
+        "ci:cargo-fmt-check",
+        "ci:cargo-clippy-warnings-denied",
+        "test:cargo-test-mlx_lifecycle",
+        "test:cargo-test",
+        "ci:check-agent-trace-requirement",
+        "ci:check-agent-trace-evidence",
+        "ci:agent-behavior-gate"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Actual debug macOS KubeMetal.app and local test-owned mlx-lm Qwen2.5-0.5B server; no simulated UI or device sleep/wake",
+      "summary": "Server PID47357 returned HTTP200 on 127.0.0.1:18081. Live owner PID47356 hid its marker from orphans. After terminating only the test owner, marker birth+1 showed stale-identity refusal while HTTP200 persisted. Correct birth exposed structured argv; native confirm terminated that owned server, closed its port and removed its marker; UI showed no orphan. No user process was signaled.",
+      "evidence": [
+        "runtime:native-mlx-orphan-owner-birth-termination"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Implementation and verification complete: local full gates, independent review, real disposable macOS process-group tests and native orphan UI acceptance passed. Actual sleep/wake acceptance and frontend wake wiring remain outside this PR.",
+      "evidence": [
+        "e4",
+        "e5",
+        "e8"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for issue #124 orphan-safety scope. Backend wake heartbeat is included as progress for #13; actual device sleep/wake and frontend wake wiring are not claimed."
+    }
+  ]
+}

@@ -121,6 +121,10 @@ pub struct MlxStatus {
     pub training: Option<TrainingStatus>,
     pub serving: Option<ServingStatus>,
     pub last_serving_error: Option<String>,
+    /// A post-wake process identity check is still pending for this slot.
+    pub training_needs_reverification: bool,
+    /// A post-wake process and `/v1/models` health check is still pending for this slot.
+    pub serving_needs_reverification: bool,
 }
 
 #[derive(Default)]
@@ -131,6 +135,8 @@ pub struct MlxState {
     pub training: Mutex<Option<TrainingStatus>>,
     pub serving: Mutex<Option<ServingStatus>>,
     pub last_serving_error: Mutex<Option<String>>,
+    pub training_needs_reverification: AtomicBool,
+    pub serving_needs_reverification: AtomicBool,
     /// 헬스체크를 통과한 마지막 서빙 구성(이슈 #12) — `revert_to_last_serving`이 되돌릴
     /// 대상. 스폰 성공만으로는 채우지 않는다: 모델 로드 실패로 죽는 프로세스를 "성공"으로
     /// 남기면 되돌리기가 똑같이 죽는 구성으로 되돌아간다(D22).
@@ -1106,12 +1112,54 @@ pub async fn get_mlx_status(state: State<'_, MlxState>) -> Result<MlxStatus, Str
         .map_err(|e| e.to_string())?
         .clone();
 
+    let training_needs_reverification =
+        if state.training_needs_reverification.load(Ordering::SeqCst) {
+            let verified = match training.as_ref() {
+                None => true,
+                Some(training) if services::process::pid_is_alive(training.pid) => {
+                    matches!(
+                        services::mlx_lifecycle::inspect_mlx_process(training.pid).await,
+                        services::mlx_lifecycle::CmdlineVerification::Mlx(_)
+                    )
+                }
+                Some(_) => false,
+            };
+            if verified {
+                state
+                    .training_needs_reverification
+                    .store(false, Ordering::SeqCst);
+            }
+            !verified
+        } else {
+            false
+        };
+    let serving_needs_reverification = if state.serving_needs_reverification.load(Ordering::SeqCst)
+    {
+        let verified = match serving.as_ref() {
+            None => true,
+            Some(serving) if services::process::pid_is_alive(serving.pid) => {
+                is_serving_healthy(&format!("http://127.0.0.1:{}/v1", serving.port)).await
+            }
+            Some(_) => false,
+        };
+        if verified {
+            state
+                .serving_needs_reverification
+                .store(false, Ordering::SeqCst);
+        }
+        !verified
+    } else {
+        false
+    };
+
     Ok(MlxStatus {
         env,
         env_setup,
         training,
         serving,
         last_serving_error,
+        training_needs_reverification,
+        serving_needs_reverification,
     })
 }
 
@@ -1129,6 +1177,20 @@ pub(crate) fn resolve_signal_target(pid: u32, use_process_group: bool) -> Option
     }
 }
 
+fn resolve_training_signal_target(pid: u32, group_is_alive: bool) -> Option<i32> {
+    if pid == 0 {
+        None
+    } else if group_is_alive {
+        Some(-(pid as i32))
+    } else {
+        Some(pid as i32)
+    }
+}
+
+fn marker_start_time_matches(expected: Option<u64>, actual: Option<u64>) -> bool {
+    expected.is_some() && expected == actual
+}
+
 /// SIGTERM 전송 후 1초 대기하고, 남아 있는 대상은 명령줄을 다시 검증한 뒤 SIGKILL 한다.
 /// `use_process_group`이면 시그널을 `-pid`(프로세스 그룹)로 보낸다 — 학습 래퍼는
 /// `.process_group(0)`으로 기동되어 자신이 그룹 리더이므로, 그룹으로 보내야 내부에서
@@ -1143,19 +1205,80 @@ fn signal_target_is_alive(target: i32) -> bool {
 
 /// SIGTERM 후 그룹 리더만 먼저 사라진 경우에도, 살아 있는 PGID는 같은 그룹의 자식을
 /// 가리킨다. 단일 서빙 PID와 리더가 아직 살아 있는 경우에는 이 예외를 적용하지 않는다.
-fn may_kill_surviving_training_group(use_process_group: bool, leader_is_alive: bool) -> bool {
-    use_process_group && !leader_is_alive
+async fn surviving_training_group_witness(pid: u32, members: &[(u32, u64)]) -> Option<(u32, u64)> {
+    // D-MLX-GROUP-1 (#124): a live group number alone cannot prove identity after
+    // its leader exits. Retain a pre-TERM member's birth time and group membership;
+    // without that witness we refuse, at the cost of manual orphan recovery.
+    for &(member, start_time) in members {
+        if tokio::task::spawn_blocking(move || {
+            services::process::process_still_in_group(member, start_time, pid)
+        })
+        .await
+        .unwrap_or(false)
+            && matches!(
+                services::mlx_lifecycle::inspect_mlx_process(member).await,
+                services::mlx_lifecycle::CmdlineVerification::Mlx(_)
+            )
+            && tokio::task::spawn_blocking(move || {
+                services::process::process_still_in_group(member, start_time, pid)
+            })
+            .await
+            .unwrap_or(false)
+        {
+            return Some((member, start_time));
+        }
+    }
+    None
 }
 
 /// SIGTERM 뒤의 대기만 blocking worker에서 수행한다. 학습은 `-pgid`에 signal 0을 보내
 /// 리더가 아닌 남은 자식도 확인한다. SIGKILL 직전에는 PID의 명령줄을 다시 읽어 PID 재사용으로
 /// 무관한 프로세스(또는 그룹)를 종료하지 않게 한다.
-pub(crate) async fn terminate_pid(pid: u32, use_process_group: bool) -> Result<(), String> {
+pub(crate) async fn terminate_pid(
+    pid: u32,
+    use_process_group: bool,
+    expected_start_time: Option<u64>,
+) -> Result<(), String> {
     let target = match resolve_signal_target(pid, use_process_group) {
         Some(t) => t,
         None => return Ok(()),
     };
+    let target = if use_process_group {
+        resolve_training_signal_target(pid, signal_target_is_alive(target))
+            .ok_or_else(|| format!("Invalid training PID {pid}"))?
+    } else {
+        target
+    };
+    if expected_start_time.is_some()
+        && !marker_start_time_matches(
+            expected_start_time,
+            tokio::task::spawn_blocking(move || services::process::process_start_time(pid))
+                .await
+                .map_err(|e| format!("Failed to inspect process {pid}: {e}"))?,
+        )
+    {
+        return Err(format!(
+            "Refusing to signal process {pid}: process start time differs from its marker."
+        ));
+    }
+    let members = if target < 0 {
+        tokio::task::spawn_blocking(move || services::process::process_group_members(pid))
+            .await
+            .map_err(|e| format!("Failed to inspect training group {pid}: {e}"))?
+    } else {
+        Vec::new()
+    };
     let target_survives = tokio::task::spawn_blocking(move || -> Result<bool, String> {
+        if expected_start_time.is_some()
+            && !marker_start_time_matches(
+                expected_start_time,
+                services::process::process_start_time(pid),
+            )
+        {
+            return Err(format!(
+                "Refusing to signal process {pid}: process identity changed before SIGTERM."
+            ));
+        }
         let term_result = unsafe { libc::kill(target, libc::SIGTERM) };
         if term_result != 0 {
             let error = std::io::Error::last_os_error();
@@ -1173,38 +1296,55 @@ pub(crate) async fn terminate_pid(pid: u32, use_process_group: bool) -> Result<(
         return Ok(());
     }
 
-    match crate::services::process::get_process_cmdline(pid).await {
-        Ok(cmdline)
-            if matches!(
-                crate::services::mlx_lifecycle::classify_mlx_cmdline(Some(&cmdline)),
-                crate::services::mlx_lifecycle::CmdlineVerification::Mlx(_)
-            ) => {}
-        Ok(_) => {
-            return Err(format!(
-                "Refusing to SIGKILL process {pid}: it is no longer a verified MLX process."
-            ))
-        }
-        Err(error)
-            if may_kill_surviving_training_group(
-                use_process_group,
-                crate::services::process::pid_is_alive(pid),
-            ) =>
-        {
-            // 그룹 리더는 SIGTERM에 먼저 종료될 수 있지만 `kill(-pgid, 0)`은 아직 멤버가
-            // 남았음을 확인했다. 살아 있는 PGID는 재사용될 수 없으므로 이 경우에만 리더의
-            // 명령줄 재확인 불가를 허용해 남은 MLX 자식을 SIGKILL한다.
-            eprintln!(
-                "[mlx] Training leader {pid} exited before SIGKILL re-verification; terminating surviving process group: {error}"
-            );
-        }
-        Err(error) => {
-            return Err(format!(
-                "Refusing to SIGKILL process {pid}: could not re-verify MLX identity: {error}"
-            ))
-        }
+    let leader_start_time =
+        tokio::task::spawn_blocking(move || services::process::process_start_time(pid))
+            .await
+            .map_err(|e| format!("Failed to inspect process {pid}: {e}"))?;
+    let surviving_group_witness = if target < 0 && leader_start_time.is_none() {
+        surviving_training_group_witness(pid, &members).await
+    } else {
+        None
+    };
+    let verified_surviving_group = surviving_group_witness.is_some();
+    if expected_start_time.is_some()
+        && !verified_surviving_group
+        && !marker_start_time_matches(expected_start_time, leader_start_time)
+    {
+        return Err(format!(
+            "Refusing to SIGKILL process {pid}: process start time differs from its marker."
+        ));
+    }
+
+    if !verified_surviving_group
+        && !matches!(
+            services::mlx_lifecycle::inspect_mlx_process(pid).await,
+            services::mlx_lifecycle::CmdlineVerification::Mlx(_)
+        )
+    {
+        return Err(format!(
+            "Refusing to SIGKILL process {pid}: could not re-verify MLX argv identity."
+        ));
     }
 
     tokio::task::spawn_blocking(move || {
+        if let Some((member, start_time)) = surviving_group_witness {
+            if services::process::process_start_time(pid).is_some()
+                || !services::process::process_still_in_group(member, start_time, pid)
+            {
+                return Err(std::io::Error::other(
+                    "Training group identity changed before SIGKILL",
+                ));
+            }
+        } else if expected_start_time.is_some()
+            && !marker_start_time_matches(
+                expected_start_time,
+                services::process::process_start_time(pid),
+            )
+        {
+            return Err(std::io::Error::other(
+                "Process identity changed before SIGKILL",
+            ));
+        }
         let kill_result = unsafe { libc::kill(target, libc::SIGKILL) };
         if kill_result != 0 {
             return Err(std::io::Error::last_os_error());
@@ -1296,7 +1436,7 @@ pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bo
         }
     }
 
-    if let Err(error) = terminate_pid(pid, is_training).await {
+    if let Err(error) = terminate_pid(pid, is_training, None).await {
         // 시그널 전송이 실패했으니 위에서 낙관적으로 쓴 "killed"를 되돌린다 — 프로세스가
         // 여전히 살아있을 수 있는데 종료된 것으로 보여주면 안 된다(D22).
         let mut guard = state.training.lock().map_err(|e| e.to_string())?;
@@ -1580,7 +1720,7 @@ pub async fn stop_model_serving(state: State<'_, MlxState>) -> Result<String, St
         return Err("Serving process is still starting; nothing to stop yet.".into());
     }
 
-    terminate_pid(pid, false).await?;
+    terminate_pid(pid, false, None).await?;
 
     // Child 소유권은 run_serving_reader가 갖고 있으므로 여기서는 상태만 비운다.
     // reaper가 실제 종료를 감지하고 last_serving_error를 남기지 않는다(사용자 의도 종료).
@@ -1781,6 +1921,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn orphan_termination_requires_matching_process_start_time() {
+        assert!(marker_start_time_matches(Some(42), Some(42)));
+        assert!(!marker_start_time_matches(Some(42), Some(43)));
+        assert!(!marker_start_time_matches(None, Some(42)));
+    }
+
+    #[test]
+    fn training_termination_falls_back_to_pid_when_no_process_group_exists() {
+        assert_eq!(resolve_training_signal_target(123, false), Some(123));
+        assert_eq!(resolve_training_signal_target(123, true), Some(-123));
+        assert_eq!(resolve_training_signal_target(0, false), None);
+    }
+
+    #[test]
     fn tracked_mlx_process_decision_allows_only_current_training_or_serving_pid() {
         assert_eq!(
             tracked_mlx_process_is_training(41, Some(41), Some(42)),
@@ -1826,11 +1980,87 @@ mod tests {
         assert!(!should_revert_optimistic_killed_status("running"));
     }
 
-    #[test]
-    fn surviving_training_group_is_only_killed_when_its_leader_has_exited() {
-        assert!(may_kill_surviving_training_group(true, false));
-        assert!(!may_kill_surviving_training_group(true, true));
-        assert!(!may_kill_surviving_training_group(false, false));
+    #[tokio::test]
+    async fn surviving_training_group_requires_preterm_identity_witness() {
+        assert!(surviving_training_group_witness(std::process::id(), &[])
+            .await
+            .is_none());
+        assert!(
+            surviving_training_group_witness(std::process::id(), &[(std::process::id(), 0)])
+                .await
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn orphan_training_stop_kills_verified_child_after_leader_exits() {
+        exercise_orphan_training_group(true).await;
+    }
+
+    #[tokio::test]
+    async fn orphan_training_stop_refuses_unverified_surviving_child() {
+        exercise_orphan_training_group(false).await;
+    }
+
+    async fn exercise_orphan_training_group(child_is_mlx: bool) {
+        use std::os::unix::process::CommandExt;
+        let root = std::env::temp_dir().join(format!(
+            "kubemetal group stop-{child_is_mlx}-{}",
+            std::process::id()
+        ));
+        let script = root.join("scripts/mlx/finetune_wrapper.py");
+        std::fs::create_dir_all(script.parent().unwrap()).unwrap();
+        // Only this test's dedicated process group is signaled. Child initialization
+        // is acknowledged before the leader writes its PID file.
+        std::fs::write(&script, "import os,signal,sys,time\npid=os.fork()\nif pid == 0:\n signal.signal(signal.SIGTERM,signal.SIG_IGN)\n open(sys.argv[1]+'.ready','w').close()\n if sys.argv[2] == 'unverified': os.execl('/bin/sleep','sleep','30')\n time.sleep(30)\nelse:\n while not os.path.exists(sys.argv[1]+'.ready'): time.sleep(.01)\n open(sys.argv[1],'w').write(str(pid))\n time.sleep(30)\n").unwrap();
+        let pid_file = root.join("child.pid");
+        let mut leader = std::process::Command::new(resolve_cli_path("python3").unwrap())
+            .arg(&script)
+            .arg(&pid_file)
+            .arg(if child_is_mlx { "mlx" } else { "unverified" })
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = leader.id();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !pid_file.exists() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let child_pid: u32 = std::fs::read_to_string(&pid_file).unwrap().parse().unwrap();
+        let start_time = services::process::process_start_time(pid).unwrap();
+        let child_start_time = services::process::process_start_time(child_pid).unwrap();
+        assert!(terminate_pid(pid, true, Some(start_time + 1))
+            .await
+            .is_err());
+        assert!(services::process::pid_is_alive(pid));
+        assert!(services::process::pid_is_alive(child_pid));
+        // Reap the leader during terminate_pid's wait, as the app's reader does.
+        let reaper = tokio::task::spawn_blocking(move || leader.wait().unwrap());
+        let result = terminate_pid(pid, true, Some(start_time)).await;
+        let child_cmdline = services::process::get_process_cmdline(child_pid)
+            .await
+            .unwrap_or_default();
+        let exited = !child_cmdline.contains("finetune_wrapper.py");
+        // Cleanup is limited to the group created above even when the assertion fails.
+        let child_still_alive =
+            services::process::process_still_in_group(child_pid, child_start_time, pid);
+        if child_still_alive {
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGKILL);
+            }
+        }
+        let _ = reaper.await;
+        let _ = std::fs::remove_dir_all(root);
+        if child_is_mlx {
+            assert!(result.is_ok(), "{result:?}");
+            assert!(exited, "SIGTERM-resistant training child survived");
+        } else {
+            assert!(result.is_err(), "unverified group was authorized");
+            assert!(
+                child_still_alive,
+                "unverified child was signaled with SIGKILL"
+            );
+        }
     }
 
     #[test]
@@ -2639,7 +2869,7 @@ mod tests {
     #[tokio::test]
     async fn terminate_pid_noop_on_zero() {
         // PID 0은 시그널 전송이나 sleep 대기 없이 즉시 no-op으로 반환되어야 한다.
-        assert!(terminate_pid(0, false).await.is_ok());
-        assert!(terminate_pid(0, true).await.is_ok());
+        assert!(terminate_pid(0, false, None).await.is_ok());
+        assert!(terminate_pid(0, true, None).await.is_ok());
     }
 }

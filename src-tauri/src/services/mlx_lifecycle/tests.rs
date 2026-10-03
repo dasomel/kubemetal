@@ -1,6 +1,74 @@
 use super::*;
 use std::path::PathBuf;
 
+#[test]
+fn structured_argv_distinguishes_wrapper_path_from_report_argument() {
+    for argv in [
+        vec!["python3", "/tmp/test dir/scripts/mlx/finetune_wrapper.py"],
+        vec!["/Users/test user/venv/bin/python", "-m", "mlx_lm.server"],
+    ] {
+        let argv: Vec<String> = argv.into_iter().map(str::to_owned).collect();
+        assert!(matches!(
+            marker::classify_mlx_argv(&argv),
+            CmdlineVerification::Mlx(_)
+        ));
+    }
+    for argv in [
+        vec!["python3", "report", "dir/scripts/mlx/finetune_wrapper.py"],
+        vec![
+            "python3",
+            "/tmp/report",
+            "dir/scripts/mlx/finetune_wrapper.py",
+        ],
+        vec!["python3", "/tmp/scripts/mlx/finetune_wrapper.py.backup"],
+        vec!["python3", "-c", "report", "-m", "mlx_lm.server"],
+        vec!["python3", "scripts/mlx/finetune_wrapper.py"],
+    ] {
+        let argv: Vec<String> = argv.into_iter().map(str::to_owned).collect();
+        assert_eq!(
+            marker::classify_mlx_argv(&argv),
+            CmdlineVerification::NotMlx
+        );
+    }
+    assert_eq!(
+        marker::classify_mlx_argv(&[]),
+        CmdlineVerification::Unverifiable
+    );
+}
+
+#[tokio::test]
+async fn scan_rejects_real_report_process_with_wrapper_argument() {
+    let dir = make_temp_dir("argv-spoof");
+    let markers = dir.join("markers");
+    std::fs::create_dir_all(&markers).unwrap();
+    let report = dir.join("report");
+    std::fs::write(&report, "import time\ntime.sleep(10)\n").unwrap();
+    let mut child =
+        std::process::Command::new(crate::services::process::resolve_cli_path("python3").unwrap())
+            .arg(&report)
+            .arg("dir/scripts/mlx/finetune_wrapper.py")
+            .spawn()
+            .unwrap();
+    let pid = child.id();
+    let marker = markers.join(format!("training-{pid}.pid"));
+    std::fs::write(&marker, pid.to_string()).unwrap();
+    wait_for_argv_settled(pid).await;
+    let argv = crate::services::process::get_process_argv(pid).await;
+    let result = scan_orphaned_mlx_processes(&markers, &[]).await;
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(dir);
+    let argv = argv.expect("native macOS argv must be observed");
+    assert_eq!(argv[1], report.to_str().unwrap());
+    assert_eq!(argv[2], "dir/scripts/mlx/finetune_wrapper.py");
+    let result = result.unwrap();
+    assert!(
+        result.orphans.is_empty(),
+        "report process was authorized as MLX"
+    );
+    assert!(result.unreadable.is_empty());
+}
+
 fn make_temp_dir(label: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("kubemetal-test-{label}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -69,16 +137,67 @@ async fn scan_detects_live_pid_marker() {
 }
 
 #[tokio::test]
+async fn scan_skips_marker_owned_by_another_live_kubemetal_instance() {
+    let dir = make_temp_dir("other-live-owner");
+    let mut owner = std::process::Command::new("/bin/sleep")
+        .arg("5")
+        .spawn()
+        .expect("spawn owner process");
+    let pid = std::process::id();
+    let owner_pid = owner.id();
+    let start_time = crate::services::process::process_start_time(pid).unwrap();
+    let marker = dir.join(format!("serving-{pid}.pid"));
+    std::fs::write(
+        &marker,
+        format!("pid={pid}\nowner_pid={owner_pid}\nstart_time={start_time}\n"),
+    )
+    .unwrap();
+
+    let scan = scan_orphaned_mlx_processes(&dir, &[]).await.unwrap();
+    let _ = owner.kill();
+    let _ = owner.wait();
+    assert!(scan.orphans.is_empty());
+    assert!(
+        scan.unreadable.is_empty(),
+        "live app ownership is recognized, not treated as a malformed marker"
+    );
+    assert!(
+        marker.exists(),
+        "a live other app owner keeps its marker intact"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
 async fn scan_removes_marker_for_non_mlx_live_process_and_excludes_from_orphans() {
     let dir = make_temp_dir("non-mlx-live");
-    let pid = std::process::id(); // cargo test 프로세스 (MLX 아님)
+    let mut child = std::process::Command::new("/bin/sleep")
+        .arg("5")
+        .spawn()
+        .expect("spawn non-MLX process");
+    let pid = child.id();
     let marker_file = dir.join(format!("training-{pid}.pid"));
     std::fs::write(&marker_file, pid.to_string()).unwrap();
 
     let result = scan_orphaned_mlx_processes(&dir, &[]).await.unwrap();
-    assert!(result.orphans.is_empty(), "Non-MLX process excluded");
+    let _ = child.kill();
+    let _ = child.wait();
     assert!(result.unreadable.is_empty());
-    assert!(!marker_file.exists(), "Marker must be cleaned up");
+    if let Some(orphan) = result.orphans.first() {
+        assert!(
+            !orphan.verified,
+            "when process inspection is unavailable, report uncertainty"
+        );
+        assert!(
+            marker_file.exists(),
+            "unverifiable identity must not delete the marker"
+        );
+    } else {
+        assert!(
+            !marker_file.exists(),
+            "confirmed non-MLX PID reuse cleans up its marker"
+        );
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -162,10 +281,19 @@ fn classify_cmdline_identifies_valid_mlx_processes() {
         classify_mlx_cmdline(Some(vlm)),
         CmdlineVerification::Mlx(vlm.into())
     );
-    let ft = "python3 scripts/mlx/finetune_wrapper.py --model foo";
+    let ft = "python3 /tmp/scripts/mlx/finetune_wrapper.py --model foo";
     assert_eq!(
         classify_mlx_cmdline(Some(ft)),
         CmdlineVerification::Mlx(ft.into())
+    );
+}
+
+#[test]
+fn classify_cmdline_accepts_python_paths_with_spaces() {
+    let cmd = "\"/Users/test user/MLX venv/bin/python\" -m mlx_lm server --host 127.0.0.1";
+    assert_eq!(
+        classify_mlx_cmdline(Some(cmd)),
+        CmdlineVerification::Mlx(cmd.into())
     );
 }
 
@@ -188,7 +316,7 @@ fn classify_cmdline_accepts_measured_framework_python_reexec_paths() {
         CmdlineVerification::Mlx(cli_tools_reexec.into())
     );
 
-    let library_frameworks_reexec = "/Library/Frameworks/Python.framework/Versions/3.10/Resources/Python.app/Contents/MacOS/Python scripts/mlx/finetune_wrapper.py --model foo";
+    let library_frameworks_reexec = "/Library/Frameworks/Python.framework/Versions/3.10/Resources/Python.app/Contents/MacOS/Python /tmp/scripts/mlx/finetune_wrapper.py --model foo";
     assert_eq!(
         classify_mlx_cmdline(Some(library_frameworks_reexec)),
         CmdlineVerification::Mlx(library_frameworks_reexec.into())
@@ -197,6 +325,16 @@ fn classify_cmdline_accepts_measured_framework_python_reexec_paths() {
 
 #[test]
 fn classify_cmdline_rejects_false_positive_substrings() {
+    for cmd in [
+        "python3 /tmp/scripts/mlx/finetune_wrapper.py.backup",
+        "python3 /tmp/report.py --input /tmp/scripts/mlx/finetune_wrapper.py",
+        "python3 /tmp/report.py -m mlx_lm server",
+        "python3 -c report --input /tmp/scripts/mlx/finetune_wrapper.py",
+        "python3 /tmp/report --input /tmp/scripts/mlx/finetune_wrapper.py",
+        "python3 /tmp/report /tmp/scripts/mlx/finetune_wrapper.py",
+    ] {
+        assert_eq!(classify_mlx_cmdline(Some(cmd)), CmdlineVerification::NotMlx);
+    }
     // 리뷰의 오탐 예시 1: output 인자에 mlx_lm.log가 포함된 무관한 파이썬 스크립트
     let r1 = "python3 /tmp/report.py --output /tmp/mlx_lm.log";
     assert_eq!(classify_mlx_cmdline(Some(r1)), CmdlineVerification::NotMlx);
@@ -220,6 +358,17 @@ fn classify_cmdline_rejects_false_positive_substrings() {
 }
 
 #[test]
+fn classify_cmdline_accepts_exact_wrapper_paths_with_spaces() {
+    for cmd in [
+        "/Users/test user/MLX venv/bin/python /tmp/test dir/scripts/mlx/finetune_wrapper.py --model foo",
+        "/Users/a.python/MLX venv/bin/python /tmp/parent.python/scripts/mlx/finetune_wrapper.py --model foo",
+        "\"/Users/test user/MLX venv/bin/python\" \"/tmp/test dir/scripts/mlx/finetune_wrapper.py\" --model foo",
+    ] {
+        assert_eq!(classify_mlx_cmdline(Some(cmd)), CmdlineVerification::Mlx(cmd.into()));
+    }
+}
+
+#[test]
 fn classify_cmdline_unverifiable_on_none_or_empty() {
     assert_eq!(
         classify_mlx_cmdline(None),
@@ -239,6 +388,7 @@ fn orphan_termination_allows_pid_in_fresh_orphan_scan() {
             kind: "training".into(),
             cmdline: "python -m mlx_lm.lora".into(),
             verified: true,
+            start_time: Some(1),
         }],
         unreadable: vec![],
     };
@@ -267,6 +417,7 @@ fn orphan_termination_refuses_session_tracked_pid() {
             kind: "serving".into(),
             cmdline: "python -m mlx_lm server".into(),
             verified: true,
+            start_time: Some(1),
         }],
         unreadable: vec![],
     };
