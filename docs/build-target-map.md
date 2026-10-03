@@ -66,6 +66,11 @@ publishing. If `manifest.sha256` exists, only its `sbom/` entries are refreshed;
 asset hashes remain unchanged. Do not generate evidence while collecting or installing
 the same bundle. A compressed source needs temporary space for one uncompressed tar.
 
+The downloader reports success only after creating and publishing `manifest.sha256`
+and verifying it with `shasum -a 256 -c`. Temporary-file, hashing, publication, and
+verification failures return nonzero; `test_digest_lock.sh` exercises these failures
+with disposable cached fixtures and CLI shims, without downloads or a Docker daemon.
+
 If re-running `download_airgap_bundle.sh` actually changes `digests.lock` (an image
 was re-collected with a different digest), the downloader deletes any existing `sbom/`
 evidence itself, then regenerates it against the new digests — stale SBOM evidence

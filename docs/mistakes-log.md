@@ -129,6 +129,7 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-10-03 | #127 번들 다운로더가 `manifest.sha256` 임시 파일 생성·해시 작성·게시 실패를 FAILED에 기록하지 않아 무결성 목록이 없어도 수집 성공을 출력했다 | 각 단계 실패를 기록하고 exit 1로 종료하며 게시 후 `shasum -a 256 -c` 자체 검증을 성공 조건으로 추가했다. 기존 daemon/network 없는 캐시 fixture에 임시 파일·해시·게시·검증 실패 주입 회귀를 연결했다. 수정 전 임시 파일 실패에서 성공 반환을 재현했다. 교훈: 성공에 필요한 마지막 증거 파일의 실패도 작업 실패다 |
 | 2026-10-02 | #142 파인튜닝 래퍼가 공용 MLflow 리포터의 `start_run(experiment_id, ...)`을 호출하면서 experiment 조회·생성 호출을 누락해, MLflow 가용 여부와 무관하게 `NameError`로 학습 자식 스폰 전에 종료됐다. Rust·TypeScript 게이트는 실행되지 않은 Python main 경로를 검증하지 못했다 | `get_or_create_experiment()` 결과를 전달한다. 실제 main과 reporter를 실행하고 HTTP 경계·학습 자식만 대체한 회귀 테스트로 기존 experiment, 404 생성, 접속 거부/500 시 warning 후 학습 계속, 자식 실패 시 FAILED 수렴을 검증한다. 수정 전 5개 NameError 실패·수정 후 통과를 확인했으며 `make test`에 연결했다. 교훈: 스크립트 진입점의 배선은 헬퍼 단위 테스트나 타 언어 컴파일로 검증되지 않는다 |
 | 2026-09-28 | 조사 노트 레인이 `grep`으로 `ComputeBackend` 0건이라는 결과를 `[measured-local]`로 기록했는데 `docs/04-architecture.md`에 실제로 있었다. 같은 날 `[upstream-doc]` 라벨이 URL·인용 없이 붙은 주장도 여럿 나왔다 — 조작된 측정(D22)이 조사 문서에서 재발 | 다른 벤더(Codex)가 라벨마다 근거를 대조해 적발, 재측정·원문 인용 또는 `[unverified]` 강등으로 수정. 교훈: 증거 라벨은 작성자가 아니라 다른 레인이 대조해야 의미가 있다 — 조사 노트도 코드처럼 교차 리뷰를 거칠 것 |
 | 2026-09-07 | `make lint`가 clippy/tsc/디자인 린트는 돌리면서 `cargo fmt --check`는 빠져 있어 25개 Rust 파일(123 hunk)이 rustfmt와 어긋난 채 CI를 통과하고 있었다 — OpenForge 감사(CI-002)가 밖에서 먼저 잡았다 | `lint` 첫 단계에 `cargo fmt --check`를 넣고 전체를 `cargo fmt`로 정렬했다. 포매터가 잡을 수 있는 규칙은 사람이 아니라 게이트가 강제한다 |
