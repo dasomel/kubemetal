@@ -100,7 +100,6 @@ forwards die with their parent.
   `--output-path`, and its adapter_config.json has no `model` key. `--train-vision`
   needs a non-quantized (bf16) model — 4-bit dies on `QuantizedMatmul::vjp`.
 - colima is not reentrant — one lifecycle op at a time, and never above the D4 profile.
-- Files past ~300 lines want splitting.
 
 ## Rules
 
@@ -119,7 +118,7 @@ forwards die with their parent.
 
 ## Commits
 
-Conventional Commits, scoped per verified task. `CHANGELOG.md` / `CHANGELOG-ko.md` carry
+Scoped per verified task. `CHANGELOG.md` / `CHANGELOG-ko.md` carry
 **user-visible** change per release (Keep a Changelog, updated at release time — not per
 commit). Everything else stays where it already lives: rationale in the D-registry, defects
 and their lessons in `docs/mistakes-log.md`, and the full history in `git log`. Don't restate

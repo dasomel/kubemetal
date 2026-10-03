@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useMlx } from '../../hooks/useMlx';
 import { useServingRollback } from '../../hooks/useServingRollback';
 import { useTranslation } from '../../i18n/i18nContext';
@@ -14,8 +14,16 @@ import { LocalInferenceOpsCard } from './LocalInferenceOpsCard';
 import { LocalInferenceBenchmarkCard } from './LocalInferenceBenchmarkCard';
 import { LocalInferenceReadinessCard } from './LocalInferenceReadinessCard';
 import { LockedPreview } from '../dashboard/LockedPreview';
+import { MlxStudioTabs, getStoredMlxSubTab, setStoredMlxSubTab, type MlxSubTab } from './MlxStudioTabs';
 
 export const MlxStudio: React.FC = () => {
+  const [activeTab, setActiveTabState] = useState<MlxSubTab>(getStoredMlxSubTab);
+
+  const handleTabChange = (tab: MlxSubTab) => {
+    setActiveTabState(tab);
+    setStoredMlxSubTab(tab);
+  };
+
   const {
     envStatus,
     checkingEnv,
@@ -88,37 +96,82 @@ export const MlxStudio: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <MlxEnvCard
-        envStatus={envStatus}
-        envSetup={mlxStatus?.env_setup}
-        checkingEnv={checkingEnv}
-        settingUp={settingUpEnv}
-        onSetup={setupEnv}
-        compact={envReady}
-      />
+      <MlxStudioTabs activeTab={activeTab} onTabChange={handleTabChange} />
 
-      <GpuBenchmarkCard />
-      <MlxOrphanedProcessesCard />
+      {/* 환경·진단 / Environment */}
+      <div
+        role="tabpanel"
+        id="mlx-panel-env"
+        aria-labelledby="mlx-tab-env"
+        hidden={activeTab !== 'env'}
+        className={activeTab === 'env' ? 'space-y-4 focus-visible:outline-none' : 'hidden'}
+        tabIndex={0}
+      >
+        <MlxEnvCard
+          envStatus={envStatus}
+          envSetup={mlxStatus?.env_setup}
+          checkingEnv={checkingEnv}
+          settingUp={settingUpEnv}
+          onSetup={setupEnv}
+          compact={envReady}
+        />
+        <GpuBenchmarkCard />
+        <LocalInferenceReadinessCard />
+        <MlxOrphanedProcessesCard />
+      </div>
 
-      <LocalInferenceReadinessCard />
-      <LocalInferenceRuntimeCard />
-      <LocalInferenceBridgeCard />
-      <LocalInferenceOpsCard />
-      <LocalInferenceBenchmarkCard />
+      {/* 추론 런타임 / Runtime */}
+      <div
+        role="tabpanel"
+        id="mlx-panel-runtime"
+        aria-labelledby="mlx-tab-runtime"
+        hidden={activeTab !== 'runtime'}
+        className={activeTab === 'runtime' ? 'space-y-4 focus-visible:outline-none' : 'hidden'}
+        tabIndex={0}
+      >
+        <LocalInferenceRuntimeCard />
+        <LocalInferenceBridgeCard />
+        <LocalInferenceOpsCard />
+        <LocalInferenceBenchmarkCard />
+      </div>
 
-      {envReady ? (
-        <>
-          {fineTune}
-          {guardrail}
-          {serving}
-        </>
-      ) : (
-        <>
-          <LockedPreview caption={t('mlx.lockedFinetune')}>{fineTune}</LockedPreview>
-          <LockedPreview caption={t('mlx.lockedGuardrail')}>{guardrail}</LockedPreview>
+      {/* 학습 / Training */}
+      <div
+        role="tabpanel"
+        id="mlx-panel-training"
+        aria-labelledby="mlx-tab-training"
+        hidden={activeTab !== 'training'}
+        className={activeTab === 'training' ? 'space-y-4 focus-visible:outline-none' : 'hidden'}
+        tabIndex={0}
+      >
+        {envReady ? (
+          <>
+            {fineTune}
+            {guardrail}
+          </>
+        ) : (
+          <>
+            <LockedPreview caption={t('mlx.lockedFinetune')}>{fineTune}</LockedPreview>
+            <LockedPreview caption={t('mlx.lockedGuardrail')}>{guardrail}</LockedPreview>
+          </>
+        )}
+      </div>
+
+      {/* 서빙·채팅 / Serving & Chat */}
+      <div
+        role="tabpanel"
+        id="mlx-panel-serving"
+        aria-labelledby="mlx-tab-serving"
+        hidden={activeTab !== 'serving'}
+        className={activeTab === 'serving' ? 'space-y-4 focus-visible:outline-none' : 'hidden'}
+        tabIndex={0}
+      >
+        {envReady ? (
+          serving
+        ) : (
           <LockedPreview caption={t('mlx.lockedServing')}>{serving}</LockedPreview>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 };

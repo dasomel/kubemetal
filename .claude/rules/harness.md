@@ -16,13 +16,7 @@ Model tiering, agy rotation, and the failure ladder are owned by the global
 | `approve` | final approval pass on high-risk diffs — D-registry changes, colima lifecycle, guardrails (D11/D16/D17), credential & SSRF paths (D21), K8s↔host bridge (D10) | `critic` / `code-reviewer` subagent | `opus` |
 | `escalate` | only after an `opus` lane produced a demonstrably wrong/insufficient result on the hardest reasoning step | subagent | `fable` (rare) |
 
-Authoring, manifest normalization, 1st-pass review and doc drafts run on `sonnet`; `opus` is
-for the `approve` lane and cross-cutting judgment only.
-
 ## Rules
-
-Dispatch mechanics (`agyp` vs raw `agy`, `--add-dir`, permission flags, rotation, failure
-ladder) belong to the global `<agy_cli>` — don't restate them here. What this repo adds:
 
 - **`agyp` injection reaches `CLAUDE.md` (which now expands one level to `AGENTS.md`) + this
   file, and nothing else.** `AGENTS.md` carries the D-registry decisions as summary bullets, but
@@ -36,8 +30,6 @@ ladder) belong to the global `<agy_cli>` — don't restate them here. What this 
   Keep raw output out of main context.
 - **Workers inherit no doctrine.** Whatever the lane must satisfy — goal, file scope, what
   not to touch, the verification command, report shape — says so in the prompt.
-- **Authoring never approves itself.** The qa lane re-runs the checks; a lane's own
-  "done" is not evidence.
 
 ## OMC agents for these lanes
 

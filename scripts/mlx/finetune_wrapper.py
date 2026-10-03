@@ -83,6 +83,7 @@ def main() -> int:
         EXPERIMENT_NAME,
         warn=lambda message: emit({"type": "warning", "message": message}),
     )
+    experiment_id = reporter.get_or_create_experiment()
     # GitHub #13: run_id를 러스트에 즉시 보고한다 — start_run 내부에서 run 생성 응답을
     # 받는 즉시 콜백으로 emit하여, 후속 log-batch(네트워크 지연/타임아웃 가능성) 도중
     # 프로세스가 시그널로 종료되더라도 러스트가 run_id를 이미 알고 수렴할 수 있게 한다.

@@ -1,0 +1,87 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-142-finetune-start",
+  "task": "Restore MLX fine-tuning startup after the missing experiment lookup (#142)",
+  "changeContext": {
+    "paths": [
+      "scripts/mlx/finetune_wrapper.py",
+      "tests/mlx/**",
+      "Makefile",
+      "docs/build-target-map.md",
+      "docs/mistakes-log.md",
+      ".agents/evals/traces/2026-10-issue-142-finetune-start.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Restore one missing reporter call, add main-entrypoint regressions to make test, and update the owning build map and mistakes log. No Rust, IPC, UI, Kubernetes, or MLflow reporter API changes."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before the fix, python3 -m unittest discover -s tests/mlx -v ran four tests and reported five NameError errors at reporter.start_run(experiment_id, ...), before the MLX child could spawn.",
+      "evidence": [
+        "test:tests/mlx/test_finetune_wrapper.py:pre-fix-NameError"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Assign experiment_id from reporter.get_or_create_experiment() before start_run. A failed lookup retains the reporter warning-and-continue contract."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Real finetune_wrapper.main and MlflowReporter with mocked urllib HTTP boundary and MLX subprocess; no live MLflow success claim",
+      "summary": "Four tests pass: existing experiment, 404 experiment creation, connection refusal/HTTP 500 warning while training continues, and child failure marking the run FAILED. The run-start event is observed before params logging.",
+      "evidence": [
+        "test:python3 -m unittest discover -s tests/mlx -v",
+        "test:FineTuneStartupTests",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Completion suite on the implementation worktree, observed by root agent",
+      "summary": "make verify exited 0: 315 Rust passed, 1 ignored, 18 RAG and 4 MLX tests passed; airgap regressions, lint, IPC/version, license checks, and web build passed. Vite reported a large-chunk warning.",
+      "evidence": [
+        "ci:make verify",
+        "artifact:.omc/artifacts/issue-142/verify.log"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Real macOS debug Tauri bundle and host MLX training; MLflow 127.0.0.1:5001 refused connection; observed by root agent",
+      "summary": "Source and bundled wrapper hashes matched; app PID 60156 owned the intended debug bundle. Local Qwen2.5-0.5B-Instruct-4bit smoke training completed 100 iterations with wrapper PID 69507 and child 69509. After a memory-warning pause and UI resume, a serving-tab roundtrip retained the PID and showed 29/100, loss 0.0140; an environment-tab roundtrip showed completion at 100/100, loss 0.0300. adapter_config.json and an 11MB adapters.safetensors existed, and wrapper, child, and caffeinate exited. Live MLflow success was not exercised.",
+      "evidence": [
+        "runtime:root-observed-Tauri-MLX-100-iteration-smoke",
+        "artifact:.omc/artifacts/issue-142/report.md"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "The startup fix is verified with mocked MLflow success/failure regressions and real app training while MLflow is unavailable. Live MLflow success remains outside the observed runtime evidence.",
+      "evidence": [
+        "e4",
+        "e5",
+        "e6"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Implementation complete within #142 scope; verification distinguishes mocked REST success from observed host training and does not claim live MLflow or cluster verification."
+    }
+  ]
+}
