@@ -15,7 +15,7 @@ pub struct OrphanedProcessInfo {
     pub pid: u32,
     pub kind: String,
     pub cmdline: String,
-    /// 명령줄을 `classify_mlx_cmdline`으로 확인했는지 여부. `false`면 `cmdline`은
+    /// native argv를 `classify_mlx_argv`로 확인했는지 여부. `false`면 `cmdline`은
     /// "확인 불가" 자리표시자이며, UI는 이 PID에 대한 종료 요청을 거부해야 한다 —
     /// `terminate_orphaned_mlx_process`가 재검증 단계에서 항상 거부하기 때문이다.
     pub verified: bool,
@@ -125,9 +125,13 @@ pub async fn write_pid_marker(base_dir: &Path, kind: &str, pid: u32) -> Result<P
 
     // D-MLX-OWNER-1 (#124): bind a marker to app ownership and process birth; this costs one sysinfo
     // process refresh per marker write, and legacy records remain visible but cannot be terminated.
-    let start_time = crate::services::process::process_start_time(pid).ok_or_else(|| {
-        format!("Cannot determine start time for MLX process {pid}; marker not written")
-    })?;
+    let start_time =
+        tokio::task::spawn_blocking(move || crate::services::process::process_start_time(pid))
+            .await
+            .map_err(|e| format!("Cannot inspect MLX process {pid}: {e}"))?
+            .ok_or_else(|| {
+                format!("Cannot determine start time for MLX process {pid}; marker not written")
+            })?;
     let owner_pid = std::process::id();
     let marker = format!("pid={pid}\nowner_pid={owner_pid}\nstart_time={start_time}\n");
     tokio::fs::write(&tmp_path, marker).await.map_err(|e| {
@@ -173,6 +177,7 @@ pub async fn remove_pid_marker(base_dir: &Path, kind: &str, pid: u32) {
 /// Stop에서 SIGKILL되지 않고, 고아 스캔이 진짜 고아의 marker를 삭제해버린다.
 ///
 /// 그 외에는 MLX가 아닌 것(PID 재사용 가능성)으로 판정하고, 명령줄이 비어있거나 없으면 확인 불가로 판정한다.
+#[cfg(test)]
 pub fn classify_mlx_cmdline(raw_cmdline: Option<&str>) -> CmdlineVerification {
     let Some(raw) = raw_cmdline else {
         return CmdlineVerification::Unverifiable;
@@ -182,47 +187,49 @@ pub fn classify_mlx_cmdline(raw_cmdline: Option<&str>) -> CmdlineVerification {
         return CmdlineVerification::Unverifiable;
     }
 
-    let (executable_arg, module_arg) = trimmed
-        .split_once(" -m ")
-        .map(|(executable, module)| (executable, Some(module)))
-        .unwrap_or_else(|| {
-            (
-                trimmed.split_once(' ').map_or(trimmed, |(first, _)| first),
-                None,
-            )
-        });
-    let executable_path = Path::new(executable_arg.trim_matches(['"', '\'']));
-    let executable = executable_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    let executable_lower = executable.to_ascii_lowercase();
-    let is_python = executable_lower == "python"
-        || executable_lower == "python3"
-        || executable_lower
-            .strip_prefix("python3.")
-            .is_some_and(|version| {
-                !version.is_empty()
-                    && version
-                        .split('.')
-                        .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
-            })
-        || executable_path.ends_with(Path::new("Python.app/Contents/MacOS/Python"));
-    if !is_python {
+    // D-MLX-ARGV-1 (#124): ps does not quote paths containing spaces. Locate the
+    // interpreter boundary first; inspecting later arguments would authorize a
+    // report script merely because its input mentions our wrapper. Ambiguous
+    // paths fail closed; structured argv inspection can replace this parser.
+    let boundary = trimmed
+        .char_indices()
+        .filter(|(_, ch)| ch.is_whitespace())
+        .find(|(index, _)| is_python_executable(&trimmed[..*index]));
+    let Some((boundary, _)) = boundary else {
         return CmdlineVerification::NotMlx;
-    }
-
-    if let Some(module_arg) = module_arg {
-        let module = module_arg.split_whitespace().next().unwrap_or_default();
+    };
+    let args = trimmed[boundary..].trim_start();
+    if let Some(module_args) = args.strip_prefix("-m ") {
+        let module = module_args.split_whitespace().next().unwrap_or_default();
         if ["mlx_lm", "mlx_vlm"]
             .iter()
             .any(|prefix| module == *prefix || module.starts_with(&format!("{prefix}.")))
         {
             return CmdlineVerification::Mlx(trimmed.to_string());
         }
-    }
-    if trimmed.contains("scripts/mlx/finetune_wrapper.py") {
-        return CmdlineVerification::Mlx(trimmed.to_string());
+    } else if let Some(end) = args
+        .match_indices(".py")
+        .map(|(index, _)| index + 3)
+        .find(|&end| {
+            let suffix = &args[end..];
+            suffix.is_empty()
+                || suffix.starts_with(char::is_whitespace)
+                || suffix.starts_with('"')
+                || suffix.starts_with('\'')
+        })
+    {
+        let script = args[..end].trim_matches(['"', '\'']);
+        if Path::new(script).is_absolute()
+            && !script.split_whitespace().any(|part| part.starts_with('-'))
+            && script
+                .split_whitespace()
+                .filter(|part| part.starts_with('/'))
+                .count()
+                <= 1
+            && Path::new(script).ends_with("scripts/mlx/finetune_wrapper.py")
+        {
+            return CmdlineVerification::Mlx(trimmed.to_string());
+        }
     }
 
     CmdlineVerification::NotMlx
@@ -363,15 +370,17 @@ pub async fn scan_orphaned_mlx_processes(
                 continue;
             }
             if let Some(expected) = record.start_time {
-                if crate::services::process::process_start_time(pid) != Some(expected) {
+                let actual_start_time = tokio::task::spawn_blocking(move || {
+                    crate::services::process::process_start_time(pid)
+                })
+                .await
+                .map_err(|e| format!("Cannot inspect MLX process {pid}: {e}"))?;
+                if actual_start_time != Some(expected) {
                     unreadable.push(UnreadableMarker { path: entry_path.display().to_string(), error: format!("Process {pid} start time differs from marker; refusing stale PID identity") });
                     continue;
                 }
             }
-            let raw_cmdline = crate::services::process::get_process_cmdline(pid)
-                .await
-                .ok();
-            match classify_mlx_cmdline(raw_cmdline.as_deref()) {
+            match inspect_mlx_process(pid).await {
                 CmdlineVerification::Mlx(cmdline) => {
                     orphans.push(OrphanedProcessInfo {
                         pid,
@@ -405,4 +414,55 @@ pub async fn scan_orphaned_mlx_processes(
         orphans,
         unreadable,
     })
+}
+
+/// Native argv boundaries are mandatory for process authorization: ps text
+/// cannot distinguish a spaced wrapper path from a script mentioning that path.
+pub fn classify_mlx_argv(argv: &[String]) -> CmdlineVerification {
+    let Some(executable) = argv.first() else {
+        return CmdlineVerification::Unverifiable;
+    };
+    if !is_python_executable(executable) {
+        return CmdlineVerification::NotMlx;
+    }
+    let Some(first_arg) = argv.get(1) else {
+        return CmdlineVerification::NotMlx;
+    };
+    let is_module = first_arg == "-m"
+        && argv.get(2).is_some_and(|module| {
+            ["mlx_lm", "mlx_vlm"]
+                .iter()
+                .any(|prefix| module == *prefix || module.starts_with(&format!("{prefix}.")))
+        });
+    let script = Path::new(first_arg);
+    if is_module || (script.is_absolute() && script.ends_with("scripts/mlx/finetune_wrapper.py")) {
+        CmdlineVerification::Mlx(argv.join(" "))
+    } else {
+        CmdlineVerification::NotMlx
+    }
+}
+
+pub async fn inspect_mlx_process(pid: u32) -> CmdlineVerification {
+    match crate::services::process::get_process_argv(pid).await {
+        Ok(argv) => classify_mlx_argv(&argv),
+        Err(_) => CmdlineVerification::Unverifiable,
+    }
+}
+
+fn is_python_executable(raw: &str) -> bool {
+    let path = Path::new(raw.trim_matches(['"', '\'']));
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    name == "python"
+        || name == "python3"
+        || name.strip_prefix("python3.").is_some_and(|version| {
+            !version.is_empty()
+                && version
+                    .split('.')
+                    .all(|part| !part.is_empty() && part.chars().all(|ch| ch.is_ascii_digit()))
+        })
+        || path.ends_with("Python.app/Contents/MacOS/Python")
 }

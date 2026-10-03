@@ -106,8 +106,72 @@ pub fn process_start_time(pid: u32) -> Option<u64> {
     system.process(pid).map(sysinfo::Process::start_time)
 }
 
+/// Capture birth times for existing members of an owned training group before TERM.
+pub(crate) fn process_group_members(pgid: u32) -> Vec<(u32, u64)> {
+    if pgid == 0 || pgid > i32::MAX as u32 {
+        return Vec::new();
+    }
+    let mut system = sysinfo::System::new();
+    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    system
+        .processes()
+        .iter()
+        .filter_map(|(pid, process)| {
+            let pid = pid.as_u32();
+            (pid != pgid
+                && pid <= i32::MAX as u32
+                && unsafe { libc::getpgid(pid as i32) } == pgid as i32)
+                .then_some((pid, process.start_time()))
+        })
+        .collect()
+}
+
+pub(crate) fn process_still_in_group(pid: u32, start_time: u64, pgid: u32) -> bool {
+    pid != 0
+        && pid <= i32::MAX as u32
+        && pgid != 0
+        && pgid <= i32::MAX as u32
+        && process_start_time(pid) == Some(start_time)
+        && unsafe { libc::getpgid(pid as i32) } == pgid as i32
+}
+
+/// Read native argv boundaries; `ps command=` flattens spaces and cannot prove
+/// which argument is the script path. Empty or non-UTF8 argv fails closed.
+pub(crate) async fn get_process_argv(pid: u32) -> Result<Vec<String>, String> {
+    if pid == 0 || pid > i32::MAX as u32 {
+        return Err(format!("invalid pid {pid}"));
+    }
+    tokio::task::spawn_blocking(move || {
+        let mut system = sysinfo::System::new();
+        let pid = sysinfo::Pid::from_u32(pid);
+        system.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::Some(&[pid]),
+            true,
+            sysinfo::ProcessRefreshKind::nothing().with_cmd(sysinfo::UpdateKind::Always),
+        );
+        let process = system
+            .process(pid)
+            .ok_or_else(|| "Process not found".to_string())?;
+        if process.cmd().is_empty() {
+            return Err("Process argv unavailable".to_string());
+        }
+        process
+            .cmd()
+            .iter()
+            .map(|arg| {
+                arg.to_str()
+                    .map(str::to_owned)
+                    .ok_or_else(|| "Process argv is not UTF-8".to_string())
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| format!("Process argv inspection failed: {e}"))?
+}
+
 /// pid에 대한 프로세스 전체 명령줄(args)을 조회한다.
 /// macOS `ps -p <pid> -o command=`를 `external_command`로 호출하여 비동기로 조회한다(D5/D22).
+#[cfg(test)]
 pub async fn get_process_cmdline(pid: u32) -> Result<String, String> {
     if pid == 0 || pid > i32::MAX as u32 {
         return Err(format!("invalid pid {pid}"));

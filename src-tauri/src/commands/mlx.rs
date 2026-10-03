@@ -1117,14 +1117,10 @@ pub async fn get_mlx_status(state: State<'_, MlxState>) -> Result<MlxStatus, Str
             let verified = match training.as_ref() {
                 None => true,
                 Some(training) if services::process::pid_is_alive(training.pid) => {
-                    services::process::get_process_cmdline(training.pid)
-                        .await
-                        .is_ok_and(|cmdline| {
-                            matches!(
-                                services::mlx_lifecycle::classify_mlx_cmdline(Some(&cmdline)),
-                                services::mlx_lifecycle::CmdlineVerification::Mlx(_)
-                            )
-                        })
+                    matches!(
+                        services::mlx_lifecycle::inspect_mlx_process(training.pid).await,
+                        services::mlx_lifecycle::CmdlineVerification::Mlx(_)
+                    )
                 }
                 Some(_) => false,
             };
@@ -1209,8 +1205,30 @@ fn signal_target_is_alive(target: i32) -> bool {
 
 /// SIGTERM 후 그룹 리더만 먼저 사라진 경우에도, 살아 있는 PGID는 같은 그룹의 자식을
 /// 가리킨다. 단일 서빙 PID와 리더가 아직 살아 있는 경우에는 이 예외를 적용하지 않는다.
-fn may_kill_surviving_training_group(use_process_group: bool, leader_is_alive: bool) -> bool {
-    use_process_group && !leader_is_alive
+async fn surviving_training_group_witness(pid: u32, members: &[(u32, u64)]) -> Option<(u32, u64)> {
+    // D-MLX-GROUP-1 (#124): a live group number alone cannot prove identity after
+    // its leader exits. Retain a pre-TERM member's birth time and group membership;
+    // without that witness we refuse, at the cost of manual orphan recovery.
+    for &(member, start_time) in members {
+        if tokio::task::spawn_blocking(move || {
+            services::process::process_still_in_group(member, start_time, pid)
+        })
+        .await
+        .unwrap_or(false)
+            && matches!(
+                services::mlx_lifecycle::inspect_mlx_process(member).await,
+                services::mlx_lifecycle::CmdlineVerification::Mlx(_)
+            )
+            && tokio::task::spawn_blocking(move || {
+                services::process::process_still_in_group(member, start_time, pid)
+            })
+            .await
+            .unwrap_or(false)
+        {
+            return Some((member, start_time));
+        }
+    }
+    None
 }
 
 /// SIGTERM 뒤의 대기만 blocking worker에서 수행한다. 학습은 `-pgid`에 signal 0을 보내
@@ -1234,14 +1252,33 @@ pub(crate) async fn terminate_pid(
     if expected_start_time.is_some()
         && !marker_start_time_matches(
             expected_start_time,
-            crate::services::process::process_start_time(pid),
+            tokio::task::spawn_blocking(move || services::process::process_start_time(pid))
+                .await
+                .map_err(|e| format!("Failed to inspect process {pid}: {e}"))?,
         )
     {
         return Err(format!(
             "Refusing to signal process {pid}: process start time differs from its marker."
         ));
     }
+    let members = if target < 0 {
+        tokio::task::spawn_blocking(move || services::process::process_group_members(pid))
+            .await
+            .map_err(|e| format!("Failed to inspect training group {pid}: {e}"))?
+    } else {
+        Vec::new()
+    };
     let target_survives = tokio::task::spawn_blocking(move || -> Result<bool, String> {
+        if expected_start_time.is_some()
+            && !marker_start_time_matches(
+                expected_start_time,
+                services::process::process_start_time(pid),
+            )
+        {
+            return Err(format!(
+                "Refusing to signal process {pid}: process identity changed before SIGTERM."
+            ));
+        }
         let term_result = unsafe { libc::kill(target, libc::SIGTERM) };
         if term_result != 0 {
             let error = std::io::Error::last_os_error();
@@ -1259,49 +1296,55 @@ pub(crate) async fn terminate_pid(
         return Ok(());
     }
 
+    let leader_start_time =
+        tokio::task::spawn_blocking(move || services::process::process_start_time(pid))
+            .await
+            .map_err(|e| format!("Failed to inspect process {pid}: {e}"))?;
+    let surviving_group_witness = if target < 0 && leader_start_time.is_none() {
+        surviving_training_group_witness(pid, &members).await
+    } else {
+        None
+    };
+    let verified_surviving_group = surviving_group_witness.is_some();
     if expected_start_time.is_some()
-        && !marker_start_time_matches(
-            expected_start_time,
-            crate::services::process::process_start_time(pid),
-        )
+        && !verified_surviving_group
+        && !marker_start_time_matches(expected_start_time, leader_start_time)
     {
         return Err(format!(
             "Refusing to SIGKILL process {pid}: process start time differs from its marker."
         ));
     }
 
-    match crate::services::process::get_process_cmdline(pid).await {
-        Ok(cmdline)
-            if matches!(
-                crate::services::mlx_lifecycle::classify_mlx_cmdline(Some(&cmdline)),
-                crate::services::mlx_lifecycle::CmdlineVerification::Mlx(_)
-            ) => {}
-        Ok(_) => {
-            return Err(format!(
-                "Refusing to SIGKILL process {pid}: it is no longer a verified MLX process."
-            ))
-        }
-        Err(error)
-            if may_kill_surviving_training_group(
-                use_process_group,
-                crate::services::process::pid_is_alive(pid),
-            ) =>
-        {
-            // 그룹 리더는 SIGTERM에 먼저 종료될 수 있지만 `kill(-pgid, 0)`은 아직 멤버가
-            // 남았음을 확인했다. 살아 있는 PGID는 재사용될 수 없으므로 이 경우에만 리더의
-            // 명령줄 재확인 불가를 허용해 남은 MLX 자식을 SIGKILL한다.
-            eprintln!(
-                "[mlx] Training leader {pid} exited before SIGKILL re-verification; terminating surviving process group: {error}"
-            );
-        }
-        Err(error) => {
-            return Err(format!(
-                "Refusing to SIGKILL process {pid}: could not re-verify MLX identity: {error}"
-            ))
-        }
+    if !verified_surviving_group
+        && !matches!(
+            services::mlx_lifecycle::inspect_mlx_process(pid).await,
+            services::mlx_lifecycle::CmdlineVerification::Mlx(_)
+        )
+    {
+        return Err(format!(
+            "Refusing to SIGKILL process {pid}: could not re-verify MLX argv identity."
+        ));
     }
 
     tokio::task::spawn_blocking(move || {
+        if let Some((member, start_time)) = surviving_group_witness {
+            if services::process::process_start_time(pid).is_some()
+                || !services::process::process_still_in_group(member, start_time, pid)
+            {
+                return Err(std::io::Error::other(
+                    "Training group identity changed before SIGKILL",
+                ));
+            }
+        } else if expected_start_time.is_some()
+            && !marker_start_time_matches(
+                expected_start_time,
+                services::process::process_start_time(pid),
+            )
+        {
+            return Err(std::io::Error::other(
+                "Process identity changed before SIGKILL",
+            ));
+        }
         let kill_result = unsafe { libc::kill(target, libc::SIGKILL) };
         if kill_result != 0 {
             return Err(std::io::Error::last_os_error());
@@ -1937,11 +1980,87 @@ mod tests {
         assert!(!should_revert_optimistic_killed_status("running"));
     }
 
-    #[test]
-    fn surviving_training_group_is_only_killed_when_its_leader_has_exited() {
-        assert!(may_kill_surviving_training_group(true, false));
-        assert!(!may_kill_surviving_training_group(true, true));
-        assert!(!may_kill_surviving_training_group(false, false));
+    #[tokio::test]
+    async fn surviving_training_group_requires_preterm_identity_witness() {
+        assert!(surviving_training_group_witness(std::process::id(), &[])
+            .await
+            .is_none());
+        assert!(
+            surviving_training_group_witness(std::process::id(), &[(std::process::id(), 0)])
+                .await
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn orphan_training_stop_kills_verified_child_after_leader_exits() {
+        exercise_orphan_training_group(true).await;
+    }
+
+    #[tokio::test]
+    async fn orphan_training_stop_refuses_unverified_surviving_child() {
+        exercise_orphan_training_group(false).await;
+    }
+
+    async fn exercise_orphan_training_group(child_is_mlx: bool) {
+        use std::os::unix::process::CommandExt;
+        let root = std::env::temp_dir().join(format!(
+            "kubemetal group stop-{child_is_mlx}-{}",
+            std::process::id()
+        ));
+        let script = root.join("scripts/mlx/finetune_wrapper.py");
+        std::fs::create_dir_all(script.parent().unwrap()).unwrap();
+        // Only this test's dedicated process group is signaled. Child initialization
+        // is acknowledged before the leader writes its PID file.
+        std::fs::write(&script, "import os,signal,sys,time\npid=os.fork()\nif pid == 0:\n signal.signal(signal.SIGTERM,signal.SIG_IGN)\n open(sys.argv[1]+'.ready','w').close()\n if sys.argv[2] == 'unverified': os.execl('/bin/sleep','sleep','30')\n time.sleep(30)\nelse:\n while not os.path.exists(sys.argv[1]+'.ready'): time.sleep(.01)\n open(sys.argv[1],'w').write(str(pid))\n time.sleep(30)\n").unwrap();
+        let pid_file = root.join("child.pid");
+        let mut leader = std::process::Command::new(resolve_cli_path("python3").unwrap())
+            .arg(&script)
+            .arg(&pid_file)
+            .arg(if child_is_mlx { "mlx" } else { "unverified" })
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = leader.id();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !pid_file.exists() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let child_pid: u32 = std::fs::read_to_string(&pid_file).unwrap().parse().unwrap();
+        let start_time = services::process::process_start_time(pid).unwrap();
+        let child_start_time = services::process::process_start_time(child_pid).unwrap();
+        assert!(terminate_pid(pid, true, Some(start_time + 1))
+            .await
+            .is_err());
+        assert!(services::process::pid_is_alive(pid));
+        assert!(services::process::pid_is_alive(child_pid));
+        // Reap the leader during terminate_pid's wait, as the app's reader does.
+        let reaper = tokio::task::spawn_blocking(move || leader.wait().unwrap());
+        let result = terminate_pid(pid, true, Some(start_time)).await;
+        let child_cmdline = services::process::get_process_cmdline(child_pid)
+            .await
+            .unwrap_or_default();
+        let exited = !child_cmdline.contains("finetune_wrapper.py");
+        // Cleanup is limited to the group created above even when the assertion fails.
+        let child_still_alive =
+            services::process::process_still_in_group(child_pid, child_start_time, pid);
+        if child_still_alive {
+            unsafe {
+                libc::kill(-(pid as i32), libc::SIGKILL);
+            }
+        }
+        let _ = reaper.await;
+        let _ = std::fs::remove_dir_all(root);
+        if child_is_mlx {
+            assert!(result.is_ok(), "{result:?}");
+            assert!(exited, "SIGTERM-resistant training child survived");
+        } else {
+            assert!(result.is_err(), "unverified group was authorized");
+            assert!(
+                child_still_alive,
+                "unverified child was signaled with SIGKILL"
+            );
+        }
     }
 
     #[test]
