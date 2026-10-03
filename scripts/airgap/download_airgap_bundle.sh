@@ -264,15 +264,29 @@ fi
 # 경로는 AIRGAP_DIR 기준 상대경로여야 `shasum -c`가 그대로 검증할 수 있다.
 # 작성 중인 임시 파일은 **스캔 대상 밖**에 둔다 — AIRGAP_DIR 안에 두면 find가 그것까지
 # 목록에 넣고, 곧 rename으로 사라져 검증이 항상 깨진다(실측으로 확인).
-MANIFEST_TMP="$(mktemp -t kubemetal-airgap-manifest)"
+if ! MANIFEST_TMP="$(mktemp -t kubemetal-airgap-manifest)"; then
+  FAILED+=("manifest-temp")
+fi
 trap 'rm -f "$MANIFEST_TMP" "${DIGESTS_TMP:-}"' EXIT
-(
+if [ ${#FAILED[@]} -eq 0 ] && ! (
   cd "${AIRGAP_DIR}" || exit 1
   find . -type f ! -name "$(basename "$MANIFEST")" ! -name '*.part' -print0 \
     | sort -z \
     | xargs -0 shasum -a 256
-) > "$MANIFEST_TMP" && mv "$MANIFEST_TMP" "$MANIFEST"
-echo "  -> $(wc -l < "$MANIFEST" | tr -d ' ')개 파일 해시 기록: ${MANIFEST}"
+) > "$MANIFEST_TMP"; then
+  FAILED+=("manifest-write")
+fi
+if [ ${#FAILED[@]} -eq 0 ] && ! mv "$MANIFEST_TMP" "$MANIFEST"; then
+  FAILED+=("manifest-publish")
+fi
+# D23: publishing hashes is insufficient evidence; read them back against the
+# bundle before reporting success. Keep the collect-all-failures shell policy.
+if [ ${#FAILED[@]} -eq 0 ] && ! (cd "$AIRGAP_DIR" && shasum -a 256 -c manifest.sha256); then
+  FAILED+=("manifest-verify")
+fi
+if [ ${#FAILED[@]} -eq 0 ]; then
+  echo "  -> $(wc -l < "$MANIFEST" | tr -d ' ')개 파일 해시 기록: ${MANIFEST}"
+fi
 
 echo ""
 if [ ${#FAILED[@]} -eq 0 ]; then

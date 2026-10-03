@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-127-airgap-manifest",
+  "task": "Fail closed when the downloader cannot publish or verify its transport manifest (#127)",
+  "changeContext": {
+    "paths": [
+      "scripts/airgap/download_airgap_bundle.sh",
+      "scripts/airgap/test_digest_lock.sh",
+      "docs/build-target-map.md",
+      "docs/mistakes-log.md",
+      ".agents/evals/traces/2026-10-issue-127-airgap-manifest.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Keep collection failure aggregation unchanged; only final manifest creation, publication and verification are guarded. Reuse the existing make test digest-lock harness; no downloads, daemon calls, cluster changes or global shell errexit."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before the fix, the test harness injected failure in final manifest mktemp and observed downloader success: FAIL downloader accepted manifest temp failure.",
+      "evidence": [
+        "test:test_digest_lock.sh:pre-fix-temp-failure"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Record manifest-temp/write/publish/verify failures in FAILED, return nonzero and withhold the success message. Verify published manifest with real shasum -a 256 -c."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Actual downloader and installer shell entrypoints with disposable archives and PATH shims for external tools; real hashing and local file verification",
+      "summary": "Digest-lock suite passes temporary-file, hashing, rename and verifier fault injection; real chart corruption after manifest publication is detected by real shasum. Normal downloader success produces a manifest independently verified by shasum -c. Existing cache, digest, installer and SBOM regressions also pass. No live downloads or Docker daemon exercised.",
+      "evidence": [
+        "test:bash scripts/airgap/test_digest_lock.sh",
+        "runtime:command-exit-0"
+      ],
+      "commandExitCode": 0
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Changed shell syntax and diff whitespace",
+      "summary": "bash -n scripts/airgap/download_airgap_bundle.sh scripts/airgap/test_digest_lock.sh and git diff --check exited 0.",
+      "evidence": [
+        "test:bash-n",
+        "test:git-diff-check"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The manifest failure reporting and self-verification fix is complete at disposable local script regression scope. Full make verify and remote review remain orchestration checks, not claimed here.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Scoped implementation and local shell behavior regression complete; no claim of fresh registry downloads or real cluster installation."
+    }
+  ]
+}
