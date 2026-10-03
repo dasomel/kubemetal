@@ -203,6 +203,51 @@ if [ -f "$TEST_DOCKER_LOG" ] && grep -q docker-pull "$TEST_DOCKER_LOG"; then
 fi
 echo 'PASS downloader cache reuse preserves repository provenance and image ID'
 
+# #127: fault injection affects only the final transport manifest, leaving the
+# earlier SBOM/digest checks real. No downloads or Docker daemon are involved.
+export TEST_REAL_SHASUM="$(command -v shasum)"
+export TEST_REAL_MV="$(command -v mv)"
+export TEST_REAL_MKTEMP="$(command -v mktemp)"
+cat > "${SHIM_DIR}/shasum" <<'EOF'
+#!/usr/bin/env bash
+if [ "${TEST_MANIFEST_FAILURE:-}" = hash ] && [ "$PWD" = "$TEST_MANIFEST_BUNDLE" ]; then exit 42; fi
+if [ "${TEST_MANIFEST_FAILURE:-}" = verify ] && [ "${3:-}" = -c ] && [ "${4:-}" = manifest.sha256 ]; then exit 42; fi
+exec "$TEST_REAL_SHASUM" "$@"
+EOF
+cat > "${SHIM_DIR}/mv" <<'EOF'
+#!/usr/bin/env bash
+if [ "${TEST_MANIFEST_FAILURE:-}" = publish ] && [ "${2:-}" = "$TEST_MANIFEST_BUNDLE/manifest.sha256" ]; then exit 42; fi
+if [ "${TEST_MANIFEST_FAILURE:-}" = corrupt ] && [ "${2:-}" = "$TEST_MANIFEST_BUNDLE/manifest.sha256" ]; then
+  "$TEST_REAL_MV" "$@" || exit "$?"
+  printf 'tampered\n' >> "$TEST_MANIFEST_BUNDLE/charts/kagent-0.9.12.tgz"
+  exit 0
+fi
+exec "$TEST_REAL_MV" "$@"
+EOF
+cat > "${SHIM_DIR}/mktemp" <<'EOF'
+#!/usr/bin/env bash
+if [ "${TEST_MANIFEST_FAILURE:-}" = temp ] && [ "${2:-}" = kubemetal-airgap-manifest ]; then exit 42; fi
+exec "$TEST_REAL_MKTEMP" "$@"
+EOF
+chmod +x "$SHIM_DIR/shasum" "$SHIM_DIR/mv" "$SHIM_DIR/mktemp"
+export TEST_MANIFEST_BUNDLE="$BUNDLE"
+for failure in temp hash publish verify corrupt; do
+  if TEST_MANIFEST_FAILURE="$failure" AIRGAP_DIR="$BUNDLE" bash "$SCRIPT_DIR/download_airgap_bundle.sh" > "$TEST_DIR/manifest-$failure.out" 2>&1; then
+    echo "FAIL downloader accepted manifest $failure failure" >&2
+    exit 1
+  fi
+  grep -q '실패 항목.*manifest-' "$TEST_DIR/manifest-$failure.out"
+  if grep -q '완료: 모든 자원 수집 성공' "$TEST_DIR/manifest-$failure.out"; then
+    echo "FAIL downloader printed success after manifest $failure failure" >&2
+    exit 1
+  fi
+  echo "PASS downloader rejects manifest $failure failure"
+done
+AIRGAP_DIR="$BUNDLE" bash "$SCRIPT_DIR/download_airgap_bundle.sh" > "$TEST_DIR/manifest-success.out" 2>&1
+(cd "$BUNDLE" && shasum -a 256 -c manifest.sha256) > "$TEST_DIR/manifest-verified.out"
+grep -q '완료: 모든 자원 수집 성공' "$TEST_DIR/manifest-success.out"
+echo 'PASS downloader success publishes a self-verifying manifest'
+
 write_manifest() {
   local manifest_tmp="${TEST_DIR}/manifest.part"
   (
