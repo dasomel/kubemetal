@@ -302,3 +302,7 @@ clean: clean-light ## 전체 캐시 제거 — 이상 징후 시 수동 실행 (
 	rm -rf src-tauri/target/release/incremental
 	rm -rf src-tauri/target/release/.fingerprint
 	@echo "✓ 전체 캐시 정리 완료"
+
+.PHONY: research-check
+research-check:
+	python3 scripts/research/check-research-evidence.py
