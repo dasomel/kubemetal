@@ -6,6 +6,12 @@ def load_policy(path):
   data=json.loads(Path(path).read_text())
   if data.get("schemaVersion")!="openforge-agent-risk-policy/v1" or not isinstance(data.get("rules"),list): raise ValueError("invalid risk policy")
   return data
+def trace_exempt(paths,policy):
+  # D1: owner-visible weakening: exempt when the HIGH-risk subset of the change equals
+  # one configured set (low-risk files alongside it do not matter). Cost: no new trace
+  # for dependency-resolution-only changes. Remove the policy entry to restore the gate.
+  hr=set(p for p in paths if classify([p],policy)[0]=="high")
+  return bool(hr) and any(hr==set(g) for g in policy.get("traceExemptHighRiskFileSets",[]))
 def classify(paths,policy):
   highest=policy.get("defaultRisk","low"); matches=[]
   if highest not in RISK_ORDER: raise ValueError("unknown default risk")
@@ -22,8 +28,8 @@ def main():
   try:
     policy=load_policy(a.policy); changed=[x.strip() for x in Path(a.changed_files).read_text().splitlines() if x.strip()]
     risk,matches=classify(changed,policy); prefix=policy.get("tracePathPrefix",".agents/evals/traces/")
-    trace=any(x.startswith(prefix) and x.endswith(".json") for x in changed); required=risk in set(policy.get("traceRequiredAt",["high"]))
-    result={"schemaVersion":"openforge-agent-risk-result/v1","risk":risk,"traceRequired":required,"traceChanged":trace,"changedFiles":changed,"matches":matches}
+    trace=any(x.startswith(prefix) and x.endswith(".json") for x in changed); required=risk in set(policy.get("traceRequiredAt",["high"])) and not trace_exempt(changed,policy)
+    result={"schemaVersion":"openforge-agent-risk-result/v1","risk":risk,"traceExempt":trace_exempt(changed,policy),"traceRequired":required,"traceChanged":trace,"changedFiles":changed,"matches":matches}
     if a.report_out: Path(a.report_out).write_text(json.dumps(result,indent=2)+"\n")
     print(json.dumps(result,indent=2))
     if required and not trace:

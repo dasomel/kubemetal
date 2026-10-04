@@ -3,6 +3,7 @@
   "defaultRisk": "low",
   "traceRequiredAt": ["high"],
   "tracePathPrefix": ".agents/evals/traces/",
+  "traceExemptHighRiskFileSets": [["src-tauri/Cargo.lock"]],
   "rules": [
     {"risk": "high", "pattern": ".github/workflows/**", "reason": "CI and release behavior"},
     {"risk": "high", "pattern": "scripts/ci/**", "reason": "CI governance and enforcement logic"},

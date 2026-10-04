@@ -36,6 +36,10 @@ jobs:
             .github/workflows/release.yml \
             .github/workflows/agent-behavior.yml \
             scripts/airgap/images-helm.txt
+      - name: Check Tauri dependency coupling and CI regressions
+        run: |
+          python3 scripts/ci/check_tauri_versions.py
+          python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v
       - name: Evaluate representative trace
         run: python3 .agents/evals/evaluate.py .agents/evals/reference-trace.json
       - name: Collect PR changed paths
