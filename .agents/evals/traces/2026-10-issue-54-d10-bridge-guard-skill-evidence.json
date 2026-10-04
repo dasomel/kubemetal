@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "kubemetal-d10-bridge-guard-skill-evidence-2026-10",
+  "task": "Record fresh-session verification evidence for kubemetal-hybrid-runtime-change (openforge#54) and add the missing D10 guard that the replay showed no repository check enforced",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      ".agents/**",
+      "src-tauri/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "reproduction",
+      "summary": "A sandboxed fresh-session replay added ports to the ExternalName bridge (scripts/k8s/mac-gpu-bridge.yaml and the renderer output): the existing provision tests still exited 0, so decision D10 (mistakes log row 103) had no deterministic guard"
+    },
+    {
+      "id": "e2",
+      "type": "bug_fix",
+      "summary": "Added test bridge_externalname_service_declares_no_ports in src-tauri/src/commands/provision.rs and hardened it to compare the YAML key token so `ports :` and quoted `\"ports\":` are caught; no production code changed"
+    },
+    {
+      "id": "e3",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "With the guard in place a second fresh agent and an independent verifier both reproduced the mutation: adding ports to the ExternalName Service fails the test with a non-zero exit (flow, block, `ports :` and quoted-key spellings), and reverting passes",
+      "scope": "D10 ExternalName bridge manifest ports invariant in scripts/k8s/mac-gpu-bridge.yaml",
+      "evidence": [
+        "test:cargo-test-bridge_externalname-mutation-fails-revert-passes"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "summary": "make verify exited 0 locally after the guard hardening (Rust lib suite, Python tests, lint, pnpm build) and the pull-request CI verify and supply-chain jobs passed on the same code; strict skill audit reports no SKILL-VERIFICATION-* finding; the evidence JSON lists what was not verified (airgap, real macOS/Tauri/MLX/Colima behavior)",
+      "scope": "KubeMetal repository verification entrypoint plus the kubemetal-hybrid-runtime-change evidence artifact",
+      "evidence": [
+        "test:make-verify-exit-0-2026-10-04",
+        "ci:pr-145-verify-and-supply-chain-run-37178626065",
+        "artifact:research/issue-54-kubemetal-hybrid-runtime-change-replay-2026-10-04.md",
+        "policy:openforge-agent-skill-verification-v1"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Evidence for the verified skill is recorded and the D10 invariant is now enforced by a test; live runtime behavior stays unverified as stated in the evidence JSON"
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified for the repository-checkable scope: local make verify, independent verifier re-run and PR CI verify/supply-chain passed; live runtime behavior stays unverified as stated in the evidence JSON"
+    }
+  ]
+}
