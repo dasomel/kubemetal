@@ -85,7 +85,7 @@ hash and both digest fields offline, rejecting missing/empty/incomplete/invalid 
 files, duplicate entries and incomplete coverage. `install_from_airgap.sh` requires
 this check before loading images; a missing manifest fails closed. Existing
 bundle-integrity checks remain in force. Invalid or missing SBOM evidence fails even
-with the legacy integrity opt-outs.
+with `AIRGAP_ALLOW_UNVERIFIED=1`, which only skips the file-hash check when `manifest.sha256` is absent.
 
 SBOM presence and digest binding are required bundle gates; license contents are not
 policy-gated. `licenses.json`

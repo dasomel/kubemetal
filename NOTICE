@@ -193,7 +193,7 @@ bundle of those same images on the user's own machine (`docker pull` +
 use, but handing it to a third party is redistribution of the upstream images
 and their GPL userland — with the source-offer obligations that implies. That
 is the operator's call and the operator's obligation, not KubeMetal's.
-Required (D42): `make airgap-sbom` attaches digest-linked SPDX/license evidence, and bundle generation/install fails without it; see docs/build-target-map.md (issue #98).
+Required (D42): `make airgap-sbom` attaches per-image SPDX/license evidence listed against the lock digests and checksum-bound in the bundle manifest (not cryptographically bound to the image; unsigned), and bundle generation/install fails without it; see docs/build-target-map.md (issue #98).
 
 ================================================================================
 Trademark Notice
