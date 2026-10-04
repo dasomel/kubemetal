@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- KubeMetal app icon master. Colors are the DESIGN.md tokens primary (#6D3FE0) -> primaryStrong (#5B2FC7)
+       on a macOS icon grid (824px body, 100px margin). Regenerate the bundle set:
+       rsvg-convert -w 1024 -h 1024 src-tauri/icons/source/kubemetal-icon.svg -o /tmp/km-1024.png
+       pnpm exec tauri icon /tmp/km-1024.png -o /tmp/km-icons
+       then copy 32x32.png 128x128.png 128x128@2x.png icon.png icon.icns icon.ico into src-tauri/icons/
+       (the generator also emits android/ios/Windows-store sets this Apple-Silicon desktop app does not use). -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6D3FE0"/>
+      <stop offset="1" stop-color="#5B2FC7"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="drop" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#0F1115" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="188" fill="url(#body)" filter="url(#drop)"/>
+  <rect x="100" y="100" width="824" height="824" rx="188" fill="url(#sheen)"/>
+  <rect x="103" y="103" width="818" height="818" rx="185" fill="none" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="6"/>
+  <g transform="translate(-27 0)" fill="none" stroke="#FFFFFF" stroke-width="64" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M330 342V682"/>
+    <path d="M468 342L338 512L474 682"/>
+    <path d="M582 682V342L666 492L750 342V682"/>
+  </g>
+</svg>

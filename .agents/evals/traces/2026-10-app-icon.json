@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-app-icon",
+  "task": "Replace the 70-byte placeholder app icons with a real KubeMetal icon",
+  "changeContext": {
+    "paths": [
+      ".agents/**",
+      "src-tauri/icons/**",
+      "docs/mistakes-log.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Binary icon assets and one mistakes-log row only; tauri.conf.json bundle.icon list, runtime code, capabilities and dependencies unchanged."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "All six files under src-tauri/icons were 70-byte stubs (icon.png decoded as a 1x1 PNG), so the Dock showed a blank gray tile; owner screenshot.",
+      "evidence": [
+        "runtime:owner-dock-screenshot-blank-icon"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added the master SVG (DESIGN.md tokens primary to primaryStrong, white KM) and regenerated 32x32, 128x128, 128x128@2x, icon.png (512), icon.icns and icon.ico with the Tauri CLI; android/ios/store sets the generator also emits were deliberately not committed."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Icon file formats and that the Rust crate still builds with the new icon.png",
+      "summary": "file(1) reports valid PNG/ICNS/ICO of the expected sizes; iconutil expands icon.icns to the full 16..512@2x iconset; cargo check in src-tauri finished with exit 0.",
+      "evidence": [
+        "test:icon-file-format-and-iconutil-check",
+        "test:cargo-check-src-tauri"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "Icons are real, valid and compile into the app; not observed in the Dock of a freshly built app, nor in a signed or notarized bundle.",
+      "evidence": [
+        "e4"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for asset generation, format validation and compile; the on-screen Dock result was not verified."
+    }
+  ]
+}
