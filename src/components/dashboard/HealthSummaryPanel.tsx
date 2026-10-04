@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { useTranslation } from '../../i18n/i18nContext';
+import { useSupportBundle } from '../../hooks/useSupportBundle';
 import type { SystemHealthSummary } from '../../types/ipc';
 
 type Tone = 'success' | 'warning' | 'muted';
@@ -14,6 +15,7 @@ const overallTone: Record<SystemHealthSummary['overall'], Tone> = {
 
 export const HealthSummaryPanel: React.FC = () => {
   const { t } = useTranslation();
+  const bundle = useSupportBundle();
   const [summary, setSummary] = useState<SystemHealthSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
@@ -119,6 +121,30 @@ export const HealthSummaryPanel: React.FC = () => {
           </div>
         </>
       )}
+      <div className="mt-4 space-y-2">
+        <button
+          type="button"
+          onClick={bundle.create}
+          disabled={bundle.loading}
+          className="px-3 py-2 rounded-md bg-surfaceRaised hover:brightness-95 disabled:opacity-50 disabled:cursor-not-allowed text-ink text-caption font-medium flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          {bundle.loading && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+          {t(bundle.loading ? 'health.bundle.creating' : 'health.bundle.create')}
+        </button>
+        {bundle.error && (
+          <p role="alert" className="text-caption text-danger break-words">
+            {t('health.bundle.failed', { error: bundle.error })}
+          </p>
+        )}
+        {bundle.result && (
+          <div role="status" className="rounded-lg bg-surfaceRaised p-3 text-caption text-inkMuted space-y-1 break-words">
+            <p>{t('health.bundle.created', { path: bundle.result.bundle_dir })}</p>
+            <p>{t('health.bundle.manifest', { path: bundle.result.manifest_path })}</p>
+            <p>{t('health.bundle.counts', { files: bundle.result.files_count, omitted: bundle.result.omitted_count })}</p>
+            {bundle.result.redaction.review_before_sharing && <p>{t('health.bundle.review')}</p>}
+          </div>
+        )}
+      </div>
     </section>
   );
 };

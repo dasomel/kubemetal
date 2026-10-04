@@ -500,3 +500,25 @@ export interface ConfirmedOperationTarget {
   context: string;
   namespace: string;
 }
+
+/** Serialized result of the existing create_support_bundle command (#17). */
+export interface SupportBundleRedactionInfo {
+  mode: string;
+  review_before_sharing: boolean;
+  rules_version: number;
+}
+
+export interface SupportBundleResult {
+  bundle_dir: string;
+  manifest_path: string;
+  files_count: number;
+  omitted_count: number;
+  manifest: {
+    schema_version: number;
+    redaction: SupportBundleRedactionInfo;
+    created_at: string;
+    files: { path: string; sha256: string; bytes: number }[];
+    omitted?: { path: string; omitted: string }[];
+  };
+  redaction: SupportBundleRedactionInfo;
+}
