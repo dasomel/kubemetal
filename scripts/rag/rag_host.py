@@ -46,6 +46,12 @@ _QUESTION_LEADS = {
     "what", "why", "how", "when", "where", "which", "who", "whom", "whose",
     "is", "are", "does", "do", "did", "can", "should", "explain", "describe",
 }
+# Korean is head-final: the interrogative closes the query ("D26이 뭐야?"), so it is matched
+# as a trailing token. Closed set of whole tokens (not substrings) to keep routing explainable.
+_KOREAN_QUESTION_TAILS = {
+    "뭐야", "뭐지", "뭐냐", "뭐예요", "뭐에요", "뭔가", "뭔가요", "뭔데", "무엇", "무엇인가", "무엇인가요",
+    "무엇이야", "무엇이에요", "어떻게", "왜", "어떤가요", "어때", "어때요",
+}
 
 
 def classify_query(query: str) -> tuple[str, str]:
@@ -86,6 +92,10 @@ def classify_query(query: str) -> tuple[str, str]:
 
     # 6. A leading interrogative is a question even when it names an id ("what is D26").
     if stripped and stripped[0].lower() in _QUESTION_LEADS:
+        return ("hybrid", "natural_language")
+
+    # 6b. A trailing Korean interrogative ("D26이 뭐야?") is a question for the same reason.
+    if any(t in _KOREAN_QUESTION_TAILS for t in stripped[1:]):
         return ("hybrid", "natural_language")
 
     # 7. Identifier symbols or casing: underscore, in-word dot, or camelCase/PascalCase
