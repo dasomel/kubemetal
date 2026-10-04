@@ -72,6 +72,13 @@ class QueryClassifierTests(unittest.TestCase):
             # asker wants the D26 explanation (semantic), not only chunks that spell "D26".
             ("what is D26", "hybrid", "natural_language"),
             ("MLflow 배포?", "hybrid", "natural_language"),
+            # Korean question tails are the interrogative lead of a head-final language: the id
+            # token ("D26이") carries a digit but the asker wants the explanation (issue #38 LOW).
+            ("D26이 뭐야?", "hybrid", "natural_language"),
+            ("D26이 뭐야", "hybrid", "natural_language"),
+            ("D10 브릿지가 뭔가요?", "hybrid", "natural_language"),
+            # A bare id or an id with a Korean particle but no question tail stays identifier-like.
+            ("D26이", "lexical", "short_token_with_digit_or_symbol"),
             # A single plain all-caps word is a word, not an id (no digit/symbol/casing transition).
             ("README", "hybrid", "natural_language"),
             # In-word hyphen -> identifier-like slug; exact match matters.
