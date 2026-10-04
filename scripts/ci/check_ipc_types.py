@@ -92,6 +92,10 @@ def main():
     rust = rust_commands()
     invocations, untyped = ts_invocations()
     mismatches = []
+    # D43: profile context IPC must remain a primitive String, consumed as string.
+    if rust.get('get_managed_colima_context') != 'String':
+        mismatches.append('get_managed_colima_context: expected Rust String return')
+
     checked = 0
     skipped_nonprimitive = 0
     for name, ts_type, path in invocations:

@@ -128,7 +128,7 @@ pub fn resolve_cli_path(bin: &str) -> Result<PathBuf, String> {
 
 ```rust
 use serde::{Deserialize, Serialize};
-use crate::services::process::resolve_cli_path;
+use crate::services::process::{colima_command, colima_context, resolve_cli_path};
 
 /// colima 0.10.x `status --json` 실측 스키마: 기동 중일 때만 exit 0 + stdout에
 /// 평면 JSON({"kubernetes":true,...})을 출력하고, 미기동이면 exit 1 + stdout 없음.
@@ -149,10 +149,9 @@ pub struct ClusterStatus {
 
 #[tauri::command]
 pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
-    let bin = resolve_cli_path("colima")?;
     // colima는 logrus 로그를 stderr로, 상태 정보는 stdout에 JSON으로 출력한다.
     // 문자열 매칭 대신 --json + serde_json 파싱을 사용한다. (D6)
-    let output = tokio::process::Command::new(&bin)
+    let output = colima_command()?
         .args(["status", "--json"])
         .output()
         .await
@@ -184,7 +183,7 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
     let (mlflow_ready, seaweedfs_ready) = if kubernetes_active {
         let kubectl = resolve_cli_path("kubectl")?;
         let deploy_out = tokio::process::Command::new(&kubectl)
-            .args(["--context", "colima", "get", "deploy", "-n", "default", "-o", "json"])
+            .args(["--context", colima_context(), "get", "deploy", "-n", "default", "-o", "json"])
             .output()
             .await
             .map_err(|e| format!("kubectl get deploy 실패: {e}"))?;
@@ -207,7 +206,6 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
 
 #[tauri::command]
 pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
-    let bin = resolve_cli_path("colima")?;
 
     // 프론트 입력을 신뢰하지 않는다: 감지된 호스트 RAM 기준 D4 상한으로 memory를,
     // 호스트 코어 수 기준으로 cpu를 clamp한다 (조작된/오래된 프론트 값 방어).
@@ -226,7 +224,7 @@ pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
 
     // colima start는 VM 최초 부팅 시 수 분이 걸릴 수 있어, 블로킹 std::process 대신
     // tokio::process를 사용해 Tokio 워커 스레드를 점유하지 않는다. (D7)
-    let output = tokio::process::Command::new(bin)
+    let output = colima_command()?
         .args([
             "start",
             "--cpu", &cpu.to_string(),
@@ -248,8 +246,7 @@ pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn stop_cluster() -> Result<String, String> {
-    let bin = resolve_cli_path("colima")?;
-    let output = tokio::process::Command::new(bin)
+    let output = colima_command()?
         .arg("stop")
         .output()
         .await
@@ -272,7 +269,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use tokio::process::Child;
 use tauri::State;
-use crate::services::process::resolve_cli_path;
+use crate::services::process::{colima_command, colima_context, resolve_cli_path};
 
 #[derive(Default)]
 pub struct PortForwardState(pub Mutex<HashMap<&'static str, Child>>);
@@ -288,7 +285,7 @@ pub async fn start_port_forward(state: State<'_, PortForwardState>) -> Result<St
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
     for (key, svc, ports) in jobs {
         let child = tokio::process::Command::new(&kubectl)
-            .args(["--context", "colima", "port-forward", "-n", "default", svc, ports])
+            .args(["--context", colima_context(), "port-forward", "-n", "default", svc, ports])
             .spawn()
             .map_err(|e| format!("port-forward({key}) 실행 실패: {e}"))?;
         guard.insert(key, child);
@@ -350,7 +347,7 @@ pub fn get_system_metrics(state: State<'_, Mutex<System>>) -> Result<SystemMetri
 
 ```rust
 use tauri::Manager;
-use crate::services::process::resolve_cli_path;
+use crate::services::process::{colima_command, colima_context, resolve_cli_path};
 
 const MANIFESTS: [&str; 3] = [
     "scripts/k8s/mlflow-deployment.yaml",
@@ -366,9 +363,9 @@ pub async fn provision_mlops_stack(app: tauri::AppHandle) -> Result<String, Stri
     for manifest in MANIFESTS {
         let path = resource_dir.join(manifest);
         // 사용자가 다른 kubectl 컨텍스트를 기본으로 설정해 두었을 경우 매니페스트가
-        // 엉뚱한 클러스터에 적용되는 것을 막기 위해 --context colima를 항상 명시한다.
+        // 엉뚱한 클러스터에 적용되는 것을 막기 위해 --context <derived-managed-context>를 항상 명시한다.
         let output = tokio::process::Command::new(&kubectl)
-            .args(["--context", "colima", "apply", "-f"])
+            .args(["--context", colima_context(), "apply", "-f"])
             .arg(&path)
             .output()
             .await
@@ -389,7 +386,7 @@ pub async fn provision_mlops_stack(app: tauri::AppHandle) -> Result<String, Stri
 
 **`provision_mlops_stack` 실행 전제**
 1. `tauri.conf.json`의 `bundle > resources`에 `scripts/k8s/`를 등록해야 한다 — dev(`tauri dev`)와 번들(`.app`) 양쪽에서 `resource_dir()`이 매니페스트 경로를 해석할 수 있어야 하기 때문이다 (§2 `tauri.conf.json` 스니펫 참조).
-2. 모든 kubectl 호출에는 `--context colima`를 명시한다 — 사용자의 기본 kubectl 컨텍스트가 다른 클러스터를 가리키고 있을 때 매니페스트가 잘못 적용되는 사고를 방지한다.
+2. 모든 kubectl 호출에는 `--context <derived-managed-context>`를 명시한다 — 사용자의 기본 kubectl 컨텍스트가 다른 클러스터를 가리키고 있을 때 매니페스트가 잘못 적용되는 사고를 방지한다.
 3. 매니페스트는 별도 네임스페이스를 생성하지 않고 `default` 네임스페이스를 사용한다.
 
 ### `src-tauri/src/lib.rs`
@@ -632,6 +629,7 @@ export const ClusterControl: React.FC = () => {
 | D40 | (2026-09-23, 2026-09-24 배선 완료) **학습·서빙 스폰 전 자원 admission 게이트 — 배선됨.** D16/D28은 이미 떠 있는 프로세스를 사후에 SIGSTOP하는 반응형 가드레일뿐이라, 이미 memory critical이거나 thermal serious인 상태에서 새 학습/서빙을 **시작하는 것 자체**는 막지 못한다는 문제(D16/D28 확장, GitHub #31/#32; 2026-08-23 stray `git reset --hard`로 유실됐던 8234a3f의 재랜드)에 대해, 순수 함수 `guardrails::check_spawn_admission(memory_pressure_level, thermal_state, thermal_pause_enabled)`를 도입했다 — critical 메모리와 측정 실패(unknown) 메모리는 무조건 거부(D16과 동일하게 오버라이드 불가, unknown은 이 함수가 D22 원칙의 예외로 fail-closed 처리한다 — 근거는 함수 자체의 doc comment), thermal_pause가 켜져 있고 serious/critical이면 거부(D28과 동일 임계선), thermal 판정 불가(None)는 통과시킨다(D22). **이 함수는 `commands/mlx.rs`의 `run_mlx_finetune`과 `start_model_serving`에서 슬롯 선점 및 동기 준비(경로 검증·config 읽기·포트 탐색) 전에 1회 호출된다(GitHub #32 배선 완료).** 슬롯 선점 전에 검사하므로 거부 시 상태 원복이 필요 없다. 단, 슬롯 선점·준비 전 1회 검사이므로 검사~스폰 사이의 상태 변화는 막지 못하며, 학습은 스폰 후 `spawn_guardrail_loop`가 사후 방어하지만 서빙은 사후 가드가 없다는 한계가 있다. **"서빙이 학습보다 우선"이라는 정책은 별도 구현이 필요 없다** — `spawn_guardrail_loop`가 애초에 학습 프로세스에만 붙어 서빙은 자동 SIGSTOP 대상이 아니기 때문이다(구조 자체가 그 정책이었다는 사실을 이번에 처음 명시했다). **개정(2026-09-24, GitHub #101)**: admission 게이트 통과 후 슬롯 선점 시점의 `run_mlx_finetune` 진입 가드는 `status == "running"`만이 아니라 `running`/`paused`/`paused_memory_pressure`/`paused_battery`/`paused_thermal` 등 비종료 상태 전체에 대해 새 학습 요청을 거부한다 — 가드레일이 SIGSTOP한 paused 학습의 슬롯을 새 요청이 덮어써 추적을 잃던 결함을 막는다. |
 | D41 | (2026-09-23) **GPU 텔레메트리 백엔드 공통 인터페이스(이슈 #1), f079775 re-land.** `SystemMetrics.gpu_backend`(현재 항상 `"apple_metal"` 고정값 — 원격 클러스터 NVIDIA 텔레메트리가 붙을 자리를 미리 만들어 둔 것뿐, 없는 값을 지어내지 않는다, D22)와 `metrics.rs`의 `GpuTelemetryBackend` trait(`name`/`read`) + `AppleMetalBackend` 구현체를 추가한다. NVIDIA 백엔드는 실기기가 없어 인터페이스만 남기고 구현을 보류한다. 원래 `rescue/dropped-2026-08-23-26`에서는 이 결정이 D36으로 등록됐으나, main이 그새 D35–D39를 다른 결정에 배정해 번호가 충돌해 D41로 재등록한다. |
 | D42 | (2026-09-29, issue #98 owner decision) **Air-gap bundle SBOM은 필수 증거이며 생성·설치 통과 게이트다.** `download_airgap_bundle.sh`는 `syft`가 없거나 digest lock의 이미지 어느 하나라도 완전하고 파싱 가능한 SPDX JSON SBOM에 결속되지 않으면 실패하고, 번들 성공 무결성 manifest를 쓰지 않는다. `install_from_airgap.sh`와 `verify_sbom.sh`는 SBOM 누락·변조·lock digest 불일치를 설치/검증 실패로 처리한다. 생성은 기존 `docker-archive:` 바인딩을 유지하고 설치/오프라인 검증은 Python 표준 라이브러리만 쓴다. 비용: 생성 환경에 syft가 필요하다. SBOM 게이트에는 우회 경로가 없다(`AIRGAP_ALLOW_UNLOCKED`는 제거됨); 기존 번들은 재다운로드하거나 `make airgap-sbom`으로 증거를 생성해야 한다. **SBOM 내용은 manifest.sha256을 통해 매니페스트에 checksum-bound될 뿐 이미지에 암호학적으로 결속되지는 않으며, manifest.sha256 자체도 서명되지 않았다** — Syft SPDX 출력의 root-package checksum은 OCI manifest digest였고 lock의 image config ID와 안정적으로 일치하지 않았다(2026-09-30, 오프라인 OCI fixture + syft 1.52.0 실측). 서명은 #22 추적 대상이다. **`AIRGAP_ALLOW_UNVERIFIED=1`(`install_from_airgap.sh`)은 `manifest.sha256`이 *없을 때*의 파일 해시 검증만 건너뛴다(이슈 #8). 번들 손상·변조를 탐지할 수 없게 되는 위험을 감수하는 의도적 옵트아웃이며, manifest가 있고 해시가 불일치하면 이 값과 무관하게 중단한다. digests.lock 존재 확인과 `verify_sbom.sh`(SBOM 게이트)는 항상 실행되어 이 변수로 우회되지 않는다.** |
+| D43 | (2026-10-04, owner decision) **Dedicated Colima profile**: `scripts/colima-profile.txt` owns `kubemetal`; VM/context derive as `colima-<profile>` (`colima-kubemetal`). Rust embeds the file, the command helper always supplies `--profile`, Makefile/scripts read it, and UI receives the derived context through read-only IPC. Reason: distinguish KubeMetal from the user's other VMs. Cost: existing `default` VM is orphaned, untouched and never migrated/copied; remove manually with `colima delete`, which destroys all its data. Both running VMs consume additive RAM; D4 caps only the managed VM and D36 lifecycle serialization stays unchanged. Escape hatch: `KUBEMETAL_COLIMA_PROFILE` environment override, trimmed and validated against `^[a-z0-9][a-z0-9-]*$`; empty values, `default`, `colima` and `colima-*` fail explicitly, never fall back. Docker operations explicitly use the derived managed context. Saved `colima` context is external, never rewritten or silently promoted: implicit integration is L1; new external targets default to namespace `kubemetal`, saved explicit settings remain intact, including namespace `default`. Read paths using `active_context()` (`access.rs`, `port_forward.rs`, `prefect.rs`) address that **other cluster**, not `colima-kubemetal`, until the owner re-selects the target. This is intended because `colima` is now a different cluster; only saved legacy targets deviate from AGENTS.md’s “default stays colima-only” rule. D10 `host.lima.internal` is a Lima built-in, but the non-default profile bridge is **unverified** and requires on-device evidence. |
 | D36 | (2026-09-08) **Colima lifecycle mutation은 프로세스 전체에서 하나만 실행한다.** `services/lifecycle_guard.rs`의 atomic RAII 토큰이 `start_cluster`와 `stop_cluster`을 즉시 try-acquire하며, 이미 실행 중이면 대기열을 만들지 않고 `colima lifecycle busy: <operation> in progress` 오류를 반환한다. 토큰은 모든 Result 조기 반환과 panic unwind에서 Drop으로 해제된다. `get_cluster_status` 같은 읽기 전용 조회와 Colima lifecycle CLI를 실행하지 않는 air-gap 설치는 대상이 아니다. 새 `colima start`/`stop`/`delete` 경로를 추가할 때는 `Operation`에 등록하고 같은 가드를 획득해야 한다. |
 | D3 | IPC 커맨드명 통일: `get_system_metrics`, `get_cluster_status`, `start_cluster{cpu,memory}`, `stop_cluster`, `provision_mlops_stack`, `start_port_forward`, `stop_port_forward`, `run_mlx_finetune`, `kill_mlx_process`(뒤 2개는 이름만 예약). |
 | D4 | UI의 CPU/메모리 하드코딩("6 CPU / 12GB") 제거 → `get_system_metrics`로 감지한 전체 RAM 기반 자동 산정(16GB→VM 4GB/2CPU, 32~48GB→8GB/4CPU, 64GB+→12GB/6CPU). |
@@ -641,7 +639,7 @@ export const ClusterControl: React.FC = () => {
 | D8 | wry(WebView)는 JS `alert()`를 지원하지 않는다 → 프론트 훅에서 `@tauri-apps/plugin-dialog`의 `message`/`ask` 사용. |
 | D9 | 매 호출 `System::new_all()` 생성 대신 `tauri::State<Mutex<System>>`로 앱 시작 시 1회 생성 후 `refresh_*`만 수행. |
 | D10 | `mac-gpu-bridge.yaml`은 `type: ExternalName`이며 `ports` 필드를 선언하지 않는다 — ExternalName은 CNAME 별칭일 뿐 포트 프록시를 수행하지 않으므로, 클라이언트가 대상 포트를 직접 지정해야 한다. **(2026-07-26 개정 — 대상이 IP면 이 형태를 쓸 수 없다)** ExternalName은 **DNS 이름만** 허용한다. colima는 `host.lima.internal`이라는 이름이 있어 성립했지만, 호스트를 IP로만 가리킬 수 있는 클러스터(예: VirtualBox/VMware host-only 네트워크의 `192.168.56.1`)에서는 CoreDNS가 `192.168.56.1.`로 CNAME을 만들고 그것은 유효한 호스트명이 아니라 조회가 **NXDOMAIN으로 끝난다**. narwhal 실측(2026-07-26): 파드 3종은 전부 Running이었는데 브리지만 조용히 죽어 있었고, `ExternalName` 필드 값만 IP로 치환한 렌더는 admission도 rollout도 통과했다 — 즉 **모든 게이트가 초록인 채로 기능만 죽는다**. 개정: 브리지 대상이 IP일 때는 `render.sh`가 매니페스트를 **셀렉터 없는 `ClusterIP` Service + `EndpointSlice`**로 갈아끼운다. 이 형태는 Endpoints가 포트를 요구하므로 D10 본래의 "포트 무관" 성질을 포기하며, 기본 노출 포트는 `--bridge-ports`(기본 `8080,8081` — 8080은 D1의 모델 서빙 포트, 8081은 docs/08에서 kagent가 실제 소비한 포트)로 지정한다. DNS 이름을 쓸 수 있는 대상(colima)은 기존 ExternalName 그대로다. 실측 확인(2026-07-26, narwhal): 파드에서 `http://mac-gpu-service.kubemetal.svc.cluster.local:8080/`로 Mac 호스트의 응답 수신. **(D30 참조)** 외부 클러스터에서 이 브리지는 L2 풀스택 옵트인 경로의 구성요소다 — L1 에이전트 온리는 브리지를 깔지 않는다. |
-| D26 | (2026-07-26) **배포 대상(DeployTarget)을 1급 개념으로 분리한다** — "colima를 쓸지"가 아니라 "어느 클러스터에 배포할지"가 설정이다. `services/deploy_target.rs`가 `{context, namespace, storage_class, image_registry, bridge}`를 들고 앱 설정 디렉터리(`deploy-target.json`)에 영속화하며, 저장된 선택이 없으면 colima가 기본값이라 기존 사용자의 동작은 바뀌지 않는다. 제거한 하드코딩: `provision.rs`·`port_forward.rs`·`access.rs`·`prefect.rs`·`colima.rs`의 `--context colima`/`-n default`와 Makefile의 `KUBECTL_CTX`/`--kube-context colima`. **colima 수명주기(`get_cluster_status`/`start_cluster`/`stop_cluster`)만 colima 고정으로 남긴다** — 외부 클러스터는 이 앱이 수명주기를 소유하지 않는다. **네임스페이스는 colima=`default`, 그 외=`kubemetal`**: 공유 IDP 클러스터의 `default`는 남의 영역이고 prune 반경이 너무 넓다. 매니페스트 목록의 단일 출처는 `scripts/k8s/kustomization.yaml`이고(예전에는 `provision.rs::MANIFESTS`와 Makefile `PROVISION_MANIFESTS`에 이중으로 있었다), 렌더링(ns/브리지/StorageClass/레지스트리 치환)은 `scripts/k8s/render.sh`가 단독 소유해 Rust·Makefile·GitOps export가 모두 이것을 거친다. **브리지 미검증이면 렌더가 거부한다**(`render_args()` → Err, `render.sh` → exit 1): `--bridge-host` 또는 `--keep-bridge` 중 하나를 반드시 명시해야 하며, 지정하지 않으면 외부 클러스터에 `host.lima.internal`이 그대로 실려 나가 파드가 조용히 죽는다. 외부 클러스터 실측으로 확인한 제약 2건(narwhal, 2026-07-26): Kyverno `require-labels`가 파드에 `app.kubernetes.io/name`을 요구하므로 **selector가 아닌 파드 템플릿 라벨에만** 추가했고(`selector.matchLabels`는 불변 필드라 건드리면 기존 배포의 apply가 거부된다 — 그래서 kustomize `commonLabels`는 사용 금지), `restrict-image-registries`가 `docker.io/*` 같은 정규화된 접두사만 승인하므로 짧은 이미지 이름 3종에 `docker.io/`를 붙였다. **(D30 개정)** 외부 클러스터 풀스택 배포는 기본 경로에서 내려가 옵트인 고급 경로가 됐다 — 스택의 정식 거처는 자체 k3s이며, 외부 클러스터 기본 통합은 에이전트 온리다. |
+| D26 | (2026-07-26) **배포 대상(DeployTarget)을 1급 개념으로 분리한다** — "colima를 쓸지"가 아니라 "어느 클러스터에 배포할지"가 설정이다. `services/deploy_target.rs`가 `{context, namespace, storage_class, image_registry, bridge}`를 들고 앱 설정 디렉터리(`deploy-target.json`)에 영속화하며, 저장된 선택이 없으면 D43 관리 컨텍스트가 기본값이다. 기존 `colima` 저장값은 외부 대상으로 남는다. 제거한 하드코딩: `provision.rs`·`port_forward.rs`·`access.rs`·`prefect.rs`·`colima.rs`의 `--context colima`/`-n default`와 Makefile의 `KUBECTL_CTX`/`--kube-context colima`. **colima 수명주기(`get_cluster_status`/`start_cluster`/`stop_cluster`)만 D43 관리 프로필 고정으로 남긴다** — 외부 클러스터는 이 앱이 수명주기를 소유하지 않는다. **기본 네임스페이스는 D43 관리 컨텍스트=`default`, 그 외=`kubemetal`**: 공유 IDP 클러스터의 `default`는 남의 영역이고 prune 반경이 너무 넓다. 매니페스트 목록의 단일 출처는 `scripts/k8s/kustomization.yaml`이고(예전에는 `provision.rs::MANIFESTS`와 Makefile `PROVISION_MANIFESTS`에 이중으로 있었다), 렌더링(ns/브리지/StorageClass/레지스트리 치환)은 `scripts/k8s/render.sh`가 단독 소유해 Rust·Makefile·GitOps export가 모두 이것을 거친다. **브리지 미검증이면 렌더가 거부한다**(`render_args()` → Err, `render.sh` → exit 1): `--bridge-host` 또는 `--keep-bridge` 중 하나를 반드시 명시해야 하며, 지정하지 않으면 외부 클러스터에 `host.lima.internal`이 그대로 실려 나가 파드가 조용히 죽는다. 외부 클러스터 실측으로 확인한 제약 2건(narwhal, 2026-07-26): Kyverno `require-labels`가 파드에 `app.kubernetes.io/name`을 요구하므로 **selector가 아닌 파드 템플릿 라벨에만** 추가했고(`selector.matchLabels`는 불변 필드라 건드리면 기존 배포의 apply가 거부된다 — 그래서 kustomize `commonLabels`는 사용 금지), `restrict-image-registries`가 `docker.io/*` 같은 정규화된 접두사만 승인하므로 짧은 이미지 이름 3종에 `docker.io/`를 붙였다. **(D30 개정)** 외부 클러스터 풀스택 배포는 기본 경로에서 내려가 옵트인 고급 경로가 됐다 — 스택의 정식 거처는 자체 k3s이며, 외부 클러스터 기본 통합은 에이전트 온리다. |
 | D27 | (2026-07-26) **외부 클러스터 GitOps 편입은 export까지만 하고 push는 하지 않는다.** `make export-gitops NARWHAL_DIR=...`이 narwhal 레포에 `gitops/resources/kubemetal.yaml`(렌더 결과)과 `gitops/charts/narwhal-apps/templates/kubemetal.yaml`(Application, `.Values.kubemetal.enabled` 게이트로 **기본 비활성**)을 내려놓고 끝난다 — Gitea 반영은 사용자가 narwhal의 `scripts/gitops/push-to-gitea.sh`로 수행한다. 이 경계 덕분에 kubemetal이 Gitea 자격증명·포트포워딩·narwhal 레포 구조에 의존하지 않는다. **Direct와 GitOps는 배타적이다**: ArgoCD가 대상 네임스페이스를 소유하면 직접 `kubectl apply`는 selfHeal이 되돌리므로, `preflight_deploy_target`이 대상 ns를 destination으로 삼는 Application을 찾아 blocker로 올린다(narwhal 실측 2026-07-26: 34개 Application 중 `default`/`kubemetal`을 대상으로 하는 것은 없어 Direct 모드가 즉시 성립했다). **kubemetal 네임스페이스에 `istio.io/dataplane-mode: ambient` 라벨을 붙이지 않는다** — ambient는 ns opt-in이고(narwhal 실측: `dev`/`storage`에만 붙어 있고 `default`엔 없다), 편입되면 ztunnel HBONE이 mlflow/prefect의 plain-HTTP kubelet 프로브를 깬다. narwhal 레포 동반 변경: `values.yaml`의 `kubemetal.enabled`, `scripts/airgap/images.txt`의 이미지 4종. **(D30 참조)** GitOps 편입을 포함한 풀스택 외부 배포 전체가 옵트인 경로다. |
 | D11 | OOM 가드(FR-05.2)는 "가용 RAM 비율" 기준이 아니라 macOS memory pressure 레벨(warn/critical) 기반으로 트리거한다(파일 캐시로 RAM은 상시 높게 점유). Phase 3 범위. |
 | D12 | 서빙 도구 표기는 mlx_lm.server(mlx-lm 패키지) 또는 llama-server — "mlx-serve"라는 도구는 존재하지 않는다. **(2026-07-27 개정)** `mlx_vlm.server`(mlx-vlm 패키지)가 세 번째 유효 서빙 도구로 추가됐다(D29) — OpenAI 호환이라 소비자 관점 계약은 동일하다. |

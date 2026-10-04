@@ -14,8 +14,10 @@ set -uo pipefail
 # 실제 번들을 건드리지 않고 확인할 방법이 없었다(그래서 검증하려던 시도가 진짜 번들을
 # 로드하기 시작했다). KUBE_CONTEXT가 이미 같은 규약이다.
 AIRGAP_DIR="${AIRGAP_DIR:-${HOME}/.kubemetal/airgap}"
-KUBE_CONTEXT="${KUBE_CONTEXT:-colima}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/colima-profile.sh
+. "${SCRIPT_DIR}/../colima-profile.sh"
+KUBE_CONTEXT="${KUBE_CONTEXT:-${COLIMA_CONTEXT}}"
 # shellcheck source=scripts/airgap/lib.sh
 . "${SCRIPT_DIR}/lib.sh"
 
@@ -136,7 +138,7 @@ else
     echo "  -> 로드: $(basename "$archive")"
     if [ "$VERIFY_IMAGE_IDS" -eq 1 ] && ! verify_preexisting_image_id "$archive"; then
       FAILED+=("image-id-cache-mismatch:$(basename "$archive")")
-    elif gunzip -c "$archive" | docker load; then
+    elif gunzip -c "$archive" | docker --context "$COLIMA_CONTEXT" load; then
       loaded=$((loaded + 1))
       if [ "$VERIFY_IMAGE_IDS" -eq 1 ] && ! verify_loaded_image_id "$archive"; then
         FAILED+=("image-id-mismatch:$(basename "$archive")")
@@ -149,7 +151,7 @@ else
     echo "  -> 로드(비압축): $(basename "$archive")"
     if [ "$VERIFY_IMAGE_IDS" -eq 1 ] && ! verify_preexisting_image_id "$archive"; then
       FAILED+=("image-id-cache-mismatch:$(basename "$archive")")
-    elif docker load -i "$archive"; then
+    elif docker --context "$COLIMA_CONTEXT" load -i "$archive"; then
       loaded=$((loaded + 1))
       if [ "$VERIFY_IMAGE_IDS" -eq 1 ] && ! verify_loaded_image_id "$archive"; then
         FAILED+=("image-id-mismatch:$(basename "$archive")")

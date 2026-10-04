@@ -199,7 +199,7 @@ else
     rm -f "$targz_path"
 
     echo "  -> 수집: $img"
-    if ! docker pull "$img"; then
+    if ! docker --context "$COLIMA_CONTEXT" pull "$img"; then
       FAILED+=("pull:${img}")
       continue
     fi
@@ -213,7 +213,7 @@ else
       FAILED+=("image-id-inspect:${img}")
       continue
     fi
-    if docker save "$img" | gzip > "${targz_path}.part"; then
+    if docker --context "$COLIMA_CONTEXT" save "$img" | gzip > "${targz_path}.part"; then
       mv "${targz_path}.part" "$targz_path"
       printf '%s %s %s\n' "$img" "$repo_digest" "$image_id" >> "$DIGESTS_TMP"
     else

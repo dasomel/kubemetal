@@ -17,10 +17,12 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/colima-profile.sh
+. "${SCRIPT_DIR}/../colima-profile.sh"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck source=scripts/airgap/lib.sh
 . "${SCRIPT_DIR}/lib.sh"
-CONTEXT="${KUBE_CONTEXT:-colima}"
+CONTEXT="${KUBE_CONTEXT:-${COLIMA_CONTEXT}}"
 NS="airgap-verify"
 TIMEOUT_SECS="${TIMEOUT_SECS:-60}"
 

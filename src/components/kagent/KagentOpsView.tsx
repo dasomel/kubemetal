@@ -13,6 +13,7 @@ import {
   Sliders,
   Terminal,
 } from 'lucide-react';
+import { useManagedColimaContext } from '../../hooks/useDeployTarget';
 import { useColima } from '../../hooks/useColima';
 import { useTranslation } from '../../i18n/i18nContext';
 import { confirmDeployOperation } from '../../lib/confirmDeployOperation';
@@ -35,9 +36,10 @@ const SUB_TABS: { id: SubTab; labelKey: string; icon: React.ElementType }[] = [
 export const KagentOpsView: React.FC = () => {
   const { status: cluster } = useColima();
   const { t } = useTranslation();
+  const { context: managedContext, error: managedContextError } = useManagedColimaContext();
   const [subTab, setSubTab] = useState<SubTab>('diagnostics');
   const [contexts, setContexts] = useState<string[]>([]);
-  const [selectedContext, setSelectedContext] = useState<string>('colima');
+  const [selectedContext, setSelectedContext] = useState<string>('');
   const [report, setReport] = useState<KagentDiagnosticReport | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,6 +47,14 @@ export const KagentOpsView: React.FC = () => {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [installBusy, setInstallBusy] = useState<boolean>(false);
   const [uiBusy, setUiBusy] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (managedContext) setSelectedContext((previous) => previous || managedContext);
+  }, [managedContext]);
+
+  useEffect(() => {
+    if (managedContextError) setError(managedContextError);
+  }, [managedContextError]);
 
   const activeAgents = new Set(report?.active_agents ?? []);
   const toggleableAgents = report?.available_agents ?? [];
@@ -59,6 +69,7 @@ export const KagentOpsView: React.FC = () => {
 
   // 조회 실패는 그대로 노출한다 — "정상"으로 폴백하면 장애를 정상으로 위장하게 된다.
   const fetchDiagnostics = async (ctx: string) => {
+    if (!ctx) return;
     setLoading(true);
     try {
       const res = await invoke<KagentDiagnosticReport>('get_kagent_diagnostics', { context: ctx });
@@ -114,7 +125,7 @@ export const KagentOpsView: React.FC = () => {
 
   useEffect(() => {
     fetchContexts();
-    fetchDiagnostics(selectedContext);
+    if (selectedContext) void fetchDiagnostics(selectedContext);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedContext]);
 
@@ -196,7 +207,7 @@ export const KagentOpsView: React.FC = () => {
           {cluster?.is_running && (
             <button
               type="button"
-              disabled={uiBusy}
+              disabled={uiBusy || !selectedContext}
               onClick={handleOpenKagentUi}
               className="px-3 py-1.5 rounded-lg bg-primaryStrong hover:brightness-110 text-inverse text-caption font-bold flex items-center gap-1.5 transition-all shadow-xs"
             >
@@ -257,7 +268,7 @@ export const KagentOpsView: React.FC = () => {
             <button
               type="button"
               onClick={() => fetchDiagnostics(selectedContext)}
-              disabled={loading}
+              disabled={loading || !selectedContext}
               className="px-3 py-1.5 rounded-lg bg-surfaceRaised hover:brightness-95 text-primary text-caption font-medium flex items-center gap-1.5"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -269,12 +280,12 @@ export const KagentOpsView: React.FC = () => {
             <div className="p-4 rounded-xl bg-danger/10 border border-danger/20 text-danger text-caption space-y-3">
               <div className="font-bold">{t('kagent.errorTitle')}</div>
               <div className="font-sans whitespace-pre-line leading-relaxed text-ink font-medium bg-surface/60 p-3 rounded-lg border border-hairline/10">{error}</div>
-              {selectedContext !== 'colima' && (
+              {managedContext && selectedContext !== managedContext && (
                 <button
                   type="button"
                   onClick={() => {
-                    setSelectedContext('colima');
-                    fetchDiagnostics('colima');
+                    setSelectedContext(managedContext);
+                    fetchDiagnostics(managedContext);
                   }}
                   className="px-3 py-1.5 rounded-lg bg-primaryStrong hover:brightness-110 text-inverse text-caption font-bold flex items-center gap-1.5 transition-all shadow-xs"
                 >
@@ -300,7 +311,7 @@ export const KagentOpsView: React.FC = () => {
               <button
                 type="button"
                 onClick={handleInstallKagent}
-                disabled={installBusy}
+                disabled={installBusy || !selectedContext}
                 className="px-3 py-1.5 rounded-lg bg-primaryStrong hover:brightness-110 text-inverse text-caption font-bold flex items-center gap-1.5 transition-all shadow-xs disabled:opacity-60"
               >
                 <DownloadCloud className={`w-3.5 h-3.5 ${installBusy ? 'animate-pulse' : ''}`} />

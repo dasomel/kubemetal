@@ -11,11 +11,17 @@ KubeMetal E2E Verification Step 4: Step 3에서 관측된 장애 파드를 정�
 
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 import time
 
-CONTEXT = "colima"
+PROFILE = subprocess.check_output(
+    ["bash", "-c", 'source "$1"; printf "%s" "$KUBEMETAL_COLIMA_PROFILE"',
+     "profile", str(Path(__file__).resolve().parents[1] / "colima-profile.sh")],
+    text=True,
+)
+CONTEXT = os.environ.get("KUBE_CONTEXT") or f"colima-{PROFILE}"
 DEPLOY_NAME = "e2e-broken-nginx"
 TARGET_YAML_PATH = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "k8s", "e2e-remediated-nginx.yaml")

@@ -4,7 +4,14 @@ import { message } from '@tauri-apps/plugin-dialog';
 import type { BridgeState, DeployTarget, PreflightReport } from '../types/ipc';
 import { useTranslation } from '../i18n/i18nContext';
 
-export const COLIMA_CONTEXT = 'colima';
+export function useManagedColimaContext() {
+  const [context, setContext] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void invoke<string>('get_managed_colima_context').then(setContext).catch((err) => setError(String(err)));
+  }, []);
+  return { context, error };
+}
 
 // 이 훅은 컴포넌트마다 독립 인스턴스다(DeployTargetCard와 ProvisionPanel이 각자 호출).
 // 한 인스턴스에서 저장해도 다른 인스턴스는 마운트 시점 복사본을 계속 렌더하므로 —
@@ -21,6 +28,7 @@ const notifyTargetSaved = () => saveListeners.forEach((fn) => fn());
  */
 export function useDeployTarget() {
   const { t } = useTranslation();
+  const { context: managedContext, error: managedContextError } = useManagedColimaContext();
   const [target, setTarget] = useState<DeployTarget | null>(null);
   const [contexts, setContexts] = useState<string[]>([]);
   const [contextsError, setContextsError] = useState<string | null>(null);
@@ -66,16 +74,16 @@ export function useDeployTarget() {
     setPreflightError(null);
     setTarget({
       context,
-      namespace: context === COLIMA_CONTEXT ? 'default' : 'kubemetal',
+      namespace: context === managedContext ? 'default' : 'kubemetal',
       storage_class: null,
       image_registry: null,
       bridge:
-        context === COLIMA_CONTEXT
+        context === managedContext
           ? { kind: 'keep_base' }
           : { kind: 'unverified', candidates: [], reason_code: 'not_probed', detail: null },
       integration_level: null,
     });
-  }, []);
+  }, [managedContext]);
 
   const patchTarget = useCallback((patch: Partial<DeployTarget>) => {
     setTarget((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -154,13 +162,14 @@ export function useDeployTarget() {
 
   return {
     target,
+    managedContext,
     contexts,
-    contextsError,
+    contextsError: contextsError || managedContextError,
     preflight,
     preflightError,
     busy,
     blockers,
-    isColima: target?.context === COLIMA_CONTEXT,
+    isColima: target?.context === managedContext,
     selectContext,
     patchTarget,
     runPreflight,

@@ -11,7 +11,7 @@ use crate::services::deploy_operation::{
     build_kagent_install_summary, build_operation_summary, DeployAction, OperationSummary,
 };
 use crate::services::deploy_target::{
-    bridge_candidates, parse_ifconfig, set_active, BridgeState, DeployTarget, COLIMA_CONTEXT,
+    bridge_candidates, colima_context, parse_ifconfig, set_active, BridgeState, DeployTarget,
 };
 use crate::services::process::external_command;
 
@@ -27,6 +27,12 @@ fn target_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(dir.join(TARGET_FILE))
 }
 
+/// D43: the UI obtains the managed context here, never a duplicated literal.
+#[tauri::command]
+pub fn get_managed_colima_context() -> String {
+    colima_context().to_string()
+}
+
 #[tauri::command]
 pub async fn get_deploy_target(app: tauri::AppHandle) -> Result<DeployTarget, String> {
     let path = target_path(&app)?;
@@ -35,7 +41,7 @@ pub async fn get_deploy_target(app: tauri::AppHandle) -> Result<DeployTarget, St
             format!("failed to parse {TARGET_FILE}: {e}. Please re-select the deploy target.")
         })?,
         // 저장된 선택이 없으면 colima가 기본값 — 기존 사용자의 동작이 바뀌지 않는다.
-        Err(_) => DeployTarget::for_context(COLIMA_CONTEXT),
+        Err(_) => DeployTarget::for_context(colima_context()),
     };
     set_active(&target);
     Ok(target)
@@ -234,7 +240,7 @@ pub async fn preflight_deploy_target(
     }
 
     let candidates = detect_bridge_candidates(&node_ips).await?;
-    if candidates.is_empty() && context != COLIMA_CONTEXT {
+    if candidates.is_empty() && context != colima_context() {
         blockers.push(Blocker {
             code: "no_bridge_candidates".into(),
             detail: None,
@@ -271,7 +277,7 @@ async fn detect_bridge_candidates(node_ips: &[String]) -> Result<Vec<String>, St
 
 #[tauri::command]
 pub async fn detect_host_bridge(context: String, namespace: String) -> Result<BridgeState, String> {
-    if context == COLIMA_CONTEXT {
+    if context == colima_context() {
         // D10 실측값이 이미 있다. 추가 탐지는 불필요하고, DNS 이름이라 인터페이스 계산 대상도 아니다.
         return Ok(BridgeState::KeepBase);
     }

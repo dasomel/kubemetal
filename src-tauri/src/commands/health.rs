@@ -140,7 +140,7 @@ mod tests {
 
     fn healthy_kagent() -> KagentDiagnosticReport {
         KagentDiagnosticReport {
-            target_context: "colima".to_string(),
+            target_context: crate::services::process::colima_context().to_string(),
             kagent_ready: true,
             kagent_installed: true,
             pod_issues_count: 0,

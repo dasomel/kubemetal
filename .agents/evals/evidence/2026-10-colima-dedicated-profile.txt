@@ -1,0 +1,36 @@
+D43 review fixes: local verification, 2026-10-04.
+No real colima/limactl/kubectl commands, UI or VM observation.
+Historical lead result: cargo test outside Codex sandbox on 9ea7c6a:
+329 passed, 0 failed, 1 ignored. This does not verify the current fixes.
+
+Current observed passing verification:
+python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v: 5 tests, OK.
+cargo test with four sandbox port tests explicitly skipped:
+326 passed, 0 failed, 1 ignored, 4 filtered; main/doc tests OK (0 tests).
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings: exit 0.
+bash -n: all seven touched shell scripts exit 0.
+shellcheck --severity=warning: six touched scripts exit 0.
+bash scripts/airgap/test_digest_lock.sh: exit 0; digest-lock and 24 archive fixtures passed.
+bash scripts/airgap/test_sbom.sh: exit 0; stub-only SBOM suite passed.
+git diff --check: exit 0.
+check-agent-trace-requirement.py with risk-policy and changed files: exit 0.
+check-agent-trace-evidence.py with risk-policy, changed files and updated trace:
+passed: true, failures: [] (exit 0).
+All 38 trace gate comparisons against baseline pass (zero regressions).
+Trace completion is scoped to requested local fixes; it does not claim full-suite
+success, warning-free shellcheck or any UI/VM/D10 observation.
+No TypeScript changes; tsc not rerun.
+
+Limitations:
+Full cargo test: 326 passed, 4 failed, 1 ignored. Sandbox socket binds report
+Operation not permitted in these services::ports::tests:
+find_free_port_errors_when_range_exhausted
+find_free_port_skips_occupied_preferred
+is_port_free_detects_loopback_holder
+is_port_free_detects_wildcard_holder
+The lead must rerun outside the sandbox after these changes.
+test_digest_lock.sh shellcheck exits 1 on three pre-existing SC2155 warnings:
+TEST_REAL_SHASUM, TEST_REAL_MV, TEST_REAL_MKTEMP (confirmed in 9ea7c6a).
+Named-profile VM, Docker/K3s image store, Tauri UI and D10 bridge unverified.
+KeepBase bridge behavior, UI target-selection race and Makefile 6 CPU/12GB
+hardcode deliberately unchanged.

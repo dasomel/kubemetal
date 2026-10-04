@@ -68,6 +68,52 @@ pub fn external_command(bin: &str) -> Result<tokio::process::Command, String> {
     Ok(cmd)
 }
 
+// D43: isolate our VM; cost: old default VM remains; escape: KUBEMETAL_COLIMA_PROFILE.
+pub const KUBEMETAL_COLIMA_PROFILE: &str = include_str!("../../../scripts/colima-profile.txt");
+static MANAGED_PROFILE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    std::env::var_os("KUBEMETAL_COLIMA_PROFILE")
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| KUBEMETAL_COLIMA_PROFILE.to_string())
+        .trim()
+        .to_string()
+});
+pub static COLIMA_CONTEXT: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| format!("colima-{}", *MANAGED_PROFILE));
+
+// D43: never redirect invalid overrides to another VM. Context reads retain identity;
+// lifecycle and airgap operations validate before invoking any external command.
+fn validate_colima_profile(value: &str) -> Result<&str, String> {
+    let profile = value.trim();
+    let valid = profile
+        .as_bytes()
+        .first()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && profile
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+        && !matches!(profile, "default" | "colima")
+        && !profile.starts_with("colima-");
+    if !valid {
+        return Err(format!("Invalid KUBEMETAL_COLIMA_PROFILE {value:?}: expected [a-z0-9][a-z0-9-]*; default, colima and colima-* are reserved"));
+    }
+    Ok(profile)
+}
+
+pub fn colima_profile() -> Result<&'static str, String> {
+    validate_colima_profile(&MANAGED_PROFILE)
+}
+
+pub fn colima_context() -> &'static str {
+    &COLIMA_CONTEXT
+}
+
+pub fn colima_command() -> Result<tokio::process::Command, String> {
+    let profile = colima_profile()?;
+    let mut command = external_command("colima")?;
+    command.args(["--profile", profile]);
+    Ok(command)
+}
+
 /// `tauri.conf.json`의 `bundle.resources`는 `../scripts/k8s/*`, `../scripts/mlx/*`처럼
 /// `src-tauri/` 상위 디렉터리를 참조한다. `.app` 번들 실측(2026-07-21, tauri 2.11.5)으로
 /// 확인한 결과, `resource_dir()`는 언제나 `Contents/Resources`를 가리키지만 번들러는
@@ -200,6 +246,47 @@ mod tests {
 
     /// macOS의 셸은 `/bin`에만 있다(`/usr/bin/bash`는 존재하지 않는다). Air-Gap 스크립트
     /// 실행이 이 경로 누락으로 실패했으므로 회귀를 테스트로 고정한다.
+    #[test]
+    fn dedicated_profile_command_arguments_and_context_agree() {
+        // Inspect arguments only; never execute Colima on the test machine.
+        let mut command = tokio::process::Command::new("unused-test-command");
+        command.args(["--profile", colima_profile().unwrap()]);
+        command.args(["status", "--json"]);
+        let args: Vec<_> = command
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
+        assert_eq!(
+            args,
+            vec!["--profile", colima_profile().unwrap(), "status", "--json"]
+        );
+        assert_eq!(
+            colima_context(),
+            format!("colima-{}", colima_profile().unwrap())
+        );
+    }
+
+    #[test]
+    fn managed_profile_validation() {
+        for value in ["kubemetal", "my-vm2", "  my-vm2 \n"] {
+            assert_eq!(validate_colima_profile(value).unwrap(), value.trim());
+        }
+        for value in [
+            "",
+            " ",
+            "default",
+            "colima",
+            "colima-foo",
+            "--foo",
+            "../x",
+            "A",
+            "a b",
+        ] {
+            assert!(validate_colima_profile(value).is_err(), "{value:?}");
+        }
+    }
+
     #[test]
     fn resolve_cli_path_finds_system_shells() {
         for bin in ["bash", "sh"] {

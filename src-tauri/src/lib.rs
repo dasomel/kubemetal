@@ -13,8 +13,8 @@ use commands::data_ingest::{
     get_ingest_status, list_ingested_datasets, run_data_ingest, DataIngestState,
 };
 use commands::deploy_target::{
-    describe_deploy_operation, detect_host_bridge, get_deploy_target, preflight_deploy_target,
-    save_deploy_target,
+    describe_deploy_operation, detect_host_bridge, get_deploy_target, get_managed_colima_context,
+    preflight_deploy_target, save_deploy_target,
 };
 use commands::guardrails::{
     get_guardrail_status, pause_mlx_training, resume_mlx_training, set_guardrail_config,
@@ -96,6 +96,7 @@ pub fn run() {
             start_cluster,
             stop_cluster,
             list_kubeconfig_contexts,
+            get_managed_colima_context,
             get_deploy_target,
             save_deploy_target,
             preflight_deploy_target,

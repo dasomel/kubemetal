@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
 use crate::services::lifecycle_guard::{self, Operation};
-use crate::services::process::{external_command, resolve_bundled_resource};
+use crate::services::process::{
+    colima_command, colima_context, colima_profile, external_command, resolve_bundled_resource,
+};
 
 /// colima 0.10.x `status --json` 실측 스키마: 기동 중일 때만 exit 0 + stdout에
 /// 평면 JSON({"kubernetes":true,...})을 출력하고, 미기동이면 exit 1 + stdout 없음.
@@ -11,6 +13,14 @@ use crate::services::process::{external_command, resolve_bundled_resource};
 struct ColimaStatusRaw {
     #[serde(default)]
     kubernetes: bool,
+}
+
+fn parse_profile_status(success: bool, stdout: &[u8]) -> Option<ColimaStatusRaw> {
+    if success {
+        serde_json::from_slice(stdout).ok()
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -24,18 +34,13 @@ pub struct ClusterStatus {
 
 #[tauri::command]
 pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
-    let output = external_command("colima")?
+    let output = colima_command()?
         .args(["status", "--json"])
         .output()
         .await
         .map_err(|e| format!("colima execution failed: {e}"))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let raw: Option<ColimaStatusRaw> = if output.status.success() {
-        serde_json::from_str(&stdout).ok()
-    } else {
-        None
-    };
+    let raw = parse_profile_status(output.status.success(), &output.stdout);
 
     let Some(raw) = raw else {
         return Ok(ClusterStatus {
@@ -58,7 +63,7 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
         let deploy_out = external_command("kubectl")?
             .args([
                 "--context",
-                "colima",
+                colima_context(),
                 "get",
                 "deploy",
                 "-n",
@@ -133,7 +138,7 @@ pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
     let memory = memory.min(max_memory_gb as u32).max(1);
     let cpu = cpu.clamp(1, host_cores);
 
-    let output = external_command("colima")?
+    let output = colima_command()?
         .args([
             "start",
             "--cpu",
@@ -158,7 +163,7 @@ pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
 #[tauri::command]
 pub async fn stop_cluster() -> Result<String, String> {
     let _lifecycle_guard = lifecycle_guard::acquire(Operation::StopCluster)?;
-    let output = external_command("colima")?
+    let output = colima_command()?
         .arg("stop")
         .output()
         .await
@@ -455,6 +460,8 @@ async fn run_airgap_script(
     }
 
     let output = external_command("bash")?
+        .env("KUBEMETAL_COLIMA_PROFILE", colima_profile()?)
+        .env("DOCKER_CONTEXT", colima_context())
         .arg(&script_path)
         .output()
         .await
@@ -585,6 +592,18 @@ mod tests {
             .parent()
             .expect("repo root")
             .join("scripts/k8s")
+    }
+
+    #[test]
+    fn absent_dedicated_profile_never_uses_another_profiles_json() {
+        assert!(parse_profile_status(false, br#"{"kubernetes":true}"#).is_none());
+        assert!(parse_profile_status(false, b"").is_none());
+        assert!(parse_profile_status(true, b"").is_none());
+        assert!(
+            parse_profile_status(true, br#"{"kubernetes":true}"#)
+                .unwrap()
+                .kubernetes
+        );
     }
 
     #[test]
