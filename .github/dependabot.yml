@@ -5,12 +5,27 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # groups are ecosystem-local; coordinate Cargo + npm updates (docs/dependency-updates.md).
+    groups:
+      tauri-core:
+        patterns: ["@tauri-apps/api", "@tauri-apps/cli"]
+      tauri-dialog:
+        patterns: ["@tauri-apps/plugin-dialog"]
+      tauri-opener:
+        patterns: ["@tauri-apps/plugin-opener"]
 
   - package-ecosystem: "cargo"
     directory: "/src-tauri"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    groups:
+      tauri-core:
+        patterns: ["tauri", "tauri-build"]
+      tauri-dialog:
+        patterns: ["tauri-plugin-dialog"]
+      tauri-opener:
+        patterns: ["tauri-plugin-opener"]
 
   - package-ecosystem: "github-actions"
     directory: "/"

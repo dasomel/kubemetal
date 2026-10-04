@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-ci-dependabot-tauri-coupling",
+  "task": "Group Tauri updates, check documented lockfile coupling and narrowly exempt Cargo.lock-only traces",
+  "changeContext": {
+    "paths": [
+      ".github/dependabot.yml",
+      ".github/workflows/**",
+      "scripts/ci/**",
+      ".agents/**",
+      "docs/dependency-updates.md",
+      "docs/mistakes-log.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "CI and dependency governance only; runtime code, dependency versions, weekly schedules and PR limits unchanged."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Highest-risk-wins src-tauri/** rule requires a new trace for Cargo.lock-only changes; current schema has no exact change-set exemption. Tauri docs specify core minor and plugin exact synchronization, not CLI/build minor equality.",
+      "evidence": [
+        "policy:docs/dependency-updates.md"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Ecosystem-local Dependabot groups; dependency-free lockfile CI comparison; shared exact Cargo.lock-only trace exception (D1 owner-visible policy weakening)."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Core/plugin mismatch, missing/ambiguous/malformed locks and mixed-file trace exemptions",
+      "summary": "python3 -m unittest discover -s scripts/ci -p test_*.py -v: Ran 7 tests, OK; real lockfile check_tauri_versions: ok.",
+      "evidence": [
+        "test:ci-dependency-policy-seven-tests",
+        "artifact:/tmp/kubemetal-ci-evidence/tests.log"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Changed Python scripts and existing relevant lint checks",
+      "summary": "py_compile and git diff --check passed; check_versions: ok; check_ipc_types: OK. make help inspected: no Python-specific lint target; full Rust/frontend make lint not run.",
+      "evidence": [
+        "test:python-compile-and-existing-python-lint"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Static CI slice verified; real CLI enforcement, tauri build, remote CI and networked cargo-deny not run. Policy weakening requires owner review before acceptance.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete for local static checks and regression tests; no runtime or remote success claimed."
+    }
+  ]
+}
