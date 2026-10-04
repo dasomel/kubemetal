@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/colima-profile.sh
+. "${SCRIPT_DIR}/../colima-profile.sh"
 
 # Evening/on-device verification for KubeMetal #58.
 # The KubeMetal UI starts the private relay; this script verifies the same inference service
@@ -32,13 +35,13 @@ probe() {
 probe "macOS loopback" "http://127.0.0.1:${TARGET_PORT}/health"
 probe "private bridge on host" "http://${BRIDGE_HOST}:${BRIDGE_PORT}/health"
 
-if ! colima status >/dev/null 2>&1; then
+if ! colima --profile "$COLIMA_PROFILE" status >/dev/null 2>&1; then
   echo "Colima is not running; VM/K3s bridge verification skipped." >&2
   exit 3
 fi
 
 printf '%-26s %s ... ' "Colima VM" "http://host.lima.internal:${BRIDGE_PORT}/health"
-if colima ssh -- sh -lc "command -v curl >/dev/null 2>&1 && curl -fsS --max-time 5 http://host.lima.internal:${BRIDGE_PORT}/health"; then
+if colima --profile "$COLIMA_PROFILE" ssh -- sh -lc "command -v curl >/dev/null 2>&1 && curl -fsS --max-time 5 http://host.lima.internal:${BRIDGE_PORT}/health"; then
   echo
   echo "Colima VM → KubeMetal private bridge → oMLX: OK"
 else

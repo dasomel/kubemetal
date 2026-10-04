@@ -14,8 +14,10 @@ set -uo pipefail
 # 실제 번들을 건드리지 않고 확인할 방법이 없었다(그래서 검증하려던 시도가 진짜 번들을
 # 로드하기 시작했다). KUBE_CONTEXT가 이미 같은 규약이다.
 AIRGAP_DIR="${AIRGAP_DIR:-${HOME}/.kubemetal/airgap}"
-KUBE_CONTEXT="${KUBE_CONTEXT:-colima}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/colima-profile.sh
+. "${SCRIPT_DIR}/../colima-profile.sh"
+KUBE_CONTEXT="${KUBE_CONTEXT:-${COLIMA_CONTEXT}}"
 # shellcheck source=scripts/airgap/lib.sh
 . "${SCRIPT_DIR}/lib.sh"
 

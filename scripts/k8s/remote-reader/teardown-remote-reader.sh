@@ -6,8 +6,10 @@
 set -euo pipefail
 
 REMOTE_CONTEXT="${1:-}"
-LOCAL_CONTEXT="${2:-colima}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/colima-profile.sh
+. "${SCRIPT_DIR}/../../colima-profile.sh"
+LOCAL_CONTEXT="${2:-${COLIMA_CONTEXT}}"
 KUBECTL_TIMEOUT="--request-timeout=60s"
 
 if [ -z "$REMOTE_CONTEXT" ]; then

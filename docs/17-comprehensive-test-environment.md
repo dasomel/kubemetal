@@ -179,7 +179,7 @@ gantt
 1. **단일 Mac mini M4 Pro로 완전한 자율 AI MLOps 테스트 환경 구축 가능**:
    - 클라우드 GPU 비용 **$0**, 외부 API 비용 **$0**, 코드 유출 위험 **0%**인 환경에서 **파인튜닝 → 평가 → 서빙 → kagent 진단 → 코딩 에이전트 IaC 수정**으로 이어지는 선순환 E2E 파이프라인이 완성됩니다.
 2. **핵심 추천 구성**:
-   - **Colima VM**: 메모리 **12GB** 지정 (`colima start --cpu 6 --memory 12`)
+   - **Colima VM**: 메모리 **12GB** 지정 (`colima --profile "$(cat scripts/colima-profile.txt)" start --cpu 6 --memory 12`)
    - **메인 모델**: **`Qwen3-Coder-32B-4bit`** (호스트 서빙 포트 :8081)
    - **파인튜닝 타겟**: **7B 모델** (학습 속도 및 자원 효율 극대화)
 3. **다음 실행 단계**:

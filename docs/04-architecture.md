@@ -112,9 +112,9 @@ DRA/Kueue는 위 조건을 만족하는 **실제 Kubernetes 관리 가능 resour
 | 기능군 | 커맨드 | 설명 |
 |--------|--------|------|
 | 클러스터 제어 | `get_system_metrics` | sysinfo 기반 RAM/CPU 사용률 조회 (D2) |
-| | `get_cluster_status` | `colima status --json` 파싱 + MLflow/SeaweedFS 파드 준비 상태 조회 |
-| | `start_cluster` | 감지된 호스트 RAM 기준 clamp된 cpu/memory로 `colima start` 실행 |
-| | `stop_cluster` | `colima stop` 실행 (포트포워딩 정리 선행) |
+| | `get_cluster_status` | `colima --profile <profile> status --json` 파싱 + MLflow/SeaweedFS 파드 준비 상태 조회 |
+| | `start_cluster` | 감지된 호스트 RAM 기준 clamp된 cpu/memory로 `colima --profile <profile> start` 실행 |
+| | `stop_cluster` | `colima --profile <profile> stop` 실행 (포트포워딩 정리 선행) |
 | | `provision_mlops_stack` | `scripts/k8s/`의 Secret + MLflow + SeaweedFS + mac-gpu-bridge 매니페스트 4종을 `kubectl apply` (D18: `resolve_bundled_resource`로 번들 `_up_/` 평탄화 경로 해석) |
 | | `start_port_forward` / `stop_port_forward` | MLflow/SeaweedFS S3/Filer 3개 포트포워딩 자식 프로세스 spawn/종료 |
 | 모델 허브 (Phase 2b) | `search_hf_models`, `download_hf_model`, `get_model_downloads`, `list_local_models` | Hugging Face 검색·다운로드(`~/.kubemetal/models/`)·진행 상태·로컬 목록 조회 |
@@ -168,7 +168,7 @@ sequenceDiagram
 
 ## 5. 실측 검증된 사실 (colima 0.10.3, tauri 2.11.5)
 
-- (2026-07-20) `colima status --json`은 기동 중일 때만 exit 0 + 평면 JSON
+- (2026-07-20) `colima --profile <profile> status --json`은 기동 중일 때만 exit 0 + 평면 JSON
   (`{"kubernetes": bool, ...}`)을 출력한다. `status` 필드는 존재하지 않으며, 미기동 시
   exit 1 + stdout 없음.
 - (2026-07-20) `mac-gpu-service` → `host.lima.internal` → `192.168.5.2` CNAME 체인이
@@ -205,3 +205,5 @@ canonical 출처로 참고할 것 — 본 문서에서 중복 서술하지 않�
 현재 구현 이후의 compute/runtime 확장 검토는 기존 D1~D18을 소급 변경하지 않고 GitHub
 issue/evidence gate로 관리한다. 주요 추적 이슈는 #24(Model/Compute Routing),
 #84(CuMetal), #94(krunkit/K3s GPU feasibility)다.
+
+D43: 관리 프로필은 `scripts/colima-profile.txt`에서 읽고 context는 `colima-<profile>`로 파생한다. 기본 프로필의 이전 측정은 전용 프로필 D10 브리지 검증을 대신하지 않는다.

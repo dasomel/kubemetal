@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::net::Ipv4Addr;
 
 /// colima 컨텍스트만 특별 취급한다 — 수명주기(start/stop)를 이 앱이 소유하는 유일한 대상이고,
-/// D10 브리지 주소가 실측으로 확정된 유일한 대상이다.
-pub const COLIMA_CONTEXT: &str = "colima";
+/// D10 기본 프로필 실측은 전용 프로필 검증을 대신하지 않는다(D43).
+pub use crate::services::process::colima_context;
 
 /// 외부 클러스터의 기본 네임스페이스. `default`를 쓰지 않는다 — 공유 IDP 클러스터의
 /// default는 남의 영역이고, prune/삭제 사고의 반경이 너무 넓다.
@@ -21,7 +21,7 @@ pub const DEFAULT_EXTERNAL_NAMESPACE: &str = "kubemetal";
 /// `describe_deploy_operation`의 InstallKagent 요약)도 이 규칙을 그대로 써야 한다 — 두 번째
 /// 판정 규칙을 새로 만들면 축이 어긋난다(D33이 고친 것과 같은 종류의 결함).
 pub fn context_is_colima(context: &str) -> bool {
-    context == COLIMA_CONTEXT
+    context == colima_context()
 }
 
 // IPC 타입은 프로젝트 규약대로 snake_case를 유지한다(`src/types/ipc.ts` 상단 주석).
@@ -72,7 +72,7 @@ pub struct DeployTarget {
 
 impl DeployTarget {
     pub fn for_context(context: &str) -> Self {
-        if context == COLIMA_CONTEXT {
+        if context == colima_context() {
             Self {
                 context: context.to_string(),
                 namespace: "default".into(),
@@ -133,7 +133,10 @@ impl DeployTarget {
         let mut args = vec!["--namespace".to_string(), self.namespace.clone()];
 
         match &self.bridge {
-            BridgeState::KeepBase => args.push("--keep-bridge".into()),
+            BridgeState::KeepBase if self.is_colima() => args.push("--keep-bridge".into()),
+            BridgeState::KeepBase => {
+                return Err("Deploy refused: base bridge is managed-profile-only (D43)".into())
+            }
             BridgeState::Verified { host } => {
                 args.push("--bridge-host".into());
                 args.push(host.clone());
@@ -198,7 +201,7 @@ pub fn active_context() -> (String, String) {
         .read()
         .ok()
         .and_then(|g| g.clone())
-        .unwrap_or_else(|| (COLIMA_CONTEXT.to_string(), "default".to_string()))
+        .unwrap_or_else(|| (colima_context().to_string(), "default".to_string()))
 }
 
 /// 활성 대상의 **실측 검증된** 브리지 호스트.
@@ -358,6 +361,28 @@ en0: flags=8863<UP,BROADCAST>
     }
 
     #[test]
+    fn saved_default_profile_is_external_and_never_promoted_or_rewritten() {
+        let json = r#"{"context":"colima","namespace":"default","storage_class":null,
+            "image_registry":null,"bridge":{"kind":"keep_base"}}"#;
+        let target: DeployTarget = serde_json::from_str(json).unwrap();
+        assert_eq!(target.context, "colima");
+        assert_eq!(target.namespace, "default"); // persisted explicit choice is not migrated
+        assert!(!target.is_colima());
+        assert_eq!(
+            target.effective_integration_level(),
+            IntegrationLevel::AgentOnly
+        );
+        assert!(target.full_stack_gate().is_err());
+        assert!(target.render_args().is_err()); // legacy KeepBase cannot bypass bridge isolation
+        let external = DeployTarget::for_context(&target.context);
+        assert_eq!(external.namespace, DEFAULT_EXTERNAL_NAMESPACE);
+        assert_eq!(
+            external.effective_integration_level(),
+            IntegrationLevel::AgentOnly
+        );
+    }
+
+    #[test]
     fn parses_macos_hex_netmask() {
         let ifaces = parse_ifconfig(IFCONFIG_CLUSTER_UP);
         let bridge = ifaces
@@ -398,8 +423,8 @@ en0: flags=8863<UP,BROADCAST>
     }
 
     #[test]
-    fn colima_target_keeps_verified_d10_defaults() {
-        let t = DeployTarget::for_context(COLIMA_CONTEXT);
+    fn colima_target_keeps_base_d10_bridge_pending_profile_verification() {
+        let t = DeployTarget::for_context(colima_context());
         assert_eq!(t.namespace, "default");
         assert_eq!(t.bridge, BridgeState::KeepBase);
         assert_eq!(
@@ -432,7 +457,7 @@ en0: flags=8863<UP,BROADCAST>
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         // 저장된 대상과 무관한 컨텍스트는 그 컨텍스트의 기본 네임스페이스를 쓴다.
-        assert_eq!(namespace_for_context(COLIMA_CONTEXT), "default");
+        assert_eq!(namespace_for_context(colima_context()), "default");
         assert_eq!(
             namespace_for_context("some-external"),
             DEFAULT_EXTERNAL_NAMESPACE
@@ -451,7 +476,7 @@ en0: flags=8863<UP,BROADCAST>
         );
 
         // 전역 상태를 원복해 다른 테스트에 영향을 주지 않는다.
-        set_active(&DeployTarget::for_context(COLIMA_CONTEXT));
+        set_active(&DeployTarget::for_context(colima_context()));
     }
 
     #[test]
@@ -477,7 +502,7 @@ en0: flags=8863<UP,BROADCAST>
 
     #[test]
     fn full_stack_gate_passes_for_colima_default() {
-        let t = DeployTarget::for_context(COLIMA_CONTEXT);
+        let t = DeployTarget::for_context(colima_context());
         assert_eq!(t.effective_integration_level(), IntegrationLevel::FullStack);
         assert!(t.full_stack_gate().is_ok());
     }

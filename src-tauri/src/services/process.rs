@@ -68,6 +68,37 @@ pub fn external_command(bin: &str) -> Result<tokio::process::Command, String> {
     Ok(cmd)
 }
 
+// D43: isolate our VM; cost: old default VM remains; escape: COLIMA_PROFILE.
+pub const COLIMA_PROFILE: &str = include_str!("../../../scripts/colima-profile.txt");
+static MANAGED_PROFILE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    std::env::var("COLIMA_PROFILE")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| COLIMA_PROFILE.trim().to_string())
+        .trim()
+        .to_string()
+});
+pub static COLIMA_CONTEXT: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| format!("colima-{}", colima_profile()));
+
+pub fn colima_profile() -> &'static str {
+    &MANAGED_PROFILE
+}
+
+pub fn colima_context() -> &'static str {
+    &COLIMA_CONTEXT
+}
+
+pub fn colima_command() -> Result<tokio::process::Command, String> {
+    let mut command = external_command("colima")?;
+    apply_colima_profile(&mut command);
+    Ok(command)
+}
+
+fn apply_colima_profile(command: &mut tokio::process::Command) {
+    command.args(["--profile", colima_profile()]);
+}
+
 /// `tauri.conf.json`의 `bundle.resources`는 `../scripts/k8s/*`, `../scripts/mlx/*`처럼
 /// `src-tauri/` 상위 디렉터리를 참조한다. `.app` 번들 실측(2026-07-21, tauri 2.11.5)으로
 /// 확인한 결과, `resource_dir()`는 언제나 `Contents/Resources`를 가리키지만 번들러는
@@ -200,6 +231,24 @@ mod tests {
 
     /// macOS의 셸은 `/bin`에만 있다(`/usr/bin/bash`는 존재하지 않는다). Air-Gap 스크립트
     /// 실행이 이 경로 누락으로 실패했으므로 회귀를 테스트로 고정한다.
+    #[test]
+    fn dedicated_profile_command_arguments_and_context_agree() {
+        // Inspect arguments only; never execute Colima on the test machine.
+        let mut command = tokio::process::Command::new("unused-test-command");
+        apply_colima_profile(&mut command);
+        command.args(["status", "--json"]);
+        let args: Vec<_> = command
+            .as_std()
+            .get_args()
+            .map(|a| a.to_str().unwrap())
+            .collect();
+        assert_eq!(
+            args,
+            vec!["--profile", colima_profile(), "status", "--json"]
+        );
+        assert_eq!(colima_context(), format!("colima-{}", colima_profile()));
+    }
+
     #[test]
     fn resolve_cli_path_finds_system_shells() {
         for bin in ["bash", "sh"] {

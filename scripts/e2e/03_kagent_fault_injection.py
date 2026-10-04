@@ -10,11 +10,16 @@ KubeMetal E2E Verification Step 3: 고의 장애 파드 주입 후 **클러스�
 """
 
 import json
+import os
+from pathlib import Path
 import subprocess
 import sys
 import time
 
-CONTEXT = "colima"
+PROFILE = os.environ.get("COLIMA_PROFILE") or (
+    Path(__file__).resolve().parents[1] / "colima-profile.txt"
+).read_text().strip()
+CONTEXT = os.environ.get("KUBE_CONTEXT") or f"colima-{PROFILE}"
 DEPLOY_NAME = "e2e-broken-nginx"
 BROKEN_IMAGE = "nginx:non-existent-tag-123456"
 

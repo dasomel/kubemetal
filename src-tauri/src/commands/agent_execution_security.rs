@@ -353,7 +353,7 @@ mod tests {
             session_id: "chat-1".into(),
             policy_version: "kubemetal-agent/v1".into(),
             allowed_tools: vec!["runbook.apply".into(), "k8s.get".into()],
-            allowed_target_prefixes: vec!["cluster:colima/namespace:kubemetal".into()],
+            allowed_target_prefixes: vec!["cluster:test-cluster/namespace:kubemetal".into()],
             issued_at_epoch_s: 100,
             expires_at_epoch_s: 500,
         }
@@ -367,7 +367,7 @@ mod tests {
             "kubemetal-agent/v1",
             "runbook.apply",
             "v1",
-            "cluster:colima/namespace:kubemetal/deployment:demo",
+            "cluster:test-cluster/namespace:kubemetal/deployment:demo",
             args,
         )
         .unwrap()

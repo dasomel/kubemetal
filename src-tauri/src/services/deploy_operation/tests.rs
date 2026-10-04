@@ -1,7 +1,7 @@
 use super::*;
 use crate::commands::kagent::KAGENT_NAMESPACE;
 use crate::services::deploy_target::{
-    DeployTarget, IntegrationLevel, COLIMA_CONTEXT, DEFAULT_EXTERNAL_NAMESPACE,
+    colima_context, DeployTarget, IntegrationLevel, DEFAULT_EXTERNAL_NAMESPACE,
 };
 
 fn confirmed_target(context: &str, namespace: &str) -> ConfirmedOperationTarget {
@@ -19,10 +19,10 @@ fn confirmed_target_matches_actual_target() {
 
 #[test]
 fn confirmed_target_rejects_context_mismatch() {
-    let expected = confirmed_target("colima", "default");
+    let expected = confirmed_target(colima_context(), "default");
     let err = ensure_confirmed_target(&expected, "narwhal", "default")
         .expect_err("a changed context must require reconfirmation");
-    assert!(err.contains("confirmed context='colima'"));
+    assert!(err.contains(&format!("confirmed context='{}'", colima_context())));
     assert!(err.contains("actual context='narwhal'"));
 }
 
@@ -38,7 +38,7 @@ fn confirmed_target_rejects_namespace_mismatch() {
 #[test]
 fn colima_lifecycle_start_cluster_with_no_target() {
     let summary = build_operation_summary("start_cluster", None).unwrap();
-    assert_eq!(summary.context, COLIMA_CONTEXT);
+    assert_eq!(summary.context, colima_context());
     assert_eq!(summary.namespace, "-");
     assert_eq!(summary.action, "start_cluster");
     assert_eq!(summary.risk_class, DeployRiskClass::Local);
@@ -51,7 +51,7 @@ fn colima_lifecycle_stop_cluster_ignores_saved_target() {
     // 저장된 대상이 외부 클러스터여도 colima 수명주기 액션은 항상 colima를 가리켜야 한다.
     let external = DeployTarget::for_context("narwhal");
     let summary = build_operation_summary("stop_cluster", Some(&external)).unwrap();
-    assert_eq!(summary.context, COLIMA_CONTEXT);
+    assert_eq!(summary.context, colima_context());
     assert_eq!(summary.namespace, "-");
     assert_eq!(summary.action, "stop_cluster");
     assert_eq!(summary.risk_class, DeployRiskClass::Local);
@@ -62,7 +62,7 @@ fn colima_lifecycle_stop_cluster_ignores_saved_target() {
 fn colima_lifecycle_start_cluster_with_saved_target() {
     let external = DeployTarget::for_context("narwhal");
     let summary = build_operation_summary("start_cluster", Some(&external)).unwrap();
-    assert_eq!(summary.context, COLIMA_CONTEXT);
+    assert_eq!(summary.context, colima_context());
     assert_eq!(summary.namespace, "-");
     assert_eq!(summary.risk_class, DeployRiskClass::Local);
     assert!(summary.target_description.contains("시작"));
@@ -70,9 +70,9 @@ fn colima_lifecycle_start_cluster_with_saved_target() {
 
 #[test]
 fn local_colima_provision_mlops_stack() {
-    let target = DeployTarget::for_context(COLIMA_CONTEXT);
+    let target = DeployTarget::for_context(colima_context());
     let summary = build_operation_summary("provision_mlops_stack", Some(&target)).unwrap();
-    assert_eq!(summary.context, COLIMA_CONTEXT);
+    assert_eq!(summary.context, colima_context());
     assert_eq!(summary.namespace, "default");
     assert_eq!(summary.action, "provision_mlops_stack");
     assert_eq!(summary.risk_class, DeployRiskClass::Local);
@@ -151,7 +151,7 @@ fn rejects_target_with_empty_context_or_namespace() {
 /// 지어내지 않고 에러로 알려야 한다.
 #[test]
 fn build_operation_summary_rejects_install_kagent() {
-    let target = DeployTarget::for_context(COLIMA_CONTEXT);
+    let target = DeployTarget::for_context(colima_context());
     let err = build_operation_summary("install_kagent", Some(&target))
         .expect_err("install_kagent summaries must go through build_kagent_install_summary");
     assert!(err.contains("build_kagent_install_summary"));
@@ -183,8 +183,8 @@ fn kagent_install_summary_uses_the_resolved_context_verbatim() {
 
 #[test]
 fn kagent_install_summary_is_local_for_colima_context() {
-    let summary = build_kagent_install_summary(COLIMA_CONTEXT, KAGENT_NAMESPACE).unwrap();
-    assert_eq!(summary.context, COLIMA_CONTEXT);
+    let summary = build_kagent_install_summary(colima_context(), KAGENT_NAMESPACE).unwrap();
+    assert_eq!(summary.context, colima_context());
     assert_eq!(summary.namespace, KAGENT_NAMESPACE);
     assert_eq!(summary.risk_class, DeployRiskClass::Local);
     assert!(summary.target_description.contains("로컬 colima"));

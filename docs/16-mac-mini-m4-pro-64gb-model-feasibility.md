@@ -139,7 +139,7 @@ gantt
 1. **메인 최적 모델**: **`Qwen3-Coder-32B-4bit`** 및 **`DeepSeek-R1-Distill-Qwen-32B`**
    * 추론 속도 **11~15 tok/s**로 코드 및 복잡 추론에 우수한 성능 제공.
 2. **KubeMetal VM 예산 설정**:
-   * `colima start --cpu 6 --memory 12` (VM 메모리 **12GB** 할당).
+   * `colima --profile "$(cat scripts/colima-profile.txt)" start --cpu 6 --memory 12` (VM 메모리 **12GB** 할당).
 3. **학습/서빙 가드레일**:
    * 32B 모델까지 파인튜닝 및 서빙 완전 지원.
    * 70B 모델은 파인튜닝을 배제하고 단독 서빙 시 8k 컨텍스트로 제한 구동.

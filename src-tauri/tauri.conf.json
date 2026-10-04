@@ -32,6 +32,8 @@
       "icons/icon.ico"
     ],
     "resources": [
+      "../scripts/colima-profile.txt",
+      "../scripts/colima-profile.sh",
       "../scripts/airgap/*",
       "../scripts/data/*",
       "../scripts/helm/*",

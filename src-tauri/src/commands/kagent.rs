@@ -9,6 +9,7 @@ use crate::commands::mlx::MlxState;
 use crate::commands::provision::ensure_namespace;
 use crate::services::deploy_operation::{ensure_confirmed_target, ConfirmedOperationTarget};
 use crate::services::kagent_agents::{agent_manifest, TOGGLEABLE_AGENTS};
+use crate::services::process::colima_context;
 use crate::services::process::{external_command, resolve_bundled_resource};
 
 /// kagent Helm 릴리스 버전의 단일 출처(D33). `Makefile`의 `kagent-up`도 같은 파일을
@@ -78,8 +79,9 @@ async fn get_pods_json(context: &str, namespace: &str) -> Result<serde_json::Val
                 Err(format!(
                     "🔒 선택된 Kubeconfig 컨텍스트 [{context}]의 클러스터 인증 토큰이 만료되었거나 로그인 자격 증명이 유효하지 않습니다.\n\n\
                     [해결 방법]\n\
-                    1. 로컬 K3s 환경을 사용하시려면 상단 Kubeconfig 셀렉터에서 'colima' 컨텍스트를 선택해 주세요.\n\
-                    2. 원격/외부 클러스터인 경우 클라우드 CLI(gcloud / aws / kubectl login 등)로 재인증을 수행한 뒤 '진단 다시 실행'을 눌러주세요."
+                    1. 로컬 K3s 환경을 사용하시려면 상단 Kubeconfig 셀렉터에서 '{managed_context}' 컨텍스트를 선택해 주세요.\n\
+                    2. 원격/외부 클러스터인 경우 클라우드 CLI(gcloud / aws / kubectl login 등)로 재인증을 수행한 뒤 '진단 다시 실행'을 눌러주세요.",
+                    managed_context = colima_context()
                 ))
             } else {
                 Err(err)
@@ -129,7 +131,7 @@ fn unschedulable_reason(pod: &serde_json::Value) -> Option<String> {
 pub async fn get_kagent_diagnostics(
     context: Option<String>,
 ) -> Result<KagentDiagnosticReport, String> {
-    let target_ctx = context.unwrap_or_else(|| "colima".into());
+    let target_ctx = context.unwrap_or_else(|| colima_context().into());
 
     // MLOps 스택 네임스페이스는 대상마다 다르다 — colima는 default, 외부 클러스터는
     // kubemetal이다(D26). "default"로 고정돼 있을 때는 외부 클러스터를 진단해도 스택
@@ -263,7 +265,7 @@ pub async fn toggle_kagent_agent(
     enable: bool,
     context: Option<String>,
 ) -> Result<String, String> {
-    let target_ctx = context.unwrap_or_else(|| "colima".into());
+    let target_ctx = context.unwrap_or_else(|| colima_context().into());
 
     if enable {
         let manifest = agent_manifest(&agent_name).ok_or_else(|| {

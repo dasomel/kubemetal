@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-colima-dedicated-profile",
+  "task": "Use the owner-authorized dedicated Colima profile with one definition; verify locally without real VM commands",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "scripts/**",
+      "src/**",
+      "Makefile",
+      "README.md",
+      "docs/**",
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Dedicated profile wiring, legacy target fail-safe, docs D43 and strict trace only. D4 sizing and D36 lifecycle guard preserved; no VM, GitHub, push or merge operations."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "provenance": "policy:owner-decision-in-current-session; .agents/skills/kubemetal-hybrid-runtime-change/SKILL.md",
+      "reviewed": true,
+      "summary": "Owner requires fresh dedicated profile with no migration; lead owns on-device checks."
+    },
+    {
+      "id": "e3",
+      "type": "reproduction",
+      "summary": "Read-only audit found implicit default profile in all three lifecycle commands and duplicated managed context in Rust, TS, Makefile and scripts. Negative-control test introduces hardcoded Makefile context and confirms rejection.",
+      "evidence": [
+        "test:scripts/ci/test_colima_profile.py",
+        "artifact:.agents/evals/evidence/2026-10-colima-dedicated-profile.txt"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Profile definition embedded by Rust and read by scripts/Makefile; helper adds explicit profile, backend IPC derives UI context, legacy context remains external L1 and stale KeepBase is refused. Persisted context and explicit namespace are never rewritten."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Profile argument construction, absent-profile status parser, legacy deploy-target fail-safe, default/override and divergence including negative control; no CLI spawning to a real VM",
+      "summary": "Scoped cargo suite: 325 passed, 0 failed, 1 ignored, 4 sandbox bind tests filtered. Separate Rust env override test passes. CI divergence tests: 4 passed.",
+      "evidence": [
+        "test:cargo-scoped-325-pass",
+        "test:rust-profile-override",
+        "test:ci-profile-divergence-four-tests",
+        "artifact:.agents/evals/evidence/2026-10-colima-dedicated-profile.txt"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Compile/static checks only: clippy, cached offline make lint, tsc, web build, CI checks, warning-level shellcheck and each shell syntax check",
+      "summary": "All checks in this scope passed. DESIGN.md linter: zero errors/warnings, one existing info. Build emits existing chunk-size warning.",
+      "evidence": [
+        "test:clippy",
+        "test:make-lint-cached-cli",
+        "test:tsc-build",
+        "test:shellcheck-warning-and-bash-n",
+        "artifact:.agents/evals/evidence/2026-10-colima-dedicated-profile.txt"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "limitations",
+      "summary": "Full cargo test and make verify FAILED solely in find_free_port_errors_when_range_exhausted, find_free_port_skips_occupied_preferred, is_port_free_detects_loopback_holder, is_port_free_detects_wildcard_holder: Operation not permitted. Unfiltered shellcheck exits 1 on pre-existing info/style findings. Original make lint failed DNS before cached retry passed. No real Colima VM, Tauri UI, absent/stopped live-profile or D10 bridge exercise. Makefile fixed 6 CPU/12GB remains out of scope.",
+      "evidence": [
+        "artifact:.agents/evals/evidence/2026-10-colima-dedicated-profile.txt"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "Owner-authorized implementation and scoped local static/unit verification complete. Does not claim full cargo/make-verify success, clean unfiltered shellcheck, UI observation, or real VM/bridge behavior.",
+      "evidence": [
+        "e5",
+        "e6",
+        "e7"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete only for locally implemented and scoped verified behavior claimed in e8; full-suite environment failures and on-device checks remain explicit in e7 for the lead."
+    }
+  ]
+}

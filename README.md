@@ -100,7 +100,8 @@ Kubernetes-manageable accelerator resource has been demonstrated.
 3. Pressing the **Start Cluster** button on the **Dashboard** tab internally runs the
    following command with CPU/memory values auto-derived from detected host RAM.
    ```bash
-   colima start --cpu <N> --memory <M> --vm-type=vz --mount-type=virtiofs --kubernetes
+   source scripts/colima-profile.sh
+   colima --profile "$COLIMA_PROFILE" start --cpu <N> --memory <M> --vm-type=vz --mount-type=virtiofs --kubernetes
    ```
 4. Press **Provision MLOps Stack** to apply the MLflow / SeaweedFS (+ credential Secret) /
    mac-gpu-bridge manifests to the cluster.
@@ -189,8 +190,9 @@ make export-gitops NARWHAL_DIR=/path/to/narwhal CONTEXT=<context> BRIDGE_HOST=<h
 ### Troubleshooting (checking directly via CLI)
 
 ```bash
-colima status --json
-kubectl --context colima get pods -n default
+source scripts/colima-profile.sh
+colima --profile "$COLIMA_PROFILE" status --json
+kubectl --context "$COLIMA_CONTEXT" get pods -n default
 # external cluster
 kubectl --context <context> get pods -n kubemetal
 ```
@@ -277,3 +279,22 @@ model, prompt, and hardware.
 
 See [docs/01-proposal.md §7](docs/01-proposal.md#7-단계별-개발-로드맵-roadmap) (Korean)
 for the detailed roadmap.
+
+### Dedicated Colima profile (D43)
+
+The single profile definition is `scripts/colima-profile.txt`; the managed profile is
+`kubemetal`, VM and Kubernetes context `colima-kubemetal`. Rust, Makefile and scripts
+read that definition. Set `COLIMA_PROFILE` in the app/command environment to override
+it; context is always derived as `colima-<profile>` (use a named, non-default profile).
+
+There is no migration or data copying. An existing `default` VM is untouched and is
+not managed by KubeMetal. Remove it manually with `colima delete` only after accepting
+that **all data in that default VM is lost**. If both VMs run, their RAM allocations
+add up; D4 caps only the KubeMetal VM, not the user's other VM.
+
+A saved deploy target with context `colima` remains a different, external cluster:
+no context rewrite or silent L2 promotion occurs. Its implicit integration becomes
+L1 agent-only; newly selected external targets use namespace `kubemetal`. Saved
+explicit namespace/integration selections remain intact and must be reviewed by the
+owner. The D10 `host.lima.internal` bridge needs on-device verification on this named
+profile; earlier default-profile measurements do not verify it.

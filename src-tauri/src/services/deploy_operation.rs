@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::services::deploy_target::{context_is_colima, DeployTarget, COLIMA_CONTEXT};
+use crate::services::deploy_target::{colima_context, context_is_colima, DeployTarget};
 
 /// 배포 작업 위험 등급: 로컬(colima) 작업과 외부 클러스터 작업을 구분한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,7 +102,7 @@ pub fn build_operation_summary(
     let action_kind = DeployAction::parse(action)?;
     match action_kind {
         DeployAction::StartCluster | DeployAction::StopCluster => Ok(OperationSummary {
-            context: COLIMA_CONTEXT.to_string(),
+            context: colima_context().to_string(),
             namespace: "-".to_string(),
             action: action.to_string(),
             target_description: format!(

@@ -187,7 +187,7 @@ pub async fn stop_local_inference_bridge(
 mod tests {
     use super::*;
     use crate::services::deploy_target::{
-        set_active, BridgeState, DeployTarget, ACTIVE_TARGET_TEST_LOCK, COLIMA_CONTEXT,
+        colima_context, set_active, BridgeState, DeployTarget, ACTIVE_TARGET_TEST_LOCK,
     };
 
     /// 전역 `ACTIVE_BRIDGE` 캐시를 조작하는 테스트라 다른 모듈의 같은 계열 테스트
@@ -198,7 +198,7 @@ mod tests {
         let _guard = ACTIVE_TARGET_TEST_LOCK
             .lock()
             .unwrap_or_else(|e| e.into_inner());
-        set_active(&DeployTarget::for_context(COLIMA_CONTEXT));
+        set_active(&DeployTarget::for_context(colima_context()));
         assert!(allowed_private_bind_host("0.0.0.0").is_err());
         assert!(allowed_private_bind_host("8.8.8.8").is_err());
         assert!(allowed_private_bind_host("127.0.0.1").is_ok());
@@ -217,7 +217,7 @@ mod tests {
         // the address must match the verified bridge exactly, not just be private.
         assert!(allowed_private_bind_host("192.168.1.10").is_err());
 
-        set_active(&DeployTarget::for_context(COLIMA_CONTEXT));
+        set_active(&DeployTarget::for_context(colima_context()));
     }
 
     #[test]
