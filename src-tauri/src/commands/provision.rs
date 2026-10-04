@@ -188,4 +188,28 @@ mod tests {
             assert!(mode & 0o111 != 0, "render.sh is not executable");
         }
     }
+
+    /// D10: Pod→호스트 브리지는 ExternalName Service다. ExternalName에 `ports`를 선언하면
+    /// 안 된다(과거 결함, mistakes log) — 포트는 CNAME에 의미가 없고 선언 시 혼선을 낳는다.
+    /// YAML 크레이트 없이 구조적 텍스트 검사: `type: ExternalName`인 문서에 `ports:` 키 금지.
+    #[test]
+    fn bridge_externalname_service_declares_no_ports() {
+        let text = std::fs::read_to_string(repo_root().join("scripts/k8s/mac-gpu-bridge.yaml"))
+            .expect("read mac-gpu-bridge.yaml");
+        let mut checked = 0;
+        for doc in text.split("\n---") {
+            let has = |key: &str| doc.lines().any(|l| l.trim_start().starts_with(key));
+            if has("type: ExternalName") {
+                checked += 1;
+                assert!(
+                    !has("ports:"),
+                    "D10 broken — ExternalName bridge Service must not declare `ports`"
+                );
+            }
+        }
+        assert!(
+            checked > 0,
+            "expected an ExternalName Service in mac-gpu-bridge.yaml"
+        );
+    }
 }
