@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "openforge-agent-skill-verification/v1",
+  "skill": "kubemetal-hybrid-runtime-change",
+  "skillVersion": "1",
+  "freshSession": true,
+  "agentRuntime": "claude-sonnet-5-5 (Claude Code subagent)",
+  "happyPath": {
+    "status": "pass",
+    "summary": "Fresh-session replay (dasomel/openforge#54, 2026-10-04) selected the skill from its description alone for a bridge/external-cluster task, followed its workflow (AGENTS.md, mistakes-log, D10 registry), and ran a read-only analysis of render.sh for both bridge target kinds: a DNS target renders ExternalName with no ports, an IP target is rewritten to a selector-less Service + EndpointSlice (ports 8080,8081). Both renders exited 0 and no repo file changed.",
+    "evidence": [
+      "research/issue-54-kubemetal-hybrid-runtime-change-replay-2026-10-04.md#step-2-happy-path-read-only-analysis-scratch-only"
+    ]
+  },
+  "edgeCase": {
+    "status": "pass",
+    "summary": "Added a ports entry to the ExternalName bridge in scripts/k8s/mac-gpu-bridge.yaml (D10 hazard). The repository's own test bridge_externalname_service_declares_no_ports failed with cargo exit 101 and the message 'D10 broken'; after git checkout the test passed again (exit 0).",
+    "evidence": [
+      "research/issue-54-kubemetal-hybrid-runtime-change-replay-2026-10-04.md#step-3-failureedge-case-d10-externalname-bridge-must-not-declare-ports"
+    ]
+  },
+  "deterministicChecks": [
+    { "command": "make verify", "status": "pass" },
+    { "command": "cargo test --locked --manifest-path src-tauri/Cargo.toml --lib bridge_externalname", "status": "pass" }
+  ],
+  "unverified": [
+    "make verify-airgap was not run; no change in this replay could invalidate it.",
+    "No real macOS/Tauri/MLX runtime behavior was exercised (no packaged app, no MLX serving or training).",
+    "No real Kubernetes/Colima cluster was started; the bridge was checked only by rendering manifests, not by DNS resolution from a pod or kubectl apply.",
+    "External-cluster L1/L2 tier behavior, live bridge-address measurement, the IP-as-ExternalName hazard and the L1-to-L2 silent promotion hazard were not mutated or tested."
+  ],
+  "verifiedAt": "2026-10-04"
+}
