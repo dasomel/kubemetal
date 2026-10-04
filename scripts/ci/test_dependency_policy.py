@@ -53,6 +53,7 @@ class TracePolicyTests(unittest.TestCase):
     with tempfile.TemporaryDirectory() as directory:
       changed = Path(directory) / 'changed.txt'
       for paths, code in ((['src-tauri/Cargo.lock'], 0),
+                          (['src-tauri/Cargo.lock', 'package.json', 'pnpm-lock.yaml'], 0),
                           (['src-tauri/Cargo.lock', 'src-tauri/Cargo.toml'], 1)):
         changed.write_text('\n'.join(paths) + '\n')
         result = subprocess.run([sys.executable, str(ROOT / 'scripts/ci/check-agent-trace-requirement.py'),
@@ -64,21 +65,31 @@ class TracePolicyTests(unittest.TestCase):
         self.assertEqual(report['traceRequired'], bool(code))
 
 
-  def test_exact_lockfile_only_and_evidence_consistency(self):
+  def test_lockfile_high_risk_set_and_evidence_consistency(self):
     requirement = load('check-agent-trace-requirement')
     evidence = load('check-agent-trace-evidence')
     policy = json.loads((ROOT / '.agents/evals/risk-policy.json').read_text())
-    for paths, exempt in ((['src-tauri/Cargo.lock'], True), ([], False),
-                          (['src-tauri/Cargo.toml'], False),
-                          (['src-tauri/Cargo.lock', 'src-tauri/Cargo.toml'], False),
-                          (['src-tauri/Cargo.lock', 'src-tauri/src/lib.rs'], False),
-                          (['src-tauri/Cargo.lock', 'README.md'], False),
-                          (['src-tauri/Cargo.lock', '.github/workflows/ci.yml'], False)):
+    lock = 'src-tauri/Cargo.lock'
+    cases = (([lock], True), ([], False),
+             (['src-tauri/Cargo.toml'], False),
+             ([lock, 'src-tauri/Cargo.toml'], False),
+             ([lock, 'src-tauri/src/lib.rs'], False),
+             ([lock, '.github/workflows/ci.yml'], False),
+             ([lock, '.agents/evals/risk-policy.json'], False),
+             ([lock, 'scripts/ci/check_versions.py'], False),
+             ([lock, 'pnpm-lock.yaml', 'package.json'], True),
+             ([lock, 'README.md'], True),
+             (['pnpm-lock.yaml'], False))
+    for paths, exempt in cases:
       with self.subTest(paths=paths):
+        has_high = any(requirement.classify([p], policy)[0] == 'high' for p in paths)
         self.assertEqual(requirement.trace_exempt(paths, policy), exempt)
-        self.assertEqual(bool(evidence.high(paths, policy)), bool(paths) and not exempt)
+        self.assertEqual(bool(evidence.high(paths, policy)), has_high and not exempt)
+    # Low-risk-only change: nothing required, nothing exempt.
+    self.assertEqual(requirement.classify(['pnpm-lock.yaml'], policy)[0], 'low')
+    self.assertEqual(evidence.high(['pnpm-lock.yaml'], policy), [])
     self.assertEqual(requirement.classify(['src-tauri/Cargo.lock'], policy)[0], 'high')
-    policy.pop('traceExemptExactFileSets')
+    policy.pop('traceExemptHighRiskFileSets')
     self.assertFalse(requirement.trace_exempt(['src-tauri/Cargo.lock'], policy))
 
 

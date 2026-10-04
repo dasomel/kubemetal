@@ -7,9 +7,11 @@ def load_policy(path):
   if data.get("schemaVersion")!="openforge-agent-risk-policy/v1" or not isinstance(data.get("rules"),list): raise ValueError("invalid risk policy")
   return data
 def trace_exempt(paths,policy):
-  # D1: owner-visible weakening: only an exact file set; cost is no new trace
-  # for dependency resolution changes. Remove policy entry to restore the gate.
-  return bool(paths) and any(set(paths)==set(group) for group in policy.get("traceExemptExactFileSets",[]))
+  # D1: owner-visible weakening: exempt when the HIGH-risk subset of the change equals
+  # one configured set (low-risk files alongside it do not matter). Cost: no new trace
+  # for dependency-resolution-only changes. Remove the policy entry to restore the gate.
+  hr=set(p for p in paths if classify([p],policy)[0]=="high")
+  return bool(hr) and any(hr==set(g) for g in policy.get("traceExemptHighRiskFileSets",[]))
 def classify(paths,policy):
   highest=policy.get("defaultRisk","low"); matches=[]
   if highest not in RISK_ORDER: raise ValueError("unknown default risk")

@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "kubemetal-ci-dependabot-tauri-coupling",
-  "task": "Group Tauri updates, check documented lockfile coupling and narrowly exempt Cargo.lock-only traces",
+  "task": "Group Tauri updates, check documented lockfile coupling and narrowly exempt Cargo.lock-only high-risk change sets from traces",
   "changeContext": {
     "paths": [
       ".github/dependabot.yml",
@@ -30,13 +30,13 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Ecosystem-local Dependabot groups; dependency-free lockfile CI comparison; shared exact Cargo.lock-only trace exception (D1 owner-visible policy weakening)."
+      "summary": "Ecosystem-local Dependabot groups; dependency-free lockfile CI comparison; shared trace exception when the high-risk change set is exactly Cargo.lock (low-risk files such as package.json/pnpm-lock.yaml allowed; D1 owner-visible policy weakening); check_tauri_versions added to make lint."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "Core/plugin mismatch, missing/ambiguous/malformed locks and mixed-file trace exemptions",
+      "scope": "Core/plugin mismatch, missing/ambiguous/malformed locks and high-risk-set trace exemptions",
       "summary": "python3 -m unittest discover -s scripts/ci -p test_*.py -v: Ran 7 tests, OK; real lockfile check_tauri_versions: ok.",
       "evidence": [
         "test:ci-dependency-policy-seven-tests",
@@ -48,7 +48,7 @@
       "type": "verification",
       "status": "passed",
       "scope": "Changed Python scripts and existing relevant lint checks",
-      "summary": "py_compile and git diff --check passed; check_versions: ok; check_ipc_types: OK. make help inspected: no Python-specific lint target; full Rust/frontend make lint not run.",
+      "summary": "py_compile and git diff --check passed; check_versions: ok; check_ipc_types: OK. make lint ran rustfmt --check and clippy -D warnings clean but stopped at npx tsc (node_modules absent), so its Python checks were run directly: check_tauri_versions ok.",
       "evidence": [
         "test:python-compile-and-existing-python-lint"
       ]
