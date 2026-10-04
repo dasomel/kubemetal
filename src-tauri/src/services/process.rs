@@ -68,21 +68,39 @@ pub fn external_command(bin: &str) -> Result<tokio::process::Command, String> {
     Ok(cmd)
 }
 
-// D43: isolate our VM; cost: old default VM remains; escape: COLIMA_PROFILE.
-pub const COLIMA_PROFILE: &str = include_str!("../../../scripts/colima-profile.txt");
+// D43: isolate our VM; cost: old default VM remains; escape: KUBEMETAL_COLIMA_PROFILE.
+pub const KUBEMETAL_COLIMA_PROFILE: &str = include_str!("../../../scripts/colima-profile.txt");
 static MANAGED_PROFILE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-    std::env::var("COLIMA_PROFILE")
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| COLIMA_PROFILE.trim().to_string())
+    std::env::var_os("KUBEMETAL_COLIMA_PROFILE")
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| KUBEMETAL_COLIMA_PROFILE.to_string())
         .trim()
         .to_string()
 });
 pub static COLIMA_CONTEXT: std::sync::LazyLock<String> =
-    std::sync::LazyLock::new(|| format!("colima-{}", colima_profile()));
+    std::sync::LazyLock::new(|| format!("colima-{}", *MANAGED_PROFILE));
 
-pub fn colima_profile() -> &'static str {
-    &MANAGED_PROFILE
+// D43: never redirect invalid overrides to another VM. Context reads retain identity;
+// lifecycle and airgap operations validate before invoking any external command.
+fn validate_colima_profile(value: &str) -> Result<&str, String> {
+    let profile = value.trim();
+    let valid = profile
+        .as_bytes()
+        .first()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && profile
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')
+        && !matches!(profile, "default" | "colima")
+        && !profile.starts_with("colima-");
+    if !valid {
+        return Err(format!("Invalid KUBEMETAL_COLIMA_PROFILE {value:?}: expected [a-z0-9][a-z0-9-]*; default, colima and colima-* are reserved"));
+    }
+    Ok(profile)
+}
+
+pub fn colima_profile() -> Result<&'static str, String> {
+    validate_colima_profile(&MANAGED_PROFILE)
 }
 
 pub fn colima_context() -> &'static str {
@@ -90,13 +108,10 @@ pub fn colima_context() -> &'static str {
 }
 
 pub fn colima_command() -> Result<tokio::process::Command, String> {
+    let profile = colima_profile()?;
     let mut command = external_command("colima")?;
-    apply_colima_profile(&mut command);
+    command.args(["--profile", profile]);
     Ok(command)
-}
-
-fn apply_colima_profile(command: &mut tokio::process::Command) {
-    command.args(["--profile", colima_profile()]);
 }
 
 /// `tauri.conf.json`의 `bundle.resources`는 `../scripts/k8s/*`, `../scripts/mlx/*`처럼
@@ -235,7 +250,7 @@ mod tests {
     fn dedicated_profile_command_arguments_and_context_agree() {
         // Inspect arguments only; never execute Colima on the test machine.
         let mut command = tokio::process::Command::new("unused-test-command");
-        apply_colima_profile(&mut command);
+        command.args(["--profile", colima_profile().unwrap()]);
         command.args(["status", "--json"]);
         let args: Vec<_> = command
             .as_std()
@@ -244,9 +259,32 @@ mod tests {
             .collect();
         assert_eq!(
             args,
-            vec!["--profile", colima_profile(), "status", "--json"]
+            vec!["--profile", colima_profile().unwrap(), "status", "--json"]
         );
-        assert_eq!(colima_context(), format!("colima-{}", colima_profile()));
+        assert_eq!(
+            colima_context(),
+            format!("colima-{}", colima_profile().unwrap())
+        );
+    }
+
+    #[test]
+    fn managed_profile_validation() {
+        for value in ["kubemetal", "my-vm2", "  my-vm2 \n"] {
+            assert_eq!(validate_colima_profile(value).unwrap(), value.trim());
+        }
+        for value in [
+            "",
+            " ",
+            "default",
+            "colima",
+            "colima-foo",
+            "--foo",
+            "../x",
+            "A",
+            "a b",
+        ] {
+            assert!(validate_colima_profile(value).is_err(), "{value:?}");
+        }
     }
 
     #[test]

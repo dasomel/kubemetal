@@ -7,6 +7,9 @@
 # 규칙을 각자 들고 있으면 규칙 쪽에서 다시 어긋나므로, 두 함수 모두 여기서만 정의한다.
 # ==============================================================================
 
+# shellcheck source=scripts/colima-profile.sh
+. "$(dirname "${BASH_SOURCE[0]}")/../colima-profile.sh"
+
 # Shell entrypoints inherit a caller's PATH; resolve optional tools once, then
 # invoke the resolved path (the desktop backend has its own Rust resolver).
 resolve_cli_path() {
@@ -47,7 +50,7 @@ image_archive_name() {
 # stdout: <registry@sha256 digest|unverified>
 image_repo_digest_lock_value() {
   local image="$1" repo_digest
-  repo_digest="$(docker inspect --format='{{range .RepoDigests}}{{println .}}{{end}}' "$image" 2>/dev/null | head -n 1)" || return 1
+  repo_digest="$(docker --context "$COLIMA_CONTEXT" inspect --format='{{range .RepoDigests}}{{println .}}{{end}}' "$image" 2>/dev/null | head -n 1)" || return 1
   if [ -z "$repo_digest" ]; then
     printf '%s\n' 'unverified'
   else
@@ -59,7 +62,7 @@ image_repo_digest_lock_value() {
 # content-addressed ID다.
 # stdout: <sha256 image ID>
 image_id_lock_value() {
-  docker image inspect --format='{{.Id}}' "$1" 2>/dev/null
+  docker --context "$COLIMA_CONTEXT" image inspect --format='{{.Id}}' "$1" 2>/dev/null
 }
 
 # digests.lock의 writer. 레코드는

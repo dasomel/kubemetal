@@ -3,7 +3,7 @@ use tauri::Manager;
 
 use crate::services::lifecycle_guard::{self, Operation};
 use crate::services::process::{
-    colima_command, colima_context, external_command, resolve_bundled_resource,
+    colima_command, colima_context, colima_profile, external_command, resolve_bundled_resource,
 };
 
 /// colima 0.10.x `status --json` 실측 스키마: 기동 중일 때만 exit 0 + stdout에
@@ -460,6 +460,8 @@ async fn run_airgap_script(
     }
 
     let output = external_command("bash")?
+        .env("KUBEMETAL_COLIMA_PROFILE", colima_profile()?)
+        .env("DOCKER_CONTEXT", colima_context())
         .arg(&script_path)
         .output()
         .await

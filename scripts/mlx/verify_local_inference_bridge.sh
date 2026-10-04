@@ -35,13 +35,13 @@ probe() {
 probe "macOS loopback" "http://127.0.0.1:${TARGET_PORT}/health"
 probe "private bridge on host" "http://${BRIDGE_HOST}:${BRIDGE_PORT}/health"
 
-if ! colima --profile "$COLIMA_PROFILE" status >/dev/null 2>&1; then
+if ! colima --profile "$KUBEMETAL_COLIMA_PROFILE" status >/dev/null 2>&1; then
   echo "Colima is not running; VM/K3s bridge verification skipped." >&2
   exit 3
 fi
 
 printf '%-26s %s ... ' "Colima VM" "http://host.lima.internal:${BRIDGE_PORT}/health"
-if colima --profile "$COLIMA_PROFILE" ssh -- sh -lc "command -v curl >/dev/null 2>&1 && curl -fsS --max-time 5 http://host.lima.internal:${BRIDGE_PORT}/health"; then
+if colima --profile "$KUBEMETAL_COLIMA_PROFILE" ssh -- sh -lc "command -v curl >/dev/null 2>&1 && curl -fsS --max-time 5 http://host.lima.internal:${BRIDGE_PORT}/health"; then
   echo
   echo "Colima VM → KubeMetal private bridge → oMLX: OK"
 else

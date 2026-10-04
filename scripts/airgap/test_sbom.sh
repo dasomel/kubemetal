@@ -63,6 +63,8 @@ printf '%s' "${TEST_SYFT_WHITESPACE:-}"
 SH
 cat > "$TEST_DIR/bin/docker" <<'SH'
 #!/usr/bin/env bash
+[ "$1" = --context ] && [ "$2" = "$COLIMA_CONTEXT" ] || exit 64
+shift 2
 set -euo pipefail
 printf 'docker %s\n' "$*" >> "$TEST_CALLS"
 case "$1" in
@@ -79,7 +81,7 @@ printf 'provision\n' >> "$TEST_CALLS"
 SH
 done
 chmod +x "$TEST_DIR/bin/"*
-for cli in bash dirname python3; do ln -s "$(command -v "$cli")" "$TEST_DIR/no-syft/$cli"; done
+for cli in bash cat dirname python3; do ln -s "$(command -v "$cli")" "$TEST_DIR/no-syft/$cli"; done
 export PATH="$TEST_DIR/bin:$PATH"
 
 generate() { bash "$SCRIPT_DIR/generate_sbom.sh"; }

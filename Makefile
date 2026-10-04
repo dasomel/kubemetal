@@ -8,8 +8,13 @@ CARGO_MANIFEST := src-tauri/Cargo.toml
 # 배포 대상(D26). 기본값은 colima — 지정하지 않으면 기존 동작 그대로다.
 # 외부 클러스터 예: make provision CONTEXT=narwhal NAMESPACE=kubemetal \
 #                     BRIDGE_HOST=192.168.56.1 STORAGE_CLASS=nfs-csi
-COLIMA_PROFILE ?= $(shell cat scripts/colima-profile.txt)
-COLIMA_CONTEXT := colima-$(COLIMA_PROFILE)
+# Validate through the same shell source, including command-line overrides.
+COLIMA_PROFILE_CHECK := $(shell $(if $(filter undefined,$(origin KUBEMETAL_COLIMA_PROFILE)),,KUBEMETAL_COLIMA_PROFILE='$(subst ','"'"',$(KUBEMETAL_COLIMA_PROFILE))') bash -c 'source scripts/colima-profile.sh; printf "%s" "$$KUBEMETAL_COLIMA_PROFILE"')
+ifeq ($(COLIMA_PROFILE_CHECK),)
+$(error Invalid managed Colima profile; see diagnostic above)
+endif
+override KUBEMETAL_COLIMA_PROFILE := $(COLIMA_PROFILE_CHECK)
+COLIMA_CONTEXT := colima-$(KUBEMETAL_COLIMA_PROFILE)
 CONTEXT ?= $(COLIMA_CONTEXT)
 NAMESPACE ?= $(if $(filter $(COLIMA_CONTEXT),$(CONTEXT)),default,kubemetal)
 STORAGE_CLASS ?=
@@ -179,10 +184,10 @@ verify: test lint license-check ## 완료 게이트 스위트 (test + lint + 라
 	pnpm build
 
 cluster-up: ## Colima K3s 시작 (vz/virtiofs, 6CPU/12GB — 64GB 호스트 D4 값)
-	colima --profile $(COLIMA_PROFILE) start --cpu 6 --memory 12 --vm-type=vz --mount-type=virtiofs --kubernetes
+	colima --profile $(KUBEMETAL_COLIMA_PROFILE) start --cpu 6 --memory 12 --vm-type=vz --mount-type=virtiofs --kubernetes
 
 cluster-down: ## Colima 정지
-	colima --profile $(COLIMA_PROFILE) stop
+	colima --profile $(KUBEMETAL_COLIMA_PROFILE) stop
 
 # 매니페스트 목록은 `scripts/k8s/kustomization.yaml`이 단일 출처다 — 예전에는 여기와
 # `provision.rs::MANIFESTS`에 같은 목록이 이중으로 있어 한쪽만 바뀌면 조용히 어긋났다.
@@ -266,7 +271,7 @@ forward-stop: ## 포트포워딩 프로세스 종료 (mlflow/seaweedfs/kagent �
 	-pkill -f "port-forward.*svc/kagent-ui"
 
 status: ## 클러스터·파드 상태 요약
-	-colima --profile $(COLIMA_PROFILE) status --json
+	-colima --profile $(KUBEMETAL_COLIMA_PROFILE) status --json
 	-$(KUBECTL) get pods
 
 # CodeGraph는 선택 도구다(docs/18). 미설치 환경에서 알 수 없는 오류로 죽지 않도록 먼저 안내한다.

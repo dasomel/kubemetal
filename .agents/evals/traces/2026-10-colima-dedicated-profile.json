@@ -30,7 +30,7 @@
     {
       "id": "e3",
       "type": "reproduction",
-      "summary": "Read-only audit found implicit default profile in all three lifecycle commands and duplicated managed context in Rust, TS, Makefile and scripts. Negative-control test introduces hardcoded Makefile context and confirms rejection.",
+      "summary": "Review reproduced unvalidated overrides, ambient Docker context and weak divergence scanning. Negative controls reject split literals, bare command factories, hardcoded contexts and an additional bare lifecycle command.",
       "evidence": [
         "test:scripts/ci/test_colima_profile.py",
         "artifact:.agents/evals/evidence/2026-10-colima-dedicated-profile.txt"
@@ -39,39 +39,35 @@
     {
       "id": "e4",
       "type": "bug_fix",
-      "summary": "Profile definition embedded by Rust and read by scripts/Makefile; helper adds explicit profile, backend IPC derives UI context, legacy context remains external L1 and stale KeepBase is refused. Persisted context and explicit namespace are never rewritten."
+      "summary": "Validate namespaced profile override in Rust/shell/Makefile, explicitly select managed Docker context and scan all consumers. Saved legacy target behavior unchanged and documented."
     },
     {
       "id": "e5",
       "type": "regression_verification",
       "status": "passed",
       "scope": "Profile argument construction, absent-profile status parser, legacy deploy-target fail-safe, default/override and divergence including negative control; no CLI spawning to a real VM",
-      "summary": "Scoped cargo suite: 325 passed, 0 failed, 1 ignored, 4 sandbox bind tests filtered. Separate Rust env override test passes. CI divergence tests: 4 passed.",
+      "summary": "Current scoped cargo suite: 326 passed, 0 failed, 1 ignored, 4 bind tests filtered. Python suite: 5 passed. Docker-context shim suites passed.",
       "evidence": [
-        "test:cargo-scoped-325-pass",
-        "test:rust-profile-override",
-        "test:ci-profile-divergence-four-tests",
-        "artifact:.agents/evals/evidence/2026-10-colima-dedicated-profile.txt"
+        "artifact:.agents/evals/evidence/2026-10-colima-dedicated-profile.txt",
+        "test:scripts/ci/test_colima_profile.py",
+        "test:scripts/airgap/test_digest_lock.sh",
+        "test:scripts/airgap/test_sbom.sh"
       ]
     },
     {
       "id": "e6",
       "type": "verification",
       "status": "passed",
-      "scope": "Compile/static checks only: clippy, cached offline make lint, tsc, web build, CI checks, warning-level shellcheck and each shell syntax check",
-      "summary": "All checks in this scope passed. DESIGN.md linter: zero errors/warnings, one existing info. Build emits existing chunk-size warning.",
+      "scope": "Current clippy, shell syntax and whitespace checks; six scripts pass warning-level shellcheck; seventh retains existing SC2155 warnings.",
+      "summary": "Clippy, seven bash syntax checks and diff whitespace pass. No current tsc/build claim. Trace requirement/evidence checks and all 38 baseline comparisons pass.",
       "evidence": [
-        "test:clippy",
-        "test:make-lint-cached-cli",
-        "test:tsc-build",
-        "test:shellcheck-warning-and-bash-n",
         "artifact:.agents/evals/evidence/2026-10-colima-dedicated-profile.txt"
       ]
     },
     {
       "id": "e7",
       "type": "limitations",
-      "summary": "Full cargo test and make verify FAILED solely in find_free_port_errors_when_range_exhausted, find_free_port_skips_occupied_preferred, is_port_free_detects_loopback_holder, is_port_free_detects_wildcard_holder: Operation not permitted. Unfiltered shellcheck exits 1 on pre-existing info/style findings. Original make lint failed DNS before cached retry passed. No real Colima VM, Tauri UI, absent/stopped live-profile or D10 bridge exercise. Makefile fixed 6 CPU/12GB remains out of scope.",
+      "summary": "Current full cargo suite: 326 passed, 4 sandbox bind failures, 1 ignored; names in artifact. Lead rerun outside sandbox outstanding. Three pre-existing SC2155 warnings retained. No VM/UI/D10 observation. KeepBase bridge, UI race and fixed Makefile sizing unchanged. Historical lead cargo result on 9ea7c6a: 329 passed, 0 failed, 1 ignored; not current evidence.",
       "evidence": [
         "artifact:.agents/evals/evidence/2026-10-colima-dedicated-profile.txt"
       ]
@@ -79,7 +75,7 @@
     {
       "id": "e8",
       "type": "completion_claim",
-      "summary": "Owner-authorized implementation and scoped local static/unit verification complete. Does not claim full cargo/make-verify success, clean unfiltered shellcheck, UI observation, or real VM/bridge behavior.",
+      "summary": "All requested local review fixes implemented and scoped unit/static verification passed. This claim excludes full cargo-suite success, warning-free shellcheck, UI/VM observations and D10 runtime validation; their observed limits are explicit in e7.",
       "evidence": [
         "e5",
         "e6",
@@ -90,7 +86,7 @@
       "id": "e9",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete only for locally implemented and scoped verified behavior claimed in e8; full-suite environment failures and on-device checks remain explicit in e7 for the lead."
+      "summary": "Complete for the owner-requested local fixes and scoped verification only. No real VM operation was authorized or performed; lead full-suite rerun and runtime checks remain outside this completion claim."
     }
   ]
 }

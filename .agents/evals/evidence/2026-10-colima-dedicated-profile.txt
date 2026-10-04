@@ -1,317 +1,36 @@
-D43 local verification, 2026-10-04. No real colima/limactl/kubectl or VM lifecycle command was executed.
-UI/runtime and the non-default-profile D10 bridge are not verified.
-Dependencies copied from main checkout after matching pnpm-lock.yaml SHA1 f5822b574fa9b5d74de4d6ad55924fdfcc4f8462.
-Initial pnpm install --offline failed (missing tarball); online install and initial make lint failed with ENOTFOUND.
-Cached DESIGN.md CLI 0.4.0 used for successful offline make lint; no tracked dependency changes.
-bash -n: all six touched shell files checked individually, exit 0.
-python3 -m py_compile: changed Python scripts, exit 0.
-git diff --check: exit 0. Makefile cluster-up 6 CPU/12GB retained as requested (D4 duplication out of scope).
-
-$ cargo test --locked --manifest-path src-tauri/Cargo.toml (exit 101; full suite)
-test commands::metrics::tests::hung_benchmark_process_is_killed_on_timeout ... ok
-
-failures:
-
----- services::ports::tests::find_free_port_errors_when_range_exhausted stdout ----
-
-thread 'services::ports::tests::find_free_port_errors_when_range_exhausted' (21219140) panicked at src/services/ports.rs:187:64:
-bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
-
----- services::ports::tests::find_free_port_skips_occupied_preferred stdout ----
-
-thread 'services::ports::tests::find_free_port_skips_occupied_preferred' (21219144) panicked at src/services/ports.rs:178:64:
-bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
-
----- services::ports::tests::is_port_free_detects_wildcard_holder stdout ----
-
-thread 'services::ports::tests::is_port_free_detects_wildcard_holder' (21219147) panicked at src/services/ports.rs:158:68:
-bind wildcard: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
-
----- services::ports::tests::is_port_free_detects_loopback_holder stdout ----
-
-thread 'services::ports::tests::is_port_free_detects_loopback_holder' (21219146) panicked at src/services/ports.rs:171:66:
-bind loopback: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
-
-
-failures:
-    services::ports::tests::find_free_port_errors_when_range_exhausted
-    services::ports::tests::find_free_port_skips_occupied_preferred
-    services::ports::tests::is_port_free_detects_loopback_holder
-    services::ports::tests::is_port_free_detects_wildcard_holder
-
-test result: FAILED. 325 passed; 4 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.12s
-
-error: test failed, to rerun pass `--lib`
-
-$ cargo test ... -- --skip <four sandbox port tests> (exit 0; scoped suite)
-
-test result: ok. 325 passed; 0 failed; 1 ignored; 0 measured; 4 filtered out; finished in 2.12s
-
-     Running unittests src/main.rs (src-tauri/target/debug/deps/kubemetal-592744944edab373)
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-   Doc-tests kubemetal_lib
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-
-$ COLIMA_PROFILE=isolated-test cargo test ... dedicated_profile_command_arguments_and_context_agree (exit 0)
-    Blocking waiting for file lock on build directory
-   Compiling kubemetal v0.2.0 (/private/tmp/claude-501/-Users-m-Documents-IdeaProjects-20-dasomel-kubemetal/2b62847c-7869-41ec-af68-f005c46193f0/scratchpad/wt/l5-colima/src-tauri)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.99s
-     Running unittests src/lib.rs (src-tauri/target/debug/deps/kubemetal_lib-633aa45ce1049ae5)
-
-running 1 test
-test services::process::tests::dedicated_profile_command_arguments_and_context_agree ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 329 filtered out; finished in 0.00s
-
-     Running unittests src/main.rs (src-tauri/target/debug/deps/kubemetal-592744944edab373)
-
-running 0 tests
-
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
-
-
-$ cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings (exit 0)
-   Compiling kubemetal v0.2.0 (/private/tmp/claude-501/-Users-m-Documents-IdeaProjects-20-dasomel-kubemetal/2b62847c-7869-41ec-af68-f005c46193f0/scratchpad/wt/l5-colima/src-tauri)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 17.87s
-
-$ npm_config_offline=true make lint (exit 0; cached DESIGN.md CLI)
-cargo fmt --manifest-path src-tauri/Cargo.toml --check
-cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.69s
-npx tsc --noEmit
-npx @google/design.md lint DESIGN.md
-{
-  "findings": [
-    {
-      "severity": "info",
-      "message": "Design system defines 14 colors, 7 typography scales, 5 rounding levels, 7 spacing tokens, 13 components.",
-      "rule": "token-summary"
-    }
-  ],
-  "summary": {
-    "errors": 0,
-    "warnings": 0,
-    "infos": 1
-  }
-}
-# invoke<T>의 T는 검증되지 않는 주장이라 tsc가 못 잡는다 — Rust 반환 타입과 대조한다.
-python3 scripts/ci/check_ipc_types.py
-invoke 호출 96건 — 대조 31 · 구조체 반환 55 · 타입 인자 없음 10
-OK: Rust 반환 타입과 invoke<T> 주석이 일치한다.
-# 앱 버전(package.json/Cargo/tauri.conf)과 react/react-dom 락 버전 일치 대조.
-python3 scripts/ci/check_versions.py
-check_versions: ok
-python3 scripts/ci/test_colima_profile.py
-....
-----------------------------------------------------------------------
-Ran 4 tests in 0.085s
-
-OK
-
-$ pnpm exec tsc --noEmit (exit 0; no stdout)
-(no stdout)
-
-$ pnpm build (exit 0)
-
-> kubemetal@0.2.0 build /private/tmp/claude-501/-Users-m-Documents-IdeaProjects-20-dasomel-kubemetal/2b62847c-7869-41ec-af68-f005c46193f0/scratchpad/wt/l5-colima
-> tsc && vite build
-
-vite v8.2.2 building client environment for production...
-transforming...
-✓ 1915 modules transformed.
-rendering chunks...
-computing gzip size...
-dist/index.html                   0.57 kB │ gzip:   0.38 kB
-dist/assets/index-D2pWzdhk.css   44.11 kB │ gzip:   8.29 kB
-dist/assets/index-BgEeVGwT.js   564.21 kB │ gzip: 146.47 kB
-
-✓ built in 370ms
-[plugin builtin:vite-reporter]
-(!) Some chunks are larger than 500 kB after minification. Consider:
-- Using dynamic import() to code-split the application
-- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
-- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
-
-$ python3 -m unittest discover -s scripts/ci -p test_*.py (exit 0)
-....
-----------------------------------------------------------------------
-Ran 4 tests in 0.087s
-
-OK
-
-$ python3 scripts/ci/test_colima_profile.py (exit 0)
-....
-----------------------------------------------------------------------
-Ran 4 tests in 0.086s
-
-OK
-
-$ python3 scripts/ci/check-mutable-inputs.py <CI workflow and image inputs> (exit 0)
-Mutable-input guard passed for 4 file(s)
-
-$ shellcheck <six touched shell files> (exit 1; existing info/style findings)
-
-In scripts/airgap/install_from_airgap.sh line 22:
-. "${SCRIPT_DIR}/lib.sh"
-  ^--------------------^ SC1091 (info): Not following: scripts/airgap/lib.sh was not specified as input (see shellcheck -x).
-
-
-In scripts/airgap/verify_offline_images.sh line 24:
-. "${SCRIPT_DIR}/lib.sh"
-  ^--------------------^ SC1091 (info): Not following: scripts/airgap/lib.sh was not specified as input (see shellcheck -x).
-
-
-In scripts/airgap/verify_offline_images.sh line 31:
-cleanup() { k delete namespace "$NS" --wait=false >/dev/null 2>&1 || true; }
-^-- SC2329 (info): This function is never invoked. Check usage (or ignored if invoked indirectly).
-
-
-In scripts/airgap/verify_offline_images.sh line 129:
-for i in "${!IMAGES[@]}"; do VERDICTS[$i]=""; done
-                                      ^-- SC2004 (style): $/${} is unnecessary on arithmetic variables.
-
-
-In scripts/airgap/verify_offline_images.sh line 143:
-          VERDICTS[$i]="FAIL — ErrImageNeverPull (런타임에 이미지 없음 = 레지스트리 필요)"
-                   ^-- SC2004 (style): $/${} is unnecessary on arithmetic variables.
-
-
-In scripts/airgap/verify_offline_images.sh line 148:
-          VERDICTS[$i]="PASS — ${reason}"
-                   ^-- SC2004 (style): $/${} is unnecessary on arithmetic variables.
-
-
-In scripts/k8s/remote-reader/setup-remote-reader.sh line 95:
-  https://127.0.0.1:*|https://localhost:*|https://[::1]:*)
-                                                  ^---^ SC2102 (info): Ranges can only match single chars (mentioned due to duplicates).
-
-For more information:
-  https://www.shellcheck.net/wiki/SC1091 -- Not following: scripts/airgap/lib...
-  https://www.shellcheck.net/wiki/SC2102 -- Ranges can only match single char...
-  https://www.shellcheck.net/wiki/SC2329 -- This function is never invoked. C...
-
-$ shellcheck -x --severity=warning <six touched shell files> (exit 0; no stdout)
-(no stdout)
-
-$ make verify (exit 2; same full-suite sandbox port failures)
-
-failures:
-    services::ports::tests::find_free_port_errors_when_range_exhausted
-    services::ports::tests::find_free_port_skips_occupied_preferred
-    services::ports::tests::is_port_free_detects_loopback_holder
-    services::ports::tests::is_port_free_detects_wildcard_holder
-
-test result: FAILED. 325 passed; 4 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.12s
-
-error: test failed, to rerun pass `--lib`
-make: *** [test] Error 101
-
-$ python3 scripts/ci/check-agent-trace-requirement.py --policy .agents/evals/risk-policy.json --changed-files /tmp/colima-evidence/changed.txt (exit 0)
-risk: high; traceRequired: true; traceChanged: true (full output retained under /tmp/colima-evidence/trace-requirement.log)
-
-$ python3 scripts/ci/check-agent-trace-evidence.py --policy .agents/evals/risk-policy.json --changed-files /tmp/colima-evidence/changed.txt --trace .agents/evals/traces/2026-10-colima-dedicated-profile.json (exit 0)
-{
-  "schemaVersion": "openforge-agent-evidence-quality/v1",
-  "highRiskPaths": [
-    ".agents/evals/evidence/2026-10-colima-dedicated-profile.txt",
-    ".agents/evals/traces/2026-10-colima-dedicated-profile.json",
-    "scripts/airgap/install_from_airgap.sh",
-    "scripts/airgap/verify_offline_images.sh",
-    "scripts/ci/check_ipc_types.py",
-    "scripts/ci/test_colima_profile.py",
-    "scripts/k8s/remote-reader/setup-remote-reader.sh",
-    "scripts/k8s/remote-reader/teardown-remote-reader.sh",
-    "scripts/mlx/verify_local_inference_bridge.sh",
-    "src-tauri/src/commands/agent_execution_security.rs",
-    "src-tauri/src/commands/colima.rs",
-    "src-tauri/src/commands/deploy_target.rs",
-    "src-tauri/src/commands/health.rs",
-    "src-tauri/src/commands/kagent.rs",
-    "src-tauri/src/commands/local_inference_bridge.rs",
-    "src-tauri/src/lib.rs",
-    "src-tauri/src/services/deploy_operation.rs",
-    "src-tauri/src/services/deploy_operation/tests.rs",
-    "src-tauri/src/services/deploy_target.rs",
-    "src-tauri/src/services/process.rs",
-    "src-tauri/tauri.conf.json"
-  ],
-  "traceResults": [
-    {
-      "trace": ".agents/evals/traces/2026-10-colima-dedicated-profile.json",
-      "traceId": "kubemetal-colima-dedicated-profile",
-      "status": "evaluated",
-      "failures": []
-    }
-  ],
-  "passed": true,
-  "failures": []
-}
-
-
-$ python3 .agents/evals/gate.py --trace .agents/evals/traces/2026-10-colima-dedicated-profile.json --baseline .agents/evals/baseline.eval.json (exit 0)
-{
-  "schemaVersion": "openforge-agent-eval-comparison/v1",
-  "baselineTraceId": "kubemetal-reference-change",
-  "currentTraceId": "kubemetal-colima-dedicated-profile",
-  "summary": {
-    "regressions": 0,
-    "changed": 1
-  },
-  "regressions": [],
-  "changes": [
-    {
-      "behavior": "trust-and-provenance",
-      "from": "na",
-      "to": "true"
-    }
-  ]
-}
-
-
-$ gate.py --trace <each of 38 committed trace files> --baseline .agents/evals/baseline.eval.json (all exit 0)
-2026-08-mutable-input-guard.json: exit 0
-2026-09-agent-execution-authority-contract.json: exit 0
-2026-09-agent-skill-hybrid-runtime.json: exit 0
-2026-09-branch-hygiene.json: exit 0
-2026-09-dep-tauri-2-11-6.json: exit 0
-2026-09-dependabot-pnpm-action-setup.json: exit 0
-2026-09-dependabot-sha2-0.11-fix.json: exit 0
-2026-09-header-version-single-source.json: exit 0
-2026-09-issue-101-18-rca-agent.json: exit 0
-2026-09-issue-11-13-101-98.json: exit 0
-2026-09-issue-13-kill-hardening.json: exit 0
-2026-09-issue-13-orphan-terminate.json: exit 0
-2026-09-issue-14-dataset-manifest.json: exit 0
-2026-09-issue-18-colima-lifecycle-guard.json: exit 0
-2026-09-issue-18-confirmed-deploy-target.json: exit 0
-2026-09-issue-22-mlx-artifact-manifest.json: exit 0
-2026-09-issue-36-toolchain-pin.json: exit 0
-2026-09-issue-5-airgap-digest-lock.json: exit 0
-2026-09-issue-73-skill-verification.json: exit 0
-2026-09-issue-74-k8s-security-baseline.json: exit 0
-2026-09-issue-9-release-manifest.json: exit 0
-2026-09-issue-98-sbom-containerd-store.json: exit 0
-2026-09-issues-33-12-11-38-mlx-rag.json: exit 0
-2026-09-mlx-reland-13-32-33.json: exit 0
-2026-09-mlx-wake-heartbeat-owner-guard.json: exit 0
-2026-09-openforge-compliance-gaps.json: exit 0
-2026-09-openforge-status-publisher-pin-bump.json: exit 0
-2026-09-prompt-audit-kagent-contracts.json: exit 0
-2026-09-rag-auto-mode.json: exit 0
-2026-09-rag-hybrid-retrieval.json: exit 0
-2026-09-reland-metrics-health.json: exit 0
-2026-09-reland-mlx-guardrails.json: exit 0
-2026-09-sbom-required.json: exit 0
-2026-09-support-bundle-17.json: exit 0
-2026-10-colima-dedicated-profile.json: exit 0
-2026-10-issue-127-airgap-manifest.json: exit 0
-2026-10-issue-142-finetune-start.json: exit 0
-pilot-001.json: exit 0
+D43 review fixes: local verification, 2026-10-04.
+No real colima/limactl/kubectl commands, UI or VM observation.
+Historical lead result: cargo test outside Codex sandbox on 9ea7c6a:
+329 passed, 0 failed, 1 ignored. This does not verify the current fixes.
+
+Current observed passing verification:
+python3 -m unittest discover -s scripts/ci -p 'test_*.py' -v: 5 tests, OK.
+cargo test with four sandbox port tests explicitly skipped:
+326 passed, 0 failed, 1 ignored, 4 filtered; main/doc tests OK (0 tests).
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings: exit 0.
+bash -n: all seven touched shell scripts exit 0.
+shellcheck --severity=warning: six touched scripts exit 0.
+bash scripts/airgap/test_digest_lock.sh: exit 0; digest-lock and 24 archive fixtures passed.
+bash scripts/airgap/test_sbom.sh: exit 0; stub-only SBOM suite passed.
+git diff --check: exit 0.
+check-agent-trace-requirement.py with risk-policy and changed files: exit 0.
+check-agent-trace-evidence.py with risk-policy, changed files and updated trace:
+passed: true, failures: [] (exit 0).
+All 38 trace gate comparisons against baseline pass (zero regressions).
+Trace completion is scoped to requested local fixes; it does not claim full-suite
+success, warning-free shellcheck or any UI/VM/D10 observation.
+No TypeScript changes; tsc not rerun.
+
+Limitations:
+Full cargo test: 326 passed, 4 failed, 1 ignored. Sandbox socket binds report
+Operation not permitted in these services::ports::tests:
+find_free_port_errors_when_range_exhausted
+find_free_port_skips_occupied_preferred
+is_port_free_detects_loopback_holder
+is_port_free_detects_wildcard_holder
+The lead must rerun outside the sandbox after these changes.
+test_digest_lock.sh shellcheck exits 1 on three pre-existing SC2155 warnings:
+TEST_REAL_SHASUM, TEST_REAL_MV, TEST_REAL_MKTEMP (confirmed in 9ea7c6a).
+Named-profile VM, Docker/K3s image store, Tauri UI and D10 bridge unverified.
+KeepBase bridge behavior, UI target-selection race and Makefile 6 CPU/12GB
+hardcode deliberately unchanged.

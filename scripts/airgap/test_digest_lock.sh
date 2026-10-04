@@ -22,6 +22,8 @@ export TEST_SOURCE_REPO_DIGEST TEST_SOURCE_IMAGE_ID TEST_CHANGED_IMAGE_ID
 
 cat > "${SHIM_DIR}/docker" <<'EOF'
 #!/usr/bin/env bash
+[ "$1" = --context ] && [ "$2" = "$COLIMA_CONTEXT" ] || exit 64
+shift 2
 set -euo pipefail
 export LC_ALL=C
 command="$1"
@@ -264,7 +266,7 @@ if ! AIRGAP_DIR="$BUNDLE" KUBE_CONTEXT=test "${SCRIPT_DIR}/install_from_airgap.s
   exit 1
 fi
 grep -q '프로비저닝 성공' "${TEST_DIR}/clean-install.out"
-if docker inspect --format='{{range .RepoDigests}}{{println .}}{{end}}' example.invalid/demo:1.0 | grep -q .; then
+if docker --context "$COLIMA_CONTEXT" inspect --format='{{range .RepoDigests}}{{println .}}{{end}}' example.invalid/demo:1.0 | grep -q .; then
   echo 'docker shim failed to model RepoDigests loss after load' >&2
   exit 1
 fi

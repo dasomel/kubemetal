@@ -101,7 +101,7 @@ Kubernetes-manageable accelerator resource has been demonstrated.
    following command with CPU/memory values auto-derived from detected host RAM.
    ```bash
    source scripts/colima-profile.sh
-   colima --profile "$COLIMA_PROFILE" start --cpu <N> --memory <M> --vm-type=vz --mount-type=virtiofs --kubernetes
+   colima --profile "$KUBEMETAL_COLIMA_PROFILE" start --cpu <N> --memory <M> --vm-type=vz --mount-type=virtiofs --kubernetes
    ```
 4. Press **Provision MLOps Stack** to apply the MLflow / SeaweedFS (+ credential Secret) /
    mac-gpu-bridge manifests to the cluster.
@@ -191,7 +191,7 @@ make export-gitops NARWHAL_DIR=/path/to/narwhal CONTEXT=<context> BRIDGE_HOST=<h
 
 ```bash
 source scripts/colima-profile.sh
-colima --profile "$COLIMA_PROFILE" status --json
+colima --profile "$KUBEMETAL_COLIMA_PROFILE" status --json
 kubectl --context "$COLIMA_CONTEXT" get pods -n default
 # external cluster
 kubectl --context <context> get pods -n kubemetal
@@ -284,7 +284,7 @@ for the detailed roadmap.
 
 The single profile definition is `scripts/colima-profile.txt`; the managed profile is
 `kubemetal`, VM and Kubernetes context `colima-kubemetal`. Rust, Makefile and scripts
-read that definition. Set `COLIMA_PROFILE` in the app/command environment to override
+read that definition. Set `KUBEMETAL_COLIMA_PROFILE` in the app/command environment to override
 it; context is always derived as `colima-<profile>` (use a named, non-default profile).
 
 There is no migration or data copying. An existing `default` VM is untouched and is
@@ -298,3 +298,16 @@ L1 agent-only; newly selected external targets use namespace `kubemetal`. Saved
 explicit namespace/integration selections remain intact and must be reviewed by the
 owner. The D10 `host.lima.internal` bridge needs on-device verification on this named
 profile; earlier default-profile measurements do not verify it.
+
+The `KUBEMETAL_COLIMA_PROFILE` override is trimmed and must match
+`^[a-z0-9][a-z0-9-]*$`. Empty values, `default`, `colima`, and names starting
+with `colima-` are rejected explicitly; there is no silent fallback.
+Airgap Docker calls use the derived managed context.
+
+A saved legacy target with context `colima` becomes an external target under
+agent-only L1 rules and keeps its saved namespace, including `default`.
+Read paths using `active_context()` in `access.rs`, `port_forward.rs`, and
+`prefect.rs` address that other cluster, rather than the managed
+`colima-kubemetal` VM, until the owner re-selects the target. This is intended:
+`colima` is now a different cluster. The AGENTS.md rule “default stays
+colima-only” has this exception only for saved legacy targets.

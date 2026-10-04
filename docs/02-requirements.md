@@ -79,7 +79,7 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 * **FR-01.1**: Rust 백엔드가 CLI 프로세스로 `colima` 명령을 호출하여 macOS `Virtualization.framework` (`vz`) 및 `virtiofs` 기반 K3s 클러스터를 생성/구동/중지해야 한다.
 * **FR-01.2**: 사용자의 RAM 스펙에 맞춰 [1.2 K8s VM 자원 프로파일](#12-k8s-vm-자원-프로파일-호스트-ram-기반-자동-산정)에 따라 K8s 가상머신 자원(CPU, RAM)을 동적으로 조절할 수 있어야 한다.
 * **FR-01.3**: K8s 클러스터 상태(Running/Stopped/Creating) 및 Kubeconfig 엔드포인트를 실시간 감지하여 UI에 표출해야 한다. 상태 판별은 `colima --profile <profile> status --json` 출력을 파싱하는 방식으로 구현하며, 로그 문자열 매칭에 의존해서는 안 된다.
-* **FR-01.4 (CLI 경로 탐색)**: D43에 따라 `scripts/colima-profile.txt`를 단일 프로필 출처로 사용하고 모든 Colima 호출에 `--profile <profile>`을 명시한다. 기본 VM/context는 `colima-kubemetal`이며 `COLIMA_PROFILE` 환경 오버라이드에서 함께 파생한다. macOS GUI 앱은 로그인 셸의 `PATH`를 상속받지 않으므로, Rust 백엔드는 `colima`, `kubectl`, `helm` 등 필수 CLI 바이너리를 `/opt/homebrew/bin`, `/usr/local/bin`, `$HOME/.colima` 등 알려진 표준 경로에서 우선 탐색하고, 탐색 실패 시 사용자에게 경로를 직접 지정하도록 요청해야 한다.
+* **FR-01.4 (CLI 경로 탐색)**: D43에 따라 `scripts/colima-profile.txt`를 단일 프로필 출처로 사용하고 모든 Colima 호출에 `--profile <profile>`을 명시한다. 기본 VM/context는 `colima-kubemetal`이며 `KUBEMETAL_COLIMA_PROFILE` 환경 오버라이드에서 함께 파생한다. macOS GUI 앱은 로그인 셸의 `PATH`를 상속받지 않으므로, Rust 백엔드는 `colima`, `kubectl`, `helm` 등 필수 CLI 바이너리를 `/opt/homebrew/bin`, `/usr/local/bin`, `$HOME/.colima` 등 알려진 표준 경로에서 우선 탐색하고, 탐색 실패 시 사용자에게 경로를 직접 지정하도록 요청해야 한다.
 
 ### FR-02: MLOps 인프라 서비스 자동 프로비저닝
 
@@ -162,7 +162,7 @@ FR-01.2의 동적 자원 조절 시 아래 매핑을 기본 프로파일로 사�
 | `start_cluster` | `{ cpu: u32, memory: u32 }` | `Result<String, String>` | Colima `vz` K8s 클러스터 구동 |
 | `stop_cluster` | None | `Result<String, String>` | Colima K8s 클러스터 중지 |
 | `provision_mlops_stack` | `{ expectedTarget: { context: String, namespace: String } }` | `Result<String, String>` | 활성 배포 대상(D26)에 MLOps 스택 적용. `expectedTarget`은 **필수**(#18 승인 리뷰, 2026-09-28) — 실제로 다시 읽은 대상의 context/namespace와 렌더·적용 전에 비교해 다르면 재확인을 요구한다. 예전에는 `Option`이라 키를 빠뜨린 호출도 `None`으로 역직렬화되어 가드를 조용히 우회할 수 있었다 — 모든 UI 호출자가 이미 값을 넘기고 있었으므로, 키가 빠지면 Tauri 역직렬화 단계에서 즉시 실패하도록 바꿨다. 매니페스트는 `scripts/k8s/render.sh`가 대상에 맞춰 렌더링하고(ns/브리지/StorageClass/레지스트리) 결과를 stdin으로 `kubectl apply`에 흘린다. 외부 대상이 L1 에이전트 온리면(`full_stack_gate`, D30) 렌더보다 먼저 Err, 브리지가 미검증이어도 렌더 전에 Err (FR-02.1) |
-| `get_managed_colima_context` (D43) | None | `String` | 프로필 파일 또는 `COLIMA_PROFILE` 환경에서 파생된 관리 컨텍스트. UI는 자체 컨텍스트 상수를 두지 않는다. 읽기 전용, CLI 호출 없음 |
+| `get_managed_colima_context` (D43) | None | `String` | 프로필 파일 또는 `KUBEMETAL_COLIMA_PROFILE` 환경에서 파생된 관리 컨텍스트. UI는 자체 컨텍스트 상수를 두지 않는다. 읽기 전용, CLI 호출 없음 |
 | `get_deploy_target` (D26) | None | `Result<DeployTarget, String>` | 저장된 배포 대상을 읽는다. 없으면 D43 관리 컨텍스트 기본값. 기존 저장값 `colima`는 외부 L1 대상으로 남으며 자동 재작성하지 않는다. 읽는 즉시 활성 (context, namespace) 캐시에 반영해 포트포워드·크리덴셜 조회 경로가 따라간다 |
 | `save_deploy_target` (D26) | `{ target: DeployTarget }` | `Result<DeployTarget, String>` | 대상을 앱 설정 디렉터리(`deploy-target.json`)에 저장하고 활성 캐시를 갱신. `integration_level`(`agent-only`/`full-stack`, 미지정 시 파생 기본: colima=full-stack, 외부=agent-only — D30)을 포함 |
 | `preflight_deploy_target` (D26) | `{ context: String, namespace: String }` | `Result<PreflightReport, String>` | 대상 클러스터 사전점검을 **전부 실측**으로 수행: 노드/InternalIP, StorageClass와 기본값 유무, ArgoCD CRD 및 대상 ns를 소유한 Application, Kyverno Enforce 정책 목록, 브리지 후보. 배포를 막아야 할 사유는 `blockers`로 올린다(기본 SC 없음 / ArgoCD 소유 / 브리지 후보 없음) |

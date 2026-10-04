@@ -16,9 +16,11 @@ import subprocess
 import sys
 import time
 
-PROFILE = os.environ.get("COLIMA_PROFILE") or (
-    Path(__file__).resolve().parents[1] / "colima-profile.txt"
-).read_text().strip()
+PROFILE = subprocess.check_output(
+    ["bash", "-c", 'source "$1"; printf "%s" "$KUBEMETAL_COLIMA_PROFILE"',
+     "profile", str(Path(__file__).resolve().parents[1] / "colima-profile.sh")],
+    text=True,
+)
 CONTEXT = os.environ.get("KUBE_CONTEXT") or f"colima-{PROFILE}"
 DEPLOY_NAME = "e2e-broken-nginx"
 TARGET_YAML_PATH = os.path.normpath(

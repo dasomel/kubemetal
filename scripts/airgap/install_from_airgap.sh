@@ -138,7 +138,7 @@ else
     echo "  -> 로드: $(basename "$archive")"
     if [ "$VERIFY_IMAGE_IDS" -eq 1 ] && ! verify_preexisting_image_id "$archive"; then
       FAILED+=("image-id-cache-mismatch:$(basename "$archive")")
-    elif gunzip -c "$archive" | docker load; then
+    elif gunzip -c "$archive" | docker --context "$COLIMA_CONTEXT" load; then
       loaded=$((loaded + 1))
       if [ "$VERIFY_IMAGE_IDS" -eq 1 ] && ! verify_loaded_image_id "$archive"; then
         FAILED+=("image-id-mismatch:$(basename "$archive")")
@@ -151,7 +151,7 @@ else
     echo "  -> 로드(비압축): $(basename "$archive")"
     if [ "$VERIFY_IMAGE_IDS" -eq 1 ] && ! verify_preexisting_image_id "$archive"; then
       FAILED+=("image-id-cache-mismatch:$(basename "$archive")")
-    elif docker load -i "$archive"; then
+    elif docker --context "$COLIMA_CONTEXT" load -i "$archive"; then
       loaded=$((loaded + 1))
       if [ "$VERIFY_IMAGE_IDS" -eq 1 ] && ! verify_loaded_image_id "$archive"; then
         FAILED+=("image-id-mismatch:$(basename "$archive")")
