@@ -199,10 +199,15 @@ mod tests {
         let mut checked = 0;
         for doc in text.split("\n---") {
             let has = |key: &str| doc.lines().any(|l| l.trim_start().starts_with(key));
+            // `ports :` / `"ports":` are the same YAML key — compare the key token, not a prefix.
+            let has_ports = doc.lines().any(|l| {
+                let key = l.trim_start().split(':').next().unwrap_or("");
+                key.trim().trim_matches(|c| c == '"' || c == '\'') == "ports" && l.contains(':')
+            });
             if has("type: ExternalName") {
                 checked += 1;
                 assert!(
-                    !has("ports:"),
+                    !has_ports,
                     "D10 broken — ExternalName bridge Service must not declare `ports`"
                 );
             }
