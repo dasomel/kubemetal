@@ -1,0 +1,17 @@
+{
+  "_comment": "Hand-written labels over this repo's docs/*.md (mistakes-log.md excluded: it quotes everything). 'relevant' = docs that state the answer. Identifier queries are rare literal tokens; natural_language queries are paraphrases with little literal overlap.",
+  "queries": [
+    {"id": "i1", "type": "identifier", "text": "graphify", "relevant": ["18-codegraph-graphify-analysis.md"]},
+    {"id": "i2", "type": "identifier", "text": "smolvm", "relevant": ["19-krunkit-smolvm-feasibility.md"]},
+    {"id": "i3", "type": "identifier", "text": "QuantizedMatmul", "relevant": ["03-mvp-design.md"]},
+    {"id": "i4", "type": "identifier", "text": "seccompProfile", "relevant": ["03-mvp-design.md"]},
+    {"id": "i5", "type": "identifier", "text": "kube-router", "relevant": ["03-mvp-design.md"]},
+    {"id": "i6", "type": "identifier", "text": "Colab", "relevant": ["21-remote-compute-external-agents-feasibility.md"]},
+    {"id": "n1", "type": "natural_language", "text": "how do we build a knowledge graph of source code symbols for coding agents", "relevant": ["18-codegraph-graphify-analysis.md"]},
+    {"id": "n2", "type": "natural_language", "text": "which mechanism blocks pod to pod traffic by default in the cluster", "relevant": ["03-mvp-design.md"]},
+    {"id": "n3", "type": "natural_language", "text": "can CUDA programs run on Apple Silicon GPUs through a compatibility layer", "relevant": ["20-cumetal-feasibility.md"]},
+    {"id": "n4", "type": "natural_language", "text": "could a lightweight microVM replace the Linux VM for compute", "relevant": ["19-krunkit-smolvm-feasibility.md"]},
+    {"id": "n5", "type": "natural_language", "text": "where does thermal pressure come from when no command line tool reports it", "relevant": ["01-proposal.md", "03-mvp-design.md"]},
+    {"id": "n6", "type": "natural_language", "text": "run training on a rented cloud notebook instead of the Mac", "relevant": ["21-remote-compute-external-agents-feasibility.md"]}
+  ]
+}

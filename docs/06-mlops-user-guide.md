@@ -58,6 +58,8 @@ MLOps의 핵심은 **"클릭 한 번으로 학습부터 평가까지 자동화"*
    - LanceDB 벡터 데이터베이스가 디스크 기반으로 아주 가볍게 문서 임베딩을 생성합니다.
 2. **시맨틱 검색 테스트**: `시맨틱 검색 테스트` 창에 질문(예: *"Prefect 오케스트레이션 구조는?"*)을 입력하고 **[검색]**을 누르면 문서에서 가장 관련 높은 구절과 유사도(Score)를 즉시 뽑아줍니다.
 
+**검색 모드 평가 (개발자용, #38 일부)**: `python3 scripts/rag/eval_retrieval.py`는 이 리포지터리의 `docs/*.md`(mistakes-log 제외)를 말뭉치로, `scripts/rag/eval/queries.json`의 손으로 라벨링한 12개 질의(identifier 6 / natural_language 6)에 대해 문서 단위 recall@k·MRR을 질의 유형별로 출력합니다. 모델 다운로드·GPU 없이 도는 lexical(FTS5)만 측정하며 dense/hybrid/auto는 임베딩 모델과 LanceDB가 필요해 `not measured`로 표시합니다 — 추정치를 채우지 않습니다. 12개 질의의 소표본이라 모드 간 우열 근거가 아니라 회귀 감지용 기준선이며, 메트릭 계산 자체는 `tests/rag/test_rag_eval.py`가 고정 픽스처로 검증합니다. query rewrite/decomposition 평가는 로컬 MLX 모델 선정(오너 결정) 대기라 범위 밖입니다.
+
 ---
 
 ## 🛠️ 상황별 사용 가이드 (Cheat Sheet)
