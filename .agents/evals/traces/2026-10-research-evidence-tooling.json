@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "traceId": "kubemetal-research-evidence-tooling-2026-10",
+  "task": "Add the shared research evidence recorder, validator, make target and path-filtered CI workflow (openforge#54 rollout)",
+  "consistencyMode": "strict",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/research-evidence.yml",
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped to scripts/research, research/evidence/.gitkeep, make research-check and one CI workflow; application code, existing evidence and other workflows are untouched and no measurement is backfilled"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "The repository's trace requirement checker classified .github/workflows/research-evidence.yml as high risk and exited non-zero because the change set carried no operational trace"
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Copied the recorder and validator unchanged from the OpenForge main branch and added this trace for the high-risk workflow path"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "make research-check exited 0 on the empty evidence directory and the high-risk trace requirement and evidence-quality checkers exited 0 with this file in the changed-file list",
+      "scope": "research evidence validator on an empty evidence directory plus high-risk trace gates for the workflow path",
+      "evidence": [
+        "test:make-research-check-exit-0",
+        "test:check-agent-trace-requirement-and-evidence-exit-0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Local checks only; the new workflow has not run in CI at the time of writing and no recorder run on real measurements was performed",
+      "scope": "Local validator and trace gates for the research evidence tooling addition",
+      "evidence": [
+        "policy:openforge-research-evidence-standard"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Tooling and trace are in place for the repository-checkable scope; real evidence collection starts after merge"
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified at the local checker level"
+    }
+  ]
+}
