@@ -2023,10 +2023,21 @@ mod tests {
             .unwrap();
         let pid = leader.id();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        while !pid_file.exists() && std::time::Instant::now() < deadline {
+        // Existence is not completion: python creates the file empty before writing
+        // the pid, so poll until the content parses.
+        let child_pid: u32 = loop {
+            if let Some(n) = std::fs::read_to_string(&pid_file)
+                .ok()
+                .and_then(|s| s.trim().parse().ok())
+            {
+                break n;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "child pid was not written in time"
+            );
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-        }
-        let child_pid: u32 = std::fs::read_to_string(&pid_file).unwrap().parse().unwrap();
+        };
         let start_time = services::process::process_start_time(pid).unwrap();
         let child_start_time = services::process::process_start_time(child_pid).unwrap();
         assert!(terminate_pid(pid, true, Some(start_time + 1))
