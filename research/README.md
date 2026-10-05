@@ -53,7 +53,7 @@ research/
     <experiment-id>/
 ```
 
-Nothing is pre-created under `evidence/` or `experiments/` — per the standard's rule 6
+`evidence/2026-10.jsonl` holds the first records (2026-10): only events whose revision is a commit on `main`. Events measured on squash-merged or deleted PR-branch heads cannot pass the validator's commit-exists check and are kept in `observations-2026-10-05-unmappable-revisions.md` instead of being dropped or remapped. Nothing else is pre-created under `evidence/` or `experiments/` — per the standard's rule 6
 ("avoid measurement work that materially slows normal development unless the task
 explicitly requires a benchmark/experiment"), a `YYYY-MM.jsonl` file gets created the
 first time a task actually has a measured record to append, not proactively.
