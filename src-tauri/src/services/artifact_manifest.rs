@@ -161,7 +161,7 @@ fn collect_files(dir: &Path) -> Result<Vec<ManifestEntry>, String> {
     Ok(files)
 }
 
-fn sha256_file(path: &Path) -> Result<String, String> {
+pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
     let file =
         File::open(path).map_err(|e| format!("Failed to open artifact {}: {e}", path.display()))?;
     let mut reader = BufReader::new(file);

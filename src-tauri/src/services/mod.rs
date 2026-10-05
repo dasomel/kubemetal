@@ -1,3 +1,5 @@
+#[allow(dead_code)] // wired in S2 (issue #33 staging)
+pub mod adapter_staging;
 pub mod artifact_manifest;
 pub mod deploy_operation;
 pub mod deploy_target;
