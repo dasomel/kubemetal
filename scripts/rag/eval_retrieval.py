@@ -6,6 +6,9 @@ query set. Only modes that run without a model download or GPU are measured
 (lexical / SQLite FTS5). dense, hybrid and auto need an embedding model plus
 LanceDB; they are reported as "not measured", never estimated.
 
+--chunking fixed|heading|both scores the same query set under the production fixed-size
+chunker and/or the opt-in heading-aware Markdown chunker (chunking.py).
+
 Relevance is judged at document (filename) level: ranked chunks are collapsed to
 their first occurrence per document before scoring.
 """
@@ -16,6 +19,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from chunking import chunk_markdown_headings  # noqa: E402
 from rag_host import chunk_text, lexical_search  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
@@ -28,14 +32,21 @@ NOT_MEASURED = {
 }
 
 
-def build_chunks(docs_dir, exclude=()):
-    """Chunk every top-level *.md with the production chunker; filename is the doc id."""
+CHUNKERS = {"fixed": chunk_text, "heading": chunk_markdown_headings}
+
+
+def build_chunks(docs_dir, exclude=(), chunking="fixed"):
+    """Chunk every top-level *.md; filename is the doc id.
+
+    Chunk ids: fixed `name#0`, heading `name#h0` (distinct namespaces, never colliding).
+    """
+    chunker, marker = CHUNKERS[chunking], "h" if chunking == "heading" else ""
     chunks = []
     for path in sorted(Path(docs_dir).glob("*.md")):
         if path.name in exclude:
             continue
-        for index, text in enumerate(chunk_text(path.read_text(encoding="utf-8"))):
-            chunks.append({"id": f"{path.name}#{index}", "text": text, "filename": path.name,
+        for index, text in enumerate(chunker(path.read_text(encoding="utf-8"))):
+            chunks.append({"id": f"{path.name}#{marker}{index}", "text": text, "filename": path.name,
                            "source": str(path), "chunk_index": index})
     return chunks
 
@@ -88,30 +99,39 @@ def main():
     parser.add_argument("--queries", default=str(HERE / "eval" / "queries.json"))
     parser.add_argument("--ks", default="1,3,5")
     parser.add_argument("--exclude", default="mistakes-log.md", help="comma-separated filenames")
+    parser.add_argument("--chunking", choices=("fixed", "heading", "both"), default="fixed")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
     ks = [int(k) for k in args.ks.split(",")]
     queries = json.loads(Path(args.queries).read_text(encoding="utf-8"))["queries"]
-    chunks = build_chunks(args.docs_dir, set(filter(None, args.exclude.split(","))))
-    rows = evaluate(chunks, queries, lexical_search, ks)
-    table = aggregate(rows, ks)
+    exclude = set(filter(None, args.exclude.split(",")))
+    modes = ["fixed", "heading"] if args.chunking == "both" else [args.chunking]
+    runs = {}
+    for mode in modes:
+        chunks = build_chunks(args.docs_dir, exclude, mode)
+        rows = evaluate(chunks, queries, lexical_search, ks)
+        runs[mode] = {"chunks": len(chunks), "rows": rows, "table": aggregate(rows, ks)}
 
     if args.json:
-        print(json.dumps({"corpus_chunks": len(chunks), "queries": len(queries),
-                          "measured": {"lexical": table}, "not_measured": NOT_MEASURED}, indent=2))
+        print(json.dumps({"queries": len(queries), "chunking": {
+            mode: {"corpus_chunks": run["chunks"], "measured": {"lexical": run["table"]}}
+            for mode, run in runs.items()}, "not_measured": NOT_MEASURED}, indent=2))
         return
-    print(f"corpus: {args.docs_dir} ({len(chunks)} chunks), {len(queries)} queries")
+    counts = ", ".join(f"{mode}: {run['chunks']} chunks" for mode, run in runs.items())
+    print(f"corpus: {args.docs_dir} ({counts}), {len(queries)} queries")
     header = ["mode", "type", "n"] + [f"recall@{k}" for k in ks] + ["mrr"]
     print("  ".join(f"{h:<17}" if i < 2 else f"{h:>9}" for i, h in enumerate(header)))
-    for name, m in table.items():
-        cells = [f"{'lexical':<17}", f"{name:<17}", f"{m['n']:>9}"]
-        cells += [f"{m[f'recall@{k}']:>9.3f}" for k in ks] + [f"{m['mrr']:>9.3f}"]
-        print("  ".join(cells))
+    for mode, run in runs.items():
+        for name, m in run["table"].items():
+            cells = [f"{'lexical/' + mode:<17}", f"{name:<17}", f"{m['n']:>9}"]
+            cells += [f"{m[f'recall@{k}']:>9.3f}" for k in ks] + [f"{m['mrr']:>9.3f}"]
+            print("  ".join(cells))
     for mode, reason in NOT_MEASURED.items():
         print(f"{mode:<17}  not measured ({reason})")
-    for row in rows:
-        print(f"  {row['id']} rr={row['rr']:.3f} top3={row['ranked'][:3]}")
+    for mode, run in runs.items():
+        for row in run["rows"]:
+            print(f"  [{mode}] {row['id']} rr={row['rr']:.3f} top3={row['ranked'][:3]}")
 
 
 if __name__ == "__main__":

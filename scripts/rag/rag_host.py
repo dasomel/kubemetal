@@ -256,6 +256,25 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50):
         start += (chunk_size - overlap)
     return chunks
 
+def chunk_records(fpath: Path, content: str, chunking: str = "fixed"):
+    """Index records for one file. "fixed" is the original format, byte for byte.
+
+    "heading" applies only to Markdown (`#` is a comment in .py/.yaml); its ids carry an
+    `h` marker (`name_h0`) so they can never collide with fixed ids (`name_0`).
+    """
+    if chunking == "heading" and fpath.suffix.lower() == ".md":
+        from chunking import chunk_markdown_headings
+        file_chunks, marker = chunk_markdown_headings(content, chunk_size=500, overlap=50), "h"
+    else:
+        file_chunks, marker = chunk_text(content, chunk_size=500, overlap=50), ""
+    return [{
+        "id": f"{fpath.name}_{marker}{idx}",
+        "source": str(fpath),
+        "filename": fpath.name,
+        "chunk_index": idx,
+        "text": chunk
+    } for idx, chunk in enumerate(file_chunks)]
+
 def cmd_index(args):
     docs_dir = Path(args.docs_dir).expanduser().resolve()
     db_path = Path(args.db_path).expanduser().resolve()
@@ -294,17 +313,10 @@ def cmd_index(args):
     for fpath in files:
         try:
             content = fpath.read_text(encoding="utf-8", errors="ignore")
-            file_chunks = chunk_text(content, chunk_size=500, overlap=50)
-            if file_chunks:
+            records = chunk_records(fpath, content, args.chunking)
+            if records:
                 doc_count += 1
-                for idx, chunk in enumerate(file_chunks):
-                    chunks_data.append({
-                        "id": f"{fpath.name}_{idx}",
-                        "source": str(fpath),
-                        "filename": fpath.name,
-                        "chunk_index": idx,
-                        "text": chunk
-                    })
+                chunks_data.extend(records)
         except Exception:
             continue
 
@@ -478,6 +490,7 @@ def main():
     p_index.add_argument("--db-path", default="~/.kubemetal/lancedb")
     p_index.add_argument("--collection", default="default")
     p_index.add_argument("--model", default="sentence-transformers/all-MiniLM-L6-v2")
+    p_index.add_argument("--chunking", choices=("fixed", "heading"), default="fixed")
 
     # query subcommand
     p_query = subparsers.add_parser("query")

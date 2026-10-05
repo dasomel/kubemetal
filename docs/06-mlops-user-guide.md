@@ -60,6 +60,8 @@ MLOps의 핵심은 **"클릭 한 번으로 학습부터 평가까지 자동화"*
 
 **검색 모드 평가 (개발자용, #38 일부)**: `python3 scripts/rag/eval_retrieval.py`는 이 리포지터리의 `docs/*.md`(mistakes-log 제외)를 말뭉치로, `scripts/rag/eval/queries.json`의 손으로 라벨링한 12개 질의(identifier 6 / natural_language 6)에 대해 문서 단위 recall@k·MRR을 질의 유형별로 출력합니다. 모델 다운로드·GPU 없이 도는 lexical(FTS5)만 측정하며 dense/hybrid/auto는 임베딩 모델과 LanceDB가 필요해 `not measured`로 표시합니다 — 추정치를 채우지 않습니다. 12개 질의의 소표본이라 모드 간 우열 근거가 아니라 회귀 감지용 기준선이며, 메트릭 계산 자체는 `tests/rag/test_rag_eval.py`가 고정 픽스처로 검증합니다. query rewrite/decomposition 평가는 로컬 MLX 모델 선정(오너 결정) 대기라 범위 밖입니다.
 
+**헤딩 인식 청킹 (opt-in, #38)**: 기본 인덱싱은 그대로 고정 길이(500자/50자 겹침)입니다. `rag_host.py index ... --chunking heading`을 주면 Markdown(`.md`) 파일만 ATX 헤딩(`#`~`######`) 단위로 나누고, 각 청크 첫 줄에 `[상위 > 하위]` 헤딩 경로를 붙이며(LanceDB/FTS5 스키마 불변), 코드 펜스·표는 쪼개지 않고, 너무 작은 섹션은 병합, 큰 섹션은 같은 500자 상한으로 분할합니다. 한 코드 블록/표 하나가 상한을 넘으면 쪼개지 않고 통째로 둡니다. Setext 헤딩(`===`/`---` 밑줄)은 헤딩으로 인식하지 않습니다. 같은 12개 질의를 두 청커로 비교하려면 `python3 scripts/rag/eval_retrieval.py --chunking both`(`fixed`/`heading` 단독도 가능)를 실행하세요 — 모드별·질의 유형별 recall@k/MRR과 청크 수를 출력하며 lexical만 측정합니다. 12개 질의는 회귀 기준선일 뿐 청커 간 우열의 통계적 근거가 아닙니다.
+
 ---
 
 ## 🛠️ 상황별 사용 가이드 (Cheat Sheet)
