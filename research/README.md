@@ -53,7 +53,7 @@ research/
     <experiment-id>/
 ```
 
-Nothing is pre-created under `evidence/` or `experiments/` — per the standard's rule 6
+`evidence/2026-10.jsonl` holds the first records (2026-10). Nothing is pre-created under `evidence/` or `experiments/` — per the standard's rule 6
 ("avoid measurement work that materially slows normal development unless the task
 explicitly requires a benchmark/experiment"), a `YYYY-MM.jsonl` file gets created the
 first time a task actually has a measured record to append, not proactively.
