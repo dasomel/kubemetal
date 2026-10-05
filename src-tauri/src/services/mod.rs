@@ -1,4 +1,4 @@
-#[allow(dead_code)] // wired in S2 (issue #33 staging)
+#[allow(dead_code)] // Training wired in S2; reconcile/list consumers follow in S3.
 pub mod adapter_staging;
 pub mod artifact_manifest;
 pub mod deploy_operation;

@@ -25,6 +25,7 @@ MLflow 접근 실패는 학습을 막지 않고 "warning" 이벤트만 내보낸
 import argparse
 import json
 import re
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -54,6 +55,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--batch-size", type=int, required=True)
     p.add_argument("--learning-rate", type=float, required=True)
     p.add_argument("--adapter-name", required=True)
+    p.add_argument("--output-dir", required=True)
     p.add_argument("--runtime", choices=["mlx-lm", "mlx-vlm"], default="mlx-lm")
     # 기본값은 앱 없이 단독 실행할 때만 쓰인다 — 앱은 실제 배정된 포트를 명시로 넘긴다.
     # `localhost`가 아니라 `127.0.0.1`이다(D1): macOS에서 localhost는 ::1로도 풀려
@@ -75,8 +77,18 @@ def main() -> int:
         emit({"type": "error", "message": "--train-vision은 mlx-vlm 런타임 전용입니다"})
         return 2
 
-    adapter_path = Path.home() / ".kubemetal" / "adapters" / args.adapter_name
-    adapter_path.mkdir(parents=True, exist_ok=True)
+    adapter_path = Path(args.output_dir)
+    try:
+        # D45: Rust owns staging creation; no fallback or writes before admission.
+        # Rebuilding strips trailing slashes so lstat cannot follow a leaf symlink.
+        metadata = adapter_path.lstat()
+        if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+            raise ValueError("output-dir must be a real directory, not a symlink")
+        if any(adapter_path.iterdir()):
+            raise ValueError("output-dir must be empty")
+    except (OSError, ValueError) as error:
+        emit({"type": "error", "message": str(error)})
+        return 2
 
     reporter = MlflowReporter(
         args.mlflow_uri,

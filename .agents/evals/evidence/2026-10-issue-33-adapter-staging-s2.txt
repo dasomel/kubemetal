@@ -1,0 +1,347 @@
+Issue #33 S2 — observed evidence, 2026-10-06
+Scope: tempdirs, hermetic child stubs and static/lint gates ONLY.
+NOT observed on a real MLX training run, real ~/.kubemetal, or app UI. No VM/Colima started.
+IPC signature, TS types, TRAINING_STATUSES, serving/convert, startup reconcile/list/resume/TTL unchanged.
+Plan: wire wrapper output admission -> Rust attempt/identity -> verified exclusive promotion; retain failures; prove safety by mutation; update D45/docs; local commit only.
+
+cargo test --locked --lib training_staging (manifest-path src-tauri/Cargo.toml), exit 0
+   Compiling kubemetal v0.2.0 (/private/tmp/claude-501/-Users-m-Documents-IdeaProjects-20-dasomel-kubemetal/2b62847c-7869-41ec-af68-f005c46193f0/scratchpad/wt/s2/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.30s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/kubemetal_lib-5209f2ff64b54286)
+
+running 17 tests
+test commands::mlx::training_staging::tests::safety::missing_done_cannot_match_non_utf8_expected_path ... ok
+test commands::mlx::training_staging::tests::safety::stopped_child_late_mlflow_run_id_is_retained ... ok
+test commands::mlx::training_staging::tests::safety::wrapper_error_and_late_done_cannot_erase_stop ... ok
+test commands::mlx::training_staging::tests::file_operations::legacy_name_collision_is_refused_byte_for_byte ... ok
+test commands::mlx::training_staging::tests::safety::killed_zero_exit_with_done_stays_killed ... ok
+test commands::mlx::training_staging::tests::file_operations::staging_is_protected_and_outside_delete_ipc_root ... ok
+test commands::mlx::training_staging::tests::safety::killed_attempt_survives_slot_replacement ... ok
+test commands::mlx::training_staging::tests::safety::reused_pid_does_not_overwrite_next_attempt ... ok
+test commands::mlx::training_staging::tests::safety::forged_done_path_never_publishes_or_promotes ... ok
+test commands::mlx::training_staging::tests::safety::zero_exit_without_done_is_error ... ok
+test commands::mlx::training_staging::tests::safety::failed_exit_cannot_be_overridden_by_done ... ok
+test commands::mlx::training_staging::tests::safety::failed_stop_does_not_claim_killed_or_done ... ok
+test commands::mlx::training_staging::tests::file_operations::spawn_failure_removes_only_new_empty_attempt ... ok
+test commands::mlx::training_staging::tests::safety::manifest_write_failure_is_error_never_done ... ok
+test commands::mlx::training_staging::tests::file_operations::promotion_permission_failure_records_failed ... ok
+test commands::mlx::training_staging::tests::file_operations::promotion_collision_records_failed_and_preserves_both_outputs ... ok
+test commands::mlx::training_staging::tests::file_operations::promotion_waits_for_delete_admission_mutex ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 362 filtered out; finished in 0.53s
+
+
+python3 -m unittest discover -s tests/mlx -v, exit 0
+test_child_failure_marks_run_failed (test_finetune_wrapper.FineTuneStartupTests) ... ok
+test_existing_experiment_starts_run_and_training (test_finetune_wrapper.FineTuneStartupTests) ... ok
+test_missing_experiment_is_created_before_run (test_finetune_wrapper.FineTuneStartupTests) ... ok
+test_unavailable_mlflow_warns_but_training_completes (test_finetune_wrapper.FineTuneStartupTests) ... ok
+test_invalid_output_emits_error_without_any_write (test_output_admission.OutputAdmissionTests) ... ok
+test_output_dir_is_required (test_output_admission.OutputAdmissionTests) ... ok
+test_runtime_output_flag_mapping (test_output_admission.OutputAdmissionTests) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.944s
+
+OK
+
+python3 scripts/ci/check_ipc_types.py, exit 0
+invoke 호출 97건 — 대조 31 · 구조체 반환 56 · 타입 인자 없음 10
+OK: Rust 반환 타입과 invoke<T> 주석이 일치한다.
+
+cargo fmt --check (manifest-path src-tauri/Cargo.toml), exit 0, no output
+
+npm_config_offline=true make lint, exit 0 (local read-only dependency links + cached design.md 0.3.0; no downloads)
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+    Blocking waiting for file lock on build directory
+   Compiling kubemetal v0.2.0 (/private/tmp/claude-501/-Users-m-Documents-IdeaProjects-20-dasomel-kubemetal/2b62847c-7869-41ec-af68-f005c46193f0/scratchpad/wt/s2/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.71s
+npx tsc --noEmit
+npx @google/design.md lint DESIGN.md
+{
+  "findings": [
+    {
+      "severity": "info",
+      "message": "Design system defines 14 colors, 7 typography scales, 5 rounding levels, 7 spacing tokens, 13 components."
+    }
+  ],
+  "summary": {
+    "errors": 0,
+    "warnings": 0,
+    "infos": 1
+  }
+}
+# invoke<T>의 T는 검증되지 않는 주장이라 tsc가 못 잡는다 — Rust 반환 타입과 대조한다.
+python3 scripts/ci/check_ipc_types.py
+invoke 호출 97건 — 대조 31 · 구조체 반환 56 · 타입 인자 없음 10
+OK: Rust 반환 타입과 invoke<T> 주석이 일치한다.
+# 앱 버전(package.json/Cargo/tauri.conf)과 react/react-dom 락 버전 일치 대조.
+python3 scripts/ci/check_versions.py
+check_versions: ok
+# Tauri core/plugin crate <-> npm 짝 버전 결합 대조(docs/dependency-updates.md).
+python3 scripts/ci/check_tauri_versions.py
+check_tauri_versions: ok
+python3 scripts/ci/test_colima_profile.py
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.540s
+
+OK
+
+cargo test --locked --lib (manifest-path src-tauri/Cargo.toml), FINAL CODE, 8 consecutive invocations
+Each exit 101; full suite NOT green. Only four sandbox bind failures (Operation not permitted); no orphan failure.
+RUN 1 EXIT 101
+test services::ports::tests::find_free_port_skips_occupied_preferred ... FAILED
+test services::ports::tests::find_free_port_errors_when_range_exhausted ... FAILED
+test services::ports::tests::is_port_free_detects_loopback_holder ... FAILED
+test services::ports::tests::is_port_free_detects_wildcard_holder ... FAILED
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind loopback: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind wildcard: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+test result: FAILED. 374 passed; 4 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.27s
+RUN 2 EXIT 101
+test services::ports::tests::find_free_port_errors_when_range_exhausted ... FAILED
+test services::ports::tests::find_free_port_skips_occupied_preferred ... FAILED
+test services::ports::tests::is_port_free_detects_loopback_holder ... FAILED
+test services::ports::tests::is_port_free_detects_wildcard_holder ... FAILED
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind loopback: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind wildcard: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+test result: FAILED. 374 passed; 4 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.10s
+RUN 3 EXIT 101
+test services::ports::tests::find_free_port_skips_occupied_preferred ... FAILED
+test services::ports::tests::find_free_port_errors_when_range_exhausted ... FAILED
+test services::ports::tests::is_port_free_detects_loopback_holder ... FAILED
+test services::ports::tests::is_port_free_detects_wildcard_holder ... FAILED
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind loopback: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind wildcard: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+test result: FAILED. 374 passed; 4 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.00s
+RUN 4 EXIT 101
+test services::ports::tests::find_free_port_errors_when_range_exhausted ... FAILED
+test services::ports::tests::find_free_port_skips_occupied_preferred ... FAILED
+test services::ports::tests::is_port_free_detects_loopback_holder ... FAILED
+test services::ports::tests::is_port_free_detects_wildcard_holder ... FAILED
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind loopback: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind wildcard: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+test result: FAILED. 374 passed; 4 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.07s
+RUN 5 EXIT 101
+test services::ports::tests::find_free_port_errors_when_range_exhausted ... FAILED
+test services::ports::tests::find_free_port_skips_occupied_preferred ... FAILED
+test services::ports::tests::is_port_free_detects_loopback_holder ... FAILED
+test services::ports::tests::is_port_free_detects_wildcard_holder ... FAILED
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind loopback: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind wildcard: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+test result: FAILED. 374 passed; 4 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.07s
+RUN 6 EXIT 101
+test services::ports::tests::find_free_port_errors_when_range_exhausted ... FAILED
+test services::ports::tests::find_free_port_skips_occupied_preferred ... FAILED
+test services::ports::tests::is_port_free_detects_loopback_holder ... FAILED
+test services::ports::tests::is_port_free_detects_wildcard_holder ... FAILED
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind loopback: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind wildcard: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+test result: FAILED. 374 passed; 4 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.10s
+RUN 7 EXIT 101
+test services::ports::tests::find_free_port_errors_when_range_exhausted ... FAILED
+test services::ports::tests::find_free_port_skips_occupied_preferred ... FAILED
+test services::ports::tests::is_port_free_detects_loopback_holder ... FAILED
+test services::ports::tests::is_port_free_detects_wildcard_holder ... FAILED
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind loopback: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind wildcard: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+test result: FAILED. 374 passed; 4 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.03s
+RUN 8 EXIT 101
+test services::ports::tests::find_free_port_skips_occupied_preferred ... FAILED
+test services::ports::tests::find_free_port_errors_when_range_exhausted ... FAILED
+test services::ports::tests::is_port_free_detects_loopback_holder ... FAILED
+test services::ports::tests::is_port_free_detects_wildcard_holder ... FAILED
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind loopback: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+bind wildcard: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+test result: FAILED. 374 passed; 4 failed; 1 ignored; 0 measured; 0 filtered out; finished in 3.07s
+
+TRAINING_STATUSES Rust/TS sync observed in all eight logs:
+Run 1: test services::mlx_lifecycle::admission::tests::training_status_sets_match_frontend ... ok
+Run 2: test services::mlx_lifecycle::admission::tests::training_status_sets_match_frontend ... ok
+Run 3: test services::mlx_lifecycle::admission::tests::training_status_sets_match_frontend ... ok
+Run 4: test services::mlx_lifecycle::admission::tests::training_status_sets_match_frontend ... ok
+Run 5: test services::mlx_lifecycle::admission::tests::training_status_sets_match_frontend ... ok
+Run 6: test services::mlx_lifecycle::admission::tests::training_status_sets_match_frontend ... ok
+Run 7: test services::mlx_lifecycle::admission::tests::training_status_sets_match_frontend ... ok
+Run 8: test services::mlx_lifecycle::admission::tests::training_status_sets_match_frontend ... ok
+
+25 mutation negative controls — each compiled/executed and FAILED its named safety test; original sources restored after every mutation.
+Replay: prebuild the crate, then from repo root run python3 .agents/evals/evidence/2026-10-issue-33-adapter-staging-s2-mutations.py (do not run concurrently with edits/builds).
+
+required-output — exit 1
+$ python3 -m unittest discover -s tests/mlx -p test_output_admission.py -k test_output_dir_is_required -v
+FAIL: test_output_dir_is_required (test_output_admission.OutputAdmissionTests)
+FAILED (failures=1)
+
+reject-symlinks — exit 1
+$ python3 -m unittest discover -s tests/mlx -p test_output_admission.py -k test_invalid_output -v
+FAIL: test_invalid_output_emits_error_without_any_write (test_output_admission.OutputAdmissionTests) (kind='symlink')
+FAIL: test_invalid_output_emits_error_without_any_write (test_output_admission.OutputAdmissionTests) (kind='symlink-slash')
+FAILED (failures=2)
+
+reject-nonempty — exit 1
+$ python3 -m unittest discover -s tests/mlx -p test_output_admission.py -k test_invalid_output -v
+FAIL: test_invalid_output_emits_error_without_any_write (test_output_admission.OutputAdmissionTests) (kind='nonempty')
+FAILED (failures=1)
+
+reject-missing-file — exit 1
+$ python3 -m unittest discover -s tests/mlx -p test_output_admission.py -k test_invalid_output -v
+FAIL: test_invalid_output_emits_error_without_any_write (test_output_admission.OutputAdmissionTests) (kind='missing')
+FAIL: test_invalid_output_emits_error_without_any_write (test_output_admission.OutputAdmissionTests) (kind='file')
+FAIL: test_invalid_output_emits_error_without_any_write (test_output_admission.OutputAdmissionTests) (kind='symlink')
+FAIL: test_invalid_output_emits_error_without_any_write (test_output_admission.OutputAdmissionTests) (kind='symlink-slash')
+FAIL: test_invalid_output_emits_error_without_any_write (test_output_admission.OutputAdmissionTests) (kind='nonempty')
+FAILED (failures=5)
+
+lm-output-mapping — exit 1
+$ python3 -m unittest discover -s tests/mlx -p test_output_admission.py -k test_runtime_output -v
+ERROR: test_runtime_output_flag_mapping (test_output_admission.OutputAdmissionTests) (runtime='mlx-lm')
+FAILED (errors=1)
+
+vlm-output-mapping — exit 1
+$ python3 -m unittest discover -s tests/mlx -p test_output_admission.py -k test_runtime_output -v
+ERROR: test_runtime_output_flag_mapping (test_output_admission.OutputAdmissionTests) (runtime='mlx-vlm')
+FAILED (errors=1)
+
+forged-path — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib forged_done_path -- --nocapture
+test commands::mlx::training_staging::tests::safety::forged_done_path_never_publishes_or_promotes ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.09s
+
+requires-done — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib zero_exit_without_done -- --nocapture
+test commands::mlx::training_staging::tests::safety::zero_exit_without_done_is_error ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.11s
+
+manifest-failure-is-error — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib manifest_write_failure -- --nocapture
+test commands::mlx::training_staging::tests::safety::manifest_write_failure_is_error_never_done ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.07s
+
+requires-zero-exit — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib failed_exit_cannot -- --nocapture
+test commands::mlx::training_staging::tests::safety::failed_exit_cannot_be_overridden_by_done ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.08s
+
+stop-intent — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib killed_ -- --nocapture
+test commands::mlx::training_staging::tests::safety::killed_zero_exit_with_done_stays_killed ... FAILED
+test commands::mlx::training_staging::tests::safety::killed_attempt_survives_slot_replacement ... FAILED
+test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 374 filtered out; finished in 2.13s
+
+late-child-event — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib wrapper_error_and_late -- --nocapture
+test commands::mlx::training_staging::tests::safety::wrapper_error_and_late_done_cannot_erase_stop ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.00s
+
+legacy-collision — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib legacy_name_collision -- --nocapture
+test commands::mlx::training_staging::tests::file_operations::legacy_name_collision_is_refused_byte_for_byte ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.02s
+
+same-delete-mutex — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib promotion_waits -- --nocapture
+test commands::mlx::training_staging::tests::file_operations::promotion_waits_for_delete_admission_mutex ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.08s
+
+spawn-cleanup — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib spawn_failure_removes -- --nocapture
+test commands::mlx::training_staging::tests::file_operations::spawn_failure_removes_only_new_empty_attempt ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.04s
+
+rmdir-only — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib spawn_failure_removes -- --nocapture
+test commands::mlx::training_staging::tests::file_operations::spawn_failure_removes_only_new_empty_attempt ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.05s
+
+preserve-older-attempt — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib spawn_failure_removes -- --nocapture
+test commands::mlx::training_staging::tests::file_operations::spawn_failure_removes_only_new_empty_attempt ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.05s
+
+persist-stop-across-slot-replacement — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib killed_attempt_survives -- --nocapture
+test commands::mlx::training_staging::tests::safety::killed_attempt_survives_slot_replacement ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.05s
+
+failed-stop-clear-intent — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib failed_stop_does_not -- --nocapture
+test commands::mlx::training_staging::tests::safety::failed_stop_does_not_claim_killed_or_done ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.04s
+
+delete-root-excludes-staging — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib staging_is_protected -- --nocapture
+test commands::mlx::training_staging::tests::file_operations::staging_is_protected_and_outside_delete_ipc_root ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.04s
+
+promotion-collision-is-failed — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib promotion_collision_records -- --nocapture
+test commands::mlx::training_staging::tests::file_operations::promotion_collision_records_failed_and_preserves_both_outputs ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.08s
+
+promotion-permission-is-failed — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib promotion_permission_failure -- --nocapture
+test commands::mlx::training_staging::tests::file_operations::promotion_permission_failure_records_failed ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.06s
+
+late-mlflow-reconciliation — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib stopped_child_late_mlflow -- --nocapture
+test commands::mlx::training_staging::tests::safety::stopped_child_late_mlflow_run_id_is_retained ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.00s
+
+missing-done-unknown-expected-path — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib missing_done_cannot_match_non_utf8 -- --nocapture
+test commands::mlx::training_staging::tests::safety::missing_done_cannot_match_non_utf8_expected_path ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.00s
+
+same-attempt-slot-ownership — exit 101
+$ cargo test --locked --manifest-path src-tauri/Cargo.toml --lib reused_pid_does_not -- --nocapture
+test commands::mlx::training_staging::tests::safety::reused_pid_does_not_overwrite_next_attempt ... FAILED
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.05s
+
+Additional red-before-fix observations:
+/tmp/s2-before-late-mlflow.log
+assertion `left == right` failed
+  left: None
+ right: Some("actual-child-run")
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 377 filtered out; finished in 0.00s
+/tmp/s2-before-nonutf8-predicate.log
+assertion failed: !CompletionReport::default().matches_expected(&expected)
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 377 filtered out; finished in 0.00s
+/tmp/s2-before-pid-reuse.log
+assertion `left == right` failed
+  left: "killed"
+ right: "running"
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.05s
+
+Exploratory limitation: real non-UTF-8 temp directory creation was refused with Operation not permitted; an initial fixture then panicked during cleanup. Replaced with a predicate-only test on a non-UTF-8 PathBuf. No filesystem support claim for that path.
+
+Compatibility finding (source inspection, not a real Prefect run): scripts/prefect/host_runner.py still omits required --output-dir; its independent fine-tune caller now fails argparse. No silent legacy fallback or second Python promotion implementation was added. Separate Rust lifecycle integration is needed.
+S1 transition table minimally extended: verified/verified_unpromoted -> failed, to persist publication failures without deleting bytes or reviving terminal attempts. Per-attempt stop ownership prevents replaced/reused-PID slots from being overwritten.
+CLAUDE.md adds skill/harness guidance absent in AGENTS.md: hybrid runtime skill read/applied; team harness excluded for this single lane.
+
+HEAD-based Agent Behavior CI gates (after local commit, same final source):
+$ git diff --name-only origin/main...HEAD > /tmp/s2-changed-files.txt
+$ python3 scripts/ci/check-agent-trace-requirement.py --policy .agents/evals/risk-policy.json --changed-files /tmp/s2-changed-files.txt
+Observed exit 0; risk=high, traceRequired=true, traceChanged=true.
+$ python3 scripts/ci/check-agent-trace-evidence.py --policy .agents/evals/risk-policy.json --changed-files /tmp/s2-changed-files.txt --trace .agents/evals/traces/2026-10-issue-33-adapter-staging-s2.json
+Observed exit 0; passed=true, failures=[].
+$ for t in .agents/evals/traces/*.json; do python3 .agents/evals/gate.py --trace "$t" --baseline .agents/evals/baseline.eval.json || echo FAIL "$t"; done
+Observed: all 44 trace gates passed; zero FAIL lines (S2 comparison regressions=0, changed=0).

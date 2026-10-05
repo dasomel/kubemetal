@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-33-adapter-staging-s2",
+  "task": "Wire run_mlx_finetune and required wrapper output-dir to S1 staging; verify completion authority at hermetic unit/static scope only.",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "scripts/mlx/**",
+      "tests/mlx/**",
+      "docs/**",
+      "README.md",
+      ".agents/evals/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Plan: wrapper admission, Rust attempt/marker identity, exit/done-path/manifest/exclusive promotion; failure/stop retention and owned rmdir spawn cleanup; D45/docs/tests/evidence. No IPC signature, capabilities, TS/UI, TRAINING_STATUSES, serving/convert, TTL, startup reconcile/list/checkpoint/warm-start changes; no VM, real training, GitHub mutation or remote commit/push. S1 failure transition minimally extended for publication errors."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Source audit identified direct exist_ok final writes and stdout done authority; 25 actual mutation runs caused their safety tests to fail, plus late-MLflow, missing-evidence/non-UTF8 predicate and reused-PID red-before-fix failures. No real training reproduction.",
+      "evidence": [
+        "artifact:.agents/evals/evidence/2026-10-issue-33-adapter-staging-s2.txt"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Rust owns expected staging path and durable state; child done cannot publish completion. Exit 0 + expected done + verified sha256 manifest + admission-serialized exclusive promotion are required. Existing/legacy names refused untouched; failed/killed attempts kept; spawn cleanup uses only owned record unlink plus empty rmdir. Per-attempt stop ownership survives slot replacement/PID reuse; existing marker PID/sysinfo start-time scheme is reused, unknown birth cannot grant group-signal authority."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "17 Rust training completion boundary tests on tempdirs and 7 Python tests (real Python only with external MLX/HTTP boundaries stubbed, or argparse rejection); 25 mutation controls. Non-UTF8 expected-path case is predicate-only.",
+      "summary": "Observed all scoped tests passing after restoration; every mutation failed its named safety test. Tests cover required/real/empty wrapper out, LM/VLM mapping, forged/duplicate/missing done, failed/killed/failed-stop, manifest write and promotion errors, existing legacy bytes, same delete mutex, staging root exclusion, owned nonrecursive spawn cleanup, late run-ID and replaced/reused slot ownership.",
+      "evidence": [
+        "test:17-rust-staging-boundary-tests-passed",
+        "test:7-python-tests-passed",
+        "test:25-mutations-failed-safety-tests",
+        "artifact:.agents/evals/evidence/2026-10-issue-33-adapter-staging-s2.txt"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Static/lint gates on final code (not runtime MLX/UI evidence)",
+      "summary": "cargo fmt --check, cargo clippy --locked --all-targets -- -D warnings via final make lint, check_ipc_types.py and full npm_config_offline=true make lint all exit 0. Read-only local dependency links and cached design.md 0.3.0 used; initial uncached npx invocation failed DNS before links were prepared.",
+      "evidence": [
+        "test:fmt-clippy-ipc-make-lint-exit-0",
+        "artifact:.agents/evals/evidence/2026-10-issue-33-adapter-staging-s2.txt"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "environment_limit",
+      "status": "failed",
+      "summary": "Full cargo test --locked --lib ran eight consecutive times on final code, each exit 101: 374 passed, 4 failed, 1 ignored. Each failure is a sandbox bind Operation not permitted: services::ports::tests::{find_free_port_errors_when_range_exhausted,find_free_port_skips_occupied_preferred,is_port_free_detects_loopback_holder,is_port_free_detects_wildcard_holder}. No orphan failure; TRAINING_STATUSES Rust/TS sync passed each run. Full suite is NOT claimed passed; lead must rerun outside sandbox."
+    },
+    {
+      "id": "e7",
+      "type": "compatibility_limit",
+      "summary": "Source inspection: independent Prefect host_runner still omits required --output-dir and therefore fails closed at argparse. Kept outside the Rust command slice; no unsafe legacy fallback or second promotion authority. Separate migration required."
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "S2 command/wrapper boundary implemented and observed at the scoped hermetic unit/static level ONLY. This is not a claim of a green full suite, working Prefect fine-tune flow, real MLX training, real ~/.kubemetal or app UI behavior.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "A is limited to actually executed hermetic completion-boundary and static checks. Runtime verification and outside-sandbox full-suite rerun remain unobserved; Prefect caller migration is a separately isolated compatibility limitation."
+    }
+  ]
+}

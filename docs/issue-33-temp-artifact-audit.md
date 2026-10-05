@@ -53,3 +53,18 @@ requested number for a future implemented policy (D43 reserved by caller for
 another PR); no TTL value or decision was invented. No Rust/TS tests, trace gates,
 or app/MLX/cluster verification ran because implementation stopped before changes
 to those paths. The four requested acceptance criteria remain unimplemented.
+
+## S2 implementation update (2026-10-06)
+
+The producer defect above is historical evidence. `run_mlx_finetune` now uses the
+S1 staging service: `~/.kubemetal/adapter-staging/<attempt_id>/out/`, required
+wrapper `--output-dir`, marker PID/start-time identity, and exit/done-path/sha256
+verification before admission-serialized exclusive promotion to `adapters/<name>`.
+Existing final names (including legacy directories without manifests) are refused
+and untouched. Failed/killed attempts remain staged; only a newly created empty
+attempt is removed after spawn failure using rmdir. D45 records the contract;
+D44 remains no signing. No TTL, startup reconcile, list IPC, warm-start resume or
+checkpoint events are implemented in S2. The independent Prefect fine-tune flow
+still omits the new required argument and consequently fails closed; its migration
+needs separate Rust lifecycle integration. No real MLX training, real user artifact
+directory or app UI observation is claimed by this update.
