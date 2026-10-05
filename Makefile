@@ -103,6 +103,7 @@ test: ## Rust·Python·Air-gap 회귀 테스트
 	cargo test --locked --manifest-path $(CARGO_MANIFEST) --lib
 	python3 -m unittest discover -s tests/rag -v
 	python3 -m unittest discover -s tests/mlx -v
+	python3 -m unittest discover -s scripts/support -v
 	bash scripts/airgap/test_sbom.sh
 	bash scripts/airgap/test_digest_lock.sh
 
