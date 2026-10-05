@@ -39,7 +39,7 @@ the release-specific staging sequence.
   offline-safety reason to exclude it from `verify`.
 - `supply-chain-check` gets its own CI job (`ci.yml`, separate from the `verify` job) since
   it needs `cargo-deny` installed and its own network egress, but it still isn't part of
-  `release.yml` — see issue #35 for the remaining provenance/attestation work that would
+  `release.yml` — see issue #35 for the remaining provenance work (not artifact signing or attestation, D44) that would
   fold advisory checks into the release gate.
 
 ## Air-gap image SBOM evidence (issue #98)
@@ -95,9 +95,9 @@ The `gpl_family` flag is a regex heuristic (`gpl_family_note` in the output) and
 miss unusual spellings it doesn't anticipate. Unknown licenses and GPL-family matches
 do not reject an image. The summary is derived information, not a legal conclusion. SBOM content is
 checksum-bound to the manifest, not cryptographically bound to the image; `manifest.sha256` is
-unsigned. Syft 1.52.0's SPDX root-package checksum for an offline OCI fixture identified its OCI
+intentionally unsigned (D44). Syft 1.52.0's SPDX root-package checksum for an offline OCI fixture identified its OCI
 manifest digest, which did not match the locked image config ID, so the verifier does not claim
-image-content binding. Signing is tracked in #22. The inventory does not cover Helm chart
+image-content binding. Artifact signing is not planned (D44). The inventory does not cover Helm chart
 contents or packages a container downloads after starting.
 
 Regression evidence: `bash scripts/airgap/test_sbom.sh` uses real local tar fixtures
