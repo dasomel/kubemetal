@@ -36,6 +36,15 @@ U64_MAX = 2**64 - 1
 READ_ERRORS = ("unreadable", "manifest-unreadable")
 
 
+def _safe(text):
+    """Make bundle-controlled text safe to print. A bundle is untrusted input after import: a path with a
+    newline could forge a 'RESULT: OK' line, and ESC/CR/BEL/bidi characters could rewrite the terminal.
+    str.isprintable() is False for control (Cc) and format (Cf, e.g. bidi overrides) characters, so
+    everything else is shown as a visible \\uXXXX escape and nothing is dropped silently."""
+    return "".join(c if c.isprintable() else (f"\\u{ord(c):04x}" if ord(c) <= 0xFFFF else f"\\U{ord(c):08x}")
+                   for c in str(text))
+
+
 class Report:
     def __init__(self):
         self.problems = []  # (class, message)
@@ -341,9 +350,9 @@ def main(argv=None):
         return 2
     rep, manifest = verify(args.bundle_dir, args.max_bytes, pin)
     for n in rep.notes:
-        print(f"note: {n}")
+        print(f"note: {_safe(n)}")
     for cls, msg in rep.problems:
-        print(f"FAIL[{cls}] {msg}")
+        print(f"FAIL[{_safe(cls)}] {_safe(msg)}")
     if manifest is None and rep.problems and all(c in READ_ERRORS for c, _ in rep.problems):
         print("RESULT: NOT VERIFIED (bundle could not be read)")
         return 2

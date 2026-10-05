@@ -143,6 +143,43 @@ class VerifyTest(unittest.TestCase):
                 write_manifest(self.root, m)
                 self.assertFails("path-unsafe")
 
+    def test_untrusted_strings_cannot_forge_output_lines_or_terminal_escapes(self):
+        # A bundle is untrusted input. A path containing a newline must not be able to print a line that
+        # looks like a verdict, and ESC/CR/bidi/NUL/BEL must not reach the terminal raw. Two vectors:
+        # a listed-but-absent path (message built from the manifest) and an extra file on disk
+        # (message built from a directory listing).
+        attacks = {
+            "newline-fake-verdict": "x\nRESULT: OK (file hashes verified; manifest.json matched pinned digest)",
+            "carriage-return": "x\rRESULT: OK (file hashes verified)",
+            "ansi-clear-screen": "x\x1b[2J\x1b[31mRESULT: OK",
+            "bidi-override": "x\u202eKO :TLUSER",
+            "bell": "x\x07y",
+        }
+        for name, bad in attacks.items():
+            for vector in ("listed-absent", "extra-on-disk"):
+                with self.subTest(attack=name, vector=vector):
+                    shutil.rmtree(self.root)
+                    os.makedirs(self.root)
+                    m = build_bundle(self.root)
+                    if vector == "listed-absent":
+                        m["files"].append({"path": bad, "sha256": "0" * 64, "bytes": 0})
+                        write_manifest(self.root, m)
+                    else:
+                        write_bytes(os.path.join(self.root, bad), b"planted")
+                    code, out = run(self.root)
+                    self.assertEqual(code, 1, out)
+                    # the hostile text may still appear INSIDE a FAIL[...] line as visible \uXXXX escapes;
+                    # what must never happen is a line of its own that starts like a verdict
+                    self.assertFalse([ln for ln in out.split("\n") if ln.startswith("RESULT: OK")], out)
+                    for ch in ("\x1b", "\r", "\x07", "\u202e"):
+                        self.assertNotIn(ch, out)
+                    verdicts = [ln for ln in out.split("\n") if ln.startswith("RESULT:")]
+                    self.assertEqual(len(verdicts), 1, out)
+                    self.assertTrue(verdicts[0].startswith("RESULT: FAILED"), out)
+                    # every line must be one of ours: a verdict, a note, or a FAIL[...] record
+                    for ln in out.split("\n"):
+                        self.assertTrue(ln == "" or ln.startswith(("RESULT:", "note:", "FAIL[")), repr(ln))
+
     def test_traversal_in_omitted_path(self):
         m = build_bundle(self.root)
         m["omitted"] = [{"path": "../x", "omitted": "reason"}]
