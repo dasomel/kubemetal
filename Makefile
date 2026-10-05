@@ -35,7 +35,7 @@ VITE_PORT := 5173
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap airgap-sbom verify-airgap-sbom \
+.PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap airgap-sbom verify-airgap-sbom verify-support-bundle \
         lint fmt verify license-check dependency-diff runtime-license-inventory model-license-check vuln-check supply-chain-check clean-light cluster-up cluster-down provision provision-all kagent-up \
         preflight render export-gitops \
         forward forward-stop status index-code analyze-code serve-codegraph clean
@@ -103,6 +103,7 @@ test: ## Rust·Python·Air-gap 회귀 테스트
 	cargo test --locked --manifest-path $(CARGO_MANIFEST) --lib
 	python3 -m unittest discover -s tests/rag -v
 	python3 -m unittest discover -s tests/mlx -v
+	python3 -m unittest discover -s scripts/support -v
 	bash scripts/airgap/test_sbom.sh
 	bash scripts/airgap/test_digest_lock.sh
 
@@ -119,6 +120,10 @@ airgap-sbom: ## 기존 번들 이미지의 필수 SPDX·digest·라이선스 증
 
 verify-airgap-sbom: ## 필수 SBOM의 sha256·digest lock 검증 (오프라인, python3 필요)
 	./scripts/airgap/verify_sbom.sh
+
+verify-support-bundle: ## 서포트 번들 오프라인 검증: make verify-support-bundle BUNDLE=<dir> [MANIFEST_SHA256=<hex>]
+	@test -n "$(BUNDLE)" || { echo "BUNDLE=<번들 디렉터리>가 필요합니다" >&2; exit 2; }
+	python3 scripts/support/verify_support_bundle.py "$(BUNDLE)" $(if $(MANIFEST_SHA256),--manifest-sha256 "$(MANIFEST_SHA256)")
 
 lint: ## rustfmt --check + clippy(-D warnings) + tsc + DESIGN.md 토큰 린트 + IPC 타입 대조
 	cargo fmt --manifest-path $(CARGO_MANIFEST) --check
