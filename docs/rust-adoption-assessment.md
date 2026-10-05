@@ -5,7 +5,7 @@ KubeMetal is already Rust-based on the Tauri backend. The recommendation is ther
 ## High-value areas
 
 - Kubernetes/Colima command orchestration and typed state machines
-- Air-gap artifact collection, manifest resolution, checksum/signature verification
+- Air-gap artifact collection, manifest resolution, checksum verification (no signature verification; artifacts are unsigned, D44)
 - GPU telemetry parsers with fixture-driven typed models
 - Local LLM tool/command authorization and policy evaluation
 - Evidence normalization for RCA and upgrade-impact analysis
