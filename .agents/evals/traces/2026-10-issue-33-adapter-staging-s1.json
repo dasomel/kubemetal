@@ -32,10 +32,10 @@
       "id": "e2",
       "type": "regression_verification",
       "status": "passed",
-      "summary": "22 unit tests on tempdirs prove: strict record parsing fails closed, final-name collision refused in every form with the target untouched, RENAME_EXCL refuses empty and non-empty directories including a race after the pre-check, symlink/subdirectory/missing-file refusal, st_dev mismatch refuses instead of copying, crash-window reconcile matrix, legacy directory untouched, single winner on concurrent create, atomic record writes",
+      "summary": "30 unit tests on tempdirs prove: strict record parsing fails closed, final-name collision refused in every form with the target untouched, RENAME_EXCL refuses empty and non-empty directories including a race after the pre-check, symlink/subdirectory/hardlink/missing-file refusal, st_dev mismatch refuses instead of copying, promote re-verifies the manifest (and its recorded hash) immediately before the rename so bytes changed after verify_out or inside the rename window are never promoted, reconcile converges to promoted only when the final directory passes verify_manifest against the recorded manifest hash and treats a non-NotFound lstat error on out/ as unknown, a post-rename persist failure returns Ok with a warning that reconcile converges, crash-window reconcile matrix, legacy directory untouched, single winner on concurrent create, atomic record writes. The out/ lstat error classification is unit-tested on the helper only (EACCES on out/ cannot be isolated from an unreadable record on a real directory)",
       "scope": "adapter_staging module only, unit level against a real macOS filesystem in tempdirs",
       "evidence": [
-        "test:cargo-test-adapter-staging-22-passed"
+        "test:cargo-test-adapter-staging-30-passed"
       ]
     },
     {

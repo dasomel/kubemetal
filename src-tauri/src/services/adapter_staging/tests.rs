@@ -196,11 +196,11 @@ fn promote_refuses_name_taken_before_and_during_the_rename_window() {
         };
         if racing {
             // Appears after the lstat pre-check: only RENAME_EXCL can catch this.
-            let e = promote_with(&mut a, &same_dev, &make).unwrap_err();
+            let e = promote_with(&mut a, &same_dev, &make, &|| {}).unwrap_err();
             assert!(matches!(e, StagingError::NameTaken(_)));
         } else {
             make();
-            let e = promote_with(&mut a, &same_dev, &|| {}).unwrap_err();
+            let e = promote_with(&mut a, &same_dev, &|| {}, &|| {}).unwrap_err();
             assert!(matches!(e, StagingError::NameTaken(_)));
         }
         assert_eq!(fs::read(final_path.join("keep")).unwrap(), b"legacy");
@@ -255,7 +255,7 @@ fn st_dev_mismatch_is_err_and_never_copies() {
     assert!(!t.0.join(STAGING_DIR).join("id1").exists());
 
     let mut a = verified(&t.0, "m");
-    let e = promote_with(&mut a, &split, &|| {}).unwrap_err();
+    let e = promote_with(&mut a, &split, &|| {}, &|| {}).unwrap_err();
     assert!(e.to_string().contains("different filesystems"));
     assert!(a.out_dir().join("adapters.safetensors").is_file());
     assert!(!a.final_path().exists());
@@ -570,4 +570,119 @@ fn transition_table_rejects_verified_and_promoted_targets() {
     assert!(transition(&mut a, AttemptState::ExitedOk).is_err());
     transition(&mut a, AttemptState::Failed).unwrap();
     assert!(transition(&mut a, AttemptState::Running).is_err());
+}
+
+// --- reviewer findings (S1 hardening) ----------------------------------------------------
+
+#[test]
+fn promote_refuses_bytes_changed_after_verify_and_leaves_everything_in_place() {
+    let t = TempRoot::new();
+    let mut a = verified(&t.0, "n");
+    let weights = a.out_dir().join("adapters.safetensors");
+    fs::write(&weights, b"swapped after verify").unwrap();
+    assert!(promote(&mut a, &()).is_err());
+    assert!(!a.final_path().exists());
+    assert_eq!(fs::read(&weights).unwrap(), b"swapped after verify");
+    assert_eq!(a.record.state, AttemptState::Verified);
+}
+
+#[test]
+fn promote_refuses_bytes_changed_inside_the_rename_window() {
+    let t = TempRoot::new();
+    let mut a = verified(&t.0, "n");
+    let weights = a.out_dir().join("adapters.safetensors");
+    let swap = || fs::write(&weights, b"swapped in window").unwrap();
+    assert!(promote_with(&mut a, &same_dev, &swap, &|| {}).is_err());
+    assert!(!a.final_path().exists());
+}
+
+#[test]
+fn promote_refuses_a_regenerated_but_different_manifest() {
+    let t = TempRoot::new();
+    let mut a = verified(&t.0, "n");
+    // Internally consistent out/ (valid manifest) that is not the one that was verified.
+    fs::write(a.out_dir().join("adapters.safetensors"), b"other weights").unwrap();
+    write_manifest(
+        &a.out_dir(),
+        ManifestContext {
+            runtime: "mlx-lm".into(),
+            base_model: "base/model".into(),
+        },
+    )
+    .unwrap();
+    assert!(promote(&mut a, &()).is_err());
+    assert!(!a.final_path().exists());
+}
+
+#[test]
+fn reconcile_does_not_converge_when_final_weights_differ_from_the_manifest() {
+    let t = TempRoot::new();
+    let a = verified(&t.0, "n");
+    fs::rename(a.out_dir(), a.final_path()).unwrap();
+    fs::write(a.final_path().join("adapters.safetensors"), b"different").unwrap();
+    assert!(matches!(
+        outcome(&t.0, true).as_slice(),
+        [ReconcileOutcome::Unknown { .. }]
+    ));
+    assert_eq!(read_record(&a.dir()).unwrap().state, AttemptState::Verified);
+}
+
+#[test]
+fn reconcile_does_not_converge_with_a_copied_manifest_next_to_foreign_weights() {
+    let t = TempRoot::new();
+    let a = verified(&t.0, "n");
+    let manifest = fs::read(a.out_dir().join(MANIFEST_FILE)).unwrap();
+    let final_path = a.final_path();
+    fs::create_dir(&final_path).unwrap();
+    fs::write(final_path.join(MANIFEST_FILE), manifest).unwrap();
+    fs::write(final_path.join("adapters.safetensors"), b"foreign").unwrap();
+    fs::remove_dir_all(a.out_dir()).unwrap();
+    assert!(matches!(
+        outcome(&t.0, true).as_slice(),
+        [ReconcileOutcome::Unknown { .. }]
+    ));
+    assert_eq!(read_record(&a.dir()).unwrap().state, AttemptState::Verified);
+}
+
+#[test]
+fn hardlinked_output_file_is_refused() {
+    let t = TempRoot::new();
+    let mut a = create_attempt(&t.0, &spec("h")).unwrap();
+    mark_running(&mut a, 1, Some(1)).unwrap();
+    let outside = t.0.join("outside.bin");
+    fs::write(&outside, b"weights").unwrap();
+    fs::hard_link(&outside, a.out_dir().join("adapters.safetensors")).unwrap();
+    fs::write(a.out_dir().join("adapter_config.json"), b"{}").unwrap();
+    transition(&mut a, AttemptState::ExitedOk).unwrap();
+    assert!(verify_out(&mut a).is_err());
+    assert_eq!(a.record.state, AttemptState::ExitedOk);
+}
+
+#[test]
+fn post_rename_persist_failure_is_not_an_error_and_reconcile_converges() {
+    use std::os::unix::fs::PermissionsExt;
+    let t = TempRoot::new();
+    let mut a = verified(&t.0, "n");
+    let dir = a.dir();
+    // r-x: the rename already happened, but attempt.json can no longer be rewritten.
+    let lock = || fs::set_permissions(&dir, fs::Permissions::from_mode(0o500)).unwrap();
+    let p = promote_with(&mut a, &same_dev, &|| {}, &lock);
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
+    let p = p.expect("rename succeeded; a retry must not see VerifiedUnpromoted");
+    assert!(p.final_path.join("adapters.safetensors").is_file());
+    assert!(p.warning.is_some());
+    assert_ne!(a.record.state, AttemptState::VerifiedUnpromoted);
+    assert_eq!(read_record(&dir).unwrap().state, AttemptState::Verified);
+    assert!(matches!(
+        outcome(&t.0, true).as_slice(),
+        [ReconcileOutcome::ConvergedPromoted { .. }]
+    ));
+}
+
+#[test]
+fn only_a_missing_out_dir_counts_as_gone() {
+    assert!(out_gone(Err(io::Error::from(io::ErrorKind::NotFound))).unwrap());
+    assert!(out_gone(Err(io::Error::from(io::ErrorKind::PermissionDenied))).is_err());
+    let t = TempRoot::new();
+    assert!(!out_gone(fs::symlink_metadata(&t.0)).unwrap());
 }

@@ -107,7 +107,8 @@ pub struct AttemptSpec {
 #[derive(Debug, Clone)]
 pub struct Attempt {
     root: PathBuf,
-    pub record: AttemptRecord,
+    // Private: a caller that could set `state = Verified` would skip `verify_out`.
+    record: AttemptRecord,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -119,6 +120,7 @@ pub struct VerifiedOut {
 #[derive(Debug, PartialEq, Eq)]
 pub struct Promoted {
     pub final_path: PathBuf,
+    pub warning: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -139,6 +141,10 @@ pub enum ReconcileOutcome {
 }
 
 impl Attempt {
+    pub fn record(&self) -> &AttemptRecord {
+        &self.record
+    }
+
     pub fn dir(&self) -> PathBuf {
         staging_root(&self.root).join(&self.record.attempt_id)
     }
@@ -421,6 +427,10 @@ fn scan_out(out: &Path) -> Result<Vec<String>> {
                 path.display()
             ));
         }
+        // A second link can alias content that lives (and can change) outside staging.
+        if m.nlink() > 1 {
+            return other(format!("{} is hard-linked; refusing", path.display()));
+        }
         let name = entry
             .file_name()
             .into_string()
@@ -476,6 +486,26 @@ pub fn verify_out(attempt: &mut Attempt) -> Result<VerifiedOut> {
     })
 }
 
+/// `dir` must hold a valid manifest whose own hash is the one recorded at verification.
+/// The manifest hash alone proves nothing about the bytes it describes.
+fn require_verified_content(dir: &Path, expected_sha256: Option<&str>) -> Result<()> {
+    let report = verify_manifest(dir).map_err(StagingError::Other)?;
+    if !report.is_valid() {
+        return other(format!(
+            "{} no longer matches its manifest: {report:?}",
+            dir.display()
+        ));
+    }
+    let actual = sha256_file(&dir.join(MANIFEST_FILE)).map_err(StagingError::Other)?;
+    if expected_sha256 != Some(actual.as_str()) {
+        return other(format!(
+            "{} manifest differs from the one that was verified",
+            dir.display()
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 fn rename_excl(from: &Path, to: &Path) -> io::Result<()> {
     use std::ffi::CString;
@@ -507,10 +537,15 @@ fn rename_excl(_from: &Path, _to: &Path) -> io::Result<()> {
 /// `_admission` is a witness that the caller holds the adapter-admission lock (S2 passes
 /// `&MutexGuard<..>`); this module never acquires the real lock itself.
 pub fn promote<G>(attempt: &mut Attempt, _admission: &G) -> Result<Promoted> {
-    promote_with(attempt, &st_dev, &|| {})
+    promote_with(attempt, &st_dev, &|| {}, &|| {})
 }
 
-fn promote_with(attempt: &mut Attempt, dev: DevFn, before_rename: &dyn Fn()) -> Result<Promoted> {
+fn promote_with(
+    attempt: &mut Attempt,
+    dev: DevFn,
+    before_rename: &dyn Fn(),
+    after_rename: &dyn Fn(),
+) -> Result<Promoted> {
     if attempt.record.state != AttemptState::Verified {
         return other(format!(
             "Cannot promote an attempt in state {:?}",
@@ -531,6 +566,8 @@ fn promote_with(attempt: &mut Attempt, dev: DevFn, before_rename: &dyn Fn()) -> 
         Err(e) => return Err(io_err("Failed to inspect", &final_path, e)),
     }
     before_rename();
+    // Last check before the whole directory is renamed: whatever is in out/ now is promoted.
+    require_verified_content(&out, attempt.record.manifest_sha256.as_deref())?;
     match rename_excl(&out, &final_path) {
         Ok(()) => {}
         Err(e) if matches!(e.raw_os_error(), Some(libc::EEXIST | libc::ENOTEMPTY)) => {
@@ -538,11 +575,19 @@ fn promote_with(attempt: &mut Attempt, dev: DevFn, before_rename: &dyn Fn()) -> 
         }
         Err(e) => return Err(io_err("Failed to promote into", &final_path, e)),
     }
-    // A crash between rename and the record update is converged by `reconcile`.
-    sync_dir(&adapters)?;
-    sync_dir(&attempt.dir())?;
-    persist(attempt, |r| r.state = AttemptState::Promoted)?;
-    Ok(Promoted { final_path })
+    after_rename();
+    // The bytes are in place, so a failure below must not surface as Err: the caller would
+    // retry and record `VerifiedUnpromoted` next to this attempt's own final directory. The
+    // record stays `verified` with out/ gone, which `reconcile` converges to `promoted`.
+    let warning = sync_dir(&adapters)
+        .and_then(|()| sync_dir(&attempt.dir()))
+        .and_then(|()| persist(attempt, |r| r.state = AttemptState::Promoted))
+        .err()
+        .map(|e| format!("promoted, but the record was not updated: {e}"));
+    Ok(Promoted {
+        final_path,
+        warning,
+    })
 }
 
 fn name_taken(attempt: &mut Attempt) -> Result<Promoted> {
@@ -579,6 +624,15 @@ fn reconcile_with(
         .collect()
 }
 
+/// Only NotFound means "gone"; any other lstat error (EACCES, EIO, ...) is not evidence.
+fn out_gone(lstat: io::Result<fs::Metadata>) -> io::Result<bool> {
+    match lstat {
+        Ok(_) => Ok(false),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(true),
+        Err(e) => Err(e),
+    }
+}
+
 fn reconcile_one(
     root: &Path,
     dir: &Path,
@@ -604,27 +658,32 @@ fn reconcile_one(
             }
             Some(_) => ReconcileOutcome::Interrupted { attempt_id },
         },
-        AttemptState::Verified if fs::symlink_metadata(dir.join(OUT_DIR)).is_err() => {
-            let Some(expected) = record.manifest_sha256.clone() else {
-                return unknown("verified record without manifest_sha256".into());
-            };
-            let final_path = adapters_root(root).join(&record.adapter_name);
-            let converged = fs::symlink_metadata(&final_path).is_ok_and(|m| m.is_dir())
-                && fs::symlink_metadata(final_path.join(MANIFEST_FILE)).is_ok_and(|m| m.is_file())
-                && sha256_file(&final_path.join(MANIFEST_FILE)).ok().as_deref()
-                    == Some(expected.as_str());
-            if !converged {
-                return unknown("out/ is gone but the final adapter does not match".into());
+        AttemptState::Verified => match out_gone(fs::symlink_metadata(dir.join(OUT_DIR))) {
+            Ok(false) => ReconcileOutcome::Unchanged {
+                attempt_id,
+                state: AttemptState::Verified,
+            },
+            Err(e) => unknown(format!("cannot tell whether out/ is gone: {e}")),
+            Ok(true) => {
+                let Some(expected) = record.manifest_sha256.clone() else {
+                    return unknown("verified record without manifest_sha256".into());
+                };
+                let final_path = adapters_root(root).join(&record.adapter_name);
+                // lstat first: verify_manifest would follow a symlinked final path.
+                let is_real_dir = fs::symlink_metadata(&final_path).is_ok_and(|m| m.is_dir());
+                if !is_real_dir || require_verified_content(&final_path, Some(&expected)).is_err() {
+                    return unknown("out/ is gone but the final adapter does not match".into());
+                }
+                let mut attempt = Attempt {
+                    root: root.to_path_buf(),
+                    record,
+                };
+                match persist(&mut attempt, |r| r.state = AttemptState::Promoted) {
+                    Ok(()) => ReconcileOutcome::ConvergedPromoted { attempt_id },
+                    Err(e) => unknown(e.to_string()),
+                }
             }
-            let mut attempt = Attempt {
-                root: root.to_path_buf(),
-                record,
-            };
-            match persist(&mut attempt, |r| r.state = AttemptState::Promoted) {
-                Ok(()) => ReconcileOutcome::ConvergedPromoted { attempt_id },
-                Err(e) => unknown(e.to_string()),
-            }
-        }
+        },
         state => ReconcileOutcome::Unchanged { attempt_id, state },
     }
 }
