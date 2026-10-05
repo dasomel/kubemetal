@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-33-adapter-staging-s1",
+  "task": "Add the pure adapter staging service (staging dir, durable attempt record, verified exclusive promotion, reconcile) as slice S1 of issue #33; no wiring into commands or the wrapper",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      ".agents/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Scoped to the new services/adapter_staging module and its tests, the mod.rs declaration, and widening sha256_file to pub(crate) for reuse; commands/mlx.rs production code (only a pre-existing flaky pid-file wait in its tests was fixed), lib.rs, IPC, finetune_wrapper.py, docs and src/ untouched; libc was already a direct dependency so Cargo.toml is unchanged"
+    },
+    {
+      "id": "e1a",
+      "type": "reproduction",
+      "summary": "Defect class documented by source inspection in docs/issue-33-temp-artifact-audit.md: the fine-tune wrapper writes straight into the final adapter directory with exist_ok=True, so a failed run leaves unclassifiable output and a reused name mixes old and new files; not reproduced on a running app in this slice",
+      "evidence": [
+        "doc:docs/issue-33-temp-artifact-audit.md"
+      ]
+    },
+    {
+      "id": "e1b",
+      "type": "bug_fix",
+      "summary": "Adds only the unwired primitives (staging, durable record, exclusive promotion) that the later slices need to close that defect; the defect itself stays open until S2 wires the producer and S3/S4 follow, so this is a partial step, not a fix of the running behavior"
+    },
+    {
+      "id": "e2",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "30 unit tests on tempdirs prove: strict record parsing fails closed, final-name collision refused in every form with the target untouched, RENAME_EXCL refuses empty and non-empty directories including a race after the pre-check, symlink/subdirectory/hardlink/missing-file refusal, st_dev mismatch refuses instead of copying, promote re-verifies the manifest (and its recorded hash) immediately before the rename so bytes changed after verify_out or inside the rename window are never promoted, reconcile converges to promoted only when the final directory passes verify_manifest against the recorded manifest hash and treats a non-NotFound lstat error on out/ as unknown, a post-rename persist failure returns Ok with a warning that reconcile converges, crash-window reconcile matrix, legacy directory untouched, single winner on concurrent create, atomic record writes. The out/ lstat error classification is unit-tested on the helper only (EACCES on out/ cannot be isolated from an unreadable record on a real directory)",
+      "scope": "adapter_staging module only, unit level against a real macOS filesystem in tempdirs",
+      "evidence": [
+        "test:cargo-test-adapter-staging-30-passed"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "verification",
+      "status": "passed",
+      "summary": "cargo fmt --check and cargo clippy --locked --all-targets -D warnings are clean; the module declaration carries one allow(dead_code) because nothing calls the module until S2 (47 dead-code errors without it)",
+      "scope": "src-tauri crate lint gates",
+      "evidence": [
+        "test:cargo-clippy-deny-warnings"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "completion_claim",
+      "summary": "S1 service module complete at unit level; it is not exercised by the app and nothing was verified on a real training run, a real adapters directory, or a second volume",
+      "evidence": [
+        "e2",
+        "e3"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified at unit level for slice S1; wiring, wrapper change and D45 follow in S2 to S4"
+    }
+  ]
+}
