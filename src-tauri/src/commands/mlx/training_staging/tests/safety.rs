@@ -205,3 +205,69 @@ fn reused_pid_does_not_overwrite_next_attempt() {
     assert_eq!(slot.as_ref().unwrap().total_iters, 777);
     assert!(slot.as_ref().unwrap().adapter_path.is_none());
 }
+
+#[test]
+fn failed_exit_surfaces_wrapper_error_over_generic_stderr() {
+    let home = TempHome::new();
+    let (state, mut attempt) = ready(&home);
+    let mut outcome = done(&attempt, 1);
+    outcome.report = CompletionReport::default();
+    outcome.report.observe(
+        &serde_json::json!({"type":"error","message":"wrapper: out of memory at iter 7"}),
+        &attempt.out_dir(),
+    );
+    outcome.stderr = "Training process exited abnormally (exit status: 1)".into();
+    finalize(&state, &mut attempt, &active_stop(&state), outcome).unwrap();
+    assert_failed(&state, &attempt, AttemptState::Failed);
+    assert_eq!(
+        state
+            .training
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .error
+            .as_deref(),
+        Some("wrapper: out of memory at iter 7")
+    );
+}
+
+#[test]
+fn failed_exit_without_wrapper_error_keeps_stderr_text() {
+    let home = TempHome::new();
+    let (state, mut attempt) = ready(&home);
+    let mut outcome = done(&attempt, 1);
+    outcome.report = CompletionReport::default();
+    outcome.stderr = "Traceback: boom".into();
+    finalize(&state, &mut attempt, &active_stop(&state), outcome).unwrap();
+    assert_eq!(
+        state
+            .training
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .error
+            .as_deref(),
+        Some("Traceback: boom")
+    );
+}
+
+#[test]
+fn killed_attempt_that_never_started_ends_failed_not_created() {
+    let home = TempHome::new();
+    let mut attempt = adapter_staging::create_attempt(&home.root(), &spec()).unwrap();
+    let state = MlxState::default();
+    *state.training.lock().unwrap() = Some(training());
+    *state.training_stop.lock().unwrap() = Some((42, Arc::new(AtomicBool::new(false))));
+    let mut outcome = done(&attempt, 0);
+    outcome.setup_error = Some("mark_running failed".into());
+    let stopped = active_stop(&state);
+    request_stop(&state, 42).unwrap();
+    finalize(&state, &mut attempt, &stopped, outcome).unwrap();
+    assert_eq!(persisted(&attempt), AttemptState::Failed);
+    assert_eq!(
+        state.training.lock().unwrap().as_ref().unwrap().status,
+        "killed"
+    );
+}

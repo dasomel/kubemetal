@@ -30,7 +30,9 @@ pub(crate) fn manifest_verification_status(adapter_dir: &Path) -> &'static str {
 }
 
 /// D45: the reserved final directory, not the wrapper's output. Staging is a sibling
-/// outside the delete IPC root (also protected by staging_path_is_protected).
+/// outside the delete IPC root by construction: deletion is rooted at `adapters/` and
+/// rejects symlinked path components, so `adapter-staging/` is unreachable from it.
+/// (staging_path_is_protected is a tested predicate, not called in production.)
 /// Keeping the reservation costs no new IPC field; promotion and deletion share
 /// adapter_admission. A future staging delete API must keep its own protection gate.
 pub(crate) fn adapter_output_dir(home: &Path, adapter_name: &str) -> PathBuf {

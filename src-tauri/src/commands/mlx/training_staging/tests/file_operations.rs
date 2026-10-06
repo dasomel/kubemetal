@@ -42,12 +42,15 @@ fn promotion_waits_for_delete_admission_mutex() {
     });
     started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
     let blocked = done_rx.recv_timeout(Duration::from_millis(150)).is_err();
+    // Lock order: admission first. The waiter must not already hold the training
+    // slot (async commands lock it), so M6-style inversion fails here.
+    let slot_free = state.training.try_lock().is_ok();
     let absent = !final_path.exists();
     drop(held);
     worker.join().unwrap();
     assert!(
-        blocked && absent,
-        "promotion must wait for the delete IPC's admission lock"
+        blocked && absent && slot_free,
+        "promotion must wait for the delete IPC's admission lock without holding the training slot"
     );
     assert_eq!(
         state.training.lock().unwrap().as_ref().unwrap().status,
@@ -173,4 +176,43 @@ fn promotion_permission_failure_records_failed() {
             .unwrap()
             .is_valid()
     );
+}
+
+#[test]
+fn hashing_runs_with_admission_held_and_training_slot_free() {
+    let home = TempHome::new();
+    let (state, mut attempt) = ready(&home);
+    let outcome = done(&attempt, 0);
+    let stopped = active_stop(&state);
+    let observed = std::cell::Cell::new(None);
+    finalize_with(&state, &mut attempt, &stopped, outcome, &|| {
+        // D45 lock order: admission is held across verify+promote, the training
+        // slot (read by async commands) is not.
+        observed.set(Some((
+            state.adapter_admission.try_lock().is_err(),
+            state.training.try_lock().is_ok(),
+        )));
+    })
+    .unwrap();
+    assert_eq!(observed.get(), Some((true, true)));
+    assert_eq!(
+        state.training.lock().unwrap().as_ref().unwrap().status,
+        "done"
+    );
+}
+
+#[test]
+fn stop_during_hashing_is_not_overwritten_by_done() {
+    let home = TempHome::new();
+    let (state, mut attempt) = ready(&home);
+    let outcome = done(&attempt, 0);
+    let stopped = active_stop(&state);
+    finalize_with(&state, &mut attempt, &stopped, outcome, &|| {
+        request_stop(&state, 42).unwrap();
+    })
+    .unwrap();
+    let slot = state.training.lock().unwrap();
+    let status = slot.as_ref().unwrap();
+    assert_eq!(status.status, "killed");
+    assert!(status.adapter_path.is_none());
 }

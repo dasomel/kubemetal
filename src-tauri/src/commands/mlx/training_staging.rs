@@ -165,55 +165,65 @@ pub(super) fn finalize(
     stopped: &AtomicBool,
     outcome: TrainingExit,
 ) -> Result<Option<MlflowRunReconciliation>, String> {
-    // D45: same lock and ordering as remove_adapter_checkpoint. Publish final path/status
-    // before releasing it, so deletion cannot race verification -> rename -> slot update.
+    finalize_with(state, attempt, stopped, outcome, &|| {})
+}
+
+fn finalize_with(
+    state: &MlxState,
+    attempt: &mut Attempt,
+    stopped: &AtomicBool,
+    outcome: TrainingExit,
+    before_hashing: &dyn Fn(),
+) -> Result<Option<MlflowRunReconciliation>, String> {
+    // D45 lock order everywhere: adapter_admission, then training, then training_stop;
+    // never admission while holding training. Admission alone serializes promotion against
+    // deletion, so it is held across hash/verify/promote. The training slot is read by
+    // async commands (status, kill, guardrails), so it is NOT held while hashing: it is
+    // taken once to snapshot ownership and once to publish the outcome.
     let admission = state.adapter_admission.lock().map_err(|e| e.to_string())?;
-    let mut slot = state.training.lock().map_err(|e| e.to_string())?;
-    // The per-attempt stop object also binds slot ownership: a reused PID alone
-    // must not let an older reader rewrite a newer run. This grants no signal authority.
-    let same_attempt = state
-        .training_stop
-        .lock()
-        .map_err(|e| e.to_string())?
-        .as_ref()
-        .is_some_and(|(pid, stop)| *pid == outcome.pid && std::ptr::eq(stopped, stop.as_ref()));
-    let training = slot
-        .as_mut()
-        .filter(|t| t.pid == outcome.pid && same_attempt);
-    let reconciliation = training.as_ref().and_then(|t| {
-        mlx_lifecycle::mlflow_reconciliation_decision(
-            &t.status,
-            Some(t.pid),
-            outcome.pid,
-            t.mlflow_run_id.as_deref(),
-            outcome.report.terminal,
-            outcome.exit.as_ref().ok(),
-        )
-    });
-    let killed =
-        stopped.load(Ordering::SeqCst) || training.as_ref().is_some_and(|t| t.status == "killed");
-    let result = (|| -> Result<_, String> {
-        if killed {
-            return Err("Training was stopped; staged output kept".into());
-        }
-        if training
+    let (reconciliation, mut killed, precheck) = {
+        let mut slot = state.training.lock().map_err(|e| e.to_string())?;
+        let training = owned_slot(state, &mut slot, stopped, outcome.pid)?;
+        let reconciliation = training.as_ref().and_then(|t| {
+            mlx_lifecycle::mlflow_reconciliation_decision(
+                &t.status,
+                Some(t.pid),
+                outcome.pid,
+                t.mlflow_run_id.as_deref(),
+                outcome.report.terminal,
+                outcome.exit.as_ref().ok(),
+            )
+        });
+        let killed = stopped.load(Ordering::SeqCst)
+            || training.as_ref().is_some_and(|t| t.status == "killed");
+        let precheck = if killed {
+            Err("Training was stopped; staged output kept".to_string())
+        } else if training
             .as_ref()
             .is_none_or(|t| !mlx_lifecycle::is_non_terminal_training_status(&t.status))
         {
-            return Err(training
+            Err(training
                 .as_ref()
                 .and_then(|t| t.error.clone())
                 .unwrap_or_else(|| {
                     "Training slot no longer owns this attempt; staged output kept".into()
-                }));
-        }
+                }))
+        } else {
+            Ok(())
+        };
+        (reconciliation, killed, precheck)
+    };
+    let result = precheck.and_then(|()| {
         if let Some(error) = &outcome.setup_error {
             return Err(error.clone());
         }
         match &outcome.exit {
             Ok(status) if status.success() => {}
+            // The wrapper's own error event is stdout-only; stderr is the generic fallback.
             Ok(status) => {
-                return Err(if outcome.stderr.trim().is_empty() {
+                return Err(if let Some(error) = &outcome.report.error {
+                    error.clone()
+                } else if outcome.stderr.trim().is_empty() {
                     format!("Training process exited abnormally ({status})")
                 } else {
                     outcome.stderr.trim().into()
@@ -227,28 +237,52 @@ pub(super) fn finalize(
         if !outcome.report.matches_expected(&attempt.out_dir()) {
             return Err("Training did not report done for the expected staging output".into());
         }
+        before_hashing();
         adapter_staging::transition(attempt, AttemptState::ExitedOk).map_err(|e| e.to_string())?;
         adapter_staging::verify_out(attempt).map_err(|e| e.to_string())?;
         adapter_staging::promote(attempt, &admission).map_err(|e| e.to_string())
-    })();
+    });
+    // Publish only if this attempt still owns a live slot: a stop/restart that landed
+    // while hashing must not be overwritten by `done`.
+    let mut published = None;
+    {
+        let mut slot = state.training.lock().map_err(|e| e.to_string())?;
+        let training = owned_slot(state, &mut slot, stopped, outcome.pid)?;
+        killed = killed
+            || stopped.load(Ordering::SeqCst)
+            || training.as_ref().is_some_and(|t| t.status == "killed");
+        if let Some(training) = training {
+            let live = mlx_lifecycle::is_non_terminal_training_status(&training.status);
+            match &result {
+                Ok(promoted) if live && !killed => {
+                    training.adapter_path =
+                        Some(promoted.final_path.to_string_lossy().into_owned());
+                    training.error = None;
+                    training.status = "done".into();
+                    published = Some(());
+                }
+                Ok(_) => {}
+                Err(error) if live || killed => {
+                    training.adapter_path = None;
+                    training.status = if killed { "killed" } else { "error" }.into();
+                    training.error = (!killed).then_some(error.clone());
+                }
+                Err(_) => {}
+            }
+        }
+    }
     match result {
         Ok(promoted) => {
             if let Some(warning) = promoted.warning {
                 eprintln!("[mlx] {warning}");
             }
-            if let Some(training) = training {
-                training.adapter_path = Some(promoted.final_path.to_string_lossy().into_owned());
-                training.error = None;
-                training.status = "done".into();
+            if published.is_none() {
+                eprintln!("[mlx] Training was stopped while its output was promoted; slot not marked done");
             }
         }
         Err(error) => {
-            if let Some(training) = training {
-                training.adapter_path = None;
-                training.status = if killed { "killed" } else { "error" }.into();
-                training.error = (!killed).then_some(error.clone());
-            }
-            let terminal = if killed {
+            // A never-started (Created) attempt cannot be Killed; record it failed.
+            let terminal = if killed && attempt.record().state != AttemptState::Created {
                 AttemptState::Killed
             } else {
                 AttemptState::Failed
@@ -268,6 +302,24 @@ pub(super) fn finalize(
         }
     }
     Ok(reconciliation)
+}
+
+/// The slot, only if it still belongs to this exact attempt. The per-attempt stop object
+/// binds ownership: a reused PID alone must not let an older reader rewrite a newer run.
+/// This grants no signal authority.
+fn owned_slot<'a>(
+    state: &MlxState,
+    slot: &'a mut Option<TrainingStatus>,
+    stopped: &AtomicBool,
+    pid: u32,
+) -> Result<Option<&'a mut TrainingStatus>, String> {
+    let same_attempt = state
+        .training_stop
+        .lock()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        .is_some_and(|(p, stop)| *p == pid && std::ptr::eq(stopped, stop.as_ref()));
+    Ok(slot.as_mut().filter(|t| t.pid == pid && same_attempt))
 }
 
 #[cfg(test)]
