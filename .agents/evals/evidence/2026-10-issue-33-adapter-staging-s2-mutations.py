@@ -27,10 +27,9 @@ def rust(test):return ['cargo','test','--locked','--manifest-path','src-tauri/Ca
 run('required-output',P,lambda s:s.replace('add_mutually_exclusive_group(required=True)','add_mutually_exclusive_group(required=False)'),py('test_output_dir_is_required'),'FAIL: test_output_dir_is_required')
 run('reject-symlinks',P,lambda s:s.replace('metadata = adapter_path.lstat()','metadata = adapter_path.stat()'),py('test_invalid_output'),'FAIL: test_invalid_output')
 run('reject-nonempty',P,lambda s:s.replace('if any(adapter_path.iterdir()):','if False:'),py('test_invalid_output'),'FAIL: test_invalid_output')
-def omit_admission(s):
-    a=s.index('    try:\n        # D45');b=s.index('\n    reporter =',a)
-    return s[:a]+s[b:]
-run('reject-missing-file',P,omit_admission,py('test_invalid_output'),'FAIL: test_invalid_output')
+def create_missing(s):
+    return s.replace('metadata = adapter_path.lstat()','adapter_path.mkdir(parents=True, exist_ok=True)\n            metadata = adapter_path.lstat()')
+run('reject-missing-file',P,create_missing,py('test_invalid_output'),'FAIL: test_invalid_output')
 run('lm-output-mapping',P,lambda s:s.replace('"--adapter-path", str(adapter_path)','"--output-path", str(adapter_path)'),py('test_runtime_output'),'ERROR: test_runtime_output')
 run('vlm-output-mapping',P,lambda s:s.replace('"--output-path", str(adapter_path)','"--adapter-path", str(adapter_path)'),py('test_runtime_output'),'ERROR: test_runtime_output')
 run('forged-path',R,lambda s:s.replace('if path.is_none() || path != expected.to_str() || self.path.is_some() {','if false {'),rust('forged_done_path'),'forged_done_path_never_publishes_or_promotes ... FAILED')
