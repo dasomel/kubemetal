@@ -65,6 +65,7 @@ and untouched. Failed/killed attempts remain staged; only a newly created empty
 attempt is removed after spawn failure using rmdir. D45 records the contract;
 D44 remains no signing. No TTL, startup reconcile, list IPC, warm-start resume or
 checkpoint events are implemented in S2. The independent Prefect fine-tune flow
-still omits the new required argument and consequently fails closed; its migration
-needs separate Rust lifecycle integration. No real MLX training, real user artifact
+is NOT staged: it passes the wrapper's explicit `--legacy-direct-output` and still
+writes directly into the final directory with a warning event; migrating it needs
+separate Rust lifecycle integration (S2b). No real MLX training, real user artifact
 directory or app UI observation is claimed by this update.

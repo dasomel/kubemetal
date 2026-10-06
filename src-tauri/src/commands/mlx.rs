@@ -920,35 +920,15 @@ pub async fn run_mlx_finetune(
             )
             .map_err(|e| e.to_string())?;
             let mut cmd = tokio::process::Command::new(&venv_py);
-            cmd.arg(&wrapper)
-                .arg("--model")
-                .arg(&model_path)
-                .arg("--data")
-                .arg(&data_path)
-                .arg("--iters")
-                .arg(config.iters.to_string())
-                .arg("--batch-size")
-                .arg(config.batch_size.to_string())
-                .arg("--learning-rate")
-                .arg(config.learning_rate.to_string())
-                .arg("--adapter-name")
-                .arg(&config.adapter_name)
-                .arg("--output-dir")
-                .arg(attempt.out_dir())
-                .arg("--runtime")
-                .arg(match training_runtime {
-                    MlxRuntime::MlxLm => "mlx-lm",
-                    MlxRuntime::MlxVlm => "mlx-vlm",
-                })
-                // MLflow 주소를 명시로 넘긴다. 넘기지 않으면 래퍼가 자기 기본값(5001 고정)을
-                // 쓰는데, 포트는 런타임 값이라(D1 개정) 5001이 점유되면 학습 기록이 통째로
-                // 엉뚱한 곳으로 간다.
-                .arg("--mlflow-uri")
-                .arg(ports::local_url("mlflow"));
-
-            if config.train_vision {
-                cmd.arg("--train-vision");
-            }
+            cmd.args(finetune_wrapper_args(
+                &wrapper,
+                &model_path,
+                &data_path,
+                &config,
+                training_runtime,
+                &attempt.out_dir(),
+                &ports::local_url("mlflow"),
+            ));
 
             let child = training_staging::spawn(&mut cmd, &attempt)?;
 
@@ -1830,6 +1810,52 @@ pub async fn revert_to_last_serving(
     .await
 }
 
+/// D45: the direct Rust path always hands the wrapper a staging `--output-dir` and must
+/// never pass `--legacy-direct-output` (that flag is the Prefect path's explicit bypass of
+/// staging/verification/promotion). Kept as a pure function so a test can pin both.
+fn finetune_wrapper_args(
+    wrapper: &Path,
+    model_path: &Path,
+    data_path: &Path,
+    config: &FineTuneConfig,
+    runtime: MlxRuntime,
+    out_dir: &Path,
+    mlflow_uri: &str,
+) -> Vec<std::ffi::OsString> {
+    let mut args: Vec<std::ffi::OsString> = vec![
+        wrapper.into(),
+        "--model".into(),
+        model_path.into(),
+        "--data".into(),
+        data_path.into(),
+        "--iters".into(),
+        config.iters.to_string().into(),
+        "--batch-size".into(),
+        config.batch_size.to_string().into(),
+        "--learning-rate".into(),
+        config.learning_rate.to_string().into(),
+        "--adapter-name".into(),
+        (&config.adapter_name).into(),
+        "--output-dir".into(),
+        out_dir.into(),
+        "--runtime".into(),
+        match runtime {
+            MlxRuntime::MlxLm => "mlx-lm",
+            MlxRuntime::MlxVlm => "mlx-vlm",
+        }
+        .into(),
+        // MLflow 주소를 명시로 넘긴다. 넘기지 않으면 래퍼가 자기 기본값(5001 고정)을
+        // 쓰는데, 포트는 런타임 값이라(D1 개정) 5001이 점유되면 학습 기록이 통째로
+        // 엉뚱한 곳으로 간다.
+        "--mlflow-uri".into(),
+        mlflow_uri.into(),
+    ];
+    if config.train_vision {
+        args.push("--train-vision".into());
+    }
+    args
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -1842,6 +1868,37 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn direct_finetune_args_pass_output_dir_and_never_the_legacy_flag() {
+        let config = FineTuneConfig {
+            model_path: "m".into(),
+            data_path: "d".into(),
+            iters: 1,
+            batch_size: 1,
+            learning_rate: 0.001,
+            adapter_name: "a".into(),
+            runtime: None,
+            train_vision: true,
+        };
+        for runtime in [MlxRuntime::MlxLm, MlxRuntime::MlxVlm] {
+            let args = finetune_wrapper_args(
+                Path::new("w.py"),
+                Path::new("m"),
+                Path::new("d"),
+                &config,
+                runtime,
+                Path::new("/stage/out"),
+                "http://127.0.0.1:5001",
+            );
+            let pos = args
+                .iter()
+                .position(|a| a == "--output-dir")
+                .expect("--output-dir");
+            assert_eq!(args[pos + 1], "/stage/out");
+            assert!(!args.iter().any(|a| a == "--legacy-direct-output"));
+        }
+    }
 
     #[test]
     fn orphan_termination_requires_matching_process_start_time() {

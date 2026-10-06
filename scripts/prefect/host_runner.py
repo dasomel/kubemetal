@@ -82,6 +82,9 @@ def finetune_flow(
         "--batch-size", str(batch_size),
         "--learning-rate", str(learning_rate),
         "--adapter-name", adapter_name,
+        # D45/S2b: this path still writes directly into the final adapter dir (no staging,
+        # verified manifest or promotion); the explicit flag keeps that visible and greppable.
+        "--legacy-direct-output",
     ]
     logger.info(f"finetune_wrapper 시작: {' '.join(cmd)}")
 

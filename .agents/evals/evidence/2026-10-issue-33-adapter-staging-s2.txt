@@ -345,3 +345,20 @@ $ python3 scripts/ci/check-agent-trace-evidence.py --policy .agents/evals/risk-p
 Observed exit 0; passed=true, failures=[].
 $ for t in .agents/evals/traces/*.json; do python3 .agents/evals/gate.py --trace "$t" --baseline .agents/evals/baseline.eval.json || echo FAIL "$t"; done
 Observed: all 44 trace gates passed; zero FAIL lines (S2 comparison regressions=0, changed=0).
+
+== Follow-up: explicit --legacy-direct-output for the Prefect caller (S2b out of scope) ==
+Reason: S2 made --output-dir required, which would make scripts/prefect/host_runner.py finetune_flow fail at argparse.
+Change: wrapper requires exactly one of --output-dir | --legacy-direct-output (argparse group); legacy mode warns and writes the final dir as before D45; only host_runner passes it; Rust spawn args come from finetune_wrapper_args() and never include it.
+$ python3 -m unittest discover -s tests/mlx -v
+Observed: Ran 11 tests, OK (incl. required/mutually-exclusive flags, legacy warning+direct write with HOME in a tempdir, host_runner source AST carries --legacy-direct-output without --output-dir).
+$ cargo test --locked --lib   (5 consecutive runs, final code)
+Observed: each run 379 passed; 0 failed; 1 ignored (the 4 services::ports tests passed in this sandbox).
+$ cargo test --locked --lib direct_finetune_args
+Observed: 1 passed.
+Mutations (each restored afterwards):
+ - add "--legacy-direct-output" to the Rust builder -> direct_finetune_args_pass_output_dir_and_never_the_legacy_flag FAILED
+ - drop the flag from host_runner finetune_flow -> test_host_runner_legacy_flag: 2 failures
+ - make the wrapper group non-exclusive/non-required -> test_output_dir_is_required and test_output_dir_and_legacy_flag_are_mutually_exclusive FAILED
+$ python3 scripts/ci/check_ipc_types.py ; cargo fmt --check ; cargo clippy --locked --all-targets -- -D warnings
+Observed: all exit 0.
+Not verified: real Prefect run, real MLX training, app UI. The Prefect path is still unstaged/unverified by design (S2b).
