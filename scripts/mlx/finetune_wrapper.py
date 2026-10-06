@@ -55,11 +55,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--batch-size", type=int, required=True)
     p.add_argument("--learning-rate", type=float, required=True)
     p.add_argument("--adapter-name", required=True)
-    # D45: exactly one. --output-dir is the Rust staging lifecycle; --legacy-direct-output is
-    # the explicit, greppable opt-in for the Prefect host_runner path (S2b under #33).
-    out = p.add_mutually_exclusive_group(required=True)
-    out.add_argument("--output-dir")
-    out.add_argument("--legacy-direct-output", action="store_true")
+    # D45/D47: the Rust staging lifecycle is the only output path; no direct-write mode.
+    p.add_argument("--output-dir", required=True)
     p.add_argument("--runtime", choices=["mlx-lm", "mlx-vlm"], default="mlx-lm")
     # 기본값은 앱 없이 단독 실행할 때만 쓰인다 — 앱은 실제 배정된 포트를 명시로 넘긴다.
     # `localhost`가 아니라 `127.0.0.1`이다(D1): macOS에서 localhost는 ::1로도 풀려
@@ -81,27 +78,18 @@ def main() -> int:
         emit({"type": "error", "message": "--train-vision은 mlx-vlm 런타임 전용입니다"})
         return 2
 
-    if args.legacy_direct_output:
-        # Pre-D45 behavior, kept only for the Prefect path: no staging, no verified
-        # manifest, no promotion. The warning makes the bypass visible in the event stream.
-        emit({"type": "warning", "message": "--legacy-direct-output: this run writes directly "
-              "into ~/.kubemetal/adapters/<name> and bypasses the staging lifecycle (no staging, "
-              "no verified manifest, no promotion)"})
-        adapter_path = Path.home() / ".kubemetal" / "adapters" / args.adapter_name
-        adapter_path.mkdir(parents=True, exist_ok=True)
-    else:
-        adapter_path = Path(args.output_dir)
-        try:
-            # D45: Rust owns staging creation; no fallback or writes before admission.
-            # Rebuilding strips trailing slashes so lstat cannot follow a leaf symlink.
-            metadata = adapter_path.lstat()
-            if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
-                raise ValueError("output-dir must be a real directory, not a symlink")
-            if any(adapter_path.iterdir()):
-                raise ValueError("output-dir must be empty")
-        except (OSError, ValueError) as error:
-            emit({"type": "error", "message": str(error)})
-            return 2
+    adapter_path = Path(args.output_dir)
+    try:
+        # D45: Rust owns staging creation; no fallback or writes before admission.
+        # Rebuilding strips trailing slashes so lstat cannot follow a leaf symlink.
+        metadata = adapter_path.lstat()
+        if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+            raise ValueError("output-dir must be a real directory, not a symlink")
+        if any(adapter_path.iterdir()):
+            raise ValueError("output-dir must be empty")
+    except (OSError, ValueError) as error:
+        emit({"type": "error", "message": str(error)})
+        return 2
 
     reporter = MlflowReporter(
         args.mlflow_uri,

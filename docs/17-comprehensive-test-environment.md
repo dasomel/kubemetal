@@ -113,7 +113,7 @@ sequenceDiagram
     Note over UI, CodeAgent: 1단계: 합성 데이터 생성 및 파인튜닝
     UI->>Data: 10-glossary & 12-ontology 기반 데이터셋 시나리오 추출
     Data->>Host: 32B 서빙 모델로 K8s/IDP 합성 QA 생성 (500 샘플)
-    UI->>Train: Prefect 3 Flow 트리거 (MLX LoRA 파인튜닝 실행)
+    UI->>Train: 앱 MLX 경로로 LoRA 파인튜닝 실행 (run_mlx_finetune, D45/D47)
     Train->>Reg: 파인튜닝 어댑터 업로드 (SeaweedFS S3) & MLflow 등록
 
     Note over UI, CodeAgent: 2단계: 자동 평가 및 서빙 승격

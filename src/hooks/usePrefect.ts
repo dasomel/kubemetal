@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
-import type { PrefectStatus, FineTuneConfig, EvalMetric } from '../types/ipc';
+import type { PrefectStatus, EvalMetric } from '../types/ipc';
 import { useTranslation } from '../i18n/i18nContext';
 
 /**
@@ -17,7 +17,6 @@ export function usePrefect(active: boolean = false) {
   const [installingLocal, setInstallingLocal] = useState(false);
   const [startingRunner, setStartingRunner] = useState(false);
   const [stoppingRunner, setStoppingRunner] = useState(false);
-  const [triggeringFlow, setTriggeringFlow] = useState(false);
   const [settingUpEvalEnv, setSettingUpEvalEnv] = useState(false);
   const [evalInstallingLocal, setEvalInstallingLocal] = useState(false);
   const [triggeringEvaluate, setTriggeringEvaluate] = useState(false);
@@ -74,22 +73,6 @@ export function usePrefect(active: boolean = false) {
       setStoppingRunner(false);
     }
   }, [fetchStatus, t]);
-
-  const triggerFinetuneFlow = useCallback(
-    async (config: FineTuneConfig) => {
-      setTriggeringFlow(true);
-      try {
-        const runId = await invoke<string>('trigger_finetune_flow', { config });
-        await message(t('orch.toast.finetuneFlowStarted', { runId }), { title: 'KubeMetal', kind: 'info' });
-        await fetchStatus();
-      } catch (err) {
-        await message(t('orch.toast.flowRunFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });
-      } finally {
-        setTriggeringFlow(false);
-      }
-    },
-    [fetchStatus, t],
-  );
 
   const setupEvalEnv = useCallback(async () => {
     setSettingUpEvalEnv(true);
@@ -183,8 +166,6 @@ export function usePrefect(active: boolean = false) {
     startRunner,
     stoppingRunner,
     stopRunner,
-    triggeringFlow,
-    triggerFinetuneFlow,
     evalInstalling,
     settingUpEvalEnv,
     setupEvalEnv,

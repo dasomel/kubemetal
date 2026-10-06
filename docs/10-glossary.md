@@ -26,7 +26,7 @@
 - **정의**: BaseModel + TrainingDataset로 LoRA/QLoRA 파인튜닝을 수행해 생성된 가중치
   델타. 단독으로는 서빙 불가 — 반드시 BaseModel과 함께 로드된다.
 - **한국어 표준 표기**: **"어댑터"**(고정). "모델"로 지칭하지 않는다.
-- **저장 위치·수명주기**: `run_mlx_finetune`은 `~/.kubemetal/adapter-staging/<attempt_id>/out/`에 학습 출력을 쓴다. exit 0·기대 경로 done·sha256 manifest 검증 후 배타적으로 `~/.kubemetal/adapters/{adapter_name}`에 승격해야 완료된다(D45; 기존 이름 거부, 실패/중지 staging 보존; 이는 직접 Rust 경로 한정 — Prefect 파인튜닝 플로우는 `--legacy-direct-output`으로 최종 디렉터리에 직접 쓰며 staging/검증/승격 대상이 아니다, S2b #33). 승격된 디렉터리(`adapter_config.json` 포함) → `start_model_serving`이 이 디렉터리를 감지해
+- **저장 위치·수명주기**: `run_mlx_finetune`은 `~/.kubemetal/adapter-staging/<attempt_id>/out/`에 학습 출력을 쓴다. exit 0·기대 경로 done·sha256 manifest 검증 후 배타적으로 `~/.kubemetal/adapters/{adapter_name}`에 승격해야 완료된다(D45; 기존 이름 거부, 실패/중지 staging 보존; 이것이 유일한 파인튜닝 경로다 — Prefect 파인튜닝 플로우와 래퍼의 직접 쓰기 모드는 제거됐고 오케스트레이션 카드도 이 경로를 시작한다, D47). 승격된 디렉터리(`adapter_config.json` 포함) → `start_model_serving`이 이 디렉터리를 감지해
   `adapter_config.json.model` 필드에서 베이스 모델 경로를 자동 승격(§4.1
   `start_model_serving` 설명).
 - **IPC 타입/필드**: `FineTuneConfig.adapter_name` → `MlxTrainingState.adapter_path`
@@ -95,7 +95,7 @@
 
 ### FlowRun — 플로우 실행
 
-- **정의**: Prefect가 트리거·추적하는 파인튜닝/평가 워크플로 실행 1건.
+- **정의**: Prefect가 트리거·추적하는 평가/수집 워크플로 실행 1건(파인튜닝은 앱의 MLX 경로, D45/D47).
 - **한국어 표준 표기**: **"플로우 실행"**(개별 run) · 이를 폴링·실행하는 호스트
   프로세스는 **"플로우 러너"**(이미 UI에 정착된 표기, `orch.runnerLabel`).
 - **저장 위치·수명주기**: Prefect 서버(K3s 파드, SQLite, D19)에 상태 저장,
