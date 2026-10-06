@@ -203,7 +203,10 @@ def validate_schema(m, rep):
         elif e["path"] in seen:
             rep.fail("manifest-malformed", f"{w}: duplicate path {e['path']!r}")
             ok = False
-        seen.add(e["path"])
+        # D22 (#17): only validated strings enter the path set; malformed JSON arrays/objects
+        # must produce FAIL, not TypeError. Cost: one guard; repair input instead of coercing it.
+        if not err:
+            seen.add(e["path"])
         if not isinstance(e["sha256"], str) or not SHA_RE.match(e["sha256"]):
             rep.fail("manifest-malformed", f"{w}: sha256 must be 64 lowercase hex chars")
             ok = False
@@ -230,7 +233,7 @@ def validate_schema(m, rep):
         if not isinstance(e["omitted"], str) or not e["omitted"].strip():
             rep.fail("omitted-no-reason", f"{w} ({e.get('path')!r}): omitted entry carries no reason")
             ok = False
-        if e["path"] in seen:
+        if not err and e["path"] in seen:
             rep.fail("manifest-malformed", f"{w}: {e['path']!r} is both listed and omitted")
             ok = False
     return m if ok else None

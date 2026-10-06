@@ -152,21 +152,25 @@ def chunk_markdown_headings(text: str, chunk_size: int = 500, overlap: int = 50)
         texts = _pack(blocks, budget, overlap)
         if not texts:
             continue  # empty section: its title still lives in descendants' paths
+        first_path = path
         if pending is not None:
             p_path, p_body = pending
             merged = f"{p_body}\n\n{heading_line}\n{texts[0]}" if heading_line else f"{p_body}\n\n{texts[0]}"
             if len(merged) <= max(chunk_size - len(_prefix(p_path, chunk_size)), 1):
                 texts[0] = merged
-                path = p_path
+                # D-H5: only the merged chunk inherits the pending path; keeping
+                # later chunks under their own section avoids false provenance.
+                # Cost: one local path; remove when tiny-section merging is removed.
+                first_path = p_path
                 pending = None
             else:
                 emit(p_path, p_body)
                 pending = None
         if len(texts) == 1 and len(texts[0]) < min_size:
-            pending = (path, texts[0])
+            pending = (first_path, texts[0])
             continue
-        for body in texts:
-            emit(path, body)
+        for index, body in enumerate(texts):
+            emit(first_path if index == 0 else path, body)
     if pending is not None:
         emit(*pending)
     return result

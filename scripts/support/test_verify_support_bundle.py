@@ -186,6 +186,19 @@ class VerifyTest(unittest.TestCase):
         write_manifest(self.root, m)
         self.assertFails("path-unsafe")
 
+    def test_non_string_paths_report_failure_without_crashing(self):
+        for bad in ([], {}, None, 7, True):
+            for field in ("files", "omitted"):
+                with self.subTest(path=bad, field=field):
+                    m = build_bundle(self.root)
+                    if field == "files":
+                        m["files"].append({"path": bad, "sha256": "0" * 64, "bytes": 0})
+                    else:
+                        m["omitted"] = [{"path": bad, "omitted": "reason"}]
+                    write_manifest(self.root, m)
+                    out = self.assertFails("path-unsafe")
+                    self.assertIn("RESULT: FAILED", out)
+
     def test_symlinked_listed_file(self):
         build_bundle(self.root)
         outside = os.path.join(self.root, "..", os.path.basename(self.root) + "-outside")

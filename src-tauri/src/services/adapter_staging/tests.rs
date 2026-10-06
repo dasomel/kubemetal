@@ -686,3 +686,46 @@ fn only_a_missing_out_dir_counts_as_gone() {
     let t = TempRoot::new();
     assert!(!out_gone(fs::symlink_metadata(&t.0)).unwrap());
 }
+
+#[test]
+fn reconcile_rejects_persisted_adapter_path_escape_without_mutating_record() {
+    for escaped in ["../outside", "/tmp/outside", ".hidden"] {
+        let t = TempRoot::new();
+        let a = verified(&t.0, "safe");
+        let mut record = a.record.clone();
+        record.adapter_name = escaped.into();
+        write_record(&a.dir(), &record).unwrap();
+        let before = fs::read(a.dir().join(RECORD_FILE)).unwrap();
+        let out = outcome(&t.0, true);
+        assert!(
+            matches!(out.as_slice(), [ReconcileOutcome::Unknown { reason, .. }] if reason.contains("adapter_name")),
+            "{escaped}: {out:?}"
+        );
+        assert_eq!(fs::read(a.dir().join(RECORD_FILE)).unwrap(), before);
+        assert!(a.out_dir().is_dir());
+    }
+}
+
+#[test]
+fn reconcile_missing_staging_is_empty_but_invalid_staging_is_not() {
+    let t = TempRoot::new();
+    assert!(outcome(&t.0, true).is_empty());
+    fs::write(t.0.join(STAGING_DIR), b"not a directory").unwrap();
+    assert!(
+        !outcome(&t.0, true).is_empty(),
+        "enumeration failure must not appear as an empty staging directory"
+    );
+}
+
+#[test]
+fn reconcile_entry_iteration_failure_never_becomes_partial_inventory() {
+    let error = collect_entry_names([
+        Ok(std::ffi::OsString::from("valid-attempt")),
+        Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+    ])
+    .unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
+    assert!(
+        matches!(scan_failed(Path::new("/staging"), error), ReconcileOutcome::ScanFailed { reason } if reason.contains("Failed to enumerate staging"))
+    );
+}
