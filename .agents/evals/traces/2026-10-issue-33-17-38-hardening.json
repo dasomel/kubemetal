@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-33-17-38-hardening",
+  "task": "Harden adapter staging reconcile (#33), support bundle verifier (#17) and heading chunker provenance (#38); verify at hermetic unit/static scope only.",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "scripts/support/**",
+      "scripts/rag/**",
+      "tests/rag/**",
+      "docs/**",
+      "research/**",
+      ".agents/evals/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Plan: revalidate persisted adapter_name in staging read_record; report ScanFailed for enumeration errors (only NotFound is empty) and collect entries before reconcile writes; keep non-string manifest paths out of set operations in the support verifier; apply merged heading path to the first chunk only. No IPC, UI, capability, deletion, process-policy or promotion-authority changes; no remote mutation beyond the PR."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "New regression tests failed before the fixes: 2 of 5 staging tests, 4 errors in the support verifier non-string path test, 1 failure in the heading suite. No real training, LanceDB or cluster reproduction."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Persisted adapter names get the same boundary as new attempts, so recovery cannot join paths outside adapters/. An unreadable staging directory or iterator error becomes ScanFailed instead of an empty inventory. Malformed manifest paths yield structured FAIL and exit 1 instead of TypeError. Pending heading provenance no longer propagates to later chunks."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Hermetic unit tests on tempdirs and pure functions: adapter_staging lib tests, support verifier unittest, RAG unittest suite.",
+      "summary": "adapter_staging 33 passed; support verifier 25 tests OK with 1 skipped (real bundle unavailable); RAG 45 passed.",
+      "evidence": [
+        "test:cargo-test-locked-lib-adapter_staging-33-passed",
+        "test:support-verifier-25-ok-1-skipped",
+        "test:rag-45-passed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Static gates on the changed Rust code, not runtime evidence",
+      "summary": "cargo fmt --check and cargo clippy --locked --lib --tests -- -D warnings exit 0.",
+      "evidence": [
+        "test:fmt-clippy-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "environment_limit",
+      "summary": "Not observed: Tauri UI, real MLX training, real LanceDB retrieval, real support bundle, cluster runtime. Parent issues #33, #17 and #38 remain partial and open."
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "Three defect slices implemented and observed at hermetic unit/static scope ONLY; not a claim of runtime or parent-issue completion.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "A is limited to the executed hermetic unit and static checks; runtime verification remains unobserved."
+    }
+  ]
+}
