@@ -1,0 +1,87 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-33-adapter-staging-s2",
+  "task": "Wire run_mlx_finetune and required wrapper output-dir to S1 staging; verify completion authority at hermetic unit/static scope only.",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "scripts/mlx/**",
+      "tests/mlx/**",
+      "docs/**",
+      "README.md",
+      ".agents/evals/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Plan: wrapper admission, Rust attempt/marker identity, exit/done-path/manifest/exclusive promotion; failure/stop retention and owned rmdir spawn cleanup; D45/docs/tests/evidence. No IPC signature, capabilities, TS/UI, TRAINING_STATUSES, serving/convert, TTL, startup reconcile/list/checkpoint/warm-start changes; no VM, real training, GitHub mutation or remote commit/push. S1 failure transition minimally extended for publication errors. Follow-up: wrapper accepts exactly one of --output-dir or explicit --legacy-direct-output (warning event, pre-D45 direct write) so the Prefect host_runner fine-tune flow keeps working; Prefect staging migration (S2b) is out of scope."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Source audit identified direct exist_ok final writes and stdout done authority; 32 actual mutation runs (29 earlier + 4 for the second review round, minus 1 replaced; script re-run at HEAD) caused their safety tests to fail, plus late-MLflow, missing-evidence/non-UTF8 predicate and reused-PID red-before-fix failures. No real training reproduction.",
+      "evidence": [
+        "artifact:.agents/evals/evidence/2026-10-issue-33-adapter-staging-s2.txt"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Rust owns expected staging path and durable state; child done cannot publish completion. Exit 0 + expected done + verified sha256 manifest + admission-serialized exclusive promotion are required. Existing/legacy names refused untouched; failed/killed attempts kept; spawn cleanup uses only owned record unlink plus empty rmdir. Per-attempt stop ownership survives slot replacement/PID reuse; existing marker PID/sysinfo start-time scheme is reused, unknown birth cannot grant group-signal authority. Rust spawn args now come from a pure builder that never passes --legacy-direct-output. Review fixes: a non-zero exit surfaces the wrapper's own error event over generic stderr; the training slot is not held while hashing (admission is, lock order admission/training/training_stop) and a stop during hashing is not overwritten by done; a stopped never-started attempt is recorded failed."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "27 Rust tests on tempdirs/argument builder and 11 Python tests (real Python only with external MLX/HTTP boundaries stubbed, argparse rejection, or parsed host_runner source); 32 mutation controls (script re-run at HEAD, 32/32 detected) plus 3 follow-up mutations. Non-UTF8 expected-path case is predicate-only.",
+      "summary": "Observed all scoped tests passing after restoration; every mutation failed its named safety test. Tests cover required/real/empty wrapper out, LM/VLM mapping, forged/duplicate/missing done, failed/killed/failed-stop, manifest write and promotion errors, existing legacy bytes, same delete mutex, staging root exclusion, owned nonrecursive spawn cleanup, late run-ID and replaced/reused slot ownership. Follow-up tests: required/mutually exclusive output flags, legacy flag warning and direct write (HOME redirected to a tempdir), host_runner command carries --legacy-direct-output (source AST, prefect not imported), Rust builder has --output-dir and no legacy flag. Mutations (add flag in Rust builder, drop flag in host_runner, drop wrapper exclusivity) each failed their test.",
+      "evidence": [
+        "test:22-rust-staging-boundary-tests-passed",
+        "test:7-python-tests-passed",
+        "test:32-mutations-failed-safety-tests",
+        "artifact:.agents/evals/evidence/2026-10-issue-33-adapter-staging-s2.txt",
+        "test:follow-up-legacy-flag-tests-and-3-mutations"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Static/lint gates on final code (not runtime MLX/UI evidence)",
+      "summary": "cargo fmt --check, cargo clippy --locked --all-targets -- -D warnings via final make lint, check_ipc_types.py and full npm_config_offline=true make lint all exit 0. Read-only local dependency links and cached design.md 0.3.0 used; initial uncached npx invocation failed DNS before links were prepared.",
+      "evidence": [
+        "test:fmt-clippy-ipc-make-lint-exit-0",
+        "artifact:.agents/evals/evidence/2026-10-issue-33-adapter-staging-s2.txt"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "environment_limit",
+      "status": "passed",
+      "summary": "After the second review round fixes (late stop never un-promotes or hides a failure; Killed only from Running; wrapper error capped at 4000 bytes; lock-order test), full cargo test --locked --lib ran eight consecutive times: each exit 0, 388 passed, 0 failed, 1 ignored (the earlier sandbox-bound services::ports failures did not occur in this run environment). cargo fmt --check, cargo clippy --locked --all-targets -- -D warnings, python3 -m unittest discover -s tests/mlx (11 OK) and check_ipc_types.py exit 0. Not observed: real MLX training, real Prefect run, app UI; Prefect staging migration (S2b) is out of scope."
+    },
+    {
+      "id": "e7",
+      "type": "compatibility_limit",
+      "summary": "Source inspection: independent Prefect host_runner is kept working by the explicit --legacy-direct-output flag; that path still writes directly into the final adapter directory with a warning event and is NOT staged, verified or promoted. Migration to the Rust lifecycle (S2b under #33) is a separate slice; no Python promotion authority added. No real Prefect run was performed."
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "S2 command/wrapper boundary implemented and observed at the scoped hermetic unit/static level ONLY. This is not a claim of a green full suite, working Prefect fine-tune flow (only its command line is asserted statically), real MLX training, real ~/.kubemetal or app UI behavior. The Prefect fine-tune path is out of scope of staging.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "A is limited to actually executed hermetic completion-boundary and static checks. Runtime verification and outside-sandbox full-suite rerun remain unobserved; Prefect staging migration (S2b) is out of scope; real MLX training was not run."
+    }
+  ]
+}

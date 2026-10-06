@@ -1,14 +1,18 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::services;
+use crate::services::adapter_staging::{self, Attempt, AttemptSpec};
+#[cfg(test)]
 use crate::services::artifact_manifest::{write_manifest, ManifestContext};
+
+mod training_staging;
 #[allow(unused_imports)]
 pub use crate::services::mlx_lifecycle::{
     check_for_orphaned_mlx_processes, terminate_orphaned_mlx_process, OrphanedProcessInfo,
@@ -70,12 +74,8 @@ pub struct TrainingStatus {
     pub last_loss: Option<f64>,
     pub adapter_path: Option<String>,
     pub error: Option<String>,
-    /// 학습 요청에 실린 어댑터 이름(finetune_wrapper.py가 `~/.kubemetal/adapters/<이
-    /// 이름>`에 쓴다) — `adapter_path`와 달리 스폰 시점부터 항상 알려져 있다.
-    /// `is_adapter_safe_to_delete`(#33)의 in-progress 보호가 학습이 아직 "done"에
-    /// 도달하지 않아 `adapter_path`가 비어 있는 동안에도 출력 디렉터리를 판별할 수
-    /// 있도록 추가했다(2026-09-23 리뷰) — `adapter_path`의 기존 의미(완료 시에만
-    /// 채워짐)는 바꾸지 않는다.
+    /// D45: reserves the final name during training. The wrapper writes staging out/,
+    /// outside the delete IPC root; promotion and deletion share adapter_admission.
     pub adapter_name: String,
     /// `finetune_wrapper.py`가 `reporter.start_run` 성공 직후 보고하는 실제 MLflow run id
     /// (GitHub #13). 이 값이 있어야 wrapper가 자기 `end_run`을 못 부르고 죽었을 때(시그널로
@@ -133,6 +133,8 @@ pub struct MlxState {
     pub adapter_admission: Mutex<()>,
     pub env_setup: Mutex<EnvSetupStatus>,
     pub training: Mutex<Option<TrainingStatus>>,
+    // Per-child stop intent survives a killed slot being replaced by the next run.
+    training_stop: Mutex<Option<(u32, Arc<AtomicBool>)>>,
     pub serving: Mutex<Option<ServingStatus>>,
     pub last_serving_error: Mutex<Option<String>>,
     pub training_needs_reverification: AtomicBool,
@@ -313,10 +315,12 @@ fn adapter_deletion_home(home: Result<PathBuf, String>) -> Option<PathBuf> {
 /// 지어내지 않는다(D22, fail-closed) — 서비스 함수의 계약대로, poison된
 /// 슬롯은 `None`으로 뭉개 넘기지 않고 그 자리에서 함수를 빠져나온다.
 ///
-/// 진행 중인 학습의 출력 디렉터리는 `TrainingStatus.adapter_name`(스폰 시점부터
+/// 진행 중인 학습의 예약된 최종 디렉터리는 `TrainingStatus.adapter_name`(스폰 시점부터
 /// 항상 채워짐, `adapter_path`와 달리 "done"을 기다리지 않는다)으로 역산한다 —
 /// 2026-09-23 리뷰 전에는 이 세 번째 경우가 아예 없어 진행 중인 학습의 산출물이
-/// 삭제 가능하다고 오판했다. HOME 조회 실패도 서비스에 전달해 삭제를 거부한다.
+/// 삭제 가능하다고 오판했다. D45의 staging은 삭제 루트 밖이다. 최종 이름 예약은
+/// 승격 직전까지 유지하며 승격·done 갱신과 삭제는 같은 admission 락으로 직렬화한다.
+/// HOME 조회 실패도 서비스에 전달해 삭제를 거부한다.
 ///
 pub(crate) fn is_adapter_safe_to_delete(
     adapter_dir: &Path,
@@ -672,64 +676,21 @@ pub async fn setup_mlx_env(
 
 fn apply_training_event(app: &tauri::AppHandle, child_pid: u32, value: &serde_json::Value) {
     let state = app.state::<MlxState>();
-    let mut guard = match state.training.lock() {
-        Ok(g) => g,
-        Err(_) => return,
+    if let Ok(mut guard) = state.training.lock() {
+        if let Some(training) = guard.as_mut().filter(|t| t.pid == child_pid) {
+            training_staging::apply_event(training, value);
+        }
     };
-    let training = match guard.as_mut() {
-        Some(t) => t,
-        None => return,
-    };
-    // 이전 실행 A의 늦은 이벤트가 새 실행 B의 슬롯을 오염시키지 않도록 귀속 검증(GitHub #13).
-    if training.pid != child_pid {
-        return;
-    }
-    match value.get("type").and_then(|v| v.as_str()) {
-        Some("progress") => {
-            if let Some(i) = value.get("iter").and_then(|v| v.as_u64()) {
-                training.current_iter = i as u32;
-            }
-            if let Some(l) = value.get("train_loss").and_then(|v| v.as_f64()) {
-                training.last_loss = Some(l);
-            }
-        }
-        Some("done") => {
-            training.status = "done".into();
-            if let Some(p) = value.get("adapter_path").and_then(|v| v.as_str()) {
-                training.adapter_path = Some(p.to_string());
-            }
-            if let Some(l) = value.get("last_loss").and_then(|v| v.as_f64()) {
-                training.last_loss = Some(l);
-            }
-        }
-        Some("error") => {
-            training.status = "error".into();
-            if let Some(m) = value.get("message").and_then(|v| v.as_str()) {
-                training.error = Some(m.to_string());
-            }
-        }
-        Some("warning") => {
-            // 경고는 상태를 바꾸지 않는다(예: MLflow 접근 실패) — 향후 로그 노출용으로만 무시하지 않고 수신.
-        }
-        Some("mlflow_run_started") => {
-            // GitHub #13 — wrapper가 자기 end_run을 못 부르고 죽었을 때(시그널 kill) Rust가
-            // 대신 MLflow에 종료를 알리려면 이 run_id가 필요하다. MLflow가 꺼져 있으면
-            // wrapper가 이 이벤트 자체를 안 보내므로 여기 도달하지 않는다(D22).
-            if let Some(id) = value.get("run_id").and_then(|v| v.as_str()) {
-                training.mlflow_run_id = Some(id.to_string());
-            }
-        }
-        _ => {}
-    }
 }
 
 async fn read_stdout_lines(
     app: tauri::AppHandle,
     child_pid: u32,
     stdout: tokio::process::ChildStdout,
-) -> Option<String> {
+    expected: PathBuf,
+) -> training_staging::CompletionReport {
     let mut lines = BufReader::new(stdout).lines();
-    let mut completed_adapter_path = None;
+    let mut report = training_staging::CompletionReport::default();
     loop {
         match lines.next_line().await {
             Ok(Some(line)) => {
@@ -738,20 +699,18 @@ async fn read_stdout_lines(
                     continue;
                 }
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
-                    if value.get("type").and_then(|value| value.as_str()) == Some("done") {
-                        completed_adapter_path = value
-                            .get("adapter_path")
-                            .and_then(|value| value.as_str())
-                            .map(str::to_owned);
-                    }
+                    report.observe(&value, &expected);
                     apply_training_event(&app, child_pid, &value);
                 }
             }
             Ok(None) => break,
-            Err(_) => break,
+            Err(e) => {
+                report.read_error(format!("Failed to read training output: {e}"));
+                break;
+            }
         }
     }
-    completed_adapter_path
+    report
 }
 
 async fn collect_stderr(stderr: tokio::process::ChildStderr) -> String {
@@ -789,127 +748,57 @@ fn should_record_exit(status: &str) -> bool {
     crate::services::mlx_lifecycle::is_non_terminal_training_status(status)
 }
 
-fn finalize_training(
-    app: &tauri::AppHandle,
-    pid: u32,
-    exit: std::io::Result<std::process::ExitStatus>,
-    stderr_text: String,
-) -> bool {
-    let state = app.state::<MlxState>();
-    let mut guard = match state.training.lock() {
-        Ok(g) => g,
-        Err(_) => return false,
-    };
-    let training = match guard.as_mut() {
-        Some(t) => t,
-        None => return false,
-    };
-
-    // GitHub #13 — run_id와 종료 결과를 같은 프로세스에 귀속시킨다.
-    // A 종료 전에 B가 슬롯을 차지했으면(training.pid != pid), A의 종료로 B를 KILLED로 만들거나
-    // B의 상태(status, error 등)를 덮어쓰지 않고 즉시 반환한다.
-    let is_same_process = training.pid == pid;
-    let wrapper_reported_terminal = matches!(training.status.as_str(), "done" | "error");
-    let reconciliation = crate::services::mlx_lifecycle::mlflow_reconciliation_decision(
-        &training.status,
-        Some(training.pid),
-        pid,
-        if is_same_process {
-            training.mlflow_run_id.as_deref()
-        } else {
-            None
-        },
-        wrapper_reported_terminal,
-        exit.as_ref().ok(),
-    );
-
-    if !is_same_process {
-        drop(guard);
-        return false;
-    }
-
-    if !should_record_exit(&training.status) {
-        let success = matches!(exit, Ok(status) if status.success()) && training.status == "done";
-        drop(guard);
-        if let Some(r) = reconciliation {
-            tokio::spawn(crate::services::mlx_lifecycle::reconcile_mlflow_run(r));
-        }
-        return success;
-    }
-    let success = match exit {
-        Ok(status) if status.success() => {
-            training.status = "done".into();
-            true
-        }
-        Ok(status) => {
-            training.status = "error".into();
-            training.error = Some(if stderr_text.trim().is_empty() {
-                format!("Training process exited abnormally ({status})")
-            } else {
-                stderr_text.trim().to_string()
-            });
-            false
-        }
-        Err(e) => {
-            training.status = "error".into();
-            training.error = Some(format!("Failed to wait for process: {e}"));
-            false
-        }
-    };
-    drop(guard);
-    if let Some(r) = reconciliation {
-        tokio::spawn(crate::services::mlx_lifecycle::reconcile_mlflow_run(r));
-    }
-    success
-}
-
 async fn run_training_reader(
     app: tauri::AppHandle,
     mut child: tokio::process::Child,
-    manifest_context: ManifestContext,
+    mut attempt: Attempt,
+    stopped: Arc<AtomicBool>,
+    setup_error: Option<String>,
     pid: u32,
 ) {
-    let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
-
-    let stdout_task = stdout.map(|out| tokio::spawn(read_stdout_lines(app.clone(), pid, out)));
-    let stderr_task = stderr.map(|err| tokio::spawn(collect_stderr(err)));
-
-    let adapter_path = if let Some(t) = stdout_task {
-        t.await.ok().flatten()
+    let stdout_task = child
+        .stdout
+        .take()
+        .map(|out| tokio::spawn(read_stdout_lines(app.clone(), pid, out, attempt.out_dir())));
+    let stderr_task = child
+        .stderr
+        .take()
+        .map(|err| tokio::spawn(collect_stderr(err)));
+    let report = if let Some(t) = stdout_task {
+        t.await.unwrap_or_default()
     } else {
-        None
+        training_staging::CompletionReport::default()
     };
     let stderr_text = if let Some(t) = stderr_task {
         t.await.unwrap_or_default()
     } else {
         String::new()
     };
-
     let exit = child.wait().await;
-    // child.wait()가 이미 완료됐다 — 프로세스는 실제로 종료됐으므로 기록된 상태와
-    // 무관하게 marker를 지운다(GitHub #13). 그래야 다음 실행이 이미 죽은 프로세스를
-    // 고아로 오탐하지 않는다.
     if let Ok(home) = home_dir() {
         crate::services::mlx_lifecycle::remove_pid_marker(&home, "training", pid).await;
     }
-
-    if !finalize_training(&app, pid, exit, stderr_text) {
-        return;
-    }
-
-    let Some(adapter_path) = adapter_path else {
-        eprintln!("Training warning: artifact manifest was not written because the completed run did not report an adapter path.");
-        return;
-    };
     let result = tokio::task::spawn_blocking(move || {
-        write_manifest(&PathBuf::from(adapter_path), manifest_context)
+        let state = app.state::<MlxState>();
+        training_staging::finalize(
+            &state,
+            &mut attempt,
+            &stopped,
+            training_staging::TrainingExit {
+                pid,
+                exit,
+                report,
+                stderr: stderr_text,
+                setup_error,
+            },
+        )
     })
     .await;
     match result {
-        Ok(Ok(_)) => {}
-        Ok(Err(error)) => eprintln!("Training warning: failed to write artifact manifest: {error}"),
-        Err(error) => eprintln!("Training warning: artifact manifest task failed: {error}"),
+        Ok(Ok(Some(r))) => crate::services::mlx_lifecycle::reconcile_mlflow_run(r).await,
+        Ok(Ok(None)) => {}
+        Ok(Err(e)) => eprintln!("[mlx] Failed to finalize staging attempt: {e}"),
+        Err(e) => eprintln!("[mlx] Staging finalization task failed: {e}"),
     }
 }
 
@@ -980,81 +869,95 @@ pub async fn run_mlx_finetune(
         prev
     };
 
-    let res = (|| -> Result<(u32, tokio::process::Child, PathBuf), String> {
-        if config.iters == 0 {
-            return Err("iters must be at least 1.".into());
-        }
-        if config.batch_size == 0 {
-            return Err("batch_size must be at least 1.".into());
-        }
-        if !(config.learning_rate.is_finite() && config.learning_rate > 0.0) {
-            return Err("learning_rate must be a finite value greater than 0.".into());
-        }
-        validate_adapter_name(&config.adapter_name)?;
+    let prepare_app = app.clone();
+    let prepare_config = config.clone();
+    let res = tokio::task::spawn_blocking(
+        move || -> Result<(u32, tokio::process::Child, Attempt, Option<String>), String> {
+            let app = prepare_app;
+            let config = prepare_config;
+            if config.iters == 0 {
+                return Err("iters must be at least 1.".into());
+            }
+            if config.batch_size == 0 {
+                return Err("batch_size must be at least 1.".into());
+            }
+            if !(config.learning_rate.is_finite() && config.learning_rate > 0.0) {
+                return Err("learning_rate must be a finite value greater than 0.".into());
+            }
+            validate_adapter_name(&config.adapter_name)?;
 
-        let model_path = validate_home_subpath(&config.model_path)?;
-        let data_path = validate_home_subpath(&config.data_path)?;
-        reject_incompatible_runtime_combo(&model_path, config.train_vision)?;
+            let model_path = validate_home_subpath(&config.model_path)?;
+            let data_path = validate_home_subpath(&config.data_path)?;
+            reject_incompatible_runtime_combo(&model_path, config.train_vision)?;
 
-        let venv_py = venv_python()?;
-        if !venv_py.is_file() {
-            return Err("MLX venv does not exist. Run setup_mlx_env first.".into());
-        }
+            let venv_py = venv_python()?;
+            if !venv_py.is_file() {
+                return Err("MLX venv does not exist. Run setup_mlx_env first.".into());
+            }
 
-        let wrapper = wrapper_script_path(&app)?;
-        if !wrapper.is_file() {
-            return Err(format!(
-                "Could not find the fine-tuning wrapper script: {}",
-                wrapper.display()
+            let wrapper = wrapper_script_path(&app)?;
+            if !wrapper.is_file() {
+                return Err(format!(
+                    "Could not find the fine-tuning wrapper script: {}",
+                    wrapper.display()
+                ));
+            }
+
+            let root = home_dir()?.join(".kubemetal");
+            let mut attempt = adapter_staging::create_attempt(
+                &root,
+                &AttemptSpec {
+                    adapter_name: config.adapter_name.clone(),
+                    runtime: match training_runtime {
+                        MlxRuntime::MlxLm => "mlx-lm",
+                        MlxRuntime::MlxVlm => "mlx-vlm",
+                    }
+                    .into(),
+                    base_model: model_path.to_string_lossy().into_owned(),
+                    iters: config.iters,
+                    mlflow_run_id: None,
+                },
+            )
+            .map_err(|e| e.to_string())?;
+            let mut cmd = tokio::process::Command::new(&venv_py);
+            cmd.args(finetune_wrapper_args(
+                &wrapper,
+                &model_path,
+                &data_path,
+                &config,
+                training_runtime,
+                &attempt.out_dir(),
+                &ports::local_url("mlflow"),
             ));
-        }
 
-        let mut cmd = tokio::process::Command::new(&venv_py);
-        cmd.arg(&wrapper)
-            .arg("--model")
-            .arg(&model_path)
-            .arg("--data")
-            .arg(&data_path)
-            .arg("--iters")
-            .arg(config.iters.to_string())
-            .arg("--batch-size")
-            .arg(config.batch_size.to_string())
-            .arg("--learning-rate")
-            .arg(config.learning_rate.to_string())
-            .arg("--adapter-name")
-            .arg(&config.adapter_name)
-            .arg("--runtime")
-            .arg(match training_runtime {
-                MlxRuntime::MlxLm => "mlx-lm",
-                MlxRuntime::MlxVlm => "mlx-vlm",
-            })
-            // MLflow 주소를 명시로 넘긴다. 넘기지 않으면 래퍼가 자기 기본값(5001 고정)을
-            // 쓰는데, 포트는 런타임 값이라(D1 개정) 5001이 점유되면 학습 기록이 통째로
-            // 엉뚱한 곳으로 간다.
-            .arg("--mlflow-uri")
-            .arg(ports::local_url("mlflow"));
+            let child = training_staging::spawn(&mut cmd, &attempt)?;
 
-        if config.train_vision {
-            cmd.arg("--train-vision");
-        }
+            let pid = child.id().ok_or_else(|| "Could not get PID.".to_string())?;
 
-        let child = cmd
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .env("PATH", augmented_path())
-            .process_group(0)
-            .spawn()
-            .map_err(|e| format!("Failed to launch fine-tuning process: {e}"))?;
-
-        let pid = child.id().ok_or_else(|| "Could not get PID.".to_string())?;
-
-        Ok((pid, child, model_path))
-    })();
+            // D45: reuse the marker's PID/sysinfo birth-time identity. One refresh costs
+            // startup time; unknown identity fails completion instead of granting authority.
+            let start_time = services::process::process_start_time(pid);
+            let setup_error = adapter_staging::mark_running(&mut attempt, pid, start_time)
+                .err()
+                .map(|e| e.to_string())
+                .or_else(|| {
+                    start_time
+                        .is_none()
+                        .then(|| "Cannot determine training process start time".into())
+                });
+            Ok((pid, child, attempt, setup_error))
+        },
+    )
+    .await
+    .unwrap_or_else(|e| Err(format!("Training preparation task failed: {e}")));
 
     match res {
-        Ok((pid, child, model_path)) => {
+        Ok((pid, child, attempt, setup_error)) => {
+            let stopped = Arc::new(AtomicBool::new(false));
             {
                 let mut guard = state.training.lock().map_err(|e| e.to_string())?;
+                *state.training_stop.lock().map_err(|e| e.to_string())? =
+                    Some((pid, stopped.clone()));
                 *guard = Some(TrainingStatus {
                     pid,
                     status: "running".into(),
@@ -1080,14 +983,22 @@ pub async fn run_mlx_finetune(
             crate::commands::guardrails::start_caffeinate(&app, pid);
             crate::commands::guardrails::spawn_guardrail_loop(app.clone(), pid);
 
-            let manifest_context = ManifestContext {
-                runtime: match training_runtime {
-                    MlxRuntime::MlxLm => "mlx-lm".into(),
-                    MlxRuntime::MlxVlm => "mlx-vlm".into(),
-                },
-                base_model: model_path.to_string_lossy().to_string(),
-            };
-            tokio::spawn(run_training_reader(app, child, manifest_context, pid));
+            if setup_error.is_some() {
+                // Missing process identity cannot grant group-signal authority. A known
+                // marker identity is rechecked by terminate_pid; otherwise keep tracking
+                // the child until exit and refuse promotion, rather than guessing a PID.
+                if let Some(start_time) = attempt.record().start_time {
+                    let _ = terminate_pid(pid, true, Some(start_time)).await;
+                }
+            }
+            tokio::spawn(run_training_reader(
+                app,
+                child,
+                attempt,
+                stopped,
+                setup_error,
+                pid,
+            ));
 
             Ok(pid)
         }
@@ -1388,7 +1299,7 @@ pub(crate) fn untracked_pid_stop_outcome(pid: u32, is_alive: bool) -> Result<boo
 }
 
 /// 시그널 전송이 실패했을 때 `kill_mlx_process`가 시그널 전에 낙관적으로 써둔 "killed"
-/// 상태를 되돌려야 하는지 결정한다. 그 사이 다른 경로(예: finalize_training)가 이미 다른
+/// 상태를 되돌려야 하는지 결정한다. 그 사이 다른 경로(예: training_staging::finalize)가 이미 다른
 /// 종착 상태로 갱신했다면 건드리지 않는다(D22, GitHub #13 LOW).
 pub(crate) fn should_revert_optimistic_killed_status(current_status: &str) -> bool {
     current_status == "killed"
@@ -1418,23 +1329,14 @@ pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bo
     // **시그널을 보내기 전에** 의도를 기록한다. 이 블록이 terminate_pid 뒤에 있었을 때는
     // 사용자가 중지를 눌러도 화면에 "Training process exited abnormally" 오류가 떴다:
     // terminate_pid는 SIGTERM 후 1초를 자는데, 그 사이 run_training_reader가 자식의 종료를
-    // 관측해 finalize_training을 부르고, 그때 status는 아직 "running"이라 exit code
+    // 관측해 training_staging::finalize을 부르고, 그때 status는 아직 "running"이라 exit code
     // 비정상을 이유로 "error"가 먼저 쓰인다. 그다음 여기 도달해도 `!= "error"` 가드에
     // 걸려 "killed" 갱신이 통째로 스킵됐다.
     //
-    // 순서를 뒤집으면 finalize_training의 기존 가드(`status != "running"`이면 반환)가
-    // 그대로 보호막이 된다 — 새 가드가 필요한 게 아니라 쓰는 시점이 늦었던 것이다.
-    // 의도적 중지의 종료 코드는 오류가 아니므로 기록하지 않는 것이 맞다.
-    {
-        let mut guard = state.training.lock().map_err(|e| e.to_string())?;
-        if let Some(t) = guard.as_mut() {
-            // running/paused* 등 아직 종료되지 않은 상태였다면 killed로 전이한다(가드레일이
-            // 일시정지시킨 상태에서 사용자가 중지를 눌러도 상태가 갱신되어야 한다).
-            if t.pid == pid && t.status != "done" && t.status != "error" && t.status != "killed" {
-                t.status = "killed".into();
-            }
-        }
-    }
+    // D45: slot status and per-child stop intent are recorded before signaling. The
+    // reader retains that intent even if a new run replaces the killed slot; no late
+    // child done event can authorize promotion after stop.
+    training_staging::request_stop(&state, pid)?;
 
     if let Err(error) = terminate_pid(pid, is_training, None).await {
         // 시그널 전송이 실패했으니 위에서 낙관적으로 쓴 "killed"를 되돌린다 — 프로세스가
@@ -1442,6 +1344,7 @@ pub async fn kill_mlx_process(state: State<'_, MlxState>, pid: u32) -> Result<bo
         let mut guard = state.training.lock().map_err(|e| e.to_string())?;
         if let Some(t) = guard.as_mut() {
             if t.pid == pid && should_revert_optimistic_killed_status(&t.status) {
+                training_staging::clear_stop_intent(&state, pid)?;
                 t.status = "error".into();
                 t.error = Some(error.clone());
             }
@@ -1907,6 +1810,52 @@ pub async fn revert_to_last_serving(
     .await
 }
 
+/// D45: the direct Rust path always hands the wrapper a staging `--output-dir` and must
+/// never pass `--legacy-direct-output` (that flag is the Prefect path's explicit bypass of
+/// staging/verification/promotion). Kept as a pure function so a test can pin both.
+fn finetune_wrapper_args(
+    wrapper: &Path,
+    model_path: &Path,
+    data_path: &Path,
+    config: &FineTuneConfig,
+    runtime: MlxRuntime,
+    out_dir: &Path,
+    mlflow_uri: &str,
+) -> Vec<std::ffi::OsString> {
+    let mut args: Vec<std::ffi::OsString> = vec![
+        wrapper.into(),
+        "--model".into(),
+        model_path.into(),
+        "--data".into(),
+        data_path.into(),
+        "--iters".into(),
+        config.iters.to_string().into(),
+        "--batch-size".into(),
+        config.batch_size.to_string().into(),
+        "--learning-rate".into(),
+        config.learning_rate.to_string().into(),
+        "--adapter-name".into(),
+        (&config.adapter_name).into(),
+        "--output-dir".into(),
+        out_dir.into(),
+        "--runtime".into(),
+        match runtime {
+            MlxRuntime::MlxLm => "mlx-lm",
+            MlxRuntime::MlxVlm => "mlx-vlm",
+        }
+        .into(),
+        // MLflow 주소를 명시로 넘긴다. 넘기지 않으면 래퍼가 자기 기본값(5001 고정)을
+        // 쓰는데, 포트는 런타임 값이라(D1 개정) 5001이 점유되면 학습 기록이 통째로
+        // 엉뚱한 곳으로 간다.
+        "--mlflow-uri".into(),
+        mlflow_uri.into(),
+    ];
+    if config.train_vision {
+        args.push("--train-vision".into());
+    }
+    args
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -1919,6 +1868,37 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn direct_finetune_args_pass_output_dir_and_never_the_legacy_flag() {
+        let config = FineTuneConfig {
+            model_path: "m".into(),
+            data_path: "d".into(),
+            iters: 1,
+            batch_size: 1,
+            learning_rate: 0.001,
+            adapter_name: "a".into(),
+            runtime: None,
+            train_vision: true,
+        };
+        for runtime in [MlxRuntime::MlxLm, MlxRuntime::MlxVlm] {
+            let args = finetune_wrapper_args(
+                Path::new("w.py"),
+                Path::new("m"),
+                Path::new("d"),
+                &config,
+                runtime,
+                Path::new("/stage/out"),
+                "http://127.0.0.1:5001",
+            );
+            let pos = args
+                .iter()
+                .position(|a| a == "--output-dir")
+                .expect("--output-dir");
+            assert_eq!(args[pos + 1], "/stage/out");
+            assert!(!args.iter().any(|a| a == "--legacy-direct-output"));
+        }
+    }
 
     #[test]
     fn orphan_termination_requires_matching_process_start_time() {

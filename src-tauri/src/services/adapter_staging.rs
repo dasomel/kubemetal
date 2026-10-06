@@ -392,13 +392,20 @@ pub fn mark_running(attempt: &mut Attempt, pid: u32, start_time: Option<u64>) ->
     })
 }
 
-/// Trainer-outcome transitions only; verified/promoted states are reachable solely through
+/// Trainer/publication failure transitions only; verified/promoted states are reachable solely through
 /// `verify_out` / `promote`, which prove their precondition.
 pub fn transition(attempt: &mut Attempt, to: AttemptState) -> Result<()> {
     use AttemptState::*;
+    // D45: a verified output can still fail publication; retain all bytes/hash evidence,
+    // but record failed so the app never confuses that attempt with completed promotion.
+    // No terminal attempt can be revived; retry/recovery is a future explicit operation.
     let ok = matches!(
         (attempt.record.state, to),
-        (Running, ExitedOk | Killed) | (Created | Running | ExitedOk, Failed)
+        (Running, ExitedOk | Killed)
+            | (
+                Created | Running | ExitedOk | Verified | VerifiedUnpromoted,
+                Failed
+            )
     );
     if !ok {
         return other(format!(

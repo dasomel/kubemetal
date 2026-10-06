@@ -29,9 +29,12 @@ pub(crate) fn manifest_verification_status(adapter_dir: &Path) -> &'static str {
     }
 }
 
-/// mlx 파인튜닝 래퍼(`scripts/mlx/finetune_wrapper.py`)가 어댑터를 쓰는 출력
-/// 디렉터리. `Path.home() / ".kubemetal" / "adapters" / <adapter_name>` — 래퍼 쪽과
-/// 같은 사실이므로 여기서 새로 지어내지 않고 그 파일의 실제 동작을 그대로 옮긴다.
+/// D45: the reserved final directory, not the wrapper's output. Staging is a sibling
+/// outside the delete IPC root by construction: deletion is rooted at `adapters/` and
+/// rejects symlinked path components, so `adapter-staging/` is unreachable from it.
+/// (staging_path_is_protected is a tested predicate, not called in production.)
+/// Keeping the reservation costs no new IPC field; promotion and deletion share
+/// adapter_admission. A future staging delete API must keep its own protection gate.
 pub(crate) fn adapter_output_dir(home: &Path, adapter_name: &str) -> PathBuf {
     home.join(".kubemetal").join("adapters").join(adapter_name)
 }
@@ -81,7 +84,7 @@ fn canonicalize_or_self(p: &Path) -> PathBuf {
 /// 이미 canonicalize한 `target`이 삭제로부터 보호돼야 하는가(이슈 #33 GC 가드) — 셋 중
 /// 하나라도 canonical 비교로 일치하면 보호 대상이다: 현재 서빙 중인 adapter, 마지막으로
 /// 헬스체크를 통과해 last-known-good으로 기록된 adapter, 아직 "done"에 이르지 못해
-/// `TrainingStatus.adapter_path`가 비어 있는 **진행 중인 학습**의 출력 디렉터리.
+/// `TrainingStatus.adapter_path`가 비어 있는 **진행 중인 학습**이 예약한 최종 디렉터리.
 ///
 fn is_adapter_protected(
     target: &Path,

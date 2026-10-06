@@ -45,7 +45,7 @@ class FineTuneStartupTests(unittest.TestCase):
                 "--iters", "1", "--batch-size", "1", "--learning-rate", "0.0001",
                 "--adapter-name", "test-adapter"]
         with tempfile.TemporaryDirectory() as home, \
-                patch.object(sys, "argv", argv), \
+                patch.object(sys, "argv", argv + ["--output-dir", home]), \
                 patch.object(finetune_wrapper.Path, "home", return_value=Path(home)), \
                 patch("urllib.request.urlopen", side_effect=request), \
                 patch.object(finetune_wrapper.subprocess, "Popen", return_value=child) as spawn, \
