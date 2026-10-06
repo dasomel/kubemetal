@@ -117,6 +117,14 @@ class HeadingChunker(unittest.TestCase):
         self.assertEqual(chunks[0], "[A]\nx")
         self.assertTrue(chunks[1].startswith("[B]\n"))
 
+    def test_tiny_merge_preserves_following_chunks_heading_path(self):
+        fence = "```\n" + "c" * 400 + "\n```"
+        text = "# A\n\nx\n\n# B\n\n" + "b" * 140 + "\n\n" + fence
+        chunks = chunk_markdown_headings(text, chunk_size=200)
+        self.assertEqual(len(chunks), 2)
+        self.assertTrue(chunks[0].startswith("[A]\nx\n\n# B\n"))
+        self.assertEqual(chunks[1], "[B]\n" + fence)
+
     def test_oversized_section_split_within_max_size(self):
         text = "# Big\n\n" + " ".join(f"word{i}" for i in range(400))
         chunks = chunk_markdown_headings(text, chunk_size=500, overlap=50)

@@ -125,6 +125,8 @@ pub struct Promoted {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ReconcileOutcome {
+    /// Staging enumeration failed; no complete inventory can be claimed.
+    ScanFailed { reason: String },
     /// Record unreadable/corrupt/unrecognised, or inconsistent with the filesystem. Protected.
     Unknown { attempt_id: String, reason: String },
     /// `running` and the recorded process identity is still alive.
@@ -293,6 +295,9 @@ fn read_record(dir: &Path) -> Result<AttemptRecord> {
     if dir.file_name().and_then(|n| n.to_str()) != Some(record.attempt_id.as_str()) {
         return other(format!("Attempt id mismatch in {}", path.display()));
     }
+    // D45: persisted names have the same boundary as new attempts. The small validation
+    // cost prevents recovery from reading outside adapters/; repair the record, never bypass.
+    validate_name(&record.adapter_name, "adapter_name")?;
     Ok(record)
 }
 
@@ -617,18 +622,38 @@ fn reconcile_with(
     is_alive: &dyn Fn(u32, Option<u64>) -> bool,
 ) -> Vec<ReconcileOutcome> {
     let staging = staging_root(root);
-    let Ok(entries) = fs::read_dir(&staging) else {
-        return Vec::new();
+    let entries = match fs::read_dir(&staging) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => return vec![scan_failed(&staging, e)],
     };
-    let mut names: Vec<String> = entries
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .collect();
-    names.sort();
+    let names = match collect_entry_names(entries.map(|entry| entry.map(|e| e.file_name()))) {
+        Ok(names) => names,
+        Err(e) => return vec![scan_failed(&staging, e)],
+    };
     names
         .into_iter()
         .map(|name| reconcile_one(root, &staging.join(&name), name, is_alive))
         .collect()
+}
+
+// D22: a failed read is not an empty inventory. Collect before reconciling so a late
+// iterator error cannot follow record writes; cost: one name list, retry after fixing I/O.
+fn collect_entry_names(
+    entries: impl IntoIterator<Item = io::Result<std::ffi::OsString>>,
+) -> io::Result<Vec<String>> {
+    let mut names = entries
+        .into_iter()
+        .map(|entry| entry.map(|name| name.to_string_lossy().into_owned()))
+        .collect::<io::Result<Vec<_>>>()?;
+    names.sort();
+    Ok(names)
+}
+
+fn scan_failed(staging: &Path, error: io::Error) -> ReconcileOutcome {
+    ReconcileOutcome::ScanFailed {
+        reason: io_err("Failed to enumerate staging", staging, error).to_string(),
+    }
 }
 
 /// Only NotFound means "gone"; any other lstat error (EACCES, EIO, ...) is not evidence.
