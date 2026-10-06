@@ -13,6 +13,35 @@ import type {
 } from '../types/ipc';
 import { useTranslation } from '../i18n/i18nContext';
 
+export type AdapterAttemptState =
+  | 'created'
+  | 'running'
+  | 'exited_ok'
+  | 'verified'
+  | 'promoted'
+  | 'failed'
+  | 'killed'
+  | 'verified_unpromoted';
+
+// D46: read-only adapter staging inventory (snake_case, same as the Rust serde output).
+export type AdapterAttemptStatus =
+  | { kind: 'running' }
+  | { kind: 'interrupted' }
+  | { kind: 'would_converge_promoted' }
+  | { kind: 'unchanged'; state: AdapterAttemptState }
+  | { kind: 'unknown'; reason: string }
+  | { kind: 'scan_failed'; reason: string };
+
+export interface AdapterAttemptSummary {
+  attempt_id: string;
+  adapter_name: string | null;
+  status: AdapterAttemptStatus;
+}
+
+export function listAdapterStaging(): Promise<AdapterAttemptSummary[]> {
+  return invoke<AdapterAttemptSummary[]>('list_adapter_staging');
+}
+
 // 모듈 레벨 캐시 — 탭을 벗어났다 재진입해도 이미 확인된 MLX 환경 상태를 재사용해
 // 불필요한 재확인 호출을 피한다. 환경 설치가 완료됐을 때만(useMlx 내부에서) 갱신한다.
 let cachedEnvStatus: MlxEnvStatus | null = null;

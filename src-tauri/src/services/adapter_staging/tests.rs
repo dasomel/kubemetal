@@ -729,3 +729,257 @@ fn reconcile_entry_iteration_failure_never_becomes_partial_inventory() {
         matches!(scan_failed(Path::new("/staging"), error), ReconcileOutcome::ScanFailed { reason } if reason.contains("Failed to enumerate staging"))
     );
 }
+
+// --- list_attempts (S3, D46): strictly read-only inventory ---------------------------------
+
+/// Every path under `root` with its kind and bytes; any write, rename or delete changes it.
+fn tree_snapshot(root: &Path) -> Vec<(PathBuf, Option<Vec<u8>>)> {
+    fn walk(dir: &Path, out: &mut Vec<(PathBuf, Option<Vec<u8>>)>) {
+        let mut entries: Vec<_> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        entries.sort();
+        for p in entries {
+            let m = fs::symlink_metadata(&p).unwrap();
+            if m.is_dir() {
+                out.push((p.clone(), None));
+                walk(&p, out);
+            } else if m.is_file() {
+                out.push((p.clone(), Some(fs::read(&p).unwrap())));
+            } else {
+                out.push((
+                    p.clone(),
+                    Some(
+                        fs::read_link(&p)
+                            .unwrap()
+                            .into_os_string()
+                            .into_encoded_bytes(),
+                    ),
+                ));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(root, &mut out);
+    out
+}
+
+fn listed(root: &Path, alive: bool) -> Vec<AttemptSummary> {
+    list_attempts_with(root, &|_, _| alive)
+}
+
+fn status_of(list: &[AttemptSummary], id: &str) -> AttemptStatus {
+    list.iter()
+        .find(|s| s.attempt_id == id)
+        .unwrap_or_else(|| panic!("{id} missing from {list:?}"))
+        .status
+        .clone()
+}
+
+#[test]
+fn list_reports_every_state_without_mutating_anything() {
+    let t = TempRoot::new();
+    let created = create_attempt(&t.0, &spec("created")).unwrap();
+    let mut running = create_attempt(&t.0, &spec("running")).unwrap();
+    mark_running(&mut running, 4242, Some(99)).unwrap();
+    let exited = exited_ok(&t.0, "exited");
+    let ver = verified(&t.0, "ver");
+    let mut promoted = verified(&t.0, "promoted");
+    promote(&mut promoted, &()).unwrap();
+    let mut failed = exited_ok(&t.0, "failed");
+    transition(&mut failed, AttemptState::Failed).unwrap();
+    // Verified, out/ moved to the final name, record still `verified`: reconcile would
+    // persist Promoted here; the inventory must only report it.
+    let crashed = verified(&t.0, "crashed");
+    fs::rename(crashed.out_dir(), crashed.final_path()).unwrap();
+    let mut killed = create_attempt(&t.0, &spec("killed")).unwrap();
+    mark_running(&mut killed, 4243, None).unwrap();
+    transition(&mut killed, AttemptState::Killed).unwrap();
+    let unpromoted = verified(&t.0, "unpromoted");
+    let mut record = unpromoted.record.clone();
+    record.state = AttemptState::VerifiedUnpromoted;
+    write_record(&unpromoted.dir(), &record).unwrap();
+
+    let before = tree_snapshot(&t.0);
+    let dead = listed(&t.0, false);
+    let alive = listed(&t.0, true);
+    assert_eq!(before, tree_snapshot(&t.0));
+
+    let id = |a: &Attempt| a.record.attempt_id.clone();
+    assert_eq!(dead.len(), 9);
+    assert_eq!(
+        status_of(&dead, &id(&created)),
+        AttemptStatus::Unchanged {
+            state: AttemptState::Created
+        }
+    );
+    assert_eq!(status_of(&dead, &id(&running)), AttemptStatus::Interrupted);
+    assert_eq!(status_of(&alive, &id(&running)), AttemptStatus::Running);
+    assert_eq!(
+        status_of(&dead, &id(&exited)),
+        AttemptStatus::Unchanged {
+            state: AttemptState::ExitedOk
+        }
+    );
+    assert_eq!(
+        status_of(&dead, &id(&ver)),
+        AttemptStatus::Unchanged {
+            state: AttemptState::Verified
+        }
+    );
+    assert_eq!(
+        status_of(&dead, &id(&promoted)),
+        AttemptStatus::Unchanged {
+            state: AttemptState::Promoted
+        }
+    );
+    assert_eq!(
+        status_of(&dead, &id(&failed)),
+        AttemptStatus::Unchanged {
+            state: AttemptState::Failed
+        }
+    );
+    assert_eq!(
+        status_of(&dead, &id(&killed)),
+        AttemptStatus::Unchanged {
+            state: AttemptState::Killed
+        }
+    );
+    assert_eq!(
+        status_of(&dead, &id(&unpromoted)),
+        AttemptStatus::Unchanged {
+            state: AttemptState::VerifiedUnpromoted
+        }
+    );
+    assert_eq!(
+        status_of(&dead, &id(&crashed)),
+        AttemptStatus::WouldConvergePromoted
+    );
+    assert_eq!(
+        read_record(&crashed.dir()).unwrap().state,
+        AttemptState::Verified
+    );
+}
+
+#[test]
+fn list_passes_recorded_identity_to_the_liveness_probe() {
+    let t = TempRoot::new();
+    let mut r = create_attempt(&t.0, &spec("r")).unwrap();
+    mark_running(&mut r, 4242, Some(99)).unwrap();
+    let seen = std::cell::Cell::new(None);
+    list_attempts_with(&t.0, &|pid, start| {
+        seen.set(Some((pid, start)));
+        true
+    });
+    assert_eq!(seen.get(), Some((4242, Some(99))));
+}
+
+#[test]
+fn list_marks_inconsistent_or_unreadable_entries_unknown_and_leaves_them() {
+    let t = TempRoot::new();
+    let staging = t.0.join(STAGING_DIR);
+    fs::create_dir_all(staging.join("corrupt/out")).unwrap();
+    fs::write(staging.join("corrupt/attempt.json"), b"garbage").unwrap();
+    fs::create_dir(staging.join("legacy-no-manifest")).unwrap();
+    fs::write(
+        staging.join("legacy-no-manifest/adapters.safetensors"),
+        b"old",
+    )
+    .unwrap();
+    fs::write(staging.join("stray-file"), b"x").unwrap();
+    let gone = verified(&t.0, "gone"); // out/ gone, no final adapter
+    fs::remove_dir_all(gone.out_dir()).unwrap();
+    let tampered = verified(&t.0, "tampered");
+    fs::rename(tampered.out_dir(), tampered.final_path()).unwrap();
+    fs::write(tampered.final_path().join(MANIFEST_FILE), b"tampered").unwrap();
+    let mut running = create_attempt(&t.0, &spec("nopid")).unwrap();
+    mark_running(&mut running, 1, None).unwrap();
+    let mut rec = running.record.clone();
+    rec.pid = None;
+    write_record(&running.dir(), &rec).unwrap();
+
+    let before = tree_snapshot(&t.0);
+    let out = listed(&t.0, true);
+    assert_eq!(before, tree_snapshot(&t.0));
+    assert_eq!(out.len(), 6);
+    assert!(out
+        .iter()
+        .all(|s| matches!(s.status, AttemptStatus::Unknown { .. })));
+}
+
+#[test]
+fn list_marks_escaped_adapter_name_unknown_without_mutating() {
+    for escaped in ["../outside", "/tmp/outside", ".hidden"] {
+        let t = TempRoot::new();
+        let a = verified(&t.0, "safe");
+        let mut record = a.record.clone();
+        record.adapter_name = escaped.into();
+        write_record(&a.dir(), &record).unwrap();
+        let before = tree_snapshot(&t.0);
+        let out = listed(&t.0, true);
+        assert_eq!(before, tree_snapshot(&t.0));
+        assert!(
+            matches!(out.as_slice(), [AttemptSummary { adapter_name: None, status: AttemptStatus::Unknown { reason }, .. }] if reason.contains("adapter_name")),
+            "{escaped}: {out:?}"
+        );
+    }
+}
+
+#[test]
+fn list_missing_staging_is_empty_and_non_directory_staging_is_scan_failed() {
+    let t = TempRoot::new();
+    assert!(listed(&t.0, true).is_empty());
+    fs::write(t.0.join(STAGING_DIR), b"not a directory").unwrap();
+    let out = listed(&t.0, true);
+    assert!(
+        matches!(out.as_slice(), [AttemptSummary { status: AttemptStatus::ScanFailed { reason }, .. }] if reason.contains("Failed to enumerate staging")),
+        "{out:?}"
+    );
+    // Rows are keyed by attempt_id; ScanFailed has none, and its reason must not leak root.
+    let root = t.0.display().to_string();
+    assert!(out.iter().all(|s| s.attempt_id.is_empty()));
+    assert!(
+        matches!(out.as_slice(), [AttemptSummary { status: AttemptStatus::ScanFailed { reason }, .. }] if !reason.contains(&root) && reason.contains("<root>")),
+        "{out:?}"
+    );
+}
+
+#[test]
+fn list_serializes_a_stable_shape_without_absolute_paths() {
+    let t = TempRoot::new();
+    let mut r = create_attempt(&t.0, &spec("r")).unwrap();
+    mark_running(&mut r, 4242, Some(99)).unwrap();
+    let ver = verified(&t.0, "ver");
+    fs::create_dir(t.0.join(STAGING_DIR).join("bad")).unwrap();
+    let out = listed(&t.0, true);
+    let json = serde_json::to_value(&out).unwrap();
+    let find = |id: &str| {
+        json.as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["attempt_id"] == id)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        find(&r.record.attempt_id),
+        serde_json::json!({
+            "attempt_id": r.record.attempt_id,
+            "adapter_name": "r",
+            "status": {"kind": "running"}
+        })
+    );
+    assert_eq!(
+        find(&ver.record.attempt_id)["status"],
+        serde_json::json!({"kind": "unchanged", "state": "verified"})
+    );
+    let bad = find("bad");
+    assert_eq!(bad["adapter_name"], serde_json::Value::Null);
+    assert_eq!(bad["status"]["kind"], "unknown");
+    assert!(!json.to_string().contains(t.0.to_str().unwrap()), "{json}");
+    assert_eq!(
+        serde_json::to_value(AttemptStatus::WouldConvergePromoted).unwrap(),
+        serde_json::json!({"kind": "would_converge_promoted"})
+    );
+}

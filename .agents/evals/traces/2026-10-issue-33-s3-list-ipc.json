@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-33-s3-list-ipc",
+  "task": "Add a strictly read-only adapter staging inventory and list_adapter_staging IPC (#33 S3, D46); verify at hermetic unit/static scope only.",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "src/hooks/useMlx.ts",
+      "docs/**",
+      ".agents/evals/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Plan: reconcile() persists Promoted in its Verified branch, so it is not wired. Add a separate pure-read list_attempts that reports would_converge_promoted instead of writing. One new IPC command (owner-approved plan), no capabilities change, no startup scan, no resume/events, no delete/TTL, no UI panel; legacy dirs are never read, moved or deleted."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "New list_attempts tests were written first and failed to compile (AttemptSummary, AttemptStatus and list_attempts_with did not exist). No runtime reproduction."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added list_attempts/list_attempts_with with a shared verified_out_gone_converges precondition used by both reconcile_one and the inventory; list_adapter_staging command (spawn_blocking, ~/.kubemetal root) registered in generate_handler; TypeScript type and invoke wrapper in useMlx.ts; D46, IPC table row and mistakes-log row."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Hermetic unit tests on tempdirs with injected liveness: tree byte-snapshot before/after for every attempt state including verified-with-out-gone, running alive/dead, unknown for corrupt/escaped/legacy entries, missing vs non-directory staging, serde shape without absolute paths, plus the existing reconcile tests after the shared-precondition refactor.",
+      "summary": "cargo test --locked --lib adapter_staging: 39 passed, 0 failed.",
+      "evidence": [
+        "test:cargo-test-locked-lib-adapter_staging-39-passed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Static gates, not runtime evidence",
+      "summary": "cargo fmt --check, cargo clippy --locked --lib --tests -- -D warnings, python3 scripts/ci/check_ipc_types.py and npx tsc --noEmit exit 0.",
+      "evidence": [
+        "test:fmt-clippy-ipc-types-tsc-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "environment_limit",
+      "summary": "Not observed: the Tauri app invoking list_adapter_staging, a real ~/.kubemetal staging directory, real training, any cluster runtime. No UI consumes the command yet. Parent issue #33 remains partial and open (S4 resume/events pending)."
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "S3 read-only inventory and list IPC implemented and observed at hermetic unit/static scope ONLY; not a claim of runtime or parent-issue completion.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "A is limited to the executed hermetic unit and static checks; runtime verification remains unobserved."
+    }
+  ]
+}
