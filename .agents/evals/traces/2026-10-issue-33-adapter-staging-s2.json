@@ -22,7 +22,7 @@
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Source audit identified direct exist_ok final writes and stdout done authority; 25 actual mutation runs caused their safety tests to fail, plus late-MLflow, missing-evidence/non-UTF8 predicate and reused-PID red-before-fix failures. No real training reproduction.",
+      "summary": "Source audit identified direct exist_ok final writes and stdout done authority; 29 actual mutation runs (25 original + 4 for the review fixes, script re-run at HEAD) caused their safety tests to fail, plus late-MLflow, missing-evidence/non-UTF8 predicate and reused-PID red-before-fix failures. No real training reproduction.",
       "evidence": [
         "artifact:.agents/evals/evidence/2026-10-issue-33-adapter-staging-s2.txt"
       ]
@@ -30,18 +30,18 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Rust owns expected staging path and durable state; child done cannot publish completion. Exit 0 + expected done + verified sha256 manifest + admission-serialized exclusive promotion are required. Existing/legacy names refused untouched; failed/killed attempts kept; spawn cleanup uses only owned record unlink plus empty rmdir. Per-attempt stop ownership survives slot replacement/PID reuse; existing marker PID/sysinfo start-time scheme is reused, unknown birth cannot grant group-signal authority. Rust spawn args now come from a pure builder that never passes --legacy-direct-output."
+      "summary": "Rust owns expected staging path and durable state; child done cannot publish completion. Exit 0 + expected done + verified sha256 manifest + admission-serialized exclusive promotion are required. Existing/legacy names refused untouched; failed/killed attempts kept; spawn cleanup uses only owned record unlink plus empty rmdir. Per-attempt stop ownership survives slot replacement/PID reuse; existing marker PID/sysinfo start-time scheme is reused, unknown birth cannot grant group-signal authority. Rust spawn args now come from a pure builder that never passes --legacy-direct-output. Review fixes: a non-zero exit surfaces the wrapper's own error event over generic stderr; the training slot is not held while hashing (admission is, lock order admission/training/training_stop) and a stop during hashing is not overwritten by done; a stopped never-started attempt is recorded failed."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "18 Rust tests on tempdirs/argument builder and 11 Python tests (real Python only with external MLX/HTTP boundaries stubbed, argparse rejection, or parsed host_runner source); 25 mutation controls plus 3 follow-up mutations. Non-UTF8 expected-path case is predicate-only.",
+      "scope": "23 Rust tests on tempdirs/argument builder and 11 Python tests (real Python only with external MLX/HTTP boundaries stubbed, argparse rejection, or parsed host_runner source); 29 mutation controls (script re-run at HEAD, 29/29 detected) plus 3 follow-up mutations. Non-UTF8 expected-path case is predicate-only.",
       "summary": "Observed all scoped tests passing after restoration; every mutation failed its named safety test. Tests cover required/real/empty wrapper out, LM/VLM mapping, forged/duplicate/missing done, failed/killed/failed-stop, manifest write and promotion errors, existing legacy bytes, same delete mutex, staging root exclusion, owned nonrecursive spawn cleanup, late run-ID and replaced/reused slot ownership. Follow-up tests: required/mutually exclusive output flags, legacy flag warning and direct write (HOME redirected to a tempdir), host_runner command carries --legacy-direct-output (source AST, prefect not imported), Rust builder has --output-dir and no legacy flag. Mutations (add flag in Rust builder, drop flag in host_runner, drop wrapper exclusivity) each failed their test.",
       "evidence": [
-        "test:17-rust-staging-boundary-tests-passed",
+        "test:22-rust-staging-boundary-tests-passed",
         "test:7-python-tests-passed",
-        "test:25-mutations-failed-safety-tests",
+        "test:29-mutations-failed-safety-tests",
         "artifact:.agents/evals/evidence/2026-10-issue-33-adapter-staging-s2.txt",
         "test:follow-up-legacy-flag-tests-and-3-mutations"
       ]
@@ -61,7 +61,7 @@
       "id": "e6",
       "type": "environment_limit",
       "status": "failed",
-      "summary": "Full cargo test --locked --lib ran eight consecutive times on final code, each exit 101: 374 passed, 4 failed, 1 ignored. Each failure is a sandbox bind Operation not permitted: services::ports::tests::{find_free_port_errors_when_range_exhausted,find_free_port_skips_occupied_preferred,is_port_free_detects_loopback_holder,is_port_free_detects_wildcard_holder}. No orphan failure; TRAINING_STATUSES Rust/TS sync passed each run. Full suite is NOT claimed passed; lead must rerun outside sandbox."
+      "summary": "After the review fixes, full cargo test --locked --lib ran eight consecutive times: each exit 0, 384 passed, 0 failed, 1 ignored (the earlier sandbox-bound services::ports failures did not occur in this run environment). cargo fmt --check, cargo clippy --locked --all-targets -- -D warnings, python3 -m unittest discover -s tests/mlx (11 OK) and check_ipc_types.py exit 0. Not observed: real MLX training, real Prefect run, app UI; Prefect staging migration (S2b) is out of scope."
     },
     {
       "id": "e7",

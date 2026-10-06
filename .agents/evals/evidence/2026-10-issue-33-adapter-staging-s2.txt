@@ -5,7 +5,7 @@ IPC signature, TS types, TRAINING_STATUSES, serving/convert, startup reconcile/l
 Plan: wire wrapper output admission -> Rust attempt/identity -> verified exclusive promotion; retain failures; prove safety by mutation; update D45/docs; local commit only.
 
 cargo test --locked --lib training_staging (manifest-path src-tauri/Cargo.toml), exit 0
-   Compiling kubemetal v0.2.0 (/private/tmp/claude-501/-Users-m-Documents-IdeaProjects-20-dasomel-kubemetal/2b62847c-7869-41ec-af68-f005c46193f0/scratchpad/wt/s2/src-tauri)
+   Compiling kubemetal v0.2.0 (<worktree>/src-tauri)
     Finished `test` profile [unoptimized + debuginfo] target(s) in 2.30s
      Running unittests src/lib.rs (src-tauri/target/debug/deps/kubemetal_lib-5209f2ff64b54286)
 
@@ -55,7 +55,7 @@ npm_config_offline=true make lint, exit 0 (local read-only dependency links + ca
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
 cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
     Blocking waiting for file lock on build directory
-   Compiling kubemetal v0.2.0 (/private/tmp/claude-501/-Users-m-Documents-IdeaProjects-20-dasomel-kubemetal/2b62847c-7869-41ec-af68-f005c46193f0/scratchpad/wt/s2/src-tauri)
+   Compiling kubemetal v0.2.0 (<worktree>/src-tauri)
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.71s
 npx tsc --noEmit
 npx @google/design.md lint DESIGN.md
@@ -317,15 +317,15 @@ test commands::mlx::training_staging::tests::safety::reused_pid_does_not_overwri
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.05s
 
 Additional red-before-fix observations:
-/tmp/s2-before-late-mlflow.log
+<tmp>/s2-before-late-mlflow.log
 assertion `left == right` failed
   left: None
  right: Some("actual-child-run")
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 377 filtered out; finished in 0.00s
-/tmp/s2-before-nonutf8-predicate.log
+<tmp>/s2-before-nonutf8-predicate.log
 assertion failed: !CompletionReport::default().matches_expected(&expected)
 test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 377 filtered out; finished in 0.00s
-/tmp/s2-before-pid-reuse.log
+<tmp>/s2-before-pid-reuse.log
 assertion `left == right` failed
   left: "killed"
  right: "running"
@@ -333,15 +333,15 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 378 filtered out
 
 Exploratory limitation: real non-UTF-8 temp directory creation was refused with Operation not permitted; an initial fixture then panicked during cleanup. Replaced with a predicate-only test on a non-UTF-8 PathBuf. No filesystem support claim for that path.
 
-Compatibility finding (source inspection, not a real Prefect run): scripts/prefect/host_runner.py still omits required --output-dir; its independent fine-tune caller now fails argparse. No silent legacy fallback or second Python promotion implementation was added. Separate Rust lifecycle integration is needed.
+Compatibility finding (source inspection, not a real Prefect run): scripts/prefect/host_runner.py still omits required --output-dir; its independent fine-tune caller now fails argparse (superseded by the follow-up below: --legacy-direct-output). No silent legacy fallback or second Python promotion implementation was added. Separate Rust lifecycle integration is needed.
 S1 transition table minimally extended: verified/verified_unpromoted -> failed, to persist publication failures without deleting bytes or reviving terminal attempts. Per-attempt stop ownership prevents replaced/reused-PID slots from being overwritten.
 CLAUDE.md adds skill/harness guidance absent in AGENTS.md: hybrid runtime skill read/applied; team harness excluded for this single lane.
 
 HEAD-based Agent Behavior CI gates (after local commit, same final source):
-$ git diff --name-only origin/main...HEAD > /tmp/s2-changed-files.txt
-$ python3 scripts/ci/check-agent-trace-requirement.py --policy .agents/evals/risk-policy.json --changed-files /tmp/s2-changed-files.txt
+$ git diff --name-only origin/main...HEAD > <tmp>/s2-changed-files.txt
+$ python3 scripts/ci/check-agent-trace-requirement.py --policy .agents/evals/risk-policy.json --changed-files <tmp>/s2-changed-files.txt
 Observed exit 0; risk=high, traceRequired=true, traceChanged=true.
-$ python3 scripts/ci/check-agent-trace-evidence.py --policy .agents/evals/risk-policy.json --changed-files /tmp/s2-changed-files.txt --trace .agents/evals/traces/2026-10-issue-33-adapter-staging-s2.json
+$ python3 scripts/ci/check-agent-trace-evidence.py --policy .agents/evals/risk-policy.json --changed-files <tmp>/s2-changed-files.txt --trace .agents/evals/traces/2026-10-issue-33-adapter-staging-s2.json
 Observed exit 0; passed=true, failures=[].
 $ for t in .agents/evals/traces/*.json; do python3 .agents/evals/gate.py --trace "$t" --baseline .agents/evals/baseline.eval.json || echo FAIL "$t"; done
 Observed: all 44 trace gates passed; zero FAIL lines (S2 comparison regressions=0, changed=0).
@@ -362,3 +362,19 @@ Mutations (each restored afterwards):
 $ python3 scripts/ci/check_ipc_types.py ; cargo fmt --check ; cargo clippy --locked --all-targets -- -D warnings
 Observed: all exit 0.
 Not verified: real Prefect run, real MLX training, app UI. The Prefect path is still unstaged/unverified by design (S2b).
+
+== Opus approval-review fix round (findings 1, 2, 6; docs/evidence 3-5) ==
+Red-before-fix (current code at 3e55b94 + new tests, cargo test --locked --lib training_staging):
+ - failed_exit_surfaces_wrapper_error_over_generic_stderr FAILED (stderr text shown, wrapper error dropped)
+ - killed_attempt_that_never_started_ends_failed_not_created FAILED (Created -> Killed rejected, record left Created)
+ - hashing_runs_with_admission_held_and_training_slot_free FAILED (training slot locked while hashing)
+ - stop_during_hashing_is_not_overwritten_by_done HUNG >60s (finalize held the slot; request_stop deadlocks) -- red by deadlock
+After the fix: training_staging 22 passed; 0 failed.
+Fix: finalize holds adapter_admission across verify+promote, takes the training slot only to snapshot ownership and to publish (ownership re-checked; a stop landing during hashing is not overwritten by done). Lock order everywhere: admission, training, training_stop.
+promotion_waits_for_delete_admission_mutex now also asserts the training slot is free while promotion waits for admission (order-inversion mutant).
+mlx_artifacts.rs comment corrected: staging is outside the delete root by construction (adapters/ root + symlink rejection); staging_path_is_protected is a tested predicate, not called in production.
+Mutation script updated to current code and run at HEAD (clean tree before and after; git status/diff empty):
+  $ python3 .agents/evals/evidence/2026-10-issue-33-adapter-staging-s2-mutations.py
+  Observed: 29 mutations run; 29 detected (25 original, 4 new for findings 1/2/6); none undetected.
+Not observed: real MLX training, real Prefect run, app UI.
+Verification after the fix round: cargo fmt --check, cargo clippy --locked --all-targets -- -D warnings, python3 -m unittest discover -s tests/mlx (11 OK), check_ipc_types.py: exit 0. cargo test --locked --lib x8 consecutive: each exit 0, 384 passed; 0 failed; 1 ignored.
