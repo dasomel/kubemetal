@@ -17,6 +17,18 @@ pub(super) struct CompletionReport {
     terminal: bool,
 }
 
+/// Same bound as the stderr fallback (`collect_stderr`), cut on a char boundary: the
+/// wrapper's message is untrusted and reaches the UI.
+const MAX_ERROR_BYTES: usize = 4000;
+
+fn cap_error(message: &str) -> String {
+    let mut end = message.len().min(MAX_ERROR_BYTES);
+    while !message.is_char_boundary(end) {
+        end -= 1;
+    }
+    message[..end].into()
+}
+
 impl CompletionReport {
     pub(super) fn observe(&mut self, event: &Value, expected: &Path) {
         match event.get("type").and_then(Value::as_str) {
@@ -32,13 +44,11 @@ impl CompletionReport {
             }
             Some("error") => {
                 self.terminal = true;
-                self.error = Some(
-                    event
-                        .get("message")
-                        .and_then(Value::as_str)
-                        .unwrap_or("Training wrapper reported an error")
-                        .into(),
-                );
+                let message = event
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("Training wrapper reported an error");
+                self.error = Some(cap_error(message));
             }
             _ => {}
         }
@@ -181,7 +191,7 @@ fn finalize_with(
     // async commands (status, kill, guardrails), so it is NOT held while hashing: it is
     // taken once to snapshot ownership and once to publish the outcome.
     let admission = state.adapter_admission.lock().map_err(|e| e.to_string())?;
-    let (reconciliation, mut killed, precheck) = {
+    let (reconciliation, killed, precheck) = {
         let mut slot = state.training.lock().map_err(|e| e.to_string())?;
         let training = owned_slot(state, &mut slot, stopped, outcome.pid)?;
         let reconciliation = training.as_ref().and_then(|t| {
@@ -242,19 +252,21 @@ fn finalize_with(
         adapter_staging::verify_out(attempt).map_err(|e| e.to_string())?;
         adapter_staging::promote(attempt, &admission).map_err(|e| e.to_string())
     });
-    // Publish only if this attempt still owns a live slot: a stop/restart that landed
-    // while hashing must not be overwritten by `done`.
+    // D22 invariant: the published slot must match attempt.json and the filesystem.
+    // `killed` is decided once, before hashing, from whether the stop reached the child
+    // before it ended (a child that exited 0 with `done` cannot be killed afterwards).
+    // A stop landing during hashing is a no-op on a dead process: it must neither
+    // un-promote a committed adapter nor hide a real failure behind "killed".
     let mut published = None;
     {
         let mut slot = state.training.lock().map_err(|e| e.to_string())?;
         let training = owned_slot(state, &mut slot, stopped, outcome.pid)?;
-        killed = killed
-            || stopped.load(Ordering::SeqCst)
-            || training.as_ref().is_some_and(|t| t.status == "killed");
         if let Some(training) = training {
-            let live = mlx_lifecycle::is_non_terminal_training_status(&training.status);
+            // "killed" here is only the optimistic mark of a late stop (see above).
+            let live = mlx_lifecycle::is_non_terminal_training_status(&training.status)
+                || training.status == "killed";
             match &result {
-                Ok(promoted) if live && !killed => {
+                Ok(promoted) if live => {
                     training.adapter_path =
                         Some(promoted.final_path.to_string_lossy().into_owned());
                     training.error = None;
@@ -277,12 +289,13 @@ fn finalize_with(
                 eprintln!("[mlx] {warning}");
             }
             if published.is_none() {
-                eprintln!("[mlx] Training was stopped while its output was promoted; slot not marked done");
+                eprintln!("[mlx] Output was promoted but the training slot no longer owns this attempt; slot left unchanged");
             }
         }
         Err(error) => {
-            // A never-started (Created) attempt cannot be Killed; record it failed.
-            let terminal = if killed && attempt.record().state != AttemptState::Created {
+            // S1 allows only Running -> Killed; every other state (Created, ExitedOk,
+            // Verified, VerifiedUnpromoted) records its failure as Failed.
+            let terminal = if killed && attempt.record().state == AttemptState::Running {
                 AttemptState::Killed
             } else {
                 AttemptState::Failed

@@ -67,9 +67,14 @@ run('missing-done-unknown-expected-path',R,lambda s:s.replace('self.path.is_some
 run('same-attempt-slot-ownership',R,lambda s:s.replace('t.pid == pid && same_attempt','t.pid == pid'),rust('reused_pid_does_not'),'reused_pid_does_not_overwrite_next_attempt ... FAILED')
 # New in the opus-review fix round (findings 1, 2, 6).
 run('hold-training-lock-while-hashing',R,lambda s:s.replace('before_hashing();','let held = state.training.lock().unwrap();\n        before_hashing();\n        drop(held);'),rust('hashing_runs_with'),'hashing_runs_with_admission_held_and_training_slot_free ... FAILED')
-run('done-overwrites-stop-during-hashing',R,lambda s:s.replace('Ok(promoted) if live && !killed =>','Ok(promoted) =>'),rust('stop_during_hashing'),'stop_during_hashing_is_not_overwritten_by_done ... FAILED')
+run('late-stop-hides-committed-promotion',R,lambda s:s.replace('Ok(promoted) if live =>','Ok(promoted) if live && training.status != "killed" =>'),rust('late_stop_after_child_exit'),'late_stop_after_child_exit_publishes_the_committed_promotion ... FAILED')
+def late_recompute(s):
+    return s.replace('let (reconciliation, killed, precheck)','let (reconciliation, mut killed, precheck)').replace('            // "killed" here is only','            killed = killed || stopped.load(Ordering::SeqCst);\n            // "killed" here is only').replace('if killed && attempt.record().state == AttemptState::Running {','if killed {')
+run('late-stop-illegal-killed-transition',R,late_recompute,rust('late_stop_with_name_taken'),'late_stop_with_name_taken_records_failed_not_illegal_killed ... FAILED')
+run('wrapper-error-uncapped',R,lambda s:s.replace('self.error = Some(cap_error(message));','self.error = Some(message.into());'),rust('wrapper_error_is_capped'),'wrapper_error_is_capped_before_reaching_the_slot ... FAILED')
+run('lock-order-training-before-admission',R,lambda s:s.replace('    let admission = state.adapter_admission.lock().map_err(|e| e.to_string())?;\n','    let pre = state.training.lock().map_err(|e| e.to_string())?;\n    let admission = state.adapter_admission.lock().map_err(|e| e.to_string())?;\n    drop(pre);\n',1),rust('finalize_takes_admission'),'finalize_takes_admission_before_training ... FAILED')
 run('generic-stderr-over-wrapper-error',R,lambda s:s.replace('if let Some(error) = &outcome.report.error {\n                    error.clone()\n                } else if','if'),rust('failed_exit_surfaces'),'failed_exit_surfaces_wrapper_error_over_generic_stderr ... FAILED')
-run('never-started-killed-stays-created',R,lambda s:s.replace('if killed && attempt.record().state != AttemptState::Created {','if killed {'),rust('killed_attempt_that_never'),'killed_attempt_that_never_started_ends_failed_not_created ... FAILED')
+run('never-started-killed-stays-created',R,lambda s:s.replace('if killed && attempt.record().state == AttemptState::Running {','if killed {'),rust('killed_attempt_that_never'),'killed_attempt_that_never_started_ends_failed_not_created ... FAILED')
 print(len(results),'mutations run;',sum(r['expected_failure_observed'] for r in results),'detected',flush=True)
 for r in results:
     if not r['expected_failure_observed']:print('NOT DETECTED:',r['mutation'],flush=True)

@@ -202,7 +202,8 @@ fn hashing_runs_with_admission_held_and_training_slot_free() {
 }
 
 #[test]
-fn stop_during_hashing_is_not_overwritten_by_done() {
+fn late_stop_after_child_exit_publishes_the_committed_promotion() {
+    // The child already exited 0 with done; stop landed while hashing and was a no-op.
     let home = TempHome::new();
     let (state, mut attempt) = ready(&home);
     let outcome = done(&attempt, 0);
@@ -213,6 +214,68 @@ fn stop_during_hashing_is_not_overwritten_by_done() {
     .unwrap();
     let slot = state.training.lock().unwrap();
     let status = slot.as_ref().unwrap();
-    assert_eq!(status.status, "killed");
+    assert_eq!(status.status, "done");
+    assert_eq!(
+        status.adapter_path.as_deref(),
+        attempt.final_path().to_str()
+    );
+    assert_eq!(persisted(&attempt), AttemptState::Promoted);
+    assert!(attempt.final_path().exists());
+}
+
+fn late_stop_failure(break_it: &dyn Fn(&std::path::Path, &std::path::Path)) {
+    let home = TempHome::new();
+    let (state, mut attempt) = ready(&home);
+    let outcome = done(&attempt, 0);
+    let stopped = active_stop(&state);
+    let (out, final_path) = (attempt.out_dir(), attempt.final_path());
+    finalize_with(&state, &mut attempt, &stopped, outcome, &|| {
+        break_it(&out, &final_path);
+        request_stop(&state, 42).unwrap();
+    })
+    .unwrap();
+    assert_eq!(persisted(&attempt), AttemptState::Failed);
+    let slot = state.training.lock().unwrap();
+    let status = slot.as_ref().unwrap();
+    assert_eq!(status.status, "error");
     assert!(status.adapter_path.is_none());
+}
+
+#[test]
+fn late_stop_with_name_taken_records_failed_not_illegal_killed() {
+    late_stop_failure(&|_, f| fs::create_dir_all(f).unwrap());
+}
+
+#[test]
+fn late_stop_with_verify_failure_records_failed_not_illegal_killed() {
+    late_stop_failure(&|o, _| fs::remove_file(o.join("adapters.safetensors")).unwrap());
+}
+
+#[test]
+fn finalize_takes_admission_before_training() {
+    // D45 lock order. While another thread holds the training slot, finalize must already
+    // hold admission (blocked on training). An inverted order would leave admission free.
+    let home = TempHome::new();
+    let (state, mut attempt) = ready(&home);
+    let outcome = done(&attempt, 0);
+    let stopped = active_stop(&state);
+    let slot = state.training.lock().unwrap();
+    let mut admission_held = false;
+    std::thread::scope(|scope| {
+        let worker = scope.spawn(|| finalize(&state, &mut attempt, &stopped, outcome));
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while std::time::Instant::now() < deadline {
+            if state.adapter_admission.try_lock().is_err() {
+                admission_held = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        drop(slot);
+        worker.join().unwrap().unwrap();
+    });
+    assert!(
+        admission_held,
+        "finalize did not hold admission while waiting for training"
+    );
 }

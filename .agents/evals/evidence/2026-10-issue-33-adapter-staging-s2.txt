@@ -378,3 +378,11 @@ Mutation script updated to current code and run at HEAD (clean tree before and a
   Observed: 29 mutations run; 29 detected (25 original, 4 new for findings 1/2/6); none undetected.
 Not observed: real MLX training, real Prefect run, app UI.
 Verification after the fix round: cargo fmt --check, cargo clippy --locked --all-targets -- -D warnings, python3 -m unittest discover -s tests/mlx (11 OK), check_ipc_types.py: exit 0. cargo test --locked --lib x8 consecutive: each exit 0, 384 passed; 0 failed; 1 ignored.
+
+Second opus re-review round (APPROVE-WITH-FIXES, 2 MED + 2 LOW):
+ - FIX1: after hashing `terminal = Killed` was attempted from any state; S1 allows only Running -> Killed. Now Killed only from Running, every other state records Failed. Red first: late_stop_with_name_taken_/late_stop_with_verify_failure_records_failed_not_illegal_killed failed at finalize ("Illegal transition ... -> Killed").
+ - FIX2 (D22): `killed` is decided once before hashing; a stop landing during hashing is a no-op on an already exited child, so a committed promotion publishes `done` with the real final path (attempt Promoted) and a real failure surfaces as `error`. Red first: late_stop_after_child_exit_publishes_the_committed_promotion. stop_during_hashing_is_not_overwritten_by_done encoded the old behaviour for the exit-0 case and was replaced by that test; killed_zero_exit_with_done_stays_killed (stop before hashing) is unchanged and green.
+ - LOW: wrapper error capped at 4000 bytes on a char boundary (wrapper_error_is_capped_before_reaching_the_slot, red first). Lock order admission -> training now asserted by finalize_takes_admission_before_training (mutant: training before admission, detected).
+Mutation script re-run at HEAD: 32 mutations run; 32 detected; none undetected (git status clean afterwards except intended changes).
+cargo fmt --check, cargo clippy --locked --all-targets -- -D warnings, python3 -m unittest discover -s tests/mlx (11 OK), check_ipc_types.py: exit 0. cargo test --locked --lib x8 consecutive: each exit 0, 388 passed; 0 failed; 1 ignored.
+Not observed: real MLX training, real stop signal against a live child, app UI.

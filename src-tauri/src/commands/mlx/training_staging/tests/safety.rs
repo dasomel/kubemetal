@@ -271,3 +271,20 @@ fn killed_attempt_that_never_started_ends_failed_not_created() {
         "killed"
     );
 }
+
+#[test]
+fn wrapper_error_is_capped_before_reaching_the_slot() {
+    let home = TempHome::new();
+    let (state, mut attempt) = ready(&home);
+    let mut outcome = done(&attempt, 1);
+    outcome.report = CompletionReport::default();
+    // 3-byte chars: 4000 is not a char boundary, so the cap must back off to 3999.
+    outcome.report.observe(
+        &serde_json::json!({"type":"error","message":"\u{20ac}".repeat(5000)}),
+        &attempt.out_dir(),
+    );
+    finalize(&state, &mut attempt, &active_stop(&state), outcome).unwrap();
+    let slot = state.training.lock().unwrap();
+    let error = slot.as_ref().unwrap().error.as_deref().unwrap();
+    assert_eq!(error.len(), 3999);
+}

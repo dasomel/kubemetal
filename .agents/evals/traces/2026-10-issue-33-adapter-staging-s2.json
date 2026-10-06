@@ -22,7 +22,7 @@
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Source audit identified direct exist_ok final writes and stdout done authority; 29 actual mutation runs (25 original + 4 for the review fixes, script re-run at HEAD) caused their safety tests to fail, plus late-MLflow, missing-evidence/non-UTF8 predicate and reused-PID red-before-fix failures. No real training reproduction.",
+      "summary": "Source audit identified direct exist_ok final writes and stdout done authority; 32 actual mutation runs (29 earlier + 4 for the second review round, minus 1 replaced; script re-run at HEAD) caused their safety tests to fail, plus late-MLflow, missing-evidence/non-UTF8 predicate and reused-PID red-before-fix failures. No real training reproduction.",
       "evidence": [
         "artifact:.agents/evals/evidence/2026-10-issue-33-adapter-staging-s2.txt"
       ]
@@ -36,12 +36,12 @@
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "23 Rust tests on tempdirs/argument builder and 11 Python tests (real Python only with external MLX/HTTP boundaries stubbed, argparse rejection, or parsed host_runner source); 29 mutation controls (script re-run at HEAD, 29/29 detected) plus 3 follow-up mutations. Non-UTF8 expected-path case is predicate-only.",
+      "scope": "27 Rust tests on tempdirs/argument builder and 11 Python tests (real Python only with external MLX/HTTP boundaries stubbed, argparse rejection, or parsed host_runner source); 32 mutation controls (script re-run at HEAD, 32/32 detected) plus 3 follow-up mutations. Non-UTF8 expected-path case is predicate-only.",
       "summary": "Observed all scoped tests passing after restoration; every mutation failed its named safety test. Tests cover required/real/empty wrapper out, LM/VLM mapping, forged/duplicate/missing done, failed/killed/failed-stop, manifest write and promotion errors, existing legacy bytes, same delete mutex, staging root exclusion, owned nonrecursive spawn cleanup, late run-ID and replaced/reused slot ownership. Follow-up tests: required/mutually exclusive output flags, legacy flag warning and direct write (HOME redirected to a tempdir), host_runner command carries --legacy-direct-output (source AST, prefect not imported), Rust builder has --output-dir and no legacy flag. Mutations (add flag in Rust builder, drop flag in host_runner, drop wrapper exclusivity) each failed their test.",
       "evidence": [
         "test:22-rust-staging-boundary-tests-passed",
         "test:7-python-tests-passed",
-        "test:29-mutations-failed-safety-tests",
+        "test:32-mutations-failed-safety-tests",
         "artifact:.agents/evals/evidence/2026-10-issue-33-adapter-staging-s2.txt",
         "test:follow-up-legacy-flag-tests-and-3-mutations"
       ]
@@ -60,8 +60,8 @@
     {
       "id": "e6",
       "type": "environment_limit",
-      "status": "failed",
-      "summary": "After the review fixes, full cargo test --locked --lib ran eight consecutive times: each exit 0, 384 passed, 0 failed, 1 ignored (the earlier sandbox-bound services::ports failures did not occur in this run environment). cargo fmt --check, cargo clippy --locked --all-targets -- -D warnings, python3 -m unittest discover -s tests/mlx (11 OK) and check_ipc_types.py exit 0. Not observed: real MLX training, real Prefect run, app UI; Prefect staging migration (S2b) is out of scope."
+      "status": "passed",
+      "summary": "After the second review round fixes (late stop never un-promotes or hides a failure; Killed only from Running; wrapper error capped at 4000 bytes; lock-order test), full cargo test --locked --lib ran eight consecutive times: each exit 0, 388 passed, 0 failed, 1 ignored (the earlier sandbox-bound services::ports failures did not occur in this run environment). cargo fmt --check, cargo clippy --locked --all-targets -- -D warnings, python3 -m unittest discover -s tests/mlx (11 OK) and check_ipc_types.py exit 0. Not observed: real MLX training, real Prefect run, app UI; Prefect staging migration (S2b) is out of scope."
     },
     {
       "id": "e7",
