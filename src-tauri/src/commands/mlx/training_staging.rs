@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde_json::Value;
 
 use super::{MlxState, TrainingStatus};
-use crate::services::adapter_staging::{self, Attempt, AttemptState};
+use crate::services::adapter_staging::{self, Attempt, AttemptState, AttemptSummary};
 use crate::services::mlx_lifecycle::{self, MlflowRunReconciliation};
 
 #[derive(Default)]
@@ -333,6 +333,16 @@ fn owned_slot<'a>(
         .as_ref()
         .is_some_and(|(p, stop)| *p == pid && std::ptr::eq(stopped, stop.as_ref()));
     Ok(slot.as_mut().filter(|t| t.pid == pid && same_attempt))
+}
+
+/// D46: read-only inventory of adapter staging attempts. Never repairs, resumes or deletes;
+/// `Unknown` rows are reported as-is. Same root as `run_mlx_finetune` (`~/.kubemetal`).
+#[tauri::command]
+pub async fn list_adapter_staging() -> Result<Vec<AttemptSummary>, String> {
+    let root = super::home_dir()?.join(".kubemetal");
+    tokio::task::spawn_blocking(move || adapter_staging::list_attempts(&root))
+        .await
+        .map_err(|e| format!("Adapter staging listing task failed: {e}"))
 }
 
 #[cfg(test)]

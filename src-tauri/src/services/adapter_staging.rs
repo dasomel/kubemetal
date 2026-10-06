@@ -665,6 +665,25 @@ fn out_gone(lstat: io::Result<fs::Metadata>) -> io::Result<bool> {
     }
 }
 
+/// Read-only precondition shared by `reconcile` (which then persists `Promoted`) and
+/// `list_attempts` (which only reports it): out/ is gone and the final adapter is the
+/// verified content. D46: one definition, so the inventory cannot drift from the repair.
+fn verified_out_gone_converges(
+    root: &Path,
+    record: &AttemptRecord,
+) -> std::result::Result<(), String> {
+    let Some(expected) = record.manifest_sha256.as_deref() else {
+        return Err("verified record without manifest_sha256".into());
+    };
+    let final_path = adapters_root(root).join(&record.adapter_name);
+    // lstat first: verify_manifest would follow a symlinked final path.
+    let is_real_dir = fs::symlink_metadata(&final_path).is_ok_and(|m| m.is_dir());
+    if !is_real_dir || require_verified_content(&final_path, Some(expected)).is_err() {
+        return Err("out/ is gone but the final adapter does not match".into());
+    }
+    Ok(())
+}
+
 fn reconcile_one(
     root: &Path,
     dir: &Path,
@@ -697,14 +716,8 @@ fn reconcile_one(
             },
             Err(e) => unknown(format!("cannot tell whether out/ is gone: {e}")),
             Ok(true) => {
-                let Some(expected) = record.manifest_sha256.clone() else {
-                    return unknown("verified record without manifest_sha256".into());
-                };
-                let final_path = adapters_root(root).join(&record.adapter_name);
-                // lstat first: verify_manifest would follow a symlinked final path.
-                let is_real_dir = fs::symlink_metadata(&final_path).is_ok_and(|m| m.is_dir());
-                if !is_real_dir || require_verified_content(&final_path, Some(&expected)).is_err() {
-                    return unknown("out/ is gone but the final adapter does not match".into());
+                if let Err(reason) = verified_out_gone_converges(root, &record) {
+                    return unknown(reason);
                 }
                 let mut attempt = Attempt {
                     root: root.to_path_buf(),
@@ -718,6 +731,130 @@ fn reconcile_one(
         },
         state => ReconcileOutcome::Unchanged { attempt_id, state },
     }
+}
+
+/// D46 inventory row. `attempt_id` is empty only for `ScanFailed` rows, which must not be
+/// used as list keys; `adapter_name` is `None`
+/// when the record could not be read, so a corrupt record never lends its name to the UI.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AttemptSummary {
+    pub attempt_id: String,
+    pub adapter_name: Option<String>,
+    pub status: AttemptStatus,
+}
+
+/// Derived, never persisted. Counterpart of `ReconcileOutcome` for a read-only caller.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum AttemptStatus {
+    Running,
+    Interrupted,
+    /// `verified` record whose out/ already became the final adapter; `reconcile` would
+    /// persist `promoted`, the inventory deliberately does not.
+    WouldConvergePromoted,
+    Unchanged {
+        state: AttemptState,
+    },
+    /// Protected and shown, never repaired.
+    Unknown {
+        reason: String,
+    },
+    /// Staging enumeration failed; the inventory is not complete.
+    ScanFailed {
+        reason: String,
+    },
+}
+
+/// Does not take the `adapter_admission` lock: a listing racing a promotion/delete may
+/// transiently show `would_converge_promoted` or `unknown`; acceptable for a read-only view.
+pub fn list_attempts(root: &Path) -> Vec<AttemptSummary> {
+    list_attempts_with(root, &|pid, start| {
+        crate::services::process::pid_is_alive(pid)
+            && start.is_none_or(|s| crate::services::process::process_start_time(pid) == Some(s))
+    })
+}
+
+/// Strictly read-only (D46): no record write, rename or delete, and no call into
+/// `reconcile`. Missing staging is an empty inventory; any other enumeration failure is one
+/// `ScanFailed` row, never an empty list (D22). Reasons carry `root` stripped, so no
+/// absolute path reaches the frontend.
+fn list_attempts_with(
+    root: &Path,
+    is_alive: &dyn Fn(u32, Option<u64>) -> bool,
+) -> Vec<AttemptSummary> {
+    let staging = staging_root(root);
+    let redact = |reason: String| reason.replace(&root.display().to_string(), "<root>");
+    let scan_failed = |e: io::Error| {
+        vec![AttemptSummary {
+            attempt_id: String::new(),
+            adapter_name: None,
+            status: AttemptStatus::ScanFailed {
+                reason: redact(io_err("Failed to enumerate staging", &staging, e).to_string()),
+            },
+        }]
+    };
+    let entries = match fs::read_dir(&staging) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => return scan_failed(e),
+    };
+    let names = match collect_entry_names(entries.map(|entry| entry.map(|e| e.file_name()))) {
+        Ok(names) => names,
+        Err(e) => return scan_failed(e),
+    };
+    names
+        .into_iter()
+        .map(|name| {
+            let (adapter_name, status) = list_one(root, &staging.join(&name), is_alive);
+            let status = match status {
+                AttemptStatus::Unknown { reason } => AttemptStatus::Unknown {
+                    reason: redact(reason),
+                },
+                other => other,
+            };
+            AttemptSummary {
+                attempt_id: name,
+                adapter_name,
+                status,
+            }
+        })
+        .collect()
+}
+
+/// Mirrors `reconcile_one`'s classification with the persist branch replaced by a report.
+fn list_one(
+    root: &Path,
+    dir: &Path,
+    is_alive: &dyn Fn(u32, Option<u64>) -> bool,
+) -> (Option<String>, AttemptStatus) {
+    let unknown = |name: Option<String>, reason: String| (name, AttemptStatus::Unknown { reason });
+    if let Err(e) = ensure_real_dir(dir, false) {
+        return unknown(None, e.to_string());
+    }
+    let record = match read_record(dir) {
+        Ok(r) => r,
+        Err(e) => return unknown(None, e.to_string()),
+    };
+    let name = Some(record.adapter_name.clone());
+    let status = match record.state {
+        AttemptState::Running => match record.pid {
+            None => return unknown(name, "running record without a pid".into()),
+            Some(pid) if is_alive(pid, record.start_time) => AttemptStatus::Running,
+            Some(_) => AttemptStatus::Interrupted,
+        },
+        AttemptState::Verified => match out_gone(fs::symlink_metadata(dir.join(OUT_DIR))) {
+            Ok(false) => AttemptStatus::Unchanged {
+                state: AttemptState::Verified,
+            },
+            Err(e) => return unknown(name, format!("cannot tell whether out/ is gone: {e}")),
+            Ok(true) => match verified_out_gone_converges(root, &record) {
+                Ok(()) => AttemptStatus::WouldConvergePromoted,
+                Err(reason) => return unknown(name, reason),
+            },
+        },
+        state => AttemptStatus::Unchanged { state },
+    };
+    (name, status)
 }
 
 #[cfg(test)]

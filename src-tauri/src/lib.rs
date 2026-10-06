@@ -46,9 +46,9 @@ use commands::local_inference_ops::{
 use commands::metrics::{get_hardware_spec, get_system_metrics, run_gpu_benchmark};
 use commands::mlx::{
     check_for_orphaned_mlx_processes, check_mlx_env, delete_adapter_checkpoint,
-    get_last_known_good_serving, get_mlx_status, kill_mlx_process, revert_to_last_serving,
-    run_mlx_finetune, setup_mlx_env, start_model_serving, stop_model_serving, suggest_serving_port,
-    terminate_orphaned_mlx_process, MlxState,
+    get_last_known_good_serving, get_mlx_status, kill_mlx_process, list_adapter_staging,
+    revert_to_last_serving, run_mlx_finetune, setup_mlx_env, start_model_serving,
+    stop_model_serving, suggest_serving_port, terminate_orphaned_mlx_process, MlxState,
 };
 use commands::modelhub::{
     download_hf_model, get_model_downloads, list_local_models, list_registered_models,
@@ -134,6 +134,7 @@ pub fn run() {
             suggest_serving_port,
             check_for_orphaned_mlx_processes,
             delete_adapter_checkpoint,
+            list_adapter_staging,
             terminate_orphaned_mlx_process,
             get_local_inference_status,
             probe_local_inference_runtime,

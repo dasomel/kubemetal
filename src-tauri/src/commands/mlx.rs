@@ -21,6 +21,7 @@ use crate::services::ports;
 use crate::services::process::{
     augmented_path, external_command, resolve_bundled_resource, resolve_cli_path,
 };
+pub use training_staging::list_adapter_staging;
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct MlxEnvStatus {
