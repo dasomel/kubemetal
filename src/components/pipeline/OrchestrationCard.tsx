@@ -5,6 +5,7 @@ import { useHostPorts } from '../../hooks/useHostPorts';
 import { useMlx } from '../../hooks/useMlx';
 import { useTranslation } from '../../i18n/i18nContext';
 import { openEndpoint } from '../../lib/openEndpoint';
+import { flowAdapterName } from '../../lib/flowAdapterName';
 import type { FlowRunInfo, FineTuneConfig } from '../../types/ipc';
 
 type DotColor = 'success' | 'warning' | 'danger' | 'inkFaint';
@@ -60,14 +61,13 @@ export const OrchestrationCard: React.FC = () => {
     startRunner,
     stoppingRunner,
     stopRunner,
-    triggeringFlow,
-    triggerFinetuneFlow,
     evalInstalling,
     setupEvalEnv,
     triggeringEvaluate,
     triggerEvaluateFlow,
   } = usePrefect(true);
-  const { localModels, mlxStatus } = useMlx();
+  // D47: 파인튜닝은 Prefect가 아니라 스테이징·검증·승격을 거치는 run_mlx_finetune 경로로 시작한다.
+  const { localModels, mlxStatus, runFinetune, startingTraining } = useMlx();
   const { t } = useTranslation();
   const [showFlowForm, setShowFlowForm] = useState(false);
   const [modelPath, setModelPath] = useState('');
@@ -84,7 +84,7 @@ export const OrchestrationCard: React.FC = () => {
     if (servingPort) setEvalPort(servingPort);
   }, [servingPort]);
 
-  const handleTrigger = (e: React.FormEvent) => {
+  const handleTrigger = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!modelPath) return;
     const config: FineTuneConfig = {
@@ -93,9 +93,10 @@ export const OrchestrationCard: React.FC = () => {
       iters: 100,
       batch_size: 1,
       learning_rate: 1e-5,
-      adapter_name: 'flow-adapter',
+      adapter_name: flowAdapterName(),
     };
-    triggerFinetuneFlow(config);
+    // runFinetune이 끝날 때까지 폼을 유지해 startingTraining 스피너가 보이게 한다(실패는 훅이 다이얼로그로 표면화).
+    await runFinetune(config);
     setShowFlowForm(false);
     setModelPath('');
   };
@@ -240,10 +241,10 @@ export const OrchestrationCard: React.FC = () => {
                 <div className="flex gap-2">
                   <button
                     type="submit"
-                    disabled={triggeringFlow || !modelPath}
+                    disabled={startingTraining || !modelPath}
                     className="py-2.5 px-4 bg-primaryStrong hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-inverse text-bodyStrong rounded-md transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
                   >
-                    {triggeringFlow ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                    {startingTraining ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
                     <span>{t('orch.runDefaultBtn')}</span>
                   </button>
                   <button

@@ -35,11 +35,12 @@ class OutputAdmissionTests(unittest.TestCase):
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("--output-dir", result.stderr)
-            self.assertIn("one of the arguments --output-dir --legacy-direct-output is required", result.stderr)
+            self.assertIn("the following arguments are required: --output-dir", result.stderr)
             self.assertEqual(list(Path(temp).iterdir()), [])
             self.assertEqual(result.stdout, "")
 
-    def test_output_dir_and_legacy_flag_are_mutually_exclusive(self):
+    def test_legacy_direct_output_flag_is_rejected(self):
+        # D47: the direct-write bypass is gone; an old caller must fail at argparse.
         with tempfile.TemporaryDirectory() as temp:
             out = Path(temp) / "out"
             out.mkdir()
@@ -48,24 +49,10 @@ class OutputAdmissionTests(unittest.TestCase):
                                      "--legacy-direct-output"], cwd=temp, env=env,
                                     capture_output=True, text=True)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("not allowed with argument", result.stderr)
+            self.assertIn("unrecognized arguments", result.stderr)
             self.assertEqual(result.stdout, "")
             self.assertEqual([p.name for p in Path(temp).iterdir()], ["out"])
             self.assertEqual(list(out.iterdir()), [])
-
-    def test_legacy_direct_output_warns_and_writes_to_final_dir(self):
-        with tempfile.TemporaryDirectory() as temp:
-            env = {**os.environ, "HOME": temp}
-            result = subprocess.run([sys.executable, "-c", BOOTSTRAP, str(WRAPPER.parent), *ARGS,
-                                     "--legacy-direct-output"], cwd=temp, env=env,
-                                    capture_output=True, text=True, timeout=10)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            events = [json.loads(line) for line in result.stdout.splitlines()]
-            final = Path(temp) / ".kubemetal" / "adapters" / "unused"
-            self.assertTrue(final.is_dir())
-            self.assertEqual(events[0]["type"], "warning")
-            self.assertIn("bypasses the staging lifecycle", events[0]["message"])
-            self.assertEqual(events[-1], {"type": "done", "adapter_path": str(final), "last_loss": None})
 
     def test_invalid_output_emits_error_without_any_write(self):
         for kind in ["missing", "file", "symlink", "symlink-slash", "nonempty"]:

@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-22-prefect-s2b",
+  "task": "Retire the Prefect fine-tune direct-write bypass (#22 / #33 S2b, D47): remove trigger_finetune_flow, finetune_flow and the wrapper --legacy-direct-output; the Orchestration card starts run_mlx_finetune. Verify at hermetic unit/static scope only.",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "scripts/**",
+      "src/**",
+      "tests/mlx/**",
+      "docs/**",
+      "README.md",
+      ".agents/evals/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Plan (owner-approved option D): the Prefect runner is a long-lived process Rust has no handle on and D45 forbids Python-side promotion, so the fine-tune flow is removed instead of wrapped. Removing the IPC command is an approved design change; evaluate/ingest flows, S3/S4 code and the Prefect server DB are untouched."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Tests were inverted/added first: python3 -m unittest discover -s tests/mlx failed 5 tests against the old code (host_runner still defined finetune_flow, lib.rs still registered trigger_finetune_flow, wrapper still accepted --legacy-direct-output). No runtime reproduction."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Deleted finetune_flow and its deployment from host_runner.py, trigger_finetune_flow from prefect.rs/lib.rs, and the legacy flag plus direct-write branch from finetune_wrapper.py (--output-dir required). OrchestrationCard now calls useMlx().runFinetune; usePrefect triggerFinetuneFlow plumbing and the two orch.toast i18n keys that promised a Prefect run id were removed. D47 added; docs, README and one mistakes-log row updated."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Hermetic: python unittest (11 tests incl. source tests that finetune_flow is absent from host_runner.py, trigger_finetune_flow absent from lib.rs, wrapper rejects --legacy-direct-output and requires --output-dir) and cargo test --locked --lib (397 passed, 1 ignored).",
+      "summary": "python3 -m unittest discover -s tests/mlx: 11 passed; cargo test --locked --lib: 397 passed, 0 failed.",
+      "evidence": [
+        "test:unittest-tests-mlx-11-passed-cargo-lib-397-passed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Static gates, not runtime evidence",
+      "summary": "cargo fmt --check, cargo clippy --locked --lib --tests -- -D warnings, python3 scripts/ci/check_ipc_types.py and npx tsc --noEmit exit 0.",
+      "evidence": [
+        "test:fmt-clippy-ipc-types-tsc-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "environment_limit",
+      "summary": "Not observed: the running app's Orchestration button starting a real training and promoting an adapter, a real Prefect server/runner, and the pre-existing finetune deployment in the Prefect server DB (untouched; new runs against it would stay Late)."
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "Fine-tune bypass removed and observed at hermetic unit/static scope ONLY; not a claim of real app, Prefect or MLX runtime verification.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "A is limited to the executed hermetic unit and static checks; runtime verification remains unobserved."
+    }
+  ]
+}

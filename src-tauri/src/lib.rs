@@ -60,7 +60,7 @@ use commands::port_forward::{
 };
 use commands::prefect::{
     get_eval_results, get_prefect_status, setup_eval_env, setup_prefect_env, start_prefect_runner,
-    stop_prefect_runner, trigger_evaluate_flow, trigger_finetune_flow, PrefectState,
+    stop_prefect_runner, trigger_evaluate_flow, PrefectState,
 };
 use commands::provision::provision_mlops_stack;
 use commands::rag::{
@@ -166,7 +166,6 @@ pub fn run() {
             setup_prefect_env,
             start_prefect_runner,
             stop_prefect_runner,
-            trigger_finetune_flow,
             setup_eval_env,
             trigger_evaluate_flow,
             get_eval_results,

@@ -49,7 +49,7 @@ spec:
     - BaseModel → (파인튜닝) → Adapter → (등록) → RegisteredModel
     - BaseModel + Adapter → (서빙) → ServingInstance(:8081)
     - TrainingDataset → (버저닝) → DatasetVersion (DVC + SeaweedFS)
-    - FlowRun: Prefect가 관리하는 파인튜닝/평가 실행 단위
+    - FlowRun: Prefect가 관리하는 평가/수집 실행 단위(파인튜닝은 앱의 MLX 경로, D45/D47)
     
     ## K8s 리소스 ↔ 엔티티 매핑
     - Pod/mlflow → RegisteredModel의 저장소. 이 파드가 죽으면 모델 등록·조회 불가

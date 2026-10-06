@@ -5,10 +5,7 @@ use serde::Serialize;
 use tauri::{Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
-use crate::commands::mlx::{
-    validate_adapter_name, validate_home_subpath, venv_pip, venv_python, EnvSetupStatus,
-    FineTuneConfig,
-};
+use crate::commands::mlx::{venv_pip, venv_python, EnvSetupStatus};
 use crate::services::ports;
 use crate::services::process::{augmented_path, external_command, resolve_bundled_resource};
 
@@ -452,7 +449,7 @@ pub async fn start_prefect_runner(
             ));
         }
 
-        // finetune_wrapper.py(및 그 mlx_lm 학습 자식)를 서브프로세스로 띄우는 러너이므로
+        // lm_eval/ingest 서브프로세스를 띄우는 러너이므로
         // D17과 동일하게 새 프로세스 그룹의 리더로 기동해, 정지 시 그룹 전체(-pid)로
         // 시그널을 보내면 트리 전체가 함께 종료되도록 한다.
         let child = tokio::process::Command::new(&venv_py)
@@ -535,76 +532,14 @@ pub async fn stop_prefect_runner(state: State<'_, PrefectState>) -> Result<Strin
     Ok("Stopped Prefect runner.".into())
 }
 
-/// `GET /deployments/name/{flow_name}/{deployment_name}`(실기기 실측, 2026-07-23)로
-/// finetune deployment id를 조회한 뒤 `POST /deployments/{id}/create_flow_run`으로
-/// flow run을 생성한다. 경로 검증은 `mlx.rs::validate_home_subpath`/`validate_adapter_name`을
-/// 그대로 재사용한다(D15 venv 재사용과 동일한 원칙 — 검증 로직 분산 금지).
-#[tauri::command]
-pub async fn trigger_finetune_flow(config: FineTuneConfig) -> Result<String, String> {
-    if config.iters == 0 {
-        return Err("iters must be at least 1.".into());
-    }
-    if config.batch_size == 0 {
-        return Err("batch_size must be at least 1.".into());
-    }
-    if !(config.learning_rate.is_finite() && config.learning_rate > 0.0) {
-        return Err("learning_rate must be a finite value greater than 0.".into());
-    }
-    validate_adapter_name(&config.adapter_name)?;
-    let model_path = validate_home_subpath(&config.model_path)?;
-    let data_path = validate_home_subpath(&config.data_path)?;
-
-    let deployment = curl_get_json(&format!(
-        "{}/deployments/name/finetune/finetune",
-        prefect_api_base()
-    ))
-    .await
-    .ok_or_else(|| {
-        "Cannot connect to Prefect server — check that port-forwarding (4200) is active."
-            .to_string()
-    })?;
-    let deployment_id = deployment
-        .get("id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            "finetune deployment not found — check that the Prefect runner is running.".to_string()
-        })?;
-
-    let body = serde_json::json!({
-        "parameters": {
-            "model_path": model_path.to_string_lossy(),
-            "data_path": data_path.to_string_lossy(),
-            "iters": config.iters,
-            "batch_size": config.batch_size,
-            "learning_rate": config.learning_rate,
-            "adapter_name": config.adapter_name,
-        }
-    });
-
-    let run = curl_post_json(
-        &format!(
-            "{}/deployments/{deployment_id}/create_flow_run",
-            prefect_api_base()
-        ),
-        &body,
-    )
-    .await
-    .ok_or_else(|| "flow run creation request failed.".to_string())?;
-
-    run.get("id")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| "Failed to read id from flow run response.".to_string())
-}
-
 /// MLflow REST 호출 베이스 — 포워딩이 실제로 잡은 호스트 포트를 따른다
 /// (`modelhub.rs`·`access.rs`와 같은 출처인 `services::ports`).
 fn mlflow_base() -> String {
     ports::local_url("mlflow")
 }
 
-/// `trigger_finetune_flow`와 동일 패턴으로 evaluate deployment id를 조회해 flow run을
-/// 생성한다. `serving_port`로 `host_runner.py::evaluate_flow`의 `serving_url` 파라미터
+/// `GET /deployments/name/evaluate/evaluate`(실기기 실측, 2026-07-23)로 evaluate
+/// deployment id를 조회해 `POST /deployments/{id}/create_flow_run`으로 flow run을 생성한다. `serving_port`로 `host_runner.py::evaluate_flow`의 `serving_url` 파라미터
 /// (`http://127.0.0.1:{port}/v1`)를 구성 — mlx_lm.server는 IPv4(127.0.0.1)에만 bind하므로
 /// `localhost`를 쓰지 않는다(mistakes-log.md 2026-07-21 macOS 항목).
 #[tauri::command]

@@ -117,9 +117,9 @@ Fine-tuning writes to `~/.kubemetal/adapter-staging/<attempt_id>/out/` (D45).
 The app reports completion only after exit 0, the expected output report, sha256
 manifest verification, and exclusive promotion to `~/.kubemetal/adapters/<name>`.
 Existing names are refused; legacy adapters and failed/stopped staging are retained.
-This applies to the direct in-app fine-tune path only. The Prefect fine-tune flow still
-writes directly into `~/.kubemetal/adapters/<name>` via the wrapper's explicit
-`--legacy-direct-output` flag and is not staged, verified or promoted (migration: S2b, #33).
+This is the only fine-tune path: the Orchestration card's fine-tune button starts the same
+in-app run, and Prefect serves the evaluate and ingest flows only (D47). A fine-tune no longer
+appears as a Prefect flow run.
 
 ## Connecting an External Cluster (D30 — default: agent-only)
 

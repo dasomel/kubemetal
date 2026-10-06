@@ -1811,9 +1811,8 @@ pub async fn revert_to_last_serving(
     .await
 }
 
-/// D45: the direct Rust path always hands the wrapper a staging `--output-dir` and must
-/// never pass `--legacy-direct-output` (that flag is the Prefect path's explicit bypass of
-/// staging/verification/promotion). Kept as a pure function so a test can pin both.
+/// D45/D47: the Rust path always hands the wrapper a staging `--output-dir`; the wrapper has
+/// no direct-write mode any more. Kept as a pure function so a test can pin the argument.
 fn finetune_wrapper_args(
     wrapper: &Path,
     model_path: &Path,
@@ -1871,7 +1870,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn direct_finetune_args_pass_output_dir_and_never_the_legacy_flag() {
+    fn direct_finetune_args_pass_output_dir() {
         let config = FineTuneConfig {
             model_path: "m".into(),
             data_path: "d".into(),
@@ -1897,7 +1896,6 @@ mod tests {
                 .position(|a| a == "--output-dir")
                 .expect("--output-dir");
             assert_eq!(args[pos + 1], "/stage/out");
-            assert!(!args.iter().any(|a| a == "--legacy-direct-output"));
         }
     }
 
