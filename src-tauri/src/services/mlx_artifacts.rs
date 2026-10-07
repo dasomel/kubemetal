@@ -29,6 +29,59 @@ pub(crate) fn manifest_verification_status(adapter_dir: &Path) -> &'static str {
     }
 }
 
+/// D48: what the pre-serve check concluded about an adapter that is allowed to serve.
+/// `Err` from `adapter_serving_gate` is the refusal; there is deliberately no variant
+/// for "corrupt" because a corrupt adapter must never reach the spawn.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum GateOutcome {
+    Verified,
+    /// Legacy adapter (trained outside the app, or before #22): D45 says it is never
+    /// touched, and we do not report it as verified.
+    NoManifest,
+}
+
+const GATE_LISTED_FILES: usize = 5;
+
+/// D48 pre-serve gate. Manifest present and valid -> `Verified`; present but any
+/// missing/changed/extra entry, or unparseable/unsupported -> `Err` (refuse); absent ->
+/// `NoManifest` (serve as before). Hashing is heavy: call from `spawn_blocking`.
+/// Reuses `verify_manifest`; no second parser or hasher (AGENTS.md "same fact twice").
+pub(crate) fn adapter_serving_gate(adapter_dir: &Path) -> Result<GateOutcome, String> {
+    // Same presence rule as `manifest_verification_status`: absent file == legacy.
+    if !adapter_dir.join("manifest.json").is_file() {
+        return Ok(GateOutcome::NoManifest);
+    }
+    let refuse = |detail: &str| {
+        format!(
+            "Refusing to serve adapter {}: {detail}",
+            adapter_dir.display()
+        )
+    };
+    let report = verify_manifest(adapter_dir).map_err(|e| refuse(&e))?;
+    if report.is_valid() {
+        return Ok(GateOutcome::Verified);
+    }
+    let mut problems: Vec<String> = Vec::new();
+    problems.extend(report.changed.iter().map(|f| format!("changed {f}")));
+    problems.extend(report.missing.iter().map(|f| format!("missing {f}")));
+    problems.extend(report.extra.iter().map(|f| format!("extra {f}")));
+    let mut listed = problems
+        .iter()
+        .take(GATE_LISTED_FILES)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
+    if problems.len() > GATE_LISTED_FILES {
+        listed.push_str(&format!(
+            ", and {} more",
+            problems.len() - GATE_LISTED_FILES
+        ));
+    }
+    Err(refuse(&format!(
+        "the adapter no longer matches its manifest ({listed})."
+    )))
+}
+
 /// D45: the reserved final directory, not the wrapper's output. Staging is a sibling
 /// outside the delete IPC root by construction: deletion is rooted at `adapters/` and
 /// rejects symlinked path components, so `adapter-staging/` is unreachable from it.

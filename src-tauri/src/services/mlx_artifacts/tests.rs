@@ -1,5 +1,5 @@
 use super::*;
-use crate::services::artifact_manifest::ManifestContext;
+use crate::services::artifact_manifest::{write_manifest, ManifestContext};
 
 fn make_temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
@@ -312,4 +312,92 @@ fn deletion_fails_closed_for_tilde_paths_without_home() {
         None,
         None,
     ));
+}
+
+fn manifested_adapter(name: &str) -> PathBuf {
+    let dir = make_temp_dir(name);
+    std::fs::write(dir.join("adapters.safetensors"), b"weights").unwrap();
+    std::fs::write(dir.join("adapter_config.json"), b"{}").unwrap();
+    write_manifest(&dir, manifest_context()).expect("manifest write should succeed");
+    dir
+}
+
+#[test]
+fn serving_gate_verifies_untouched_adapter() {
+    let dir = manifested_adapter("gate-valid");
+    assert_eq!(adapter_serving_gate(&dir), Ok(GateOutcome::Verified));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn serving_gate_refuses_flipped_byte_naming_the_file() {
+    let dir = manifested_adapter("gate-flipped");
+    std::fs::write(dir.join("adapters.safetensors"), b"weightz").unwrap();
+    let err = adapter_serving_gate(&dir).unwrap_err();
+    assert!(err.contains("changed adapters.safetensors"), "{err}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn serving_gate_refuses_deleted_file() {
+    let dir = manifested_adapter("gate-deleted");
+    std::fs::remove_file(dir.join("adapters.safetensors")).unwrap();
+    let err = adapter_serving_gate(&dir).unwrap_err();
+    assert!(err.contains("missing adapters.safetensors"), "{err}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn serving_gate_refuses_extra_file() {
+    let dir = manifested_adapter("gate-extra");
+    std::fs::write(dir.join("injected.bin"), b"x").unwrap();
+    let err = adapter_serving_gate(&dir).unwrap_err();
+    assert!(err.contains("extra injected.bin"), "{err}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn serving_gate_refuses_unparseable_manifest() {
+    let dir = manifested_adapter("gate-unparseable");
+    std::fs::write(dir.join("manifest.json"), b"{ not json").unwrap();
+    let err = adapter_serving_gate(&dir).unwrap_err();
+    assert!(err.contains("Failed to parse artifact manifest"), "{err}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn serving_gate_refuses_unsupported_schema_version() {
+    let dir = manifested_adapter("gate-schema");
+    let path = dir.join("manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    manifest["schema_version"] = 99.into();
+    std::fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let err = adapter_serving_gate(&dir).unwrap_err();
+    assert!(
+        err.contains("Unsupported artifact manifest schema"),
+        "{err}"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn serving_gate_allows_legacy_adapter_without_manifest_and_never_writes_one() {
+    let dir = make_temp_dir("gate-legacy");
+    std::fs::write(dir.join("adapters.safetensors"), b"weights").unwrap();
+    assert_eq!(adapter_serving_gate(&dir), Ok(GateOutcome::NoManifest));
+    assert!(!dir.join("manifest.json").exists());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn serving_gate_error_caps_the_listed_files() {
+    let dir = manifested_adapter("gate-capped");
+    for i in 0..8 {
+        std::fs::write(dir.join(format!("extra-{i}.bin")), b"x").unwrap();
+    }
+    let err = adapter_serving_gate(&dir).unwrap_err();
+    assert_eq!(err.matches("extra extra-").count(), 5, "{err}");
+    assert!(err.contains("and 3 more"), "{err}");
+    std::fs::remove_dir_all(&dir).ok();
 }

@@ -29,6 +29,7 @@
 - **저장 위치·수명주기**: `run_mlx_finetune`은 `~/.kubemetal/adapter-staging/<attempt_id>/out/`에 학습 출력을 쓴다. exit 0·기대 경로 done·sha256 manifest 검증 후 배타적으로 `~/.kubemetal/adapters/{adapter_name}`에 승격해야 완료된다(D45; 기존 이름 거부, 실패/중지 staging 보존; 이것이 유일한 파인튜닝 경로다 — Prefect 파인튜닝 플로우와 래퍼의 직접 쓰기 모드는 제거됐고 오케스트레이션 카드도 이 경로를 시작한다, D47). 승격된 디렉터리(`adapter_config.json` 포함) → `start_model_serving`이 이 디렉터리를 감지해
   `adapter_config.json.model` 필드에서 베이스 모델 경로를 자동 승격(§4.1
   `start_model_serving` 설명).
+  서빙 직전에 `adapter_serving_gate`가 manifest를 다시 검증한다(D48): 변조·누락·추가 파일이 있으면 거부하고, manifest가 없는 레거시 어댑터는 검증되지 않은 채 서빙된다(UI에는 표시되지 않음).
 - **IPC 타입/필드**: `FineTuneConfig.adapter_name` → `MlxTrainingState.adapter_path`
   → `MlxServingState.adapter_path`.
 - **관련 D**: D17(프로세스 그룹 시그널 전파), D12(서빙 도구명 정정), D45(staging 검증·승격).

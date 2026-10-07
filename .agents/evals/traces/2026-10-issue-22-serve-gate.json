@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-22-serve-gate",
+  "task": "Verify the adapter manifest before serving (#22 AC8, D48): start_model_serving, and revert_to_last_serving which re-enters it, refuse a present-but-mismatched manifest before spawning. Verify at hermetic unit/static scope only.",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "docs/**",
+      ".agents/evals/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Plan: reuse verify_manifest through one pure adapter_serving_gate and call it from start_model_serving only, on the blocking pool with no lock held. Manifest absent (legacy) keeps serving as before per D45 and is not reported as verified. No ServingStatus, TypeScript or UI change; quarantine and digest-referenced deployment are untouched."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Tests were written first: cargo test --locked --lib serving_gate did not compile against the code without adapter_serving_gate, and the source-order test start_model_serving_gates_adapter_manifest_before_spawn panicked until the gate call was wired in. No runtime reproduction of a tampered adapter being served."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added adapter_serving_gate and GateOutcome in services/mlx_artifacts.rs; hoisted serving input resolution into resolve_serving_paths and gate_serving_adapter in commands/mlx.rs, which runs the gate via spawn_blocking before the sync spawn closure; refusal flows through the existing Err arm that clears the serving slot. Removed dead_code allows from verify_manifest now that it has a production caller. D48 added with docs and one mistakes-log row."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Hermetic: temp-dir tests for valid, flipped byte, deleted file, extra file, unparseable manifest, unsupported schema, legacy without manifest (never written), capped error text, plus a source test that the gate precedes Command::new that revert re-enters start_model_serving and gates before stopping the live server, and Finder-junk (.DS_Store, ._*) manifest tests. The slot-clearing Err arm was verified by reading only, not by a test.",
+      "summary": "cargo test --locked --lib: 408 passed, 0 failed, 1 ignored.",
+      "evidence": [
+        "test:cargo-lib-408-passed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Static gates, not runtime evidence",
+      "summary": "cargo fmt --check, cargo clippy --locked --lib --tests -- -D warnings, python3 scripts/ci/check_ipc_types.py and npx tsc --noEmit exit 0.",
+      "evidence": [
+        "test:fmt-clippy-ipc-types-tsc-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "environment_limit",
+      "summary": "Not observed: a real serve of a tampered adapter in the running app being refused, a real serve of a valid adapter passing the gate, and re-hash latency on a real large adapter. Legacy adapters without a manifest are served unverified and the UI does not surface that."
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "Pre-serve manifest gate implemented and observed at hermetic unit/static scope ONLY; not a claim of real app, MLX or colima runtime verification.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "A is limited to the executed hermetic unit and static checks; runtime verification remains unobserved."
+    }
+  ]
+}
