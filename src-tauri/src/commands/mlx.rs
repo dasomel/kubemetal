@@ -1428,6 +1428,51 @@ async fn run_serving_reader(app: tauri::AppHandle, mut child: tokio::process::Ch
     }
 }
 
+/// Cheap, sync part of serving-input resolution: which base model, and which adapter (if
+/// any) will be passed to the server. Hoisted out of the spawn closure so the D48 gate can
+/// check the exact adapter directory that will be served.
+fn resolve_serving_paths(
+    model_path: &str,
+    adapter_path: Option<&str>,
+) -> Result<(PathBuf, Option<PathBuf>), String> {
+    let validated_model_dir = validate_home_subpath(model_path)?;
+    if validated_model_dir.join("adapter_config.json").is_file() {
+        let base = read_adapter_base_model(&validated_model_dir).ok_or_else(|| {
+            "This is an adapter directory — specify the base model as well.".to_string()
+        })?;
+        let validated_base = validate_home_subpath(&base)?;
+        return Ok((validated_base, Some(validated_model_dir)));
+    }
+    let explicit_adapter = match adapter_path {
+        Some(p) if !p.is_empty() => Some(validate_home_subpath(p)?),
+        _ => None,
+    };
+    Ok((validated_model_dir, explicit_adapter))
+}
+
+/// D48: resolve the serving inputs, then verify the adapter manifest (if an adapter is
+/// served) before anything is spawned. Hashing weights is heavy, so it runs on the blocking
+/// pool; the caller holds no lock here. `Err` is the refusal and flows through the caller's
+/// existing error arm, which clears the serving slot placeholder.
+async fn gate_serving_adapter(
+    model_path: &str,
+    adapter_path: Option<&str>,
+) -> Result<(PathBuf, Option<PathBuf>), String> {
+    let (base_model, adapter) = resolve_serving_paths(model_path, adapter_path)?;
+    if let Some(dir) = adapter.clone() {
+        let outcome = tokio::task::spawn_blocking(move || {
+            services::mlx_artifacts::adapter_serving_gate(&dir)
+        })
+        .await
+        .map_err(|e| format!("Adapter verification task failed: {e}"))??;
+        if outcome == services::mlx_artifacts::GateOutcome::NoManifest {
+            // Legacy adapter: served as before (D45), but never reported as verified.
+            eprintln!("[mlx] Serving adapter without a manifest (unverified legacy adapter)");
+        }
+    }
+    Ok((base_model, adapter))
+}
+
 #[tauri::command]
 pub async fn start_model_serving(
     app: tauri::AppHandle,
@@ -1468,30 +1513,18 @@ pub async fn start_model_serving(
         });
     }
 
+    // D48: verify before the sync spawn closure; no lock is held while hashing.
+    let gated = gate_serving_adapter(&model_path, adapter_path.as_deref()).await;
+
     let res = (|| -> Result<(u32, tokio::process::Child, String, Option<String>, u16), String> {
+        let (base_model, effective_adapter) = gated?;
+
         // 요청한 포트가 막혀 있으면 실패시키지 않고 비어 있는 포트로 비켜간다.
         // 8080은 개발 환경에서 다른 서비스(Docker 컨테이너·Tomcat 등)가 선점하는 일이 흔하고,
         // 그 프로세스가 와일드카드로 바인딩하면 우리 서버가 뜨기 전 창에서 남의 응답이
         // 돌아온다(실측 2026-08-06: `404 page not found`). 바뀐 포트는 반환값에 명시한다.
         let (_, range_end) = serving_port_spec();
         let port = ports::find_free_port(port, range_end.max(port))?;
-
-        let validated_model_dir = validate_home_subpath(&model_path)?;
-        let is_adapter_dir = validated_model_dir.join("adapter_config.json").is_file();
-
-        let (base_model, effective_adapter): (PathBuf, Option<PathBuf>) = if is_adapter_dir {
-            let base = read_adapter_base_model(&validated_model_dir).ok_or_else(|| {
-                "This is an adapter directory — specify the base model as well.".to_string()
-            })?;
-            let validated_base = validate_home_subpath(&base)?;
-            (validated_base, Some(validated_model_dir.clone()))
-        } else {
-            let explicit_adapter = match adapter_path.as_deref() {
-                Some(p) if !p.is_empty() => Some(validate_home_subpath(p)?),
-                _ => None,
-            };
-            (validated_model_dir.clone(), explicit_adapter)
-        };
 
         let venv_py = venv_python()?;
         if !venv_py.is_file() {
@@ -1795,6 +1828,10 @@ pub async fn revert_to_last_serving(
     let should_stop = revert_should_stop_current_serving(&state)?;
     check_current_spawn_admission(&app.state::<crate::commands::guardrails::GuardrailState>())
         .await?;
+
+    // D48: refuse a bad last-known-good adapter while the healthy server is still up.
+    // start_model_serving gates again — that one guards the actual spawn path.
+    gate_serving_adapter(&target.model_path, target.adapter_path.as_deref()).await?;
 
     if should_stop {
         stop_model_serving(app.state::<MlxState>()).await?;
@@ -2494,6 +2531,51 @@ mod tests {
         std::fs::write(dir.join("adapters.safetensors"), b"tampered").unwrap();
         assert_eq!(manifest_verification_status(&dir), "corrupt");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// D48 structure guard: the manifest gate must run before the server is spawned, and the
+    /// revert path must reach it by re-entering `start_model_serving` (never spawning itself).
+    #[test]
+    fn start_model_serving_gates_adapter_manifest_before_spawn() {
+        let source = include_str!("mlx.rs");
+        let production = source
+            .split("#[cfg(test)]\nmod tests {")
+            .next()
+            .expect("production section");
+        let start = production
+            .split("pub async fn start_model_serving(")
+            .nth(1)
+            .expect("start_model_serving")
+            .split("pub async fn suggest_serving_port")
+            .next()
+            .unwrap();
+        let gate = start
+            .find("gate_serving_adapter(")
+            .expect("gate call in start_model_serving");
+        let spawn_closure = start.find("let res = ").expect("spawn result");
+        let spawn = start.find("Command::new").expect("spawn");
+        assert!(gate < spawn, "gate must precede Command::new");
+        assert!(gate < spawn_closure, "gate must precede the spawn closure");
+        let compact: String = production.split_whitespace().collect();
+        assert!(
+            compact.contains("spawn_blocking(move||{services::mlx_artifacts::adapter_serving_gate"),
+            "hashing must run on the blocking pool"
+        );
+        let revert = production
+            .split("pub async fn revert_to_last_serving(")
+            .nth(1)
+            .expect("revert_to_last_serving")
+            .split("\n}\n")
+            .next()
+            .unwrap();
+        assert!(revert.contains("start_model_serving("));
+        assert!(!revert.contains("Command::new"));
+        let revert_gate = revert.find("gate_serving_adapter(").expect("revert gate");
+        let revert_stop = revert.find("stop_model_serving(").expect("revert stop");
+        assert!(
+            revert_gate < revert_stop,
+            "gate must precede stopping the live server"
+        );
     }
 
     #[test]

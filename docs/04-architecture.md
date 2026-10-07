@@ -122,7 +122,7 @@ DRA/Kueue는 위 조건을 만족하는 **실제 Kubernetes 관리 가능 resour
 | MLX 스튜디오 (Phase 2c) | `check_mlx_env`, `setup_mlx_env` | `~/.kubemetal/venv`의 python3/mlx-lm 상태 조회·설치 |
 | | `run_mlx_finetune` | venv python으로 `scripts/mlx/finetune_wrapper.py`(D18 경로 해석) 실행, `process_group(0)`으로 기동(D17). D47: 유일한 파인튜닝 경로(Prefect 플로우 제거). D45: staging `out/`에만 출력; exit 0·기대 done 경로·manifest 검증 후 삭제와 같은 admission mutex 아래 최종 이름으로 배타적 승격해야 done |
 | | `get_mlx_status`, `kill_mlx_process` | 환경/학습/서빙 통합 상태 조회, SIGTERM→SIGKILL 종료(학습은 그룹 전체 대상; 리더 선종료 시 TERM 전 자식의 시작 시각·PGID·native argv의 MLX 신원을 재검증하며 증거가 없으면 거부, D17) |
-| | `start_model_serving`, `stop_model_serving` | `mlx_lm server` 기동/정지 |
+| | `start_model_serving`, `stop_model_serving` | `mlx_lm server` 기동/정지. D48: 어댑터를 서빙하기 전 `adapter_serving_gate`(`services/mlx_artifacts.rs`, `verify_manifest` 재사용)로 manifest를 검증한다. 변조/누락/추가 파일이 있으면 spawn 없이 거부, manifest 없는 레거시 어댑터는 검증 없이 서빙(UI 미표시). 해싱은 `spawn_blocking`. `revert_to_last_serving`은 실행 중 서버를 멈추기 전에 같은 게이트를 먼저 건다 |
 | | `list_registered_models` | MLflow Model Registry 조회 → 파이프라인 뷰 "등록" 단계 노출 (FR-08) |
 | 접근 콘솔 (Phase 2d) | `get_service_access` | MLflow/SeaweedFS S3·Filer/Model Serving 4종 헬스 + S3 크리덴셜 Secret 조회 (FR-09) |
 | 하드웨어 가드레일 (Phase 3) | `get_guardrail_status`, `set_guardrail_config` | memory pressure(D16)·배터리 상태 조회, 배터리 시 자동 일시정지 설정 |

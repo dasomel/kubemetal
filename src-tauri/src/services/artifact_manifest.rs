@@ -32,7 +32,6 @@ struct ArtifactManifest {
 }
 
 // Verification is intentionally a service API rather than an IPC command in this single-user slice.
-#[allow(dead_code)]
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct VerifyReport {
     pub missing: Vec<String>,
@@ -40,7 +39,6 @@ pub struct VerifyReport {
     pub extra: Vec<String>,
 }
 
-#[allow(dead_code)]
 impl VerifyReport {
     pub fn is_valid(&self) -> bool {
         self.missing.is_empty() && self.changed.is_empty() && self.extra.is_empty()
@@ -48,7 +46,7 @@ impl VerifyReport {
 }
 
 pub fn write_manifest(dir: &Path, extra: ManifestContext) -> Result<PathBuf, String> {
-    let files = collect_files(dir)?;
+    let files = collect_files(dir, false)?;
     let manifest = ArtifactManifest {
         schema_version: SCHEMA_VERSION,
         created_at: utc_rfc3339_now()?,
@@ -64,7 +62,6 @@ pub fn write_manifest(dir: &Path, extra: ManifestContext) -> Result<PathBuf, Str
     Ok(path)
 }
 
-#[allow(dead_code)]
 pub fn verify_manifest(dir: &Path) -> Result<VerifyReport, String> {
     let manifest_path = dir.join(MANIFEST_FILE);
     let content = fs::read(&manifest_path).map_err(|e| {
@@ -86,10 +83,13 @@ pub fn verify_manifest(dir: &Path) -> Result<VerifyReport, String> {
         ));
     }
 
-    let actual = collect_files(dir)?;
+    let mut actual = collect_files(dir, true)?;
     let mut expected = manifest.files;
     expected.sort_by(|a, b| a.path.cmp(&b.path));
     validate_manifest_paths(&expected)?;
+    // Finder junk never counts as "extra", but a manifest that already lists it keeps
+    // verifying that entry like any other file.
+    actual.retain(|f| !is_finder_junk(&f.path) || expected.iter().any(|e| e.path == f.path));
 
     let mut report = VerifyReport::default();
     let mut expected_index = 0;
@@ -125,7 +125,13 @@ pub fn verify_manifest(dir: &Path) -> Result<VerifyReport, String> {
     Ok(report)
 }
 
-fn collect_files(dir: &Path) -> Result<Vec<ManifestEntry>, String> {
+/// Finder-created metadata (`.DS_Store`, AppleDouble `._*`) appears in a folder the moment a
+/// user opens it; it is not adapter content, so it is never hashed into a new manifest.
+fn is_finder_junk(name: &str) -> bool {
+    name == ".DS_Store" || name.starts_with("._")
+}
+
+fn collect_files(dir: &Path, include_junk: bool) -> Result<Vec<ManifestEntry>, String> {
     let entries = fs::read_dir(dir)
         .map_err(|e| format!("Failed to read artifact directory {}: {e}", dir.display()))?;
     let mut files = Vec::new();
@@ -145,7 +151,7 @@ fn collect_files(dir: &Path) -> Result<Vec<ManifestEntry>, String> {
             .file_name()
             .into_string()
             .map_err(|_| format!("Artifact filename is not valid UTF-8: {}", path.display()))?;
-        if name == MANIFEST_FILE {
+        if name == MANIFEST_FILE || (!include_junk && is_finder_junk(&name)) {
             continue;
         }
         let bytes = fs::metadata(&path)
@@ -188,7 +194,6 @@ pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
     Ok(hex)
 }
 
-#[allow(dead_code)]
 fn validate_manifest_paths(entries: &[ManifestEntry]) -> Result<(), String> {
     let mut previous: Option<&str> = None;
     for entry in entries {
@@ -318,6 +323,44 @@ mod tests {
         assert_eq!(report.changed, ["changed.bin"]);
         assert_eq!(report.missing, ["missing.bin"]);
         assert_eq!(report.extra, ["extra.bin"]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn finder_junk_is_not_extra_and_not_hashed_but_other_extras_still_refused() {
+        let dir = temp_dir("manifest-junk");
+        fs::write(dir.join(".DS_Store"), b"pre").unwrap();
+        fs::write(dir.join("adapter.bin"), b"w").unwrap();
+        write_manifest(&dir, context()).unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+        assert_eq!(manifest["files"].as_array().unwrap().len(), 1);
+
+        fs::write(dir.join(".DS_Store"), b"changed").unwrap();
+        fs::write(dir.join("._adapter.bin"), b"apple").unwrap();
+        assert!(verify_manifest(&dir).unwrap().is_valid());
+
+        fs::write(dir.join("extra.bin"), b"x").unwrap();
+        assert_eq!(verify_manifest(&dir).unwrap().extra, ["extra.bin"]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn manifest_listing_finder_junk_still_verifies_that_entry() {
+        let dir = temp_dir("manifest-junk-listed");
+        fs::write(dir.join("adapter.bin"), b"w").unwrap();
+        write_manifest(&dir, context()).unwrap();
+        let path = dir.join("manifest.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let mut entry = manifest["files"][0].clone();
+        entry["path"] = ".DS_Store".into();
+        manifest["files"].as_array_mut().unwrap().insert(0, entry);
+        fs::write(&path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+        fs::write(dir.join(".DS_Store"), b"w").unwrap();
+        assert!(verify_manifest(&dir).unwrap().is_valid());
+        fs::remove_file(dir.join(".DS_Store")).unwrap();
+        assert_eq!(verify_manifest(&dir).unwrap().missing, [".DS_Store"]);
         fs::remove_dir_all(dir).unwrap();
     }
 
