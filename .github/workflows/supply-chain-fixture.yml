@@ -30,7 +30,7 @@ jobs:
       # (rust-toolchain.toml이 고정한 1.98.0 채널을 rustup이 받아오는 데 필요).
       # example.com은 절대 포함하지 않는다 — 이 픽스처의 핵심은 example.com이
       # 반드시 도달 불가능해야 한다는 것이다.
-      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+      - uses: step-security/harden-runner@351661ca32ac09a36dc5ee2d536e3128f2a3c8ed # v2.22.0
         with:
           egress-policy: block
           allowed-endpoints: >
