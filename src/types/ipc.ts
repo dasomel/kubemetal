@@ -490,6 +490,7 @@ export interface OperationSummary {
   action: string;
   target_description: string;
   risk_class: DeployRiskClass;
+  operation_id: string;
 }
 
 /**
@@ -501,6 +502,7 @@ export interface OperationSummary {
 export interface ConfirmedOperationTarget {
   context: string;
   namespace: string;
+  operation_id?: string;
 }
 
 /** Serialized result of the existing create_support_bundle command (#17). */

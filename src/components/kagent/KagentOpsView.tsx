@@ -111,6 +111,7 @@ export const KagentOpsView: React.FC = () => {
         expectedTarget: {
           context: confirmed.context,
           namespace: confirmed.namespace,
+          operation_id: confirmed.operation_id,
         },
       });
       const shown = res ? summarizeInstallOutput(res) : t('kagent.install.fallbackAck');

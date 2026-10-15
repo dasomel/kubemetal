@@ -1,7 +1,9 @@
 use tauri::Manager;
 
 use crate::commands::deploy_target::get_deploy_target;
-use crate::services::deploy_operation::{ensure_confirmed_target, ConfirmedOperationTarget};
+use crate::services::deploy_operation::{
+    acquire_deploy_guard, ensure_confirmed_target, ConfirmedOperationTarget, DeployGuardOutcome,
+};
 use crate::services::process::{external_command, resolve_bundled_resource};
 
 /// 매니페스트 목록은 여기 없다 — `scripts/k8s/kustomization.yaml`이 단일 출처이고
@@ -18,6 +20,16 @@ pub async fn provision_mlops_stack(
     ensure_confirmed_target(&expected_target, &target.context, &target.namespace)?;
     // 외부 클러스터의 기본 통합은 에이전트 온리다 — 풀스택 프로비저닝을 차단한다(D30).
     target.full_stack_gate()?;
+
+    let guard = match acquire_deploy_guard(
+        &target.context,
+        &target.namespace,
+        expected_target.operation_id.as_deref(),
+    )? {
+        DeployGuardOutcome::AlreadyCompleted(cached) => return Ok(cached),
+        DeployGuardOutcome::Acquired(guard) => guard,
+    };
+
     // 브리지가 미검증이면 여기서 막힌다 — 추측 주소를 클러스터로 보내지 않기 위해서다.
     let render_args = target.render_args()?;
 
@@ -46,12 +58,14 @@ pub async fn provision_mlops_stack(
 
     let applied = apply_stdin(&target.context, &rendered.stdout).await?;
 
-    Ok(format!(
+    let res = format!(
         "[{}] applied MLOps stack to namespace {}.\n{}",
         target.context,
         target.namespace,
         applied.trim()
-    ))
+    );
+    guard.complete(res.clone());
+    Ok(res)
 }
 
 /// `kagent.rs::install_kagent`도 같은 ns-생성 규약(Makefile `kagent-up`과 동일하게

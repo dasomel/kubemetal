@@ -4,9 +4,45 @@
 //! 대상 클러스터 컨텍스트, 네임스페이스, 설명 및 위험 등급(risk_class) 요약을 생성한다.
 //! 읽기 전용 순수 로직으로, 어떤 외부 명령이나 변경도 수행하지 않는다(D22).
 
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
 use serde::{Deserialize, Serialize};
 
 use crate::services::deploy_target::{colima_context, context_is_colima, DeployTarget};
+
+static COUNTER: AtomicU64 = AtomicU64::new(1);
+
+struct DeployState {
+    in_flight: HashSet<String>,
+    completed: HashMap<String, (Instant, String)>,
+}
+
+static DEPLOY_STATE: OnceLock<Mutex<DeployState>> = OnceLock::new();
+
+fn deploy_state() -> &'static Mutex<DeployState> {
+    DEPLOY_STATE.get_or_init(|| {
+        Mutex::new(DeployState {
+            in_flight: HashSet::new(),
+            completed: HashMap::new(),
+        })
+    })
+}
+
+/// 유일한 작업 식별자 생성(타임스탬프 + PID + 원자적 카운터).
+pub fn new_operation_id(action: &str) -> String {
+    let ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    format!(
+        "op-{action}-{ms:013}-{}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
+}
 
 /// 배포 작업 위험 등급: 로컬(colima) 작업과 외부 클러스터 작업을 구분한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,14 +83,18 @@ pub struct OperationSummary {
     pub action: String,
     pub target_description: String,
     pub risk_class: DeployRiskClass,
+    #[serde(default)]
+    pub operation_id: String,
 }
 
 /// 사용자가 확인 다이얼로그에서 본 작업 대상의 최소 식별자. 설명이나 위험 등급은
 /// 표시용이라 실행 대상 비교에 넣지 않는다.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfirmedOperationTarget {
     pub context: String,
     pub namespace: String,
+    #[serde(default)]
+    pub operation_id: Option<String>,
 }
 
 /// 확인 이후 저장 대상이나 화면 선택기가 바뀌었으면, 적용 전에 멈춘다. `expected`는 필수다
@@ -73,7 +113,91 @@ pub fn ensure_confirmed_target(
             expected.context, expected.namespace, actual_context, actual_namespace
         ));
     }
+    if let Some(ref op_id) = expected.operation_id {
+        if op_id.trim().is_empty() {
+            return Err("operation_id cannot be empty when provided".into());
+        }
+    }
     Ok(())
+}
+
+/// 배포 작업 락 획득 결과.
+#[derive(Debug)]
+pub enum DeployGuardOutcome {
+    Acquired(DeployOperationGuard),
+    AlreadyCompleted(String),
+}
+
+/// 배포 작업 실행 중 동일 타깃(context/namespace)에 대한 동시 실행 방지 RAII 가드.
+#[derive(Debug)]
+pub struct DeployOperationGuard {
+    key: String,
+    operation_id: Option<String>,
+    completed_result: Option<String>,
+}
+
+impl DeployOperationGuard {
+    /// 성공 완료 시 결과를 기록하여 향후 동일 operation_id 재시도 시 멱등 응답을 가능하게 한다.
+    pub fn complete(mut self, result: String) {
+        self.completed_result = Some(result);
+    }
+}
+
+impl Drop for DeployOperationGuard {
+    fn drop(&mut self) {
+        let mut state = deploy_state().lock().unwrap_or_else(|e| e.into_inner());
+        state.in_flight.remove(&self.key);
+        if let (Some(id), Some(result)) = (&self.operation_id, &self.completed_result) {
+            state
+                .completed
+                .insert(id.clone(), (Instant::now(), result.clone()));
+        }
+    }
+}
+
+/// 배포 작업 실행 전 동시 실행 가드 및 멱등성 검사를 수행한다(#18).
+/// - 동일한 operation_id가 최근(5분 내) 이미 완료된 경우 캐시된 성공 결과를 즉시 반환(AlreadyCompleted).
+/// - 동일한 (context, namespace) 대상에 이미 작업이 진행 중이면 Err(busy) 반환.
+/// - 그 외의 경우 배타적 실행 권한(Acquired)을 부여하며, 반환된 가드가 drop될 때 슬롯이 해제된다.
+pub fn acquire_deploy_guard(
+    context: &str,
+    namespace: &str,
+    operation_id: Option<&str>,
+) -> Result<DeployGuardOutcome, String> {
+    let mut state = deploy_state().lock().unwrap_or_else(|e| e.into_inner());
+
+    // 5분 초과 완료 이력 만료 정리
+    let now = Instant::now();
+    state
+        .completed
+        .retain(|_, (t, _)| now.duration_since(*t) < Duration::from_secs(300));
+
+    if let Some(id) = operation_id {
+        if let Some((_, cached_result)) = state.completed.get(id) {
+            return Ok(DeployGuardOutcome::AlreadyCompleted(cached_result.clone()));
+        }
+    }
+
+    let key = format!("{context}/{namespace}");
+    if state.in_flight.contains(&key) {
+        return Err(format!(
+            "deploy operation busy: an operation is already in progress on context='{context}', namespace='{namespace}'"
+        ));
+    }
+
+    state.in_flight.insert(key.clone());
+    Ok(DeployGuardOutcome::Acquired(DeployOperationGuard {
+        key,
+        operation_id: operation_id.map(str::to_string),
+        completed_result: None,
+    }))
+}
+
+#[cfg(test)]
+pub fn reset_deploy_state_for_test() {
+    let mut state = deploy_state().lock().unwrap_or_else(|e| e.into_inner());
+    state.in_flight.clear();
+    state.completed.clear();
 }
 
 /// `action`별 요약을 조립하는 순수 함수.
@@ -115,6 +239,7 @@ pub fn build_operation_summary(
                 }
             ),
             risk_class: DeployRiskClass::Local,
+            operation_id: new_operation_id(action),
         }),
         DeployAction::ProvisionMlopsStack => {
             let target = target.ok_or_else(|| {
@@ -148,6 +273,7 @@ pub fn build_operation_summary(
                     target.context, target.namespace
                 ),
                 risk_class,
+                operation_id: new_operation_id(action),
             })
         }
         DeployAction::InstallKagent => Err(format!(
@@ -195,6 +321,7 @@ pub fn build_kagent_install_summary(
              kagent 컨트롤러/도구/UI 설치을(를) 적용합니다."
         ),
         risk_class,
+        operation_id: new_operation_id("install_kagent"),
     })
 }
 

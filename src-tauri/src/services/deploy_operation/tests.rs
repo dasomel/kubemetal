@@ -8,6 +8,7 @@ fn confirmed_target(context: &str, namespace: &str) -> ConfirmedOperationTarget 
     ConfirmedOperationTarget {
         context: context.into(),
         namespace: namespace.into(),
+        operation_id: None,
     }
 }
 
@@ -202,4 +203,69 @@ fn kagent_install_summary_rejects_empty_namespace() {
     let err =
         build_kagent_install_summary("narwhal", "").expect_err("blank namespace must be rejected");
     assert!(err.contains("install_kagent"));
+}
+
+#[test]
+fn deploy_guard_rejects_concurrent_operation_on_same_target() {
+    reset_deploy_state_for_test();
+    let _guard1 = acquire_deploy_guard("colima", "default", None).unwrap();
+    let err = match acquire_deploy_guard("colima", "default", None) {
+        Err(e) => e,
+        Ok(_) => panic!("second acquire on same target must fail"),
+    };
+    assert!(err.contains("deploy operation busy"));
+    assert!(err.contains("context='colima'"));
+}
+
+#[test]
+fn deploy_guard_allows_concurrent_operations_on_different_contexts() {
+    reset_deploy_state_for_test();
+    let _guard1 = acquire_deploy_guard("colima", "default", None).unwrap();
+    let _guard2 = acquire_deploy_guard("narwhal", "team-ml", None).unwrap();
+    // 둘 다 성공 — 다른 컨텍스트/네임스페이스는 서로 방해하지 않는다 (#18 AC)
+}
+
+#[test]
+fn deploy_guard_releases_lock_on_drop() {
+    reset_deploy_state_for_test();
+    {
+        let _guard = acquire_deploy_guard("colima", "default", None).unwrap();
+    }
+    // guard가 드롭되었으므로 다시 획득 가능
+    let _guard2 = acquire_deploy_guard("colima", "default", None).unwrap();
+}
+
+#[test]
+fn deploy_guard_deduplicates_recent_completed_operation() {
+    reset_deploy_state_for_test();
+    let op_id = "op-test-123";
+    {
+        let outcome = acquire_deploy_guard("colima", "default", Some(op_id)).unwrap();
+        match outcome {
+            DeployGuardOutcome::Acquired(guard) => {
+                guard.complete("deployed successfully".into());
+            }
+            DeployGuardOutcome::AlreadyCompleted(_) => panic!("first run cannot be completed"),
+        }
+    }
+    // 동일한 op_id로 재시도 시 이미 완료된 결과 반환
+    let outcome2 = acquire_deploy_guard("colima", "default", Some(op_id)).unwrap();
+    match outcome2 {
+        DeployGuardOutcome::AlreadyCompleted(msg) => {
+            assert_eq!(msg, "deployed successfully");
+        }
+        DeployGuardOutcome::Acquired(_) => {
+            panic!("second run with same op_id must be deduplicated")
+        }
+    }
+}
+
+#[test]
+fn operation_summary_generates_unique_operation_id() {
+    let summary1 = build_operation_summary("start_cluster", None).unwrap();
+    let summary2 = build_operation_summary("start_cluster", None).unwrap();
+    assert!(!summary1.operation_id.is_empty());
+    assert!(!summary2.operation_id.is_empty());
+    assert_ne!(summary1.operation_id, summary2.operation_id);
+    assert!(summary1.operation_id.starts_with("op-start_cluster-"));
 }

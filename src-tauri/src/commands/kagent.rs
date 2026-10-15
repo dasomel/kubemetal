@@ -7,7 +7,9 @@ use tauri::{Manager, State};
 use crate::commands::deploy_target::{get_deploy_target, kubectl_json};
 use crate::commands::mlx::MlxState;
 use crate::commands::provision::ensure_namespace;
-use crate::services::deploy_operation::{ensure_confirmed_target, ConfirmedOperationTarget};
+use crate::services::deploy_operation::{
+    acquire_deploy_guard, ensure_confirmed_target, ConfirmedOperationTarget, DeployGuardOutcome,
+};
 use crate::services::kagent_agents::{agent_manifest, TOGGLEABLE_AGENTS};
 use crate::services::process::colima_context;
 use crate::services::process::{external_command, resolve_bundled_resource};
@@ -393,6 +395,15 @@ pub async fn install_kagent(
     let target_ctx = resolve_kagent_install_context(app.clone(), context).await?;
     ensure_confirmed_target(&expected_target, &target_ctx, KAGENT_NAMESPACE)?;
 
+    let guard = match acquire_deploy_guard(
+        &target_ctx,
+        KAGENT_NAMESPACE,
+        expected_target.operation_id.as_deref(),
+    )? {
+        DeployGuardOutcome::AlreadyCompleted(cached) => return Ok(cached),
+        DeployGuardOutcome::Acquired(guard) => guard,
+    };
+
     ensure_namespace(&target_ctx, KAGENT_NAMESPACE).await?;
 
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
@@ -414,9 +425,9 @@ pub async fn install_kagent(
 
     // helm이 실제로 출력한 내용만 인용한다 — 파드가 떴는지는 여기서 알 수 없으므로
     // "설치 완료"를 단정하지 않는다(D22). 실제 상태는 get_kagent_diagnostics 재조회로 확인.
-    Ok(format!(
-        "helm upgrade --install kagent [{target_ctx}] returned: {stdout}"
-    ))
+    let res = format!("helm upgrade --install kagent [{target_ctx}] returned: {stdout}");
+    guard.complete(res.clone());
+    Ok(res)
 }
 
 /// D32(c): Secret/ModelConfig 둘 다 chart가 helm values의 `providers.openAI`에서 만들어낸다

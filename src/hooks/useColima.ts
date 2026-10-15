@@ -67,6 +67,7 @@ export function useColima() {
         expectedTarget: {
           context: confirmed.context,
           namespace: confirmed.namespace,
+          operation_id: confirmed.operation_id,
         },
       });
       await message(res || t('cluster.toast.provisioned'), { title: 'KubeMetal', kind: 'info' });
