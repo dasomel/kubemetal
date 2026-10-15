@@ -1,0 +1,69 @@
+{
+  "id": "6092edd4-9bdf-4317-85ce-fa27666f20ca",
+  "ok": true,
+  "result": {
+    "action": {
+      "verification": {
+        "actualPreview": null,
+        "state": "unverified",
+        "expected": null,
+        "reason": "synthetic_input"
+      },
+      "path": "synthetic",
+      "fallbackReason": null,
+      "targetWindowId": 13054,
+      "actionName": "hotkey"
+    },
+    "screenshotStatus": {
+      "metadata": {
+        "windowId": 13054,
+        "engine": "screenCaptureKit"
+      },
+      "state": "captured"
+    },
+    "screenshot": {
+      "format": "png",
+      "width": 1200,
+      "scale": 1,
+      "height": 800,
+      "path": "/var/folders/cj/_tt0bjr57n9g27m4srlqygfh0000gn/T/orca-computer-use/6092edd4-9bdf-4317-85ce-fa27666f20ca-screenshot.png",
+      "dataOmitted": true,
+      "expiresAt": "2026-10-15T13:39:30.430Z"
+    },
+    "snapshot": {
+      "focusedElementId": 2,
+      "elementCount": 123,
+      "treeText": "App=kubemetal (pid 42472)\nWindow: \"KubeMetal\", App: kubemetal.\n\n0 standard window KubeMetal\n\t1 scroll area\n\t\t2 HTML content KubeMetal — Hybrid MLOps Workspace\n\t\t\t3 container\n\t\t\t\t4 text KM\n\t\t\t\t5 heading KubeMetal\n\t\t\t\t6 text Hybrid MLOps\n\t\t\t\t7 button 사이드바 접기/펼치기\n\t\t\t\t8 container\n\t\t\t\t\t9 button 대시보드\n\t\t\t\t\t10 button kagent 운영\n\t\t\t\t\t11 button 파이프라인\n\t\t\t\t\t12 button 모델 허브\n\t\t\t\t\t13 button MLX 스튜디오\n\t\t\t\t\t14 button 데이터\n\t\t\t\t\t15 button 접근 콘솔 4\n\t\t\t\t\t16 button Air-Gap 관리\n\t\t\t\t17 text Apple M4 Pro\n\t\t\t\t18 text 14c CPU / 20c GPU / 64GB RAM\n\t\t\t19 container\n\t\t\t\t20 heading KubeMetal v0.2.0\n\t\t\t\t21 text macOS Host (MLX) + Colima K3s 하이브리드 MLOps 아키텍처\n\t\t\t\t22 text 54.9 / 64GB · 85.7%\n\t\t\t\t23 text GPU 12%\n\t\t\t\t24 text VM: vz + virtiofs\n\t\t\t\t25 button KR\n\t\t\t\t26 button EN\n\t\t\t27 container\n\t\t\t\t28 heading Hybrid MLOps Control Dashboard\n\t\t\t\t29 text K8s 컨트롤 플레인(Colima vz VM)을 시작하면 하이브리드 MLOps 스택을 구성할 수 있습니다.\n\t\t\t\t30 text Apple Silicon Metal Safe\n\t\t\t\t31 container 시스템 상태 요약\n\t\t\t\t\t32 heading 시스템 상태 요약\n\t\t\t\t\t33 text 각 하위 진단의 최신 조회 결과\n\t\t\t\t\t34 button 새로고침\n\t\t\t\t\t35 text 저하\n\t\t\t\t\t36 text 조회 시각 오후 10:39:11\n\t\t\t\t\t37 heading Colima 클러스터\n\t\t\t\t\t38 text 조회 완료\n\t\t\t\t\t39 text 클러스터 실행: 아니요\n\t\t\t\t\t40 text Kubernetes 활성: 아니요\n\t\t\t\t\t41 text MLflow 준비: 아니요\n\t\t\t\t\t42 text SeaweedFS 준비: 아니요\n\t\t\t\t\t43 text 아티팩트 스토어 연결: 아니요\n\t\t\t\t\t44 heading 호스트 가드레일\n\t\t\t\t\t45 text 조회 완료\n\t\t\t\t\t46 text 메모리 압력: 주의\n\t\t\t\t\t47 text 열 상태: 정상\n\t\t\t\t\t48 heading kagent 진단\n\t\t\t\t\t49 text 조회 실패\n\t\t\t\t\t50 text kubectl get pods -n kagent -o json failed: error: context \"colima-kubemetal\" does not exist\n\t\t\t\t\t51 button 지원 번들 생성\n\t\t\t\t52 heading 배포 대상\n\t\t\t\t53 button 대상 저장\n\t\t\t\t54 text 컨텍스트\n\t\t\t\t55 pop up button 컨텍스트, Value: colima-default\n\t\t\t\t56 text 네임스페이스\n\t\t\t\t57 text field (settable) 네임스페이스, Value: kubemetal\n\t\t\t\t58 text 통합 수준\n\t\t\t\t59 radio group 통합 수준\n\t\t\t\t\t60 radio button L1 에이전트 온리 (기본), Value: 1\n\t\t\t\t\t61 radio button L2 풀스택 (옵트인), Value: 0\n\t\t\t\t62 text 스택은 자체 k3s에 두고 이 클러스터에는 kagent 에이전트만 설치합니다. 설치는 터미널에서 아래 명령, 운영은 kagent 운영 탭을 사용하세요.\n\t\t\t\t63 text make kagent-up CONTEXT=colima-default\n\t\t\t\t64 text HOST METRICS\n\t\t\t\t65 heading 시스템 자원 현황\n\t\t\t\t66 text UNIFIED MEMORY\n\t\t\t\t67 text 54.88\n\t\t\t\t68 text / 64 GB · 85.8%\n\t\t\t\t69 progress indicator, Value: 85.8\n\t\t\t\t70 text 권한 없는 macOS sysinfo 모니터링\n\t\t\t\t71 text HOST CPU USAGE\n\t\t\t\t72 text 31.6\n\t\t\t\t73 text %\n\t\t\t\t74 progress indicator, Value: 31.6\n\t\t\t\t75 text 추천 VM 자원: 6 CPU / 12GB RAM\n\t\t\t\t76 text APPLE METAL GPU\n\t\t\t\t77 text 0\n\t\t\t\t78 text % 사용 · 1.3 GB\n\t\t\t\t79 progress indicator, Value: 0\n\t\t\t\t80 text ioreg Metal 가속 모니터링\n\t\t\t\t81 text 발열\n\t\t\t\t82 text 정상\n\t\t\t\t83 heading Colima K8s Control\n\t\t\t\t84 text STOPPED\n\t\t\t\t85 text VM 엔진 스펙\n\t\t\t\t86 text vz + virtiofs\n\t\t\t\t87 text KUBERNETES ACTIVE\n\t\t\t\t88 text Disabled / Inactive\n\t\t\t\t89 text 자동 산정 VM 스펙: 6 CPU 코어 / 12GB RAM (호스트 64GB RAM 기준)\n\t\t\t\t90 button Apple vz 기반 K8s 스타트\n\t\t\t\t91 heading MLOps 스택 프로비저닝 & 포트포워딩\n\t\t\t\t92 button 상태 새로고침\n\t\t\t\t93 text MLflow 트래킹\n\t\t\t\t94 text Port 5001\n\t\t\t\t95 text Not Ready\n\t\t\t\t96 text 연동 대기\n\t\t\t\t97 text SeaweedFS 스토리지\n\t\t\t\t98 text Port 8333/8888\n\t\t\t\t99 text Not Ready\n\t\t\t\t100 text Mac GPU 브리지\n\t\t\t\t101 text 미검증 — 배포 대상 카드에서 탐지하세요\n\t\t\t\t102 text ExternalName\n\t\t\t\t103 text Prefect 오케스트레이션\n\t\t\t\t104 text Port 4200\n\t\t\t\t105 text Not Ready\n\t\t\t\t106 button (disabled) MLOps 스택 일괄 배포\n\t\t\t\t107 button 포트포워딩 시작\n\t\t\t\t108 button 포트포워딩 정지\n\t\t\t\t109 text 현재 대상은 L1 에이전트 온리입니다(D30) — 풀스택 배포는 배포 대상 카드에서 L2를 선택하세요.\n\t\t\t\t110 heading 호스트 엔드포인트 바로가기\n\t\t\t\t111 button MLflow (http://127.0.0.1:5001)\n\t\t\t\t112 button SeaweedFS S3 API (http://127.0.0.1:8333)\n\t\t\t\t113 button SeaweedFS Filer UI (http://127.0.0.1:8888)\n\t\t\t\t114 text Model Serving — 실행 중이 아님\n\t\t\t\t115 text 클러스터를 시작하면 MLOps 스택 배포와 포트포워딩을 진행할 수 있습니다\n\t\t\t116 button 상태 로그 [펼치기]\n\t\t\t117 text 포트포워딩 미확인\n\t\t118 scroll bar 0\n\t119 close button\n\t120 full screen button, Secondary Actions: zoom the window\n\t121 minimize button\n\t122 text KubeMetal\n\nThe focused UI element is 2 HTML content KubeMetal — Hybrid MLOps Workspace.",
+      "id": "2835007B-A7F6-4B0A-B0D9-C97021C06E4C",
+      "app": {
+        "bundleId": null,
+        "name": "kubemetal",
+        "pid": 42472
+      },
+      "window": {
+        "id": 13054,
+        "width": 1200,
+        "title": "KubeMetal",
+        "isMinimized": false,
+        "isOffscreen": false,
+        "platform": {
+          "layer": 0
+        },
+        "y": 340,
+        "x": 1320,
+        "screenIndex": 0,
+        "height": 800
+      },
+      "coordinateSpace": "window",
+      "truncation": {
+        "truncated": false,
+        "maxNodes": 1200,
+        "maxDepthReached": false,
+        "maxDepth": 64
+      }
+    }
+  },
+  "_meta": {
+    "runtimeId": "e8424b7f-0a25-453d-bd9b-e65eae38a1ab"
+  }
+}

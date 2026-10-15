@@ -1,0 +1,67 @@
+{
+  "id": "21e4038a-0a49-4b94-bf5c-373f6da3f77a",
+  "ok": true,
+  "result": {
+    "action": {
+      "fallbackReason": null,
+      "path": "accessibility",
+      "targetWindowId": 13054,
+      "actionName": "AXPress",
+      "verification": {
+        "state": "unverified",
+        "reason": "accessibility_action_unasserted"
+      }
+    },
+    "screenshotStatus": {
+      "state": "captured",
+      "metadata": {
+        "engine": "screenCaptureKit",
+        "windowId": 13054
+      }
+    },
+    "screenshot": {
+      "scale": 1,
+      "width": 1200,
+      "height": 800,
+      "format": "png",
+      "path": "/var/folders/cj/_tt0bjr57n9g27m4srlqygfh0000gn/T/orca-computer-use/21e4038a-0a49-4b94-bf5c-373f6da3f77a-screenshot.png",
+      "dataOmitted": true,
+      "expiresAt": "2026-10-15T13:40:43.891Z"
+    },
+    "snapshot": {
+      "id": "2C35EF63-2BBA-4323-92AA-2B34224BBC03",
+      "coordinateSpace": "window",
+      "window": {
+        "y": 340,
+        "platform": {
+          "layer": 0
+        },
+        "width": 1200,
+        "title": "KubeMetal",
+        "x": 1320,
+        "isOffscreen": false,
+        "height": 800,
+        "isMinimized": false,
+        "id": 13054,
+        "screenIndex": 0
+      },
+      "treeText": "App=kubemetal (pid 42472)\nWindow: \"KubeMetal\", App: kubemetal.\n\n0 standard window KubeMetal\n\t1 scroll area\n\t\t2 HTML content KubeMetal — Hybrid MLOps Workspace\n\t\t\t3 container\n\t\t\t\t4 text KM\n\t\t\t\t5 heading KubeMetal\n\t\t\t\t6 text Hybrid MLOps\n\t\t\t\t7 button 사이드바 접기/펼치기\n\t\t\t\t8 container\n\t\t\t\t\t9 button 대시보드\n\t\t\t\t\t10 button kagent 운영\n\t\t\t\t\t11 button 파이프라인\n\t\t\t\t\t12 button 모델 허브\n\t\t\t\t\t13 button MLX 스튜디오\n\t\t\t\t\t14 button 데이터\n\t\t\t\t\t15 button 접근 콘솔 4\n\t\t\t\t\t16 button Air-Gap 관리\n\t\t\t\t17 text Apple M4 Pro\n\t\t\t\t18 text 14c CPU / 20c GPU / 64GB RAM\n\t\t\t19 container\n\t\t\t\t20 heading KubeMetal v0.2.0\n\t\t\t\t21 text macOS Host (MLX) + Colima K3s 하이브리드 MLOps 아키텍처\n\t\t\t\t22 text 54.5 / 64GB · 85.2%\n\t\t\t\t23 text GPU 9%\n\t\t\t\t24 text VM: vz + virtiofs\n\t\t\t\t25 button KR\n\t\t\t\t26 button EN\n\t\t\t27 container\n\t\t\t\t28 tab group MLX 스튜디오 서브탭\n\t\t\t\t\t29 tab 환경·진단, Value: 0\n\t\t\t\t\t30 tab 추론 런타임, Value: 0\n\t\t\t\t\t31 tab (selected) 학습, Value: 1\n\t\t\t\t\t32 tab 서빙·채팅, Value: 0\n\t\t\t\t33 menu\n\t\t\t\t34 menu\n\t\t\t\t35 menu\n\t\t\t\t36 container 학습\n\t\t\t\t\t37 text MLX\n\t\t\t\t\t38 heading LoRA / QLoRA 파인튜닝\n\t\t\t\t\t39 container\n\t\t\t\t\t\t40 text 베이스 모델 선택\n\t\t\t\t\t\t41 pop up button, Value: 다운로드한 모델 선택...\n\t\t\t\t\t\t42 text 서빙 런타임\n\t\t\t\t\t\t43 radio group 서빙 런타임\n\t\t\t\t\t\t\t44 radio button 텍스트 (mlx-lm), Value: 0\n\t\t\t\t\t\t\t45 radio button 비전+텍스트 (mlx-vlm), Value: 1\n\t\t\t\t\t\t46 text VLM 학습 데이터: question/answer(+선택 image) 컬럼의 train.jsonl 디렉터리. 어댑터는 adapters.safetensors로 저장되며, 서빙 시 베이스 모델을 함께 지정해야 합니다.\n\t\t\t\t\t\t47 text mlx-vlm은 중간 체크포인트·resume을 지원하지 않습니다.\n\t\t\t\t\t\t48 container\n\t\t\t\t\t\t\t49 checkbox 비전 스택 학습, Value: 0\n\t\t\t\t\t\t\t50 text 비전 스택 학습\n\t\t\t\t\t\t51 text 비양자화(bf16) 모델 필요 — 4bit 모델은 학습 시작 후 실패합니다\n\t\t\t\t\t\t52 text 학습 데이터 디렉토리\n\t\t\t\t\t\t53 text field (settable), Value: ~/.kubemetal/datasets/smoke\n\t\t\t\t\t\t54 text 반복 횟수 (ITERS)\n\t\t\t\t\t\t55 number field (settable), Value: 100\n\t\t\t\t\t\t\t56 stepper, Value: 0\n\t\t\t\t\t\t\t\t57 unknown\n\t\t\t\t\t\t\t\t58 unknown\n\t\t\t\t\t\t59 text 배치 크기 (BATCH SIZE)\n\t\t\t\t\t\t60 number field (settable), Value: 1\n\t\t\t\t\t\t\t61 stepper, Value: 0\n\t\t\t\t\t\t\t\t62 unknown\n\t\t\t\t\t\t\t\t63 unknown\n\t\t\t\t\t\t64 text 학습률 (LEARNING RATE)\n\t\t\t\t\t\t65 number field (settable), Value: 0.00001\n\t\t\t\t\t\t\t66 stepper, Value: 0\n\t\t\t\t\t\t\t\t67 unknown\n\t\t\t\t\t\t\t\t68 unknown\n\t\t\t\t\t\t69 text 어댑터 이름\n\t\t\t\t\t\t70 text field (settable), Value: my-adapter\n\t\t\t\t\t\t71 button (disabled) 파인튜닝 시작\n\t\t\t\t\t72 text SAFETY\n\t\t\t\t\t73 heading 배터리 & 발열 가드레일\n\t\t\t\t\t74 text 메모리 압력\n\t\t\t\t\t75 text 경고\n\t\t\t\t\t76 text 전원\n\t\t\t\t\t77 text AC 전원\n\t\t\t\t\t78 text 발열\n\t\t\t\t\t79 text 정상\n\t\t\t\t\t80 container\n\t\t\t\t\t\t81 text 발열이 높음 이상이면 학습 일시정지\n\t\t\t\t\t\t82 switch (settable) 발열이 높음 이상이면 학습 일시정지, Value: 0\n\t\t\t\t\t83 container\n\t\t\t\t\t\t84 text 배터리 모드 시 자동 일시정지\n\t\t\t\t\t\t85 switch (settable) 배터리 모드 시 자동 일시정지, Value: 0\n\t\t\t\t86 menu\n\t\t\t87 button 상태 로그 [펼치기]\n\t\t\t88 text 포트포워딩 미확인\n\t\t89 scroll bar 0.08032128\n\t90 close button\n\t91 full screen button, Secondary Actions: zoom the window\n\t92 minimize button\n\t93 text KubeMetal\n\nThe focused UI element is 45 radio button 비전+텍스트 (mlx-vlm), Value: 1.",
+      "truncation": {
+        "maxDepth": 64,
+        "maxNodes": 1200,
+        "maxDepthReached": false,
+        "truncated": false
+      },
+      "elementCount": 94,
+      "focusedElementId": 45,
+      "app": {
+        "name": "kubemetal",
+        "pid": 42472,
+        "bundleId": null
+      }
+    }
+  },
+  "_meta": {
+    "runtimeId": "e8424b7f-0a25-453d-bd9b-e65eae38a1ab"
+  }
+}

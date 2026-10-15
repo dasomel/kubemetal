@@ -1,0 +1,114 @@
+None
+App=kubemetal (pid 42472)
+Window: "KubeMetal", App: kubemetal.
+
+0 standard window KubeMetal
+	1 scroll area
+		2 HTML content KubeMetal — Hybrid MLOps Workspace
+			3 container
+				4 text KM
+				5 heading KubeMetal
+				6 text Hybrid MLOps
+				7 button 사이드바 접기/펼치기
+				8 container
+					9 button 대시보드
+					10 button kagent 운영
+					11 button 파이프라인
+					12 button 모델 허브
+					13 button MLX 스튜디오
+					14 button 데이터
+					15 button 접근 콘솔 4
+					16 button Air-Gap 관리
+				17 text Apple M4 Pro
+				18 text 14c CPU / 20c GPU / 64GB RAM
+			19 container
+				20 heading KubeMetal v0.2.0
+				21 text macOS Host (MLX) + Colima K3s 하이브리드 MLOps 아키텍처
+				22 text 54.3 / 64GB · 84.8%
+				23 text GPU 10%
+				24 text VM: vz + virtiofs
+				25 button KR
+				26 button EN
+			27 container
+				28 tab group MLX 스튜디오 서브탭
+					29 tab 환경·진단, Value: 0
+					30 tab 추론 런타임, Value: 0
+					31 tab (selected) 학습, Value: 1
+					32 tab 서빙·채팅, Value: 0
+				33 menu
+				34 menu
+				35 menu
+				36 container 학습
+					37 text MLX
+					38 heading LoRA / QLoRA 파인튜닝
+					39 container
+						40 text 베이스 모델 선택
+						41 pop up button (disabled), Value: 다운로드한 모델 선택...
+						42 text 서빙 런타임
+						43 radio group 서빙 런타임
+							44 radio button (disabled) 텍스트 (mlx-lm), Value: 1
+							45 radio button (disabled) 비전+텍스트 (mlx-vlm), Value: 0
+						46 text 체크포인트 저장 주기 (반복)
+						47 number field (disabled, settable), Value: 100
+							48 container (disabled)
+							49 stepper, Value: 0
+								50 unknown
+								51 unknown
+						52 text 중단된 학습의 체크포인트
+						53 pop up button (disabled), Value: 새로 시작
+						54 text 가중치만 복원합니다. optimizer·데이터 위치는 초기화하고 요청한 반복 수만큼 새로 학습합니다. 새 adapter 이름을 사용하세요.
+						55 text 학습 데이터 디렉토리
+						56 text field (disabled, settable), Value: ~/.kubemetal/datasets/smoke
+						57 text 반복 횟수 (ITERS)
+						58 number field (disabled, settable), Value: 100
+							59 container (disabled)
+							60 stepper, Value: 0
+								61 unknown
+								62 unknown
+						63 text 배치 크기 (BATCH SIZE)
+						64 number field (disabled, settable), Value: 1
+							65 container (disabled)
+							66 stepper, Value: 0
+								67 unknown
+								68 unknown
+						69 text 학습률 (LEARNING RATE)
+						70 number field (disabled, settable), Value: 0.00001
+							71 container (disabled)
+							72 stepper, Value: 0
+								73 unknown
+								74 unknown
+						75 text 어댑터 이름
+						76 text field (disabled, settable), Value: my-adapter
+						77 button 학습 중단
+					78 text 학습 진행 현황
+					79 text 0 / 20 iter
+					80 progress indicator, Value: 0
+					81 text 학습 중 (PID 94345)
+					82 text SAFETY
+					83 heading 배터리 & 발열 가드레일
+					84 text 메모리 압력
+					85 text 경고
+					86 text 전원
+					87 text AC 전원
+					88 text 발열
+					89 text 정상
+					90 container
+						91 text 발열이 높음 이상이면 학습 일시정지
+						92 switch (settable) 발열이 높음 이상이면 학습 일시정지, Value: 0
+					93 container
+						94 text 배터리 모드 시 자동 일시정지
+						95 switch (settable) 배터리 모드 시 자동 일시정지, Value: 0
+					96 text caffeinate 활성 — 학습 중 슬립 진입을 방지합니다.
+					97 text 수동 재개로 메모리 압력 경고 자동 일시정지를 이 학습에서는 건너뜁니다 — 메모리 압력 위험(critical) 수준은 예외입니다
+					98 text 학습이 진행 중입니다.
+					99 button 일시정지
+				100 menu
+			101 button 상태 로그 [펼치기]
+			102 text 포트포워딩 미확인
+		103 scroll bar 0.9386281
+	104 close button
+	105 full screen button, Secondary Actions: zoom the window
+	106 minimize button
+	107 text KubeMetal
+
+The focused UI element is 2 HTML content KubeMetal — Hybrid MLOps Workspace.

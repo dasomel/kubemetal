@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-10-08T03:19:25Z",
+  "runtime": "mlx-lm",
+  "base_model": "/Users/m/.kubemetal/models/mlx-community__Qwen2.5-0.5B-Instruct-4bit",
+  "files": [
+    {
+      "path": "adapter_config.json",
+      "sha256": "81c8c26243933b5f0e10d6c8997608e6a01522671f95f4b7f8f24e6a1b1addef",
+      "bytes": 1268
+    },
+    {
+      "path": "adapters.safetensors",
+      "sha256": "f981667a4d2c1e567b837e154a0245761fcc156ccf3b75696c964e538c966f15",
+      "bytes": 11754630
+    }
+  ]
+}

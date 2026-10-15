@@ -1,0 +1,57 @@
+{
+  "id": "91cb3055-d13c-4b09-a950-ece28e68b1f4",
+  "ok": true,
+  "result": {
+    "snapshot": {
+      "app": {
+        "name": "kubemetal",
+        "bundleId": null,
+        "pid": 42472
+      },
+      "coordinateSpace": "window",
+      "treeText": "App=kubemetal (pid 42472)\nWindow: \"KubeMetal\", App: kubemetal.\n\n0 standard window KubeMetal\n\t1 scroll area\n\t\t2 HTML content KubeMetal — Hybrid MLOps Workspace\n\t\t\t3 container\n\t\t\t\t4 text KM\n\t\t\t\t5 heading KubeMetal\n\t\t\t\t6 text Hybrid MLOps\n\t\t\t\t7 button 사이드바 접기/펼치기\n\t\t\t\t8 container\n\t\t\t\t\t9 button 대시보드\n\t\t\t\t\t10 button kagent 운영\n\t\t\t\t\t11 button 파이프라인\n\t\t\t\t\t12 button 모델 허브\n\t\t\t\t\t13 button MLX 스튜디오\n\t\t\t\t\t14 button 데이터\n\t\t\t\t\t15 button 접근 콘솔 4\n\t\t\t\t\t16 button Air-Gap 관리\n\t\t\t\t17 text Apple M4 Pro\n\t\t\t\t18 text 14c CPU / 20c GPU / 64GB RAM\n\t\t\t19 container\n\t\t\t\t20 heading KubeMetal v0.2.0\n\t\t\t\t21 text macOS Host (MLX) + Colima K3s 하이브리드 MLOps 아키텍처\n\t\t\t\t22 text 54.0 / 64GB · 84.3%\n\t\t\t\t23 text GPU 10%\n\t\t\t\t24 text VM: vz + virtiofs\n\t\t\t\t25 button KR\n\t\t\t\t26 button EN\n\t\t\t27 container\n\t\t\t\t28 tab group MLX 스튜디오 서브탭\n\t\t\t\t\t29 tab 환경·진단, Value: 0\n\t\t\t\t\t30 tab 추론 런타임, Value: 0\n\t\t\t\t\t31 tab (selected) 학습, Value: 1\n\t\t\t\t\t32 tab 서빙·채팅, Value: 0\n\t\t\t\t33 menu\n\t\t\t\t34 menu\n\t\t\t\t35 menu\n\t\t\t\t36 container 학습\n\t\t\t\t\t37 text MLX\n\t\t\t\t\t38 heading LoRA / QLoRA 파인튜닝\n\t\t\t\t\t39 container\n\t\t\t\t\t\t40 text 베이스 모델 선택\n\t\t\t\t\t\t41 pop up button (disabled), Value: 다운로드한 모델 선택...\n\t\t\t\t\t\t42 text 서빙 런타임\n\t\t\t\t\t\t43 radio group 서빙 런타임\n\t\t\t\t\t\t\t44 radio button (disabled) 텍스트 (mlx-lm), Value: 1\n\t\t\t\t\t\t\t45 radio button (disabled) 비전+텍스트 (mlx-vlm), Value: 0\n\t\t\t\t\t\t46 text 체크포인트 저장 주기 (반복)\n\t\t\t\t\t\t47 number field (disabled, settable), Value: 100\n\t\t\t\t\t\t\t48 container (disabled)\n\t\t\t\t\t\t\t49 stepper, Value: 0\n\t\t\t\t\t\t\t\t50 unknown\n\t\t\t\t\t\t\t\t51 unknown\n\t\t\t\t\t\t52 text 중단된 학습의 체크포인트\n\t\t\t\t\t\t53 pop up button (disabled), Value: 새로 시작\n\t\t\t\t\t\t54 text 가중치만 복원합니다. optimizer·데이터 위치는 초기화하고 요청한 반복 수만큼 새로 학습합니다. 새 adapter 이름을 사용하세요.\n\t\t\t\t\t\t55 text 학습 데이터 디렉토리\n\t\t\t\t\t\t56 text field (disabled, settable), Value: ~/.kubemetal/datasets/smoke\n\t\t\t\t\t\t57 text 반복 횟수 (ITERS)\n\t\t\t\t\t\t58 number field (disabled, settable), Value: 100\n\t\t\t\t\t\t\t59 container (disabled)\n\t\t\t\t\t\t\t60 stepper, Value: 0\n\t\t\t\t\t\t\t\t61 unknown\n\t\t\t\t\t\t\t\t62 unknown\n\t\t\t\t\t\t63 text 배치 크기 (BATCH SIZE)\n\t\t\t\t\t\t64 number field (disabled, settable), Value: 1\n\t\t\t\t\t\t\t65 container (disabled)\n\t\t\t\t\t\t\t66 stepper, Value: 0\n\t\t\t\t\t\t\t\t67 unknown\n\t\t\t\t\t\t\t\t68 unknown\n\t\t\t\t\t\t69 text 학습률 (LEARNING RATE)\n\t\t\t\t\t\t70 number field (disabled, settable), Value: 0.00001\n\t\t\t\t\t\t\t71 container (disabled)\n\t\t\t\t\t\t\t72 stepper, Value: 0\n\t\t\t\t\t\t\t\t73 unknown\n\t\t\t\t\t\t\t\t74 unknown\n\t\t\t\t\t\t75 text 어댑터 이름\n\t\t\t\t\t\t76 text field (disabled, settable), Value: my-adapter\n\t\t\t\t\t\t77 button 학습 중단\n\t\t\t\t\t78 text 학습 진행 현황\n\t\t\t\t\t79 text 0 / 20 iter\n\t\t\t\t\t80 progress indicator, Value: 0\n\t\t\t\t\t81 text 학습 중 (PID 94345)\n\t\t\t\t\t82 text SAFETY\n\t\t\t\t\t83 heading 배터리 & 발열 가드레일\n\t\t\t\t\t84 text 메모리 압력\n\t\t\t\t\t85 text 경고\n\t\t\t\t\t86 text 전원\n\t\t\t\t\t87 text AC 전원\n\t\t\t\t\t88 text 발열\n\t\t\t\t\t89 text 정상\n\t\t\t\t\t90 container\n\t\t\t\t\t\t91 text 발열이 높음 이상이면 학습 일시정지\n\t\t\t\t\t\t92 switch (settable) 발열이 높음 이상이면 학습 일시정지, Value: 0\n\t\t\t\t\t93 container\n\t\t\t\t\t\t94 text 배터리 모드 시 자동 일시정지\n\t\t\t\t\t\t95 switch (settable) 배터리 모드 시 자동 일시정지, Value: 0\n\t\t\t\t\t96 text caffeinate 활성 — 학습 중 슬립 진입을 방지합니다.\n\t\t\t\t\t97 text 수동 재개로 메모리 압력 경고 자동 일시정지를 이 학습에서는 건너뜁니다 — 메모리 압력 위험(critical) 수준은 예외입니다\n\t\t\t\t\t98 text 학습이 진행 중입니다.\n\t\t\t\t\t99 button 일시정지\n\t\t\t\t100 menu\n\t\t\t101 button 상태 로그 [펼치기]\n\t\t\t102 text 포트포워딩 미확인\n\t\t103 scroll bar 0.9386281\n\t104 close button\n\t105 full screen button, Secondary Actions: zoom the window\n\t106 minimize button\n\t107 text KubeMetal\n\nThe focused UI element is 2 HTML content KubeMetal — Hybrid MLOps Workspace.",
+      "focusedElementId": 2,
+      "id": "6215E1D1-21DD-4ECE-B32E-89E4E31208D5",
+      "elementCount": 108,
+      "truncation": {
+        "maxDepthReached": false,
+        "truncated": false,
+        "maxNodes": 1200,
+        "maxDepth": 64
+      },
+      "window": {
+        "isOffscreen": false,
+        "isMinimized": false,
+        "screenIndex": 0,
+        "title": "KubeMetal",
+        "width": 1200,
+        "platform": {
+          "layer": 0
+        },
+        "y": 340,
+        "x": 1320,
+        "id": 13054,
+        "height": 800
+      }
+    },
+    "screenshot": {
+      "format": "png",
+      "height": 800,
+      "width": 1200,
+      "scale": 1,
+      "path": "/var/folders/cj/_tt0bjr57n9g27m4srlqygfh0000gn/T/orca-computer-use/91cb3055-d13c-4b09-a950-ece28e68b1f4-screenshot.png",
+      "dataOmitted": true,
+      "expiresAt": "2026-10-15T13:46:06.339Z"
+    },
+    "screenshotStatus": {
+      "metadata": {
+        "engine": "screenCaptureKit",
+        "windowId": 13054
+      },
+      "state": "captured"
+    }
+  },
+  "_meta": {
+    "runtimeId": "e8424b7f-0a25-453d-bd9b-e65eae38a1ab"
+  }
+}

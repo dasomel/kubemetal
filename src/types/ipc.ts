@@ -107,6 +107,8 @@ export interface AirgapLatestVersionReport {
 }
 
 export interface FineTuneConfig {
+  save_every?: number;
+  resume_attempt_id?: string;
   model_path: string;
   data_path: string;
   iters: number;
@@ -521,4 +523,18 @@ export interface SupportBundleResult {
     omitted?: { path: string; omitted: string }[];
   };
   redaction: SupportBundleRedactionInfo;
+}
+
+/** D49: recorded recovery candidates; selected source is re-verified before start. */
+export interface AdapterResumeSource {
+  attempt_id: string;
+  adapter_name: string;
+  base_model: string;
+  checkpoint: { iter: number; manifest_sha256: string };
+}
+
+export interface TrainingCheckpointEvent {
+  attempt_id: string;
+  pid: number;
+  checkpoint: { iter: number; manifest_sha256: string };
 }

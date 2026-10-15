@@ -29,6 +29,11 @@ use crate::services::artifact_manifest::{
     sha256_file, verify_manifest, write_manifest, ManifestContext,
 };
 
+mod checkpoints;
+pub use checkpoints::{
+    list_resume_sources, prepare_resume, record_checkpoint, Checkpoint, ResumeSource,
+};
+
 const STAGING_DIR: &str = "adapter-staging";
 const ADAPTERS_DIR: &str = "adapters";
 const RECORD_FILE: &str = "attempt.json";
@@ -92,6 +97,10 @@ pub struct AttemptRecord {
     pub pid: Option<u32>,
     pub start_time: Option<u64>,
     pub manifest_sha256: Option<String>,
+    #[serde(default)]
+    pub last_checkpoint: Option<Checkpoint>,
+    #[serde(default)]
+    pub resume_source: Option<String>,
     pub state: AttemptState,
 }
 
@@ -369,6 +378,8 @@ fn create_attempt_with(
         pid: None,
         start_time: None,
         manifest_sha256: None,
+        last_checkpoint: None,
+        resume_source: None,
         state: AttemptState::Created,
     };
     write_record(&dir, &record)?;

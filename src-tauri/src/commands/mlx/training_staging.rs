@@ -155,6 +155,18 @@ fn cleanup_unspawned(attempt: &Attempt) -> Result<(), String> {
     if attempt.record().state != AttemptState::Created {
         return Err("Attempt already started; staging kept".into());
     }
+    // D49: a resume snapshot is recovery evidence. Cost: retain a failed attempt;
+    // escape hatch: inspect it manually rather than deleting its ownership record.
+    let entries = std::fs::read_dir(attempt.dir()).map_err(|e| e.to_string())?;
+    for entry in entries {
+        let name = entry.map_err(|e| e.to_string())?.file_name();
+        if name != "out" && name != "attempt.json" {
+            let mut retained = attempt.clone();
+            adapter_staging::transition(&mut retained, AttemptState::Failed)
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+    }
     std::fs::remove_dir(attempt.out_dir()).map_err(|e| format!("Staging out kept: {e}"))?;
     std::fs::remove_file(attempt.dir().join("attempt.json"))
         .map_err(|e| format!("Staging record kept: {e}"))?;
@@ -347,3 +359,14 @@ pub async fn list_adapter_staging() -> Result<Vec<AttemptSummary>, String> {
 
 #[cfg(test)]
 mod tests;
+
+/// D49 read-only recorded recovery inventory; start re-verifies the selected snapshot.
+#[tauri::command]
+pub async fn list_adapter_resume_sources() -> Result<Vec<adapter_staging::ResumeSource>, String> {
+    let root = super::home_dir()?.join(".kubemetal");
+    tokio::task::spawn_blocking(move || {
+        adapter_staging::list_resume_sources(&root).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

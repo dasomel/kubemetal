@@ -1,0 +1,41 @@
+{
+    "adapter_path": "/Users/m/Documents/IdeaProjects/20.dasomel/kubemetal/evidence/mlx-checkpoints/ondevice/adapter-staging/1791429554542-86801-7/out",
+    "batch_size": 1,
+    "clear_cache_threshold": 0,
+    "config": null,
+    "data": "/Users/m/.kubemetal/datasets/smoke",
+    "fine_tune_type": "lora",
+    "grad_accumulation_steps": 1,
+    "grad_checkpoint": false,
+    "iters": 2,
+    "learning_rate": 1e-05,
+    "lora_parameters": {
+        "rank": 8,
+        "dropout": 0.0,
+        "scale": 20.0
+    },
+    "lr_schedule": null,
+    "mask_prompt": false,
+    "max_seq_length": 2048,
+    "model": "/Users/m/.kubemetal/models/mlx-community__Qwen2.5-0.5B-Instruct-4bit",
+    "num_layers": 16,
+    "optimizer": "adam",
+    "optimizer_config": {
+        "adam": {},
+        "adamw": {},
+        "muon": {},
+        "sgd": {},
+        "adafactor": {}
+    },
+    "project_name": null,
+    "report_to": null,
+    "resume_adapter_file": "/Users/m/Documents/IdeaProjects/20.dasomel/kubemetal/evidence/mlx-checkpoints/ondevice/adapter-staging/1791429554542-86801-7/resume/adapters.safetensors",
+    "save_every": 1,
+    "seed": 0,
+    "steps_per_eval": 200,
+    "steps_per_report": 1,
+    "test": false,
+    "test_batches": 500,
+    "train": true,
+    "val_batches": 25
+}

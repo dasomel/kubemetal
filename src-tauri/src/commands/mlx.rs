@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use crate::services;
@@ -21,7 +21,7 @@ use crate::services::ports;
 use crate::services::process::{
     augmented_path, external_command, resolve_bundled_resource, resolve_cli_path,
 };
-pub use training_staging::list_adapter_staging;
+pub use training_staging::{list_adapter_resume_sources, list_adapter_staging};
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct MlxEnvStatus {
@@ -63,6 +63,8 @@ pub struct FineTuneConfig {
     /// 미지정 false — 기존 호출 동작 불변. mlx-vlm 전용, 비양자화 모델 필요.
     #[serde(default)]
     pub train_vision: bool,
+    pub save_every: Option<u32>,
+    pub resume_attempt_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -688,8 +690,9 @@ async fn read_stdout_lines(
     app: tauri::AppHandle,
     child_pid: u32,
     stdout: tokio::process::ChildStdout,
-    expected: PathBuf,
+    attempt: &mut Attempt,
 ) -> training_staging::CompletionReport {
+    let expected = attempt.out_dir();
     let mut lines = BufReader::new(stdout).lines();
     let mut report = training_staging::CompletionReport::default();
     loop {
@@ -700,6 +703,32 @@ async fn read_stdout_lines(
                     continue;
                 }
                 if let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                    if value.get("type").and_then(serde_json::Value::as_str) == Some("checkpoint") {
+                        if let Some(step) = value
+                            .get("iter")
+                            .and_then(serde_json::Value::as_u64)
+                            .and_then(|n| u32::try_from(n).ok())
+                        {
+                            let mut owned = attempt.clone();
+                            match tokio::task::spawn_blocking(move || {
+                                let checkpoint =
+                                    adapter_staging::record_checkpoint(&mut owned, step);
+                                (owned, checkpoint)
+                            })
+                            .await
+                            {
+                                Ok((updated, Ok(checkpoint))) => {
+                                    *attempt = updated;
+                                    let _ = app.emit("mlx-training-checkpoint", serde_json::json!({
+                                        "attempt_id": attempt.record().attempt_id, "pid": child_pid,
+                                        "checkpoint": checkpoint,
+                                    }));
+                                }
+                                Ok((_, Err(e))) => eprintln!("[mlx] Checkpoint rejected: {e}"),
+                                Err(e) => eprintln!("[mlx] Checkpoint task failed: {e}"),
+                            }
+                        }
+                    }
                     report.observe(&value, &expected);
                     apply_training_event(&app, child_pid, &value);
                 }
@@ -757,16 +786,12 @@ async fn run_training_reader(
     setup_error: Option<String>,
     pid: u32,
 ) {
-    let stdout_task = child
-        .stdout
-        .take()
-        .map(|out| tokio::spawn(read_stdout_lines(app.clone(), pid, out, attempt.out_dir())));
     let stderr_task = child
         .stderr
         .take()
         .map(|err| tokio::spawn(collect_stderr(err)));
-    let report = if let Some(t) = stdout_task {
-        t.await.unwrap_or_default()
+    let report = if let Some(out) = child.stdout.take() {
+        read_stdout_lines(app.clone(), pid, out, &mut attempt).await
     } else {
         training_staging::CompletionReport::default()
     };
@@ -885,6 +910,12 @@ pub async fn run_mlx_finetune(
             if !(config.learning_rate.is_finite() && config.learning_rate > 0.0) {
                 return Err("learning_rate must be a finite value greater than 0.".into());
             }
+            if config.save_every == Some(0) {
+                return Err("save_every must be at least 1".into());
+            }
+            if training_runtime == MlxRuntime::MlxVlm && config.resume_attempt_id.is_some() {
+                return Err("mlx-vlm does not support checkpoint resume".into());
+            }
             validate_adapter_name(&config.adapter_name)?;
 
             let model_path = validate_home_subpath(&config.model_path)?;
@@ -920,6 +951,22 @@ pub async fn run_mlx_finetune(
                 },
             )
             .map_err(|e| e.to_string())?;
+            let resume_result = config
+                .resume_attempt_id
+                .as_deref()
+                .map(|source| adapter_staging::prepare_resume(&mut attempt, source))
+                .transpose();
+            let resume_path = match resume_result {
+                Ok(path) => path,
+                Err(error) => {
+                    adapter_staging::transition(
+                        &mut attempt,
+                        adapter_staging::AttemptState::Failed,
+                    )
+                    .map_err(|e| format!("{error}; cannot record failed preparation: {e}"))?;
+                    return Err(error.to_string());
+                }
+            };
             let mut cmd = tokio::process::Command::new(&venv_py);
             cmd.args(finetune_wrapper_args(
                 &wrapper,
@@ -931,6 +978,9 @@ pub async fn run_mlx_finetune(
                 &ports::local_url("mlflow"),
             ));
 
+            if let Some(path) = resume_path {
+                cmd.arg("--resume-adapter-file").arg(path);
+            }
             let child = training_staging::spawn(&mut cmd, &attempt)?;
 
             let pid = child.id().ok_or_else(|| "Could not get PID.".to_string())?;
@@ -1887,6 +1937,12 @@ fn finetune_wrapper_args(
         "--mlflow-uri".into(),
         mlflow_uri.into(),
     ];
+    if runtime == MlxRuntime::MlxLm {
+        args.extend([
+            "--save-every".into(),
+            config.save_every.unwrap_or(100).to_string().into(),
+        ]);
+    }
     if config.train_vision {
         args.push("--train-vision".into());
     }
@@ -1909,6 +1965,8 @@ mod tests {
     #[test]
     fn direct_finetune_args_pass_output_dir() {
         let config = FineTuneConfig {
+            save_every: None,
+            resume_attempt_id: None,
             model_path: "m".into(),
             data_path: "d".into(),
             iters: 1,

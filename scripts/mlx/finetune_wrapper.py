@@ -38,6 +38,7 @@ from mlflow_reporter import MlflowReporter
 #   mlx-vlm: "Iter 1: Train loss \x1b[92m4.437...\x1b[0m, Learning Rate ..."
 # ANSI를 벗긴 뒤 매칭하므로 정규식은 하나로 충분하다.
 ITER_RE = re.compile(r"^Iter (\d+): Train loss ([0-9.eE+\-]+)")
+CHECKPOINT_RE = re.compile(r"^Iter (\d+): Saved adapter weights to ")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
@@ -63,6 +64,8 @@ def parse_args() -> argparse.Namespace:
     # 와일드카드로 바인딩한 남의 프로세스와 만난다(mistakes-log 2026-07-21).
     p.add_argument("--mlflow-uri", default="http://127.0.0.1:5001")
     p.add_argument("--train-vision", action="store_true")
+    p.add_argument("--save-every", type=int, default=100)
+    p.add_argument("--resume-adapter-file")
     return p.parse_args()
 
 
@@ -76,6 +79,10 @@ def main() -> int:
 
     if args.runtime == "mlx-lm" and args.train_vision:
         emit({"type": "error", "message": "--train-vision은 mlx-vlm 런타임 전용입니다"})
+        return 2
+
+    if args.save_every < 1 or (args.runtime == "mlx-vlm" and args.resume_adapter_file):
+        emit({"type": "error", "message": "Invalid checkpoint interval or unsupported mlx-vlm resume"})
         return 2
 
     adapter_path = Path(args.output_dir)
@@ -150,6 +157,11 @@ def main() -> int:
             "--steps-per-report", "1",
         ]
 
+    if args.runtime == "mlx-lm":
+        cmd.extend(["--save-every", str(args.save_every)])
+        if args.resume_adapter_file:
+            cmd.extend(["--resume-adapter-file", args.resume_adapter_file])
+
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1
     )
@@ -160,6 +172,14 @@ def main() -> int:
         line = strip_ansi(line.rstrip("\n"))
         if not line:
             continue
+        # D49: observe the save-completed line, never infer saving from progress.
+        # Cost: version-specific log format; unknown logs yield no recovery claim.
+        checkpoint = CHECKPOINT_RE.match(line) if args.runtime == "mlx-lm" else None
+        if checkpoint:
+            step = int(checkpoint.group(1))
+            path = adapter_path / f"{step:07d}_adapters.safetensors"
+            if path.is_file() and not path.is_symlink() and path.stat().st_size:
+                emit({"type": "checkpoint", "iter": step})
         match = ITER_RE.match(line)
         if match:
             iter_num = int(match.group(1))

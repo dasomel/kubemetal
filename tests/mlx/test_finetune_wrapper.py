@@ -12,7 +12,7 @@ import finetune_wrapper
 
 
 class FineTuneStartupTests(unittest.TestCase):
-    def run_wrapper(self, lookup_error=None, child_returncode=0):
+    def run_wrapper(self, lookup_error=None, child_returncode=0, checkpoint=False):
         requests = []
         events_at_params = []
         output = io.StringIO()
@@ -39,20 +39,27 @@ class FineTuneStartupTests(unittest.TestCase):
             result.read.return_value = json.dumps(response).encode()
             return result
 
-        child = Mock(stdout=io.StringIO("Iter 1: Train loss 2.5\n"),
+        lines = "Iter 1: Train loss 2.5\n" + ("Iter 1: Saved adapter weights to ignored and ignored.\n" if checkpoint else "")
+        child = Mock(stdout=io.StringIO(lines),
                      stderr=io.StringIO("training failed"), returncode=child_returncode)
         argv = ["finetune_wrapper.py", "--model", "test-model", "--data", "test-data",
                 "--iters", "1", "--batch-size", "1", "--learning-rate", "0.0001",
                 "--adapter-name", "test-adapter"]
+        def spawn_child(*args, **kwargs):
+            if checkpoint:
+                Path(home, "0000001_adapters.safetensors").write_bytes(b"saved weights")
+            return child
+
         with tempfile.TemporaryDirectory() as home, \
                 patch.object(sys, "argv", argv + ["--output-dir", home]), \
                 patch.object(finetune_wrapper.Path, "home", return_value=Path(home)), \
                 patch("urllib.request.urlopen", side_effect=request), \
-                patch.object(finetune_wrapper.subprocess, "Popen", return_value=child) as spawn, \
+                patch.object(finetune_wrapper.subprocess, "Popen", side_effect=spawn_child) as spawn, \
                 patch.object(sys, "stdout", output):
             result = finetune_wrapper.main()
         spawn.assert_called_once()
         self.assertEqual(spawn.call_args.args[0][3:5], ["mlx_lm", "lora"])
+        self.assertIn("--save-every", spawn.call_args.args[0])
         self.assertEqual(result, child_returncode)
         return requests, [json.loads(line) for line in output.getvalue().splitlines()], events_at_params
 
@@ -81,6 +88,11 @@ class FineTuneStartupTests(unittest.TestCase):
                 self.assertEqual(len(requests), 1)
                 self.assertEqual([event["type"] for event in events], ["warning", "progress", "done"])
                 self.assertIn("MLflow:", events[0]["message"])
+
+    def test_save_completed_line_emits_checkpoint_after_file_exists(self):
+        _, events, _ = self.run_wrapper(checkpoint=True)
+        self.assertEqual([e["type"] for e in events], ["mlflow_run_started", "progress", "checkpoint", "done"])
+        self.assertEqual(events[2], {"type": "checkpoint", "iter": 1})
 
     def test_child_failure_marks_run_failed(self):
         requests, events, _ = self.run_wrapper(child_returncode=1)

@@ -2,6 +2,12 @@ export type Language = 'ko' | 'en';
 
 export const translations: Record<Language, Record<string, string>> = {
   ko: {
+    'mlx.verifiedCheckpoint': '검증된 체크포인트: {iter} 반복',
+    'mlx.saveEvery': '체크포인트 저장 주기 (반복)',
+    'mlx.resumeSource': '중단된 학습의 체크포인트',
+    'mlx.newAttempt': '새로 시작',
+    'mlx.warmResumeHint': '가중치만 복원합니다. optimizer·데이터 위치는 초기화하고 요청한 반복 수만큼 새로 학습합니다. 새 adapter 이름을 사용하세요.',
+    'mlx.vlmResumeUnavailable': 'mlx-vlm은 중간 체크포인트·resume을 지원하지 않습니다.',
     // Header & App
     'header.title': 'KubeMetal',
     'header.subtitle': 'macOS Host (MLX) + Colima K3s 하이브리드 MLOps 아키텍처',
@@ -898,6 +904,12 @@ export const translations: Record<Language, Record<string, string>> = {
     'errorBoundary.retryBtn': '다시 시도',
   },
   en: {
+    'mlx.verifiedCheckpoint': 'Verified checkpoint: iteration {iter}',
+    'mlx.saveEvery': 'Checkpoint interval (iterations)',
+    'mlx.resumeSource': 'Checkpoint from stopped training',
+    'mlx.newAttempt': 'Start fresh',
+    'mlx.warmResumeHint': 'Restore weights only. Optimizer and data position restart for the requested iterations. Use a new adapter name.',
+    'mlx.vlmResumeUnavailable': 'mlx-vlm does not support intermediate checkpoints or resume.',
     // Header & App
     'header.title': 'KubeMetal',
     'header.subtitle': 'macOS Host (MLX) + Colima K3s Hybrid MLOps Architecture',

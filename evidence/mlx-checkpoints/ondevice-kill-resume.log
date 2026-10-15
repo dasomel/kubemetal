@@ -1,0 +1,20 @@
+   Compiling kubemetal v0.2.0 (/Users/m/Documents/IdeaProjects/20.dasomel/kubemetal/src-tauri)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.25s
+     Running unittests src/lib.rs (src-tauri/target/debug/deps/kubemetal_lib-2c9178eacb5da086)
+
+running 1 test
+source: {"type": "warning", "message": "MLflow: experiment \uc870\ud68c \uc2e4\ud328(<urlopen error [Errno 61] Connection refused>)"}
+source: {"type": "progress", "iter": 1, "train_loss": 4.65}
+source: {"type": "checkpoint", "iter": 1}
+resume: {"type": "warning", "message": "MLflow: experiment \uc870\ud68c \uc2e4\ud328(<urlopen error [Errno 61] Connection refused>)"}
+test services::adapter_staging::checkpoints::tests::ondevice_kill_and_warm_resume has been running for over 60 seconds
+resume: {"type": "progress", "iter": 1, "train_loss": 3.449}
+resume: {"type": "checkpoint", "iter": 1}
+resume: {"type": "progress", "iter": 2, "train_loss": 2.544}
+resume: {"type": "checkpoint", "iter": 2}
+resume: {"type": "done", "adapter_path": "/Users/m/Documents/IdeaProjects/20.dasomel/kubemetal/evidence/mlx-checkpoints/ondevice/adapter-staging/1791429554542-86801-7/out", "last_loss": 2.544}
+PASS: killed source 1791429497251-86801-1 retained; resumed 1791429554542-86801-7 verified and promoted
+test services::adapter_staging::checkpoints::tests::ondevice_kill_and_warm_resume ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 411 filtered out; finished in 68.89s
+

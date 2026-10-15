@@ -1,0 +1,104 @@
+None
+App=kubemetal (pid 42472)
+Window: "KubeMetal", App: kubemetal.
+
+0 standard window KubeMetal
+	1 scroll area
+		2 HTML content KubeMetal — Hybrid MLOps Workspace
+			3 container
+				4 text KM
+				5 heading KubeMetal
+				6 text Hybrid MLOps
+				7 button 사이드바 접기/펼치기
+				8 container
+					9 button 대시보드
+					10 button kagent 운영
+					11 button 파이프라인
+					12 button 모델 허브
+					13 button MLX 스튜디오
+					14 button 데이터
+					15 button 접근 콘솔 4
+					16 button Air-Gap 관리
+				17 text Apple M4 Pro
+				18 text 14c CPU / 20c GPU / 64GB RAM
+			19 container
+				20 heading KubeMetal v0.2.0
+				21 text macOS Host (MLX) + Colima K3s 하이브리드 MLOps 아키텍처
+				22 text 54.4 / 64GB · 85%
+				23 text GPU 10%
+				24 text VM: vz + virtiofs
+				25 button KR
+				26 button EN
+			27 container
+				28 tab group MLX 스튜디오 서브탭
+					29 tab 환경·진단, Value: 0
+					30 tab 추론 런타임, Value: 0
+					31 tab (selected) 학습, Value: 1
+					32 tab 서빙·채팅, Value: 0
+				33 menu
+				34 menu
+				35 menu
+				36 container 학습
+					37 text MLX
+					38 heading LoRA / QLoRA 파인튜닝
+					39 container
+						40 text 베이스 모델 선택
+						41 pop up button, Value: mlx-community/Qwen2.5-0.5B-Instruct-4bit
+						42 text 서빙 런타임
+						43 radio group 서빙 런타임
+							44 radio button 텍스트 (mlx-lm), Value: 1
+							45 radio button 비전+텍스트 (mlx-vlm), Value: 0
+						46 text 체크포인트 저장 주기 (반복)
+						47 number field (settable), Value: 0e-1
+							48 stepper, Value: 0
+								49 unknown
+								50 unknown
+						51 text 중단된 학습의 체크포인트
+						52 pop up button, Value: 새로 시작
+						53 text 가중치만 복원합니다. optimizer·데이터 위치는 초기화하고 요청한 반복 수만큼 새로 학습합니다. 새 adapter 이름을 사용하세요.
+						54 text 학습 데이터 디렉토리
+						55 text field (settable), Value: ~/.kubemetal/datasets/smoke
+						56 text 반복 횟수 (ITERS)
+						57 number field (settable), Value: 02e-0
+							58 stepper, Value: 0
+								59 unknown
+								60 unknown
+						61 text 배치 크기 (BATCH SIZE)
+						62 number field (settable), Value: 1
+							63 stepper, Value: 0
+								64 unknown
+								65 unknown
+						66 text 학습률 (LEARNING RATE)
+						67 number field (settable), Value: 0.00001
+							68 stepper, Value: 0
+								69 unknown
+								70 unknown
+						71 text 어댑터 이름
+						72 text field (settable), Value: s4-native-source-20261014
+						73 button 파인튜닝 시작
+					74 text SAFETY
+					75 heading 배터리 & 발열 가드레일
+					76 text 메모리 압력
+					77 text 경고
+					78 text 전원
+					79 text AC 전원
+					80 text 발열
+					81 text 정상
+					82 container
+						83 text 발열이 높음 이상이면 학습 일시정지
+						84 switch (settable) 발열이 높음 이상이면 학습 일시정지, Value: 0
+					85 container
+						86 text 배터리 모드 시 자동 일시정지
+						87 switch (settable) 배터리 모드 시 자동 일시정지, Value: 0
+				88 menu
+			89 button 상태 로그 [펼치기]
+			90 text 포트포워딩 미확인
+		91 scroll bar 0.06493507
+	92 popover, Secondary Actions: cancel
+		93 text Value must be greater than or equal to 1
+	94 close button
+	95 full screen button, Secondary Actions: zoom the window
+	96 minimize button
+	97 text KubeMetal
+
+The focused UI element is 47 number field (settable), Value: 0e-1.

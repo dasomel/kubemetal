@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { isTrainingActive } from '../../lib/trainingStatus';
 import { Sliders, Loader2, Play, Square, Trash2 } from 'lucide-react';
 import type { LocalModel, MlxTrainingState, FineTuneConfig, MlxRuntime } from '../../types/ipc';
+import { useTrainingCheckpoints } from '../../hooks/useTrainingCheckpoints';
 import { useTranslation } from '../../i18n/i18nContext';
 
 interface MlxFineTuneCardProps {
@@ -36,6 +37,9 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
   const [adapterName, setAdapterName] = useState('my-adapter');
   const [runtime, setRuntime] = useState<MlxRuntime>('mlx-lm');
   const [trainVision, setTrainVision] = useState(false);
+  const [saveEvery, setSaveEvery] = useState(100);
+  const [resumeId, setResumeId] = useState('');
+  const { sources, sourceError, lastCheckpoint } = useTrainingCheckpoints(training?.status);
 
   // 백엔드가 새 학습을 막는 모르는 상태에서도 중지 버튼을 유지한다.
   const isTraining = !!training && isTrainingActive(training.status);
@@ -47,6 +51,8 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
     if (!modelPath) return;
     onStart({
       runtime,
+      save_every: runtime === 'mlx-lm' ? saveEvery : undefined,
+      resume_attempt_id: runtime === 'mlx-lm' && resumeId ? resumeId : undefined,
       train_vision: runtime === 'mlx-vlm' && trainVision,
       model_path: modelPath,
       data_path: dataPath,
@@ -67,6 +73,11 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
         </h2>
       </div>
 
+      {lastCheckpoint && lastCheckpoint.pid === training?.pid && (
+        <p className="text-caption text-inkMuted mb-3">
+          {t('mlx.verifiedCheckpoint', { iter: lastCheckpoint.checkpoint.iter })}
+        </p>
+      )}
       {localModels.length === 0 ? (
         <div className="py-6 text-center text-inkMuted text-body mb-4">
           {t('orch.noLocalModelsNotice')}
@@ -77,7 +88,7 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
             <label className={labelClass}>{t('mlx.selectBaseModel')}</label>
             <select
               value={modelPath}
-              onChange={(e) => setModelPath(e.target.value)}
+              onChange={(e) => { setModelPath(e.target.value); setResumeId(''); }}
               disabled={isTraining}
               className={inputClass}
             >
@@ -111,9 +122,29 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
                 </button>
               ))}
             </div>
+            {runtime === 'mlx-lm' && (
+              <div className="space-y-2 mt-2">
+                <label className={labelClass}>{t('mlx.saveEvery')}</label>
+                <input type="number" min={1} value={saveEvery} disabled={isTraining}
+                  onChange={(e) => setSaveEvery(Number(e.target.value))} className={inputClass} />
+                <label className={labelClass}>{t('mlx.resumeSource')}</label>
+                <select value={resumeId} disabled={isTraining} className={inputClass}
+                  onChange={(e) => setResumeId(e.target.value)}>
+                  <option value="">{t('mlx.newAttempt')}</option>
+                  {sources.filter((s) => s.base_model === modelPath).map((s) => (
+                    <option key={s.attempt_id} value={s.attempt_id}>
+                      {s.adapter_name} · {s.checkpoint.iter} · {s.attempt_id}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-caption text-inkFaint">{t('mlx.warmResumeHint')}</p>
+                {sourceError && <p className="text-caption text-inkMuted">{sourceError}</p>}
+              </div>
+            )}
             {runtime === 'mlx-vlm' && (
               <>
                 <p className="text-caption text-inkFaint mt-1.5">{t('mlx.vlmDatasetHint')}</p>
+                <p className="text-caption text-inkFaint">{t('mlx.vlmResumeUnavailable')}</p>
                 <div className="mt-2.5 flex flex-col gap-1">
                   <label className="flex items-center gap-2 cursor-pointer text-body text-ink">
                     <input

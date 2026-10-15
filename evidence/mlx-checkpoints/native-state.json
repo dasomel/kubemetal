@@ -1,0 +1,57 @@
+{
+  "id": "94e57310-08bc-4a0d-9479-ce53d05d0e3b",
+  "ok": true,
+  "result": {
+    "snapshot": {
+      "truncation": {
+        "maxNodes": 1200,
+        "truncated": false,
+        "maxDepthReached": false,
+        "maxDepth": 64
+      },
+      "app": {
+        "pid": 42472,
+        "name": "kubemetal",
+        "bundleId": null
+      },
+      "treeText": "App=kubemetal (pid 42472)\nWindow: \"KubeMetal\", App: kubemetal.\n\n0 standard window KubeMetal\n\t1 scroll area\n\t\t2 HTML content KubeMetal — Hybrid MLOps Workspace\n\t3 close button\n\t4 full screen button, Secondary Actions: zoom the window\n\t5 minimize button\n\t6 text KubeMetal\n\nThe focused UI element is 2 HTML content KubeMetal — Hybrid MLOps Workspace.",
+      "focusedElementId": 2,
+      "id": "82C9E78E-56BF-4BA8-A274-ED64AF4662C8",
+      "window": {
+        "isOffscreen": false,
+        "width": 1200,
+        "title": "KubeMetal",
+        "height": 800,
+        "screenIndex": 0,
+        "id": 13054,
+        "x": 1320,
+        "y": 340,
+        "isMinimized": false,
+        "platform": {
+          "layer": 0
+        }
+      },
+      "elementCount": 7,
+      "coordinateSpace": "window"
+    },
+    "screenshot": {
+      "format": "png",
+      "width": 1200,
+      "height": 800,
+      "scale": 1,
+      "path": "/var/folders/cj/_tt0bjr57n9g27m4srlqygfh0000gn/T/orca-computer-use/94e57310-08bc-4a0d-9479-ce53d05d0e3b-screenshot.png",
+      "dataOmitted": true,
+      "expiresAt": "2026-10-15T13:39:07.911Z"
+    },
+    "screenshotStatus": {
+      "metadata": {
+        "windowId": 13054,
+        "engine": "screenCaptureKit"
+      },
+      "state": "captured"
+    }
+  },
+  "_meta": {
+    "runtimeId": "e8424b7f-0a25-453d-bd9b-e65eae38a1ab"
+  }
+}

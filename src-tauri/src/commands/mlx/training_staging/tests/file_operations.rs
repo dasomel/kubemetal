@@ -128,6 +128,22 @@ async fn spawn_failure_removes_only_new_empty_attempt() {
     assert!(attempt.dir().join("attempt.json").is_file());
 }
 
+#[tokio::test]
+async fn spawn_failure_preserves_resume_snapshot_and_ownership_record() {
+    let home = TempHome::new();
+    let attempt = adapter_staging::create_attempt(&home.root(), &spec()).unwrap();
+    fs::create_dir(attempt.dir().join("resume")).unwrap();
+    fs::write(attempt.dir().join("resume/weights"), b"recovery evidence").unwrap();
+    let missing_binary = home.0.join("missing-python");
+    assert!(spawn(&mut tokio::process::Command::new(&missing_binary), &attempt).is_err());
+    assert_eq!(persisted(&attempt), AttemptState::Failed);
+    assert_eq!(
+        fs::read(attempt.dir().join("resume/weights")).unwrap(),
+        b"recovery evidence"
+    );
+    assert!(attempt.out_dir().is_dir());
+}
+
 #[test]
 fn promotion_collision_records_failed_and_preserves_both_outputs() {
     let home = TempHome::new();
