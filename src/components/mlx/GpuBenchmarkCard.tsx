@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Gauge, Loader2 } from 'lucide-react';
+import { Check, Copy, Gauge, Loader2 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useTranslation } from '../../i18n/i18nContext';
 import type { GpuBenchmarkResult } from '../../types/ipc';
@@ -12,6 +12,7 @@ export const GpuBenchmarkCard: React.FC = () => {
   const { t } = useTranslation();
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<GpuBenchmarkResult | null>(null);
+  const [copied, setCopied] = useState(false);
   const [blockedMessage, setBlockedMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
@@ -83,28 +84,45 @@ export const GpuBenchmarkCard: React.FC = () => {
       )}
 
       {result && (
-        <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
-          <div className="rounded-lg bg-surfaceRaised p-3">
-            <dt className="text-caption text-inkMuted">{t('mlx.gpuBenchmarkGflops')}</dt>
-            <dd className="text-bodyStrong text-ink mt-1">{result.gflops.toFixed(2)}</dd>
+        <div className="space-y-3">
+          <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+            <div className="rounded-lg bg-surfaceRaised p-3">
+              <dt className="text-caption text-inkMuted">{t('mlx.gpuBenchmarkGflops')}</dt>
+              <dd className="text-bodyStrong text-ink mt-1">{result.gflops.toFixed(2)}</dd>
+            </div>
+            <div className="rounded-lg bg-surfaceRaised p-3">
+              <dt className="text-caption text-inkMuted">{t('mlx.gpuBenchmarkMatrixDim')}</dt>
+              <dd className="text-bodyStrong text-ink mt-1">{result.matrix_dim}</dd>
+            </div>
+            <div className="rounded-lg bg-surfaceRaised p-3">
+              <dt className="text-caption text-inkMuted">{t('mlx.gpuBenchmarkIterations')}</dt>
+              <dd className="text-bodyStrong text-ink mt-1">{result.iterations}</dd>
+            </div>
+            <div className="rounded-lg bg-surfaceRaised p-3">
+              <dt className="text-caption text-inkMuted">{t('mlx.gpuBenchmarkPythonElapsed')}</dt>
+              <dd className="text-bodyStrong text-ink mt-1">{result.python_elapsed_seconds.toFixed(2)}</dd>
+            </div>
+            <div className="rounded-lg bg-surfaceRaised p-3">
+              <dt className="text-caption text-inkMuted">{t('mlx.gpuBenchmarkRustElapsed')}</dt>
+              <dd className="text-bodyStrong text-ink mt-1">{result.rust_elapsed_seconds.toFixed(2)}</dd>
+            </div>
+          </dl>
+
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={async () => {
+                await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+              className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-caption font-medium text-ink flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-success" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{t(copied ? 'mlx.gpuBenchmarkCopied' : 'mlx.gpuBenchmarkCopy')}</span>
+            </button>
           </div>
-          <div className="rounded-lg bg-surfaceRaised p-3">
-            <dt className="text-caption text-inkMuted">{t('mlx.gpuBenchmarkMatrixDim')}</dt>
-            <dd className="text-bodyStrong text-ink mt-1">{result.matrix_dim}</dd>
-          </div>
-          <div className="rounded-lg bg-surfaceRaised p-3">
-            <dt className="text-caption text-inkMuted">{t('mlx.gpuBenchmarkIterations')}</dt>
-            <dd className="text-bodyStrong text-ink mt-1">{result.iterations}</dd>
-          </div>
-          <div className="rounded-lg bg-surfaceRaised p-3">
-            <dt className="text-caption text-inkMuted">{t('mlx.gpuBenchmarkPythonElapsed')}</dt>
-            <dd className="text-bodyStrong text-ink mt-1">{result.python_elapsed_seconds.toFixed(2)}</dd>
-          </div>
-          <div className="rounded-lg bg-surfaceRaised p-3">
-            <dt className="text-caption text-inkMuted">{t('mlx.gpuBenchmarkRustElapsed')}</dt>
-            <dd className="text-bodyStrong text-ink mt-1">{result.rust_elapsed_seconds.toFixed(2)}</dd>
-          </div>
-        </dl>
+        </div>
       )}
     </div>
   );
