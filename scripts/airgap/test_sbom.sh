@@ -101,6 +101,18 @@ write_bundle_manifest() {
   mv "$TEST_DIR/manifest" "$AIRGAP_DIR/manifest.sha256"
 }
 
+# An API context that cannot be observed must never be reported as missing images.
+: > "$TEST_CALLS"
+expect_failure 'offline image probe rejects an unconfigured context' \
+  env KUBE_CONTEXT=absent bash "$SCRIPT_DIR/verify_offline_images.sh"
+grep -q 'context is not configured: absent — no image verdict' "$TEST_DIR/failure.out"
+if grep -q 'RESULT: FAIL — 레지스트리가 필요한 이미지' "$TEST_DIR/failure.out"; then
+  echo 'FAIL context error misreported as missing images' >&2
+  exit 1
+fi
+[ "$(wc -l < "$TEST_CALLS" | tr -d ' ')" -eq 1 ]
+: > "$TEST_CALLS"
+
 python3 - "$SCRIPT_DIR" <<'PY'
 import sys
 sys.path.insert(0, sys.argv[1])

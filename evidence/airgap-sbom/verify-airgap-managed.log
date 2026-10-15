@@ -1,0 +1,26 @@
+./scripts/airgap/verify_sbom.sh
+SBOM 검증 통과: 12개 이미지 (digest lock + SPDX JSON + sha256)
+./scripts/airgap/verify_offline_images.sh
+======================================================================
+  Air-Gap 기동 가능성 검증 (imagePullPolicy: Never)
+  context=colima-kubemetal  namespace=airgap-verify
+======================================================================
+검증 대상 12개 (매니페스트 5개 + 비매니페스트 7개)
+
+판정 (최대 60초 관측)...
+  docker.io/chrislusf/seaweedfs:4.40         PASS — running
+  docker.io/curlimages/curl:8.21.0           PASS — terminated:Error
+  docker.io/prefecthq/prefect:3.7.8-python3.12 PASS — terminated:Completed
+  ghcr.io/mlflow/mlflow:v3.14.0              PASS — terminated:Completed
+  nginx:alpine                               PASS — running
+  cr.kagent.dev/kagent-dev/kagent/controller:0.9.12 PASS — terminated:Error
+  cr.kagent.dev/kagent-dev/kagent/app:0.9.12 PASS — running
+  cr.kagent.dev/kagent-dev/kagent/ui:0.9.12  PASS — terminated:Error
+  ghcr.io/kagent-dev/kagent/tools:0.2.1      PASS — running
+  ghcr.io/kagent-dev/kmcp/controller:0.3.0   PASS — running
+  postgres:18.3-alpine                       PASS — terminated:Error
+  aquasec/trivy:0.69.3                       PASS — terminated:Completed
+
+======================================================================
+  RESULT: PASS — 12개 전부 레지스트리 접근 없이 기동 가능
+======================================================================

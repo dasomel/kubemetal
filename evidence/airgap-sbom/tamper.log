@@ -1,0 +1,5 @@
+One real syft SPDX document modified by appending newline
+exit=1
+SBOM 오류: SBOM sha256 mismatch: nginx:alpine
+Missing SBOM: exit=1
+SBOM 오류: 필수 SBOM manifest가 없습니다: /var/folders/cj/_tt0bjr57n9g27m4srlqygfh0000gn/T/kubemetal-sbom-tamper-op8h79jz/sbom/manifest.json

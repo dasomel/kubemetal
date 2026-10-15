@@ -1,0 +1,5 @@
+./scripts/airgap/verify_sbom.sh
+SBOM 검증 통과: 12개 이미지 (digest lock + SPDX JSON + sha256)
+./scripts/airgap/verify_offline_images.sh
+Air-gap probe context is not configured: colima-kubemetal — no image verdict.
+make: *** [verify-airgap] Error 1

@@ -1,0 +1,24 @@
+Loading aquasec_trivy_0.69.3.tar.gz into colima-kubemetal
+Loaded image: aquasec/trivy:0.69.3
+Loading cr.kagent.dev_kagent-dev_kagent_app_0.9.12.tar.gz into colima-kubemetal
+Loaded image: cr.kagent.dev/kagent-dev/kagent/app:0.9.12
+Loading cr.kagent.dev_kagent-dev_kagent_controller_0.9.12.tar.gz into colima-kubemetal
+Loaded image: cr.kagent.dev/kagent-dev/kagent/controller:0.9.12
+Loading cr.kagent.dev_kagent-dev_kagent_ui_0.9.12.tar.gz into colima-kubemetal
+Loaded image: cr.kagent.dev/kagent-dev/kagent/ui:0.9.12
+Loading docker.io_chrislusf_seaweedfs_4.40.tar.gz into colima-kubemetal
+Loaded image: chrislusf/seaweedfs:4.40
+Loading docker.io_curlimages_curl_8.21.0.tar.gz into colima-kubemetal
+Loaded image: curlimages/curl:8.21.0
+Loading docker.io_prefecthq_prefect_3.7.8-python3.12.tar.gz into colima-kubemetal
+Loaded image: prefecthq/prefect:3.7.8-python3.12
+Loading ghcr.io_kagent-dev_kagent_tools_0.2.1.tar.gz into colima-kubemetal
+Loaded image: ghcr.io/kagent-dev/kagent/tools:0.2.1
+Loading ghcr.io_kagent-dev_kmcp_controller_0.3.0.tar.gz into colima-kubemetal
+Loaded image: ghcr.io/kagent-dev/kmcp/controller:0.3.0
+Loading ghcr.io_mlflow_mlflow_v3.14.0.tar.gz into colima-kubemetal
+Loaded image: ghcr.io/mlflow/mlflow:v3.14.0
+Loading nginx_alpine.tar.gz into colima-kubemetal
+Loaded image: nginx:alpine
+Loading postgres_18.3-alpine.tar.gz into colima-kubemetal
+Loaded image: postgres:18.3-alpine

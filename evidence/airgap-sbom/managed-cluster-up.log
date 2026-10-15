@@ -1,0 +1,139 @@
+colima --profile kubemetal start --cpu 6 --memory 12 --vm-type=vz --mount-type=virtiofs --kubernetes
+time="2026-10-15T07:26:18+09:00" level=info msg="starting colima [profile=kubemetal]"
+time="2026-10-15T07:26:18+09:00" level=info msg="runtime: docker+k3s"
+time="2026-10-15T07:26:18+09:00" level=info msg="creating and starting ..." context=vm
+time="2026-10-15T07:26:19+09:00" level=info msg="downloading disk image ..." context=vm
+time="2026-10-15T07:26:19+09:00" level=info msg="Terminal is not available, proceeding without opening an editor"
+time="2026-10-15T07:26:19+09:00" level=info msg="Starting the instance `colima-kubemetal` with internal VM driver `vz`"
+time="2026-10-15T07:26:19+09:00" level=info msg="Attempting to download the image" arch=aarch64 digest= location=/Users/m/Library/Caches/colima/caches/b0992ab88f5a3c0c436bbb3065c01466f20dc1dd0eb0a60299d410176f21a1c3
+time="2026-10-15T07:26:19+09:00" level=info msg="Decompressing the image (b0992ab88f5a3c0c436bbb3065c01466f20dc1dd0eb0a60299d410176f21a1c3)"
+time="2026-10-15T07:26:19+09:00" level=info msg="decompressing  with external \"gzip\""
+time="2026-10-15T07:26:23+09:00" level=info msg="Downloaded the image from `/Users/m/Library/Caches/colima/caches/b0992ab88f5a3c0c436bbb3065c01466f20dc1dd0eb0a60299d410176f21a1c3`"
+time="2026-10-15T07:26:23+09:00" level=info msg="Resize instance colima-kubemetal's disk from 3.5GiB to 20GiB"
+time="2026-10-15T07:26:24+09:00" level=info msg="[hostagent] hostagent socket created at /Users/m/.colima/_lima/colima-kubemetal/ha.sock"
+time="2026-10-15T07:26:24+09:00" level=info msg="[hostagent] Starting VZ (hint: to watch the boot progress, see `/Users/m/.colima/_lima/colima-kubemetal/serial*.log`)"
+time="2026-10-15T07:26:24+09:00" level=info msg="[hostagent] Mounting disk `colima-kubemetal` on `/mnt/lima-colima-kubemetal`"
+time="2026-10-15T07:26:24+09:00" level=info msg="[hostagent] [VZ] - vm state change: running"
+time="2026-10-15T07:26:28+09:00" level=info msg="[hostagent] SSH server does not seem to be running on vsock port, using usernet forwarder"
+time="2026-10-15T07:26:29+09:00" level=info msg="SSH Local Port: 52780"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] Waiting for the essential requirement 1 of 3: `ssh`"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] The essential requirement 1 of 3 is satisfied"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] Waiting for the essential requirement 2 of 3: `user session is ready for ssh`"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] The essential requirement 2 of 3 is satisfied"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] Waiting for the essential requirement 3 of 3: `Explicitly start ssh ControlMaster`"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] The essential requirement 3 of 3 is satisfied"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] Waiting for the guest agent to be running"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] Forwarding `/var/run/docker.sock` (guest) to `/Users/m/.colima/kubemetal/docker.sock` (host)"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] Forwarding `/var/run/containerd/containerd.sock` (guest) to `/Users/m/.colima/kubemetal/containerd.sock` (host)"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] Guest agent is running"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] Time sync: guest agent is alive, starting time synchronization"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] Waiting for the final requirement 1 of 1: `boot scripts must have finished`"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] Not forwarding TCP 0.0.0.0:22"
+time="2026-10-15T07:26:29+09:00" level=info msg="[hostagent] Not forwarding TCP [::]:22"
+time="2026-10-15T07:26:34+09:00" level=info msg="[hostagent] Time sync: guest clock adjusted (was 462ms off)"
+time="2026-10-15T07:26:39+09:00" level=info msg="READY. Run `limactl shell colima-kubemetal` to open the shell."
+installing: 386 OK
+installing: amd64 OK
+{
+  "supported": [
+    "linux/arm64",
+    "linux/amd64",
+    "linux/386"
+  ],
+  "emulators": [
+    "python3.12",
+    "qemu-i386",
+    "qemu-x86_64"
+  ]
+}
+time="2026-10-15T07:26:40+09:00" level=info msg="provisioning ..." context=docker
+colima-kubemetal
+Successfully created context "colima-kubemetal"
+colima-kubemetal
+Current context is now "colima-kubemetal"
+time="2026-10-15T07:26:41+09:00" level=info msg="starting ..." context=docker
+time="2026-10-15T07:26:42+09:00" level=info msg="Sending SIGINT to hostagent process 61630"
+time="2026-10-15T07:26:42+09:00" level=info msg="Waiting for the host agent and the driver processes to shut down"
+time="2026-10-15T07:26:42+09:00" level=info msg="[hostagent] Received SIGINT, shutting down the host agent"
+time="2026-10-15T07:26:42+09:00" level=info msg="[hostagent] Shutting down the host agent"
+time="2026-10-15T07:26:42+09:00" level=info msg="[hostagent] Stopping forwarding `/var/run/docker.sock` (guest) to `/Users/m/.colima/kubemetal/docker.sock` (host)"
+time="2026-10-15T07:26:42+09:00" level=info msg="[hostagent] Stopping forwarding `/var/run/containerd/containerd.sock` (guest) to `/Users/m/.colima/kubemetal/containerd.sock` (host)"
+time="2026-10-15T07:26:42+09:00" level=info msg="[hostagent] Unmounting disk `colima-kubemetal`"
+time="2026-10-15T07:26:42+09:00" level=info msg="[hostagent] Shutting down VZ"
+time="2026-10-15T07:26:42+09:00" level=info msg="[hostagent] [VZ] - vm state change: stopped"
+time="2026-10-15T07:26:42+09:00" level=info msg="Waiting for the instance to shut down"
+time="2026-10-15T07:26:43+09:00" level=info msg="The instance colima-kubemetal has shut down"
+time="2026-10-15T07:26:45+09:00" level=info msg="Using the existing instance `colima-kubemetal`"
+time="2026-10-15T07:26:45+09:00" level=info msg="Starting the instance `colima-kubemetal` with internal VM driver `vz`"
+time="2026-10-15T07:26:46+09:00" level=info msg="[hostagent] hostagent socket created at /Users/m/.colima/_lima/colima-kubemetal/ha.sock"
+time="2026-10-15T07:26:46+09:00" level=info msg="[hostagent] Starting VZ (hint: to watch the boot progress, see `/Users/m/.colima/_lima/colima-kubemetal/serial*.log`)"
+time="2026-10-15T07:26:46+09:00" level=info msg="[hostagent] Mounting disk `colima-kubemetal` on `/mnt/lima-colima-kubemetal`"
+time="2026-10-15T07:26:46+09:00" level=info msg="[hostagent] [VZ] - vm state change: running"
+time="2026-10-15T07:26:50+09:00" level=info msg="[hostagent] SSH server does not seem to be running on vsock port, using usernet forwarder"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Waiting for the essential requirement 1 of 3: `ssh`"
+time="2026-10-15T07:26:51+09:00" level=info msg="SSH Local Port: 52896"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] The essential requirement 1 of 3 is satisfied"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Waiting for the essential requirement 2 of 3: `user session is ready for ssh`"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] The essential requirement 2 of 3 is satisfied"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Waiting for the essential requirement 3 of 3: `Explicitly start ssh ControlMaster`"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] The essential requirement 3 of 3 is satisfied"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Waiting for the guest agent to be running"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Forwarding `/var/run/docker.sock` (guest) to `/Users/m/.colima/kubemetal/docker.sock` (host)"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Forwarding `/var/run/containerd/containerd.sock` (guest) to `/Users/m/.colima/kubemetal/containerd.sock` (host)"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Guest agent is running"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Waiting for the final requirement 1 of 1: `boot scripts must have finished`"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Time sync: guest agent is alive, starting time synchronization"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Not forwarding TCP 192.168.5.3:53"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Forwarding TCP from 127.0.0.1:53 to 127.0.0.1:53"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Forwarding `127.0.0.1:53` (guest) to `/tmp/lima-psl-127.0.0.1-53-3263384088/sock` (host)"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Stopping forwarding `127.0.0.1:53` (guest) to `/tmp/lima-psl-127.0.0.1-53-3263384088/sock` (host)"
+time="2026-10-15T07:26:51+09:00" level=warning msg="[hostagent] failed to set up forwarding tcp port 53 (negligible if already forwarded)" error="listen tcp 0.0.0.0:53: bind: address already in use"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Not forwarding TCP 0.0.0.0:22"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Forwarding TCP from [::1]:53 to 127.0.0.1:53"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Forwarding `[::1]:53` (guest) to `/tmp/lima-psl-127.0.0.1-53-3559808411/sock` (host)"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Stopping forwarding `[::1]:53` (guest) to `/tmp/lima-psl-127.0.0.1-53-3559808411/sock` (host)"
+time="2026-10-15T07:26:51+09:00" level=warning msg="[hostagent] failed to set up forwarding tcp port 53 (negligible if already forwarded)" error="listen tcp 0.0.0.0:53: bind: address already in use"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Not forwarding TCP [fe80::5055:55ff:fe82:7804]:53"
+time="2026-10-15T07:26:51+09:00" level=info msg="[hostagent] Not forwarding TCP [::]:22"
+time="2026-10-15T07:27:03+09:00" level=info msg="READY. Run `limactl shell colima-kubemetal` to open the shell."
+installing: 386 OK
+installing: amd64 OK
+{
+  "supported": [
+    "linux/arm64",
+    "linux/amd64",
+    "linux/386"
+  ],
+  "emulators": [
+    "python3.12",
+    "qemu-i386",
+    "qemu-x86_64"
+  ]
+}
+time="2026-10-15T07:27:05+09:00" level=info msg="provisioning ..." context=kubernetes
+time="2026-10-15T07:27:05+09:00" level=info msg="downloading and installing ..." context=kubernetes
+time="2026-10-15T07:27:08+09:00" level=info msg="loading oci images ..." context=kubernetes
+Loaded image: rancher/klipper-helm:v0.9.12-build20251215
+Loaded image: rancher/klipper-lb:v0.4.13
+Loaded image: rancher/local-path-provisioner:v0.0.32
+Loaded image: rancher/mirrored-coredns-coredns:1.13.1
+Loaded image: rancher/mirrored-library-busybox:1.37.0
+Loaded image: rancher/mirrored-library-traefik:3.5.1
+Loaded image: rancher/mirrored-metrics-server:v0.8.0
+Loaded image: rancher/mirrored-pause:3.6
+[INFO]  Skipping k3s download and verify
+[INFO]  Skipping installation of SELinux RPM
+[INFO]  Creating /usr/local/bin/kubectl symlink to k3s
+[INFO]  Creating /usr/local/bin/crictl symlink to k3s
+[INFO]  Skipping /usr/local/bin/ctr symlink to k3s, command exists in PATH at /usr/bin/ctr
+[INFO]  Creating killall script /usr/local/bin/k3s-killall.sh
+[INFO]  Creating uninstall script /usr/local/bin/k3s-uninstall.sh
+[INFO]  env: Creating environment file /etc/systemd/system/k3s.service.env
+[INFO]  systemd: Creating service file /etc/systemd/system/k3s.service
+time="2026-10-15T07:27:13+09:00" level=info msg="starting ..." context=kubernetes
+time="2026-10-15T07:27:17+09:00" level=info msg="updating config ..." context=kubernetes
+Property "users.colima-kubemetal" unset.
+Property "contexts.colima-kubemetal" unset.
+Property "clusters.colima-kubemetal" unset.
+time="2026-10-15T07:27:18+09:00" level=info msg="Switched to context \"colima-kubemetal\"." context=kubernetes
+time="2026-10-15T07:27:19+09:00" level=info msg=done

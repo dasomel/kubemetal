@@ -1,0 +1,40 @@
+./scripts/airgap/verify_sbom.sh
+SBOM 검증 통과: 12개 이미지 (digest lock + SPDX JSON + sha256)
+./scripts/airgap/verify_offline_images.sh
+======================================================================
+  Air-Gap 기동 가능성 검증 (imagePullPolicy: Never)
+  context=colima-kubemetal  namespace=airgap-verify
+======================================================================
+검증 대상 12개 (매니페스트 5개 + 비매니페스트 7개)
+error: context "colima-kubemetal" does not exist
+error: context "colima-kubemetal" does not exist
+error: context "colima-kubemetal" does not exist
+error: context "colima-kubemetal" does not exist
+error: context "colima-kubemetal" does not exist
+error: context "colima-kubemetal" does not exist
+error: context "colima-kubemetal" does not exist
+error: context "colima-kubemetal" does not exist
+error: context "colima-kubemetal" does not exist
+error: context "colima-kubemetal" does not exist
+error: context "colima-kubemetal" does not exist
+error: context "colima-kubemetal" does not exist
+
+판정 (최대 2초 관측)...
+  docker.io/chrislusf/seaweedfs:4.40         관측 실패 (2초 내 판정 불가)
+  docker.io/curlimages/curl:8.21.0           관측 실패 (2초 내 판정 불가)
+  docker.io/prefecthq/prefect:3.7.8-python3.12 관측 실패 (2초 내 판정 불가)
+  ghcr.io/mlflow/mlflow:v3.14.0              관측 실패 (2초 내 판정 불가)
+  nginx:alpine                               관측 실패 (2초 내 판정 불가)
+  cr.kagent.dev/kagent-dev/kagent/controller:0.9.12 관측 실패 (2초 내 판정 불가)
+  cr.kagent.dev/kagent-dev/kagent/app:0.9.12 관측 실패 (2초 내 판정 불가)
+  cr.kagent.dev/kagent-dev/kagent/ui:0.9.12  관측 실패 (2초 내 판정 불가)
+  ghcr.io/kagent-dev/kagent/tools:0.2.1      관측 실패 (2초 내 판정 불가)
+  ghcr.io/kagent-dev/kmcp/controller:0.3.0   관측 실패 (2초 내 판정 불가)
+  postgres:18.3-alpine                       관측 실패 (2초 내 판정 불가)
+  aquasec/trivy:0.69.3                       관측 실패 (2초 내 판정 불가)
+
+======================================================================
+  RESULT: FAIL — 레지스트리가 필요한 이미지 12개: docker.io/chrislusf/seaweedfs:4.40 docker.io/curlimages/curl:8.21.0 docker.io/prefecthq/prefect:3.7.8-python3.12 ghcr.io/mlflow/mlflow:v3.14.0 nginx:alpine cr.kagent.dev/kagent-dev/kagent/controller:0.9.12 cr.kagent.dev/kagent-dev/kagent/app:0.9.12 cr.kagent.dev/kagent-dev/kagent/ui:0.9.12 ghcr.io/kagent-dev/kagent/tools:0.2.1 ghcr.io/kagent-dev/kmcp/controller:0.3.0 postgres:18.3-alpine aquasec/trivy:0.69.3
+  'make provision-all' 후 Air-Gap 탭에서 패키지 다운로드 → 오프라인 설치를 실행하세요.
+======================================================================
+make: *** [verify-airgap] Error 1

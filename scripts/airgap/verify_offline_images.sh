@@ -28,8 +28,18 @@ TIMEOUT_SECS="${TIMEOUT_SECS:-60}"
 
 k() { kubectl --context "$CONTEXT" "$@"; }
 
+# D22: A missing/unreachable context has no image verdict. The extra API probe costs one
+# request; rerun against the managed context after provisioning it.
+if ! kubectl config get-contexts -o name | grep -Fxq "$CONTEXT"; then
+  echo "Air-gap probe context is not configured: ${CONTEXT} — no image verdict." >&2
+  exit 1
+fi
+if ! k get namespace default --request-timeout=5s >/dev/null; then
+  echo "Air-gap probe context is unreachable or unauthorized: ${CONTEXT} — no image verdict." >&2
+  exit 1
+fi
+
 cleanup() { k delete namespace "$NS" --wait=false >/dev/null 2>&1 || true; }
-trap cleanup EXIT
 
 echo "======================================================================"
 echo "  Air-Gap 기동 가능성 검증 (imagePullPolicy: Never)"
@@ -72,7 +82,11 @@ if [ ${#IMAGES[@]} -eq 0 ]; then
 fi
 echo "검증 대상 ${#IMAGES[@]}개 (매니페스트 ${manifest_count}개 + 비매니페스트 $(( ${#IMAGES[@]} - manifest_count ))개)"
 
-k create namespace "$NS" >/dev/null 2>&1 || true
+if ! k create namespace "$NS" >/dev/null; then
+  echo "Air-gap probe namespace could not be created: ${NS} — no image verdict." >&2
+  exit 1
+fi
+trap cleanup EXIT
 
 # 파드 이름은 이미지에서 파생 — DNS-1123 라벨 규칙에 맞춰 소문자/영숫자/하이픈만 남긴다.
 # bash 3.2에는 `${1,,}`가 없어 tr로 소문자화한다.
@@ -87,7 +101,7 @@ PODS=()
 for img in "${IMAGES[@]}"; do
   pod="$(pod_name_for "$img")"
   PODS+=("$pod")
-  k apply -n "$NS" -f - >/dev/null <<YAML
+  if ! k apply -n "$NS" -f - >/dev/null <<YAML
 apiVersion: v1
 kind: Pod
 metadata:
@@ -99,6 +113,10 @@ spec:
       image: ${img}
       imagePullPolicy: Never
 YAML
+  then
+    echo "Air-gap probe pod could not be created: ${pod} — no image verdict." >&2
+    exit 1
+  fi
 done
 
 # 파드는 위에서 전부 만들어 클러스터에서 동시에 진행 중이다. 따라서 관측도 한 번에
@@ -131,7 +149,14 @@ pending=${#IMAGES[@]}
 elapsed=0
 
 while [ "$pending" -gt 0 ] && [ "$elapsed" -lt "$TIMEOUT_SECS" ]; do
-  states="$(k get pods -n "$NS" -o json 2>/dev/null | python3 -c "$POD_STATES_PY" 2>/dev/null)"
+  if ! states_json="$(k get pods -n "$NS" -o json)"; then
+    echo "Air-gap probe pods could not be read — no image verdict." >&2
+    exit 1
+  fi
+  if ! states="$(python3 -c "$POD_STATES_PY" <<< "$states_json")"; then
+    echo "Air-gap probe pod response could not be parsed — no image verdict." >&2
+    exit 1
+  fi
   # here-string은 현재 셸에서 돌아 VERDICTS/pending 갱신이 루프 밖까지 남는다.
   while IFS=$'\t' read -r pname reason; do
     [ -n "$pname" ] || continue
@@ -158,16 +183,21 @@ while [ "$pending" -gt 0 ] && [ "$elapsed" -lt "$TIMEOUT_SECS" ]; do
   elapsed=$((elapsed + 2))
 done
 
-FAILED=()
+MISSING=()
+UNRESOLVED=()
 for i in "${!IMAGES[@]}"; do
   verdict="${VERDICTS[$i]:-관측 실패 (${TIMEOUT_SECS}초 내 판정 불가)}"
   printf "  %-42s %s\n" "${IMAGES[$i]}" "$verdict"
-  case "$verdict" in PASS*) ;; *) FAILED+=("${IMAGES[$i]}") ;; esac
+  case "$verdict" in
+    PASS*) ;;
+    FAIL*) MISSING+=("${IMAGES[$i]}") ;;
+    *) UNRESOLVED+=("${IMAGES[$i]}") ;;
+  esac
 done
 
 echo ""
 echo "======================================================================"
-if [ ${#FAILED[@]} -eq 0 ] && [ ${#SKIPPED[@]} -eq 0 ]; then
+if [ ${#MISSING[@]} -eq 0 ] && [ ${#UNRESOLVED[@]} -eq 0 ] && [ ${#SKIPPED[@]} -eq 0 ]; then
   echo "  RESULT: PASS — ${#IMAGES[@]}개 전부 레지스트리 접근 없이 기동 가능"
   echo "======================================================================"
   exit 0
@@ -177,10 +207,15 @@ fi
 if [ ${#SKIPPED[@]} -gt 0 ]; then
   echo "  RESULT: FAIL — 이미지 참조로 해석되지 않아 검증하지 못한 항목 ${#SKIPPED[@]}개: ${SKIPPED[*]}" >&2
 fi
-if [ ${#FAILED[@]} -gt 0 ]; then
-  echo "  RESULT: FAIL — 레지스트리가 필요한 이미지 ${#FAILED[@]}개: ${FAILED[*]}" >&2
+if [ ${#MISSING[@]} -gt 0 ]; then
+  echo "  RESULT: FAIL — 레지스트리가 필요한 이미지 ${#MISSING[@]}개: ${MISSING[*]}" >&2
 fi
-# 안내 문구에 백틱을 쓰지 않는다 — 큰따옴표 안의 백틱은 명령 치환이라 실제로 실행된다.
-echo "  'make provision-all' 후 Air-Gap 탭에서 패키지 다운로드 → 오프라인 설치를 실행하세요." >&2
+if [ ${#UNRESOLVED[@]} -gt 0 ]; then
+  echo "  RESULT: INCONCLUSIVE — 이미지를 판정하지 못한 항목 ${#UNRESOLVED[@]}개: ${UNRESOLVED[*]}" >&2
+fi
+if [ ${#MISSING[@]} -gt 0 ]; then
+  # 안내 문구에 백틱을 쓰지 않는다 — 큰따옴표 안의 백틱은 명령 치환이라 실제로 실행된다.
+  echo "  'make provision-all' 후 Air-Gap 탭에서 패키지 다운로드 → 오프라인 설치를 실행하세요." >&2
+fi
 echo "======================================================================"
 exit 1
