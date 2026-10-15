@@ -9,6 +9,7 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-10-15 | #17 support bundle 검증 시 check_no_symlinks_in_path가 부재하는 경로를 symlink_metadata 에러로 취급해 missing-file보다 먼저 symlink 실패로 오분류했다 | NotFound를 조기 탈출해 missing-file 검사로 위임하고, 크기 변조(size-mismatch)와 내용 변조(hash-mismatch) 검증을 단위 테스트로 명확히 분리했다 |
 | 2026-10-06 | #17 support verifier는 비문자열 path를 오류로 기록한 뒤 집합 연산을 계속해 배열/객체 manifest가 TypeError traceback으로 끝났다 | safe_rel_path 통과 경로만 set 연산에 사용한다. files/omitted 비문자열 10개 사례로 정형 FAIL 및 exit 1을 검증했다. 교훈: 검증 오류 기록 후에도 잘못된 입력 타입을 후속 처리하지 않는다 |
 | 2026-10-06 | staging reconciliation trusted persisted adapter names and silently treated directory/iterator read failures as an empty inventory | Revalidate adapter_name before recovery path joins and report ScanFailed for enumeration errors; only NotFound is empty. Collect every entry before any reconciliation writes. Regression tests cover escaped names, invalid staging roots and injected iterator failures. No IPC, UI, deletion or process policy changes. |
 | 2026-10-06 | success was judged from the child's own report; existence of output is not completion | D45: Rust requires exit 0, expected staging done path, sha256 manifest verification and exclusive admission-serialized promotion before publishing done. Failure/stop remains staged; existing names and legacy directories are never overwritten. Tempdir safety tests and mutation evidence cover this boundary; real MLX/UI verification remains unobserved. |

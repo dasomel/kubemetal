@@ -70,6 +70,51 @@ pub struct SupportBundleResult {
     pub redaction: RedactionInfo,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HardwareCapability {
+    pub brand_name: String,
+    pub cpu_cores: u32,
+    pub total_memory_gb: u32,
+    pub gpu_cores: Option<u32>,
+    pub apple_silicon: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeployTargetCapability {
+    pub context: String,
+    pub namespace: String,
+    pub is_colima: bool,
+    pub tier: String,
+    pub storage_class: Option<String>,
+    pub bridge: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapabilityMatrixInfo {
+    pub hardware: Option<HardwareCapability>,
+    pub deploy_target: Option<DeployTargetCapability>,
+    pub mlx_runtime_supported: bool,
+    pub generated_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerificationProblem {
+    pub category: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SupportBundleVerificationReport {
+    pub verified: bool,
+    pub status: String,
+    pub bundle_dir: String,
+    pub manifest_sha256: String,
+    pub files_checked: usize,
+    pub omitted_count: usize,
+    pub problems: Vec<VerificationProblem>,
+    pub notes: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppOsVersionInfo {
     pub app_name: String,
@@ -194,6 +239,7 @@ pub fn generate_support_bundle(
         target_base_dir,
         home,
         health_summary_json,
+        None,
         app_info,
         log_sources,
         Vec::new(),
@@ -204,6 +250,7 @@ fn generate_support_bundle_with_omissions(
     target_base_dir: &Path,
     home: Option<&Path>,
     health_summary_json: Option<String>,
+    capability_matrix: Option<CapabilityMatrixInfo>,
     app_info: AppOsVersionInfo,
     log_sources: Vec<(String, PathBuf)>,
     mut omitted: Vec<ManifestOmittedEntry>,
@@ -267,6 +314,15 @@ fn generate_support_bundle_with_omissions(
     let health_redacted = redact_text(&health_str, home);
     let health_path = bundle_dir.join("health_summary.json");
     files.push(write_bundle_file(&health_path, health_redacted.as_bytes())?);
+
+    // 3. capability_matrix.json 작성 (하드웨어 스펙 + 배포 대상 모드)
+    if let Some(matrix) = capability_matrix {
+        let matrix_str = serde_json::to_string_pretty(&matrix)
+            .map_err(|e| format!("Failed to serialize capability matrix: {e}"))?;
+        let matrix_redacted = redact_text(&matrix_str, home);
+        let matrix_path = bundle_dir.join("capability_matrix.json");
+        files.push(write_bundle_file(&matrix_path, matrix_redacted.as_bytes())?);
+    }
 
     // 3. 로그 소스 수집 및 redaction (fail-closed 검증)
     for (dest_rel_path, src_path) in log_sources {
@@ -452,6 +508,57 @@ pub async fn create_support_bundle_impl(
             ),
         };
 
+    let (created_at_str, _) = format_bundle_timestamps()?;
+    let hardware = crate::commands::metrics::get_hardware_spec()
+        .await
+        .ok()
+        .map(|spec| HardwareCapability {
+            apple_silicon: spec.brand_name.contains("Apple") || std::env::consts::ARCH == "aarch64",
+            brand_name: spec.brand_name,
+            cpu_cores: spec.cpu_cores,
+            total_memory_gb: spec.total_memory_gb,
+            gpu_cores: spec.gpu_cores,
+        });
+    let deploy_target = crate::commands::deploy_target::get_deploy_target(app.clone())
+        .await
+        .ok()
+        .map(|target| {
+            let bridge_desc = match &target.bridge {
+                crate::services::deploy_target::BridgeState::KeepBase => "keep-base".to_string(),
+                crate::services::deploy_target::BridgeState::Verified { host } => {
+                    format!("verified({host})")
+                }
+                crate::services::deploy_target::BridgeState::Unverified { reason_code, .. } => {
+                    format!("unverified({reason_code})")
+                }
+            };
+            let tier = if target.is_colima() {
+                "local (full-stack)".to_string()
+            } else if matches!(
+                target.integration_level,
+                Some(crate::services::deploy_target::IntegrationLevel::FullStack)
+            ) {
+                "external (full-stack L2)".to_string()
+            } else {
+                "external (agent-only L1)".to_string()
+            };
+            DeployTargetCapability {
+                context: target.context.clone(),
+                namespace: target.namespace.clone(),
+                is_colima: target.is_colima(),
+                tier,
+                storage_class: target.storage_class.clone(),
+                bridge: bridge_desc,
+            }
+        });
+    let capability_matrix = Some(CapabilityMatrixInfo {
+        hardware,
+        deploy_target,
+        mlx_runtime_supported: std::env::consts::OS == "macos"
+            && std::env::consts::ARCH == "aarch64",
+        generated_at: created_at_str,
+    });
+
     let app_info = collect_app_os_version_info(Some(app));
 
     let app_data_dir = app.path().app_data_dir().unwrap_or_else(|_| {
@@ -469,6 +576,7 @@ pub async fn create_support_bundle_impl(
             &target_base_dir,
             home.as_deref(),
             health_summary_json,
+            capability_matrix,
             app_info,
             log_sources,
             omitted,
@@ -506,6 +614,424 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let day = doy - (153 * mp + 2) / 5 + 1;
     let month = mp + if mp < 10 { 3 } else { -9 };
     (year + i64::from(month <= 2), month as u32, day as u32)
+}
+
+fn check_safe_rel_path(p: &str) -> Result<(), String> {
+    if p.is_empty() {
+        return Err("path is empty".into());
+    }
+    if p.contains('\0') || p.contains('\\') {
+        return Err("path contains NUL or backslash".into());
+    }
+    let p_clean = p.strip_suffix('/').unwrap_or(p);
+    if p_clean.starts_with('/') || p_clean.contains(':') {
+        return Err("absolute path or drive letter".into());
+    }
+    for seg in p_clean.split('/') {
+        if seg.is_empty() || seg == "." || seg == ".." {
+            return Err("path traversal or empty/dot segment".into());
+        }
+    }
+    Ok(())
+}
+
+fn check_no_symlinks_in_path(root: &Path, rel: &str) -> Result<(), String> {
+    let mut current = root.to_path_buf();
+    for seg in rel.split('/') {
+        if seg.is_empty() {
+            continue;
+        }
+        current.push(seg);
+        match fs::symlink_metadata(&current) {
+            Ok(meta) => {
+                if meta.file_type().is_symlink() {
+                    return Err(format!("{rel}: symlink component at {}", current.display()));
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // 부재하는 파일은 symlink가 아니며, 이후 missing-file 검사에서 검출한다.
+                break;
+            }
+            Err(e) => {
+                return Err(format!(
+                    "{rel}: failed to inspect {}: {e}",
+                    current.display()
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
+fn collect_bundle_files_rec(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), String> {
+    let entries = fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("{}: {e}", dir.display()))?;
+        let path = entry.path();
+        let meta = fs::symlink_metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+        if meta.file_type().is_symlink() {
+            let rel = path
+                .strip_prefix(root)
+                .map_err(|e| e.to_string())?
+                .to_string_lossy()
+                .to_string();
+            out.push(rel);
+        } else if meta.is_dir() {
+            collect_bundle_files_rec(root, &path, out)?;
+        } else if meta.is_file() {
+            let rel = path
+                .strip_prefix(root)
+                .map_err(|e| e.to_string())?
+                .to_string_lossy()
+                .to_string();
+            out.push(rel);
+        }
+    }
+    Ok(())
+}
+
+/// 서포트 번들 오프라인 무결성 검증 (D1, D22 fail-closed)
+pub fn verify_support_bundle_dir(
+    bundle_dir: &Path,
+    expected_manifest_sha256: Option<&str>,
+) -> Result<SupportBundleVerificationReport, String> {
+    let mut problems = Vec::new();
+    let mut notes = Vec::new();
+
+    // 1. 번들 루트 symlink 및 디렉터리 여부 검사
+    let root_meta = match fs::symlink_metadata(bundle_dir) {
+        Ok(m) => m,
+        Err(e) => {
+            return Ok(SupportBundleVerificationReport {
+                verified: false,
+                status: "FAIL".into(),
+                bundle_dir: bundle_dir.to_string_lossy().to_string(),
+                manifest_sha256: String::new(),
+                files_checked: 0,
+                omitted_count: 0,
+                problems: vec![VerificationProblem {
+                    category: "unreadable".into(),
+                    message: format!("Failed to read bundle directory: {e}"),
+                }],
+                notes,
+            });
+        }
+    };
+    if root_meta.file_type().is_symlink() {
+        problems.push(VerificationProblem {
+            category: "symlink".into(),
+            message: format!("Bundle root {} is a symlink", bundle_dir.display()),
+        });
+        return Ok(SupportBundleVerificationReport {
+            verified: false,
+            status: "FAIL".into(),
+            bundle_dir: bundle_dir.to_string_lossy().to_string(),
+            manifest_sha256: String::new(),
+            files_checked: 0,
+            omitted_count: 0,
+            problems,
+            notes,
+        });
+    }
+    if !root_meta.is_dir() {
+        problems.push(VerificationProblem {
+            category: "not-a-directory".into(),
+            message: format!("Bundle path {} is not a directory", bundle_dir.display()),
+        });
+        return Ok(SupportBundleVerificationReport {
+            verified: false,
+            status: "FAIL".into(),
+            bundle_dir: bundle_dir.to_string_lossy().to_string(),
+            manifest_sha256: String::new(),
+            files_checked: 0,
+            omitted_count: 0,
+            problems,
+            notes,
+        });
+    }
+
+    // 2. manifest.json 검사
+    let manifest_path = bundle_dir.join(MANIFEST_FILE);
+    let m_meta = match fs::symlink_metadata(&manifest_path) {
+        Ok(m) => m,
+        Err(e) => {
+            problems.push(VerificationProblem {
+                category: "manifest-unreadable".into(),
+                message: format!("Missing or unreadable manifest.json: {e}"),
+            });
+            return Ok(SupportBundleVerificationReport {
+                verified: false,
+                status: "FAIL".into(),
+                bundle_dir: bundle_dir.to_string_lossy().to_string(),
+                manifest_sha256: String::new(),
+                files_checked: 0,
+                omitted_count: 0,
+                problems,
+                notes,
+            });
+        }
+    };
+    if m_meta.file_type().is_symlink() {
+        problems.push(VerificationProblem {
+            category: "symlink".into(),
+            message: "manifest.json is a symlink".into(),
+        });
+        return Ok(SupportBundleVerificationReport {
+            verified: false,
+            status: "FAIL".into(),
+            bundle_dir: bundle_dir.to_string_lossy().to_string(),
+            manifest_sha256: String::new(),
+            files_checked: 0,
+            omitted_count: 0,
+            problems,
+            notes,
+        });
+    }
+    if m_meta.len() > 16 * 1024 * 1024 {
+        problems.push(VerificationProblem {
+            category: "size".into(),
+            message: "manifest.json exceeds 16 MiB".into(),
+        });
+        return Ok(SupportBundleVerificationReport {
+            verified: false,
+            status: "FAIL".into(),
+            bundle_dir: bundle_dir.to_string_lossy().to_string(),
+            manifest_sha256: String::new(),
+            files_checked: 0,
+            omitted_count: 0,
+            problems,
+            notes,
+        });
+    }
+
+    let manifest_raw = match fs::read(&manifest_path) {
+        Ok(b) => b,
+        Err(e) => {
+            problems.push(VerificationProblem {
+                category: "manifest-unreadable".into(),
+                message: format!("Failed to read manifest.json: {e}"),
+            });
+            return Ok(SupportBundleVerificationReport {
+                verified: false,
+                status: "FAIL".into(),
+                bundle_dir: bundle_dir.to_string_lossy().to_string(),
+                manifest_sha256: String::new(),
+                files_checked: 0,
+                omitted_count: 0,
+                problems,
+                notes,
+            });
+        }
+    };
+    let manifest_sha256 = sha256_digest(&manifest_raw);
+    notes.push(format!("manifest.json sha256 = {manifest_sha256}"));
+
+    if let Some(expected) = expected_manifest_sha256 {
+        if manifest_sha256.to_lowercase() != expected.trim().to_lowercase() {
+            problems.push(VerificationProblem {
+                category: "manifest-hash".into(),
+                message: format!(
+                    "manifest.json sha256 {manifest_sha256} does not match expected {expected}"
+                ),
+            });
+        } else {
+            notes.push("manifest sha256 matches expected digest".into());
+        }
+    } else {
+        notes.push("manifest self-hash is unauthenticated (no expected sha256 supplied)".into());
+    }
+
+    let manifest: SupportBundleManifest = match serde_json::from_slice(&manifest_raw) {
+        Ok(m) => m,
+        Err(e) => {
+            problems.push(VerificationProblem {
+                category: "manifest-malformed".into(),
+                message: format!("manifest.json is not valid schema: {e}"),
+            });
+            return Ok(SupportBundleVerificationReport {
+                verified: false,
+                status: "FAIL".into(),
+                bundle_dir: bundle_dir.to_string_lossy().to_string(),
+                manifest_sha256,
+                files_checked: 0,
+                omitted_count: 0,
+                problems,
+                notes,
+            });
+        }
+    };
+
+    if manifest.schema_version != SCHEMA_VERSION {
+        problems.push(VerificationProblem {
+            category: "schema-version".into(),
+            message: format!(
+                "unsupported schema_version {} (expected {})",
+                manifest.schema_version, SCHEMA_VERSION
+            ),
+        });
+    }
+
+    // 3. 필수 파일 확인
+    let mut seen_files = std::collections::HashSet::new();
+    for entry in &manifest.files {
+        seen_files.insert(entry.path.clone());
+    }
+    for req in &["app_info.json", "health_summary.json"] {
+        if !seen_files.contains(*req) {
+            problems.push(VerificationProblem {
+                category: "incomplete".into(),
+                message: format!("required file {req} is not listed in manifest"),
+            });
+        }
+    }
+
+    // 4. files 각 항목 검사
+    let mut files_checked = 0;
+    for entry in &manifest.files {
+        if entry.path == MANIFEST_FILE {
+            problems.push(VerificationProblem {
+                category: "manifest-malformed".into(),
+                message: "manifest.json cannot list itself".into(),
+            });
+            continue;
+        }
+        if let Err(err) = check_safe_rel_path(&entry.path) {
+            problems.push(VerificationProblem {
+                category: "path-unsafe".into(),
+                message: format!("{}: {err}", entry.path),
+            });
+            continue;
+        }
+
+        if entry.sha256.len() != 64 || !entry.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+            problems.push(VerificationProblem {
+                category: "manifest-malformed".into(),
+                message: format!("{}: invalid sha256 hex string", entry.path),
+            });
+            continue;
+        }
+
+        let target_file_path = bundle_dir.join(&entry.path);
+        if let Err(sym_err) = check_no_symlinks_in_path(bundle_dir, &entry.path) {
+            problems.push(VerificationProblem {
+                category: "symlink".into(),
+                message: sym_err,
+            });
+            continue;
+        }
+
+        let file_meta = match fs::metadata(&target_file_path) {
+            Ok(m) => m,
+            Err(e) => {
+                problems.push(VerificationProblem {
+                    category: "missing-file".into(),
+                    message: format!("{}: file not found or inaccessible: {e}", entry.path),
+                });
+                continue;
+            }
+        };
+
+        if file_meta.len() > MAX_SCANNABLE_BYTES as u64 {
+            problems.push(VerificationProblem {
+                category: "size".into(),
+                message: format!(
+                    "{}: exceeds maximum scannable size of {} bytes",
+                    entry.path, MAX_SCANNABLE_BYTES
+                ),
+            });
+            continue;
+        }
+
+        if file_meta.len() != entry.bytes {
+            problems.push(VerificationProblem {
+                category: "size-mismatch".into(),
+                message: format!(
+                    "{}: actual size {} != manifest bytes {}",
+                    entry.path,
+                    file_meta.len(),
+                    entry.bytes
+                ),
+            });
+            continue;
+        }
+
+        let actual_bytes = match fs::read(&target_file_path) {
+            Ok(b) => b,
+            Err(e) => {
+                problems.push(VerificationProblem {
+                    category: "unreadable".into(),
+                    message: format!("{}: failed to read: {e}", entry.path),
+                });
+                continue;
+            }
+        };
+
+        let actual_hash = sha256_digest(&actual_bytes);
+        if actual_hash.to_lowercase() != entry.sha256.to_lowercase() {
+            problems.push(VerificationProblem {
+                category: "hash-mismatch".into(),
+                message: format!(
+                    "{}: hash mismatch (actual {actual_hash} != manifest {})",
+                    entry.path, entry.sha256
+                ),
+            });
+            continue;
+        }
+
+        files_checked += 1;
+    }
+
+    // 5. omitted 항목 검사
+    for o in &manifest.omitted {
+        if o.omitted.trim().is_empty() {
+            problems.push(VerificationProblem {
+                category: "omitted-no-reason".into(),
+                message: format!("{}: omitted entry carries no reason", o.path),
+            });
+        }
+        if seen_files.contains(&o.path) {
+            problems.push(VerificationProblem {
+                category: "manifest-malformed".into(),
+                message: format!("{}: path is both listed and omitted", o.path),
+            });
+        }
+    }
+
+    // 6. extra-file 검사
+    let mut actual_rel_files = Vec::new();
+    if let Err(e) = collect_bundle_files_rec(bundle_dir, bundle_dir, &mut actual_rel_files) {
+        problems.push(VerificationProblem {
+            category: "extra-file".into(),
+            message: format!("Failed to traverse bundle directory: {e}"),
+        });
+    } else {
+        for rel in actual_rel_files {
+            if rel == MANIFEST_FILE {
+                continue;
+            }
+            if !seen_files.contains(&rel) {
+                problems.push(VerificationProblem {
+                    category: "extra-file".into(),
+                    message: format!("bundle contains unlisted file: {rel}"),
+                });
+            }
+        }
+    }
+
+    let verified = problems.is_empty();
+    let status = if verified { "PASS" } else { "FAIL" };
+    notes.push(format!("Checked {files_checked} files; status = {status}"));
+
+    Ok(SupportBundleVerificationReport {
+        verified,
+        status: status.into(),
+        bundle_dir: bundle_dir.to_string_lossy().to_string(),
+        manifest_sha256,
+        files_checked,
+        omitted_count: manifest.omitted.len(),
+        problems,
+        notes,
+    })
 }
 
 #[cfg(test)]
@@ -581,7 +1107,7 @@ mod tests {
             arch: "aarch64".into(),
         };
         let result =
-            generate_support_bundle_with_omissions(&base, None, None, info, sources, omitted)
+            generate_support_bundle_with_omissions(&base, None, None, None, info, sources, omitted)
                 .unwrap();
         assert_eq!(result.omitted_count, 1);
         let manifest: SupportBundleManifest =
@@ -775,6 +1301,154 @@ mod tests {
         assert!(error.contains("Omitted support bundle"));
         assert!(error.contains("symlink"));
         assert_eq!(fs::read_dir(outside).unwrap().count(), 0);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn test_verify_support_bundle_valid() {
+        let base = create_test_temp_dir("verify-valid");
+        let app_info = AppOsVersionInfo {
+            app_name: "KubeMetal".into(),
+            app_version: "0.2.0".into(),
+            os: "macos".into(),
+            os_version: None,
+            kernel_version: None,
+            arch: "aarch64".into(),
+        };
+        let result = generate_support_bundle(&base, None, None, app_info, vec![]).unwrap();
+        let report = verify_support_bundle_dir(Path::new(&result.bundle_dir), None).unwrap();
+        assert!(
+            report.verified,
+            "Expected valid bundle to pass: {:?}",
+            report.problems
+        );
+        assert_eq!(report.status, "PASS");
+        assert_eq!(report.files_checked, 2); // app_info.json, health_summary.json
+        assert!(report.problems.is_empty());
+
+        // manifest sha256 pinned 검증도 통과해야 함
+        let report_pinned =
+            verify_support_bundle_dir(Path::new(&result.bundle_dir), Some(&report.manifest_sha256))
+                .unwrap();
+        assert!(report_pinned.verified);
+        assert_eq!(report_pinned.status, "PASS");
+
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn test_verify_support_bundle_tampered_hash() {
+        let base = create_test_temp_dir("verify-tampered");
+        let app_info = AppOsVersionInfo {
+            app_name: "KubeMetal".into(),
+            app_version: "0.2.0".into(),
+            os: "macos".into(),
+            os_version: None,
+            kernel_version: None,
+            arch: "aarch64".into(),
+        };
+        let result = generate_support_bundle(&base, None, None, app_info, vec![]).unwrap();
+        let app_info_path = Path::new(&result.bundle_dir).join("app_info.json");
+        let mut content = fs::read(&app_info_path).unwrap();
+        content[0] ^= 0x01; // 길이는 유지하고 1바이트만 변경
+        fs::write(&app_info_path, content).unwrap();
+
+        let report = verify_support_bundle_dir(Path::new(&result.bundle_dir), None).unwrap();
+        assert!(!report.verified);
+        assert_eq!(report.status, "FAIL");
+        assert!(report
+            .problems
+            .iter()
+            .any(|p| p.category == "hash-mismatch"));
+
+        // 파일 크기 변조 시 size-mismatch 탐지
+        fs::write(&app_info_path, b"short").unwrap();
+        let report_size = verify_support_bundle_dir(Path::new(&result.bundle_dir), None).unwrap();
+        assert!(!report_size.verified);
+        assert_eq!(report_size.status, "FAIL");
+        assert!(report_size
+            .problems
+            .iter()
+            .any(|p| p.category == "size-mismatch"));
+
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn test_verify_support_bundle_missing_file() {
+        let base = create_test_temp_dir("verify-missing");
+        let app_info = AppOsVersionInfo {
+            app_name: "KubeMetal".into(),
+            app_version: "0.2.0".into(),
+            os: "macos".into(),
+            os_version: None,
+            kernel_version: None,
+            arch: "aarch64".into(),
+        };
+        let result = generate_support_bundle(&base, None, None, app_info, vec![]).unwrap();
+        let app_info_path = Path::new(&result.bundle_dir).join("app_info.json");
+        fs::remove_file(&app_info_path).unwrap();
+
+        let report = verify_support_bundle_dir(Path::new(&result.bundle_dir), None).unwrap();
+        assert!(!report.verified);
+        assert_eq!(report.status, "FAIL");
+        assert!(report.problems.iter().any(|p| p.category == "missing-file"));
+
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn test_verify_support_bundle_with_capability_matrix() {
+        let base = create_test_temp_dir("verify-matrix");
+        let app_info = AppOsVersionInfo {
+            app_name: "KubeMetal".into(),
+            app_version: "0.2.0".into(),
+            os: "macos".into(),
+            os_version: None,
+            kernel_version: None,
+            arch: "aarch64".into(),
+        };
+        let matrix = CapabilityMatrixInfo {
+            hardware: Some(HardwareCapability {
+                brand_name: "Apple M3 Max".into(),
+                cpu_cores: 16,
+                total_memory_gb: 64,
+                gpu_cores: Some(40),
+                apple_silicon: true,
+            }),
+            deploy_target: Some(DeployTargetCapability {
+                context: "colima".into(),
+                namespace: "default".into(),
+                is_colima: true,
+                tier: "local (full-stack)".into(),
+                storage_class: Some("standard".into()),
+                bridge: "keep-base".into(),
+            }),
+            mlx_runtime_supported: true,
+            generated_at: "2026-10-15T12:00:00Z".into(),
+        };
+        let result = generate_support_bundle_with_omissions(
+            &base,
+            None,
+            None,
+            Some(matrix),
+            app_info,
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        assert_eq!(result.manifest.files.len(), 3); // app_info.json, health_summary.json, capability_matrix.json
+        assert!(result
+            .manifest
+            .files
+            .iter()
+            .any(|f| f.path == "capability_matrix.json"));
+
+        let report = verify_support_bundle_dir(Path::new(&result.bundle_dir), None).unwrap();
+        assert!(report.verified);
+        assert_eq!(report.status, "PASS");
+        assert_eq!(report.files_checked, 3);
+
         fs::remove_dir_all(base).unwrap();
     }
 }

@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import type { SupportBundleResult } from '../types/ipc';
+import type { SupportBundleResult, SupportBundleVerificationReport } from '../types/ipc';
 
 export function useSupportBundle() {
   const [result, setResult] = useState<SupportBundleResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [verificationReport, setVerificationReport] = useState<SupportBundleVerificationReport | null>(null);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const mounted = useRef(false);
   const pending = useRef(false);
+  const verifyPending = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -22,6 +26,8 @@ export function useSupportBundle() {
     setLoading(true);
     setResult(null);
     setError(null);
+    setVerificationReport(null);
+    setVerifyError(null);
     try {
       const response = await invoke<SupportBundleResult>('create_support_bundle');
       if (mounted.current) setResult(response);
@@ -33,5 +39,34 @@ export function useSupportBundle() {
     }
   }, []);
 
-  return { result, error, loading, create };
+  const verify = useCallback(async (bundleDir?: string, expectedManifestSha256?: string) => {
+    const targetDir = bundleDir || result?.bundle_dir;
+    if (!targetDir || verifyPending.current) return;
+    verifyPending.current = true;
+    setVerifying(true);
+    setVerifyError(null);
+    try {
+      const report = await invoke<SupportBundleVerificationReport>('verify_support_bundle', {
+        bundleDir: targetDir,
+        expectedManifestSha256: expectedManifestSha256 || null,
+      });
+      if (mounted.current) setVerificationReport(report);
+    } catch (err) {
+      if (mounted.current) setVerifyError(String(err));
+    } finally {
+      verifyPending.current = false;
+      if (mounted.current) setVerifying(false);
+    }
+  }, [result]);
+
+  return {
+    result,
+    error,
+    loading,
+    create,
+    verificationReport,
+    verifyError,
+    verifying,
+    verify,
+  };
 }

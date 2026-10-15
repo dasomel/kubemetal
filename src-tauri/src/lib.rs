@@ -68,7 +68,7 @@ use commands::rag::{
     dvc_commit_dataset, get_dvc_status, get_rag_status, index_documents, query_rag, setup_rag_env,
     RagState,
 };
-use commands::support_bundle::create_support_bundle;
+use commands::support_bundle::{create_support_bundle, verify_support_bundle};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -181,6 +181,7 @@ pub fn run() {
             get_ingest_status,
             list_ingested_datasets,
             create_support_bundle,
+            verify_support_bundle,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

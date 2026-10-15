@@ -527,6 +527,42 @@ export interface SupportBundleResult {
   redaction: SupportBundleRedactionInfo;
 }
 
+export interface VerificationProblem {
+  category: string;
+  message: string;
+}
+
+export interface SupportBundleVerificationReport {
+  verified: boolean;
+  status: 'PASS' | 'FAIL';
+  bundle_dir: string;
+  manifest_sha256: string;
+  files_checked: number;
+  omitted_count: number;
+  problems: VerificationProblem[];
+  notes: string[];
+}
+
+export interface CapabilityMatrixInfo {
+  hardware?: {
+    brand_name: string;
+    cpu_cores: number;
+    total_memory_gb: number;
+    gpu_cores: number | null;
+    apple_silicon: boolean;
+  } | null;
+  deploy_target?: {
+    context: string;
+    namespace: string;
+    is_colima: boolean;
+    tier: string;
+    storage_class?: string | null;
+    bridge: string;
+  } | null;
+  mlx_runtime_supported: boolean;
+  generated_at: string;
+}
+
 /** D49: recorded recovery candidates; selected source is re-verified before start. */
 export interface AdapterResumeSource {
   attempt_id: string;
