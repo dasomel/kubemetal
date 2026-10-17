@@ -97,9 +97,9 @@ pub struct AttemptRecord {
     pub pid: Option<u32>,
     pub start_time: Option<u64>,
     pub manifest_sha256: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_checkpoint: Option<Checkpoint>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume_source: Option<String>,
     pub state: AttemptState,
 }

@@ -131,9 +131,10 @@ export const MlxFineTuneCard: React.FC<MlxFineTuneCardProps> = ({
                 <select value={resumeId} disabled={isTraining} className={inputClass}
                   onChange={(e) => setResumeId(e.target.value)}>
                   <option value="">{t('mlx.newAttempt')}</option>
-                  {sources.filter((s) => s.base_model === modelPath).map((s) => (
+                  {/* D49: model paths in the picker may be symlinks; Rust checks canonical equality. */}
+                  {sources.map((s) => (
                     <option key={s.attempt_id} value={s.attempt_id}>
-                      {s.adapter_name} · {s.checkpoint.iter} · {s.attempt_id}
+                      {s.adapter_name} · {s.checkpoint.iter} · {s.attempt_id} · {s.base_model}
                     </option>
                   ))}
                 </select>

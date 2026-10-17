@@ -24,6 +24,74 @@ fn saved(a: &Attempt) {
 }
 
 #[test]
+fn empty_recovery_fields_are_omitted_for_older_readers() {
+    let root = TempRoot::new();
+    let attempt = attempt(&root.0, "fresh");
+    let record = serde_json::to_value(&attempt.record).unwrap();
+    assert!(record.get("last_checkpoint").is_none());
+    assert!(record.get("resume_source").is_none());
+}
+
+#[test]
+fn resume_inventory_only_lists_failed_or_killed_text_checkpoints() {
+    let root = TempRoot::new();
+    let mut failed = attempt(&root.0, "failed");
+    mark_running(&mut failed, std::process::id(), None).unwrap();
+    saved(&failed);
+    let checkpoint = record_checkpoint(&mut failed, 2).unwrap();
+    transition(&mut failed, AttemptState::Failed).unwrap();
+
+    let mut running = attempt(&root.0, "running");
+    mark_running(&mut running, std::process::id(), None).unwrap();
+    saved(&running);
+    record_checkpoint(&mut running, 2).unwrap();
+
+    let mut interrupted = attempt(&root.0, "interrupted");
+    mark_running(&mut interrupted, u32::MAX, None).unwrap();
+    saved(&interrupted);
+    record_checkpoint(&mut interrupted, 2).unwrap();
+
+    let mut no_checkpoint = attempt(&root.0, "empty");
+    transition(&mut no_checkpoint, AttemptState::Failed).unwrap();
+
+    let mut vision = create_attempt(
+        &root.0,
+        &AttemptSpec {
+            adapter_name: "vision".into(),
+            runtime: "mlx-vlm".into(),
+            base_model: "same-model".into(),
+            iters: 10,
+            mlflow_run_id: None,
+        },
+    )
+    .unwrap();
+    persist(&mut vision, |r| {
+        r.state = AttemptState::Failed;
+        r.last_checkpoint = Some(checkpoint.clone());
+    })
+    .unwrap();
+
+    let mut unpromoted = attempt(&root.0, "unpromoted");
+    persist(&mut unpromoted, |r| {
+        r.state = AttemptState::VerifiedUnpromoted;
+        r.last_checkpoint = Some(checkpoint.clone());
+    })
+    .unwrap();
+
+    let sources = list_resume_sources(&root.0).unwrap();
+    assert_eq!(sources.len(), 1);
+    assert_eq!(sources[0].attempt_id, failed.record.attempt_id);
+    assert_eq!(sources[0].checkpoint, checkpoint);
+}
+
+#[test]
+fn resume_inventory_reports_scan_failure() {
+    let root = TempRoot::new();
+    fs::write(staging_root(&root.0), b"not a directory").unwrap();
+    assert!(list_resume_sources(&root.0).is_err());
+}
+
+#[test]
 fn checkpoint_survives_partial_output_and_resume_is_isolated() {
     let root = TempRoot::new();
     let mut source = attempt(&root.0, "source");

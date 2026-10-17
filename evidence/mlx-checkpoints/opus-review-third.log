@@ -1,0 +1,44 @@
+**판정: PASS.** Blocking이나 Medium 결함은 없습니다.
+
+리뷰 모델은 **Claude Opus 5.5 (`claude-opus-5-5`)**입니다. 읽기 전용으로 진행했고 파일 수정, 커밋, 위임은 하지 않았습니다.
+
+## 변경점별 검토
+
+- **(a) resume 사전검사** (`src-tauri/src/commands/mlx.rs:939-955`)
+  - **경로 권한:** `source_id`는 열거된 `attempt_id`와 같은지만 비교하고 경로 결합에는 쓰지 않습니다. 실제 경로 결합은 `prepare_resume`이 `validate_name`과 `ensure_real_dir`를 거친 뒤에만 합니다(`checkpoints.rs:111-117`).
+  - **모델 비교:** `model_path`는 `validate_home_subpath`가 canonical 경로로 만든 값입니다. `create_attempt`가 기록하는 `base_model`과 같은 값이라 대칭으로 비교됩니다.
+  - **부작용:** `list_resume_sources` → `list_attempts`는 D46 기준 읽기 전용입니다. 기록 쓰기나 reconcile을 하지 않습니다.
+  - **스캔 실패:** 스캔이 하나라도 실패하면 resume을 거부하는 fail-closed 동작이라 D22에 맞습니다.
+  - **TOCTOU:** 사전검사와 `create_attempt` 사이에 원본이 바뀌어도 `prepare_resume`이 새로 읽어 상태, 런타임, base_model을 다시 확인합니다(`checkpoints.rs:118-130`). 실패하면 새 시도를 `Failed`로 남깁니다. 안전 쪽으로 닫힙니다.
+  - 그 밖에 manifest `sync_all` 추가와 `skip_serializing_if` 변경도 D49 내구성과 다운그레이드 호환 방향에 맞습니다.
+
+- **(b) Interrupted fixture** (`checkpoints/tests.rs`)
+  - pid `u32::MAX`로 만든 interrupted 시도가 `Unchanged{Failed|Killed}` 필터에서 빠지는 것을 검증합니다.
+  - running, vision, unpromoted, checkpoint 없음 사례도 함께 검증해 거부 범위가 충분합니다.
+
+- **(c) 옵션 라벨** (`MlxFineTuneCard.tsx:134-137`)
+  - 모든 후보를 표시하고 실제 판정은 IPC가 canonical 경로로 합니다.
+  - D22와 충돌하지 않습니다. 라벨에 로컬 홈 경로가 보이는 건 데스크톱 UI라 문제없습니다.
+
+- **(d) airgap 정리 trap** (`scripts/airgap/verify_offline_images.sh:42-54, 101, 212-221`)
+  - trap은 namespace를 만든 뒤에만 걸리므로, 생성 실패 시 남의 namespace를 지우지 않습니다.
+  - `on_exit`는 원래 종료 코드를 보존하고, 정리에 실패하면 종료 코드를 1로 올립니다.
+  - PASS 경로는 정리가 성공한 뒤에 배너를 출력하고, trap을 해제해 이중 삭제를 막습니다.
+  - stub 회귀 테스트는 `delete:namespace`를 실패시키고 "PASS 배너 없음"과 오류 메시지를 둘 다 확인합니다. pod 이름을 추출하는 awk(`^  name: `)는 컨테이너의 `- name: probe` 줄과 섞이지 않습니다.
+  - `grep -Fx >/dev/null` 변경도 SIGPIPE 오판을 올바르게 막습니다.
+
+## 로그 확인 (제가 실행하지 않은 로그입니다)
+
+- `evidence/mlx-checkpoints/opus-verify-final.log` (15:38, `mlx.rs` 15:37 수정 이후 작성)
+  - `cargo test --lib`: 423 passed, 0 failed, 2 ignored
+  - 새 테스트 3개 ok
+  - `PASS offline probe does not print PASS when namespace cleanup fails`
+  - license 검사 OK, `pnpm build` 성공
+- `evidence/airgap-sbom/opus-verify-airgap-final.log` (15:36, 스크립트 15:34 수정 이후 작성)
+  - `verify_sbom` 통과
+  - `colima-kubemetal`에서 12/12 PASS 뒤에 PASS 배너 출력
+
+## 의미 있는 잔여 Low
+
+- **L1:** 사전검사와 생성 사이의 경쟁 구간은 여전히 빈 `Failed` 시도를 하나 남길 수 있습니다. 설계상 허용 범위이고 빈도도 극히 낮습니다.
+- **L2:** 사전검사 분기(`mlx.rs:939-955`)는 Tauri 커맨드 클로저 안에 있어 직접 단위 테스트가 없습니다. 거부 로직 자체는 `prepare_resume` 테스트가 덮고 있습니다.

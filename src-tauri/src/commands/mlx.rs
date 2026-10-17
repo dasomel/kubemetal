@@ -936,6 +936,23 @@ pub async fn run_mlx_finetune(
             }
 
             let root = home_dir()?.join(".kubemetal");
+            if let Some(source_id) = config.resume_attempt_id.as_deref() {
+                // D49: reject a mismatched picker choice before allocating an owned attempt.
+                // prepare_resume still rechecks the source after creation to close the race.
+                let compatible = adapter_staging::list_resume_sources(&root)
+                    .map_err(|e| e.to_string())?
+                    .into_iter()
+                    .any(|source| {
+                        source.attempt_id == source_id
+                            && source.base_model == model_path.to_string_lossy()
+                    });
+                if !compatible {
+                    return Err(
+                        "Resume requires a failed/killed checkpoint from the same base model"
+                            .into(),
+                    );
+                }
+            }
             let mut attempt = adapter_staging::create_attempt(
                 &root,
                 &AttemptSpec {

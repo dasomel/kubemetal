@@ -84,7 +84,7 @@ pub fn record_checkpoint(attempt: &mut Attempt, step: u32) -> Result<Checkpoint>
         &attempt.out_dir().join("adapter_config.json"),
         &dir.join("adapter_config.json"),
     )?;
-    write_manifest(
+    let manifest = write_manifest(
         &dir,
         ManifestContext {
             runtime: attempt.record.runtime.clone(),
@@ -92,6 +92,10 @@ pub fn record_checkpoint(attempt: &mut Attempt, step: u32) -> Result<Checkpoint>
         },
     )
     .map_err(StagingError::Other)?;
+    // D49: the durable attempt record must not outrun the manifest bytes it pins.
+    File::open(&manifest)
+        .and_then(|file| file.sync_all())
+        .map_err(|e| io_err("Sync checkpoint manifest", &manifest, e))?;
     let checkpoint = Checkpoint {
         iter: step,
         manifest_sha256: sha256_file(&dir.join(MANIFEST_FILE)).map_err(StagingError::Other)?,

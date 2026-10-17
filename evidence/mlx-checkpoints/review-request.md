@@ -1,5 +1,8 @@
 # Opus owner review handoff — D49 / #33 S4
 
+Completed 2026-10-15: Claude Opus 5.5 final PASS; see opus-review-resolution.md and
+opus-review-third.log. The instructions below are the original review request.
+
 Review the working-tree diff; do not commit or rewrite unrelated code.
 Primary paths: adapter_staging/checkpoints.rs, mlx.rs training reader/config,
 training_staging.rs spawn cleanup, useTrainingCheckpoints.ts, MlxFineTuneCard.tsx.

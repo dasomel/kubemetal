@@ -30,7 +30,7 @@ k() { kubectl --context "$CONTEXT" "$@"; }
 
 # D22: A missing/unreachable context has no image verdict. The extra API probe costs one
 # request; rerun against the managed context after provisioning it.
-if ! kubectl config get-contexts -o name | grep -Fxq "$CONTEXT"; then
+if ! kubectl config get-contexts -o name | grep -Fx "$CONTEXT" >/dev/null; then
   echo "Air-gap probe context is not configured: ${CONTEXT} — no image verdict." >&2
   exit 1
 fi
@@ -39,7 +39,19 @@ if ! k get namespace default --request-timeout=5s >/dev/null; then
   exit 1
 fi
 
-cleanup() { k delete namespace "$NS" --wait=false >/dev/null 2>&1 || true; }
+cleanup() {
+  # D22: a PASS must also mean the probe namespace is gone; waiting costs shutdown time.
+  if ! k delete namespace "$NS" --ignore-not-found --wait=true --timeout=60s >/dev/null; then
+    echo "Air-gap probe namespace cleanup failed: ${NS}" >&2
+    return 1
+  fi
+}
+on_exit() {
+  local result=$?
+  trap - EXIT
+  cleanup || result=1
+  exit "$result"
+}
 
 echo "======================================================================"
 echo "  Air-Gap 기동 가능성 검증 (imagePullPolicy: Never)"
@@ -86,7 +98,7 @@ if ! k create namespace "$NS" >/dev/null; then
   echo "Air-gap probe namespace could not be created: ${NS} — no image verdict." >&2
   exit 1
 fi
-trap cleanup EXIT
+trap on_exit EXIT
 
 # 파드 이름은 이미지에서 파생 — DNS-1123 라벨 규칙에 맞춰 소문자/영숫자/하이픈만 남긴다.
 # bash 3.2에는 `${1,,}`가 없어 tr로 소문자화한다.
@@ -198,6 +210,12 @@ done
 echo ""
 echo "======================================================================"
 if [ ${#MISSING[@]} -eq 0 ] && [ ${#UNRESOLVED[@]} -eq 0 ] && [ ${#SKIPPED[@]} -eq 0 ]; then
+  # Print PASS only after cleanup succeeds, so the banner agrees with the exit code.
+  if ! cleanup; then
+    trap - EXIT
+    exit 1
+  fi
+  trap - EXIT
   echo "  RESULT: PASS — ${#IMAGES[@]}개 전부 레지스트리 접근 없이 기동 가능"
   echo "======================================================================"
   exit 0

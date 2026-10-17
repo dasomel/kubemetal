@@ -35,3 +35,10 @@ remains unverified.
 its image cache. `default` remained running. Colima start selected `colima-kubemetal` as
 the current kubeconfig context; after stopping it, the selection was set to the running
 `colima-default` context.
+
+Opus review follow-up (2026-10-15): the probe now consumes the full context list
+(avoiding `grep -q` SIGPIPE under `pipefail`) and waits for namespace deletion before
+printing PASS. `opus-verify-airgap-1.log` and `-2.log` passed in immediate succession.
+After the final cleanup-order fix, `opus-verify-airgap-final.log` again passed 12/12
+and the namespace was observed absent. `opus-managed-*` and `opus-final-cluster-*`
+logs record the dedicated profile start/stop; `default` remained running.

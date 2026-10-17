@@ -1,0 +1,71 @@
+Permission deny rule "MultiEdit" matches no known tool — check for typos.
+# Opus 승인 리뷰: c8e4fc4 (#33 S4 / D49), 8a364ea (#98)
+
+**모델:** Claude Opus 5.5 (`claude-opus-5-5`)
+
+**판정: 조건부 PASS.** 두 커밋 모두 차단 결함은 없습니다. 경로 격리, 스냅샷 소유권, D45 승격, D48 서빙 게이트, mlx-vlm 거부, airgap 판정 정직성은 모두 의도대로 막혀 있습니다. 다만 아래 Medium 1건은 머지 전후로 고칠 것을 권합니다.
+
+## 지적 사항 (심각도 순)
+
+**1. [Medium] 심볼릭 링크로 둔 모델은 resume 후보가 UI에서 사라짐** — `src/components/mlx/MlxFineTuneCard.tsx:134`
+- **원인:** 두 경로 표기가 다릅니다.
+  - 백엔드는 `base_model`에 `validate_home_subpath`의 canonicalize 결과(링크 대상 경로)를 저장합니다 (`src-tauri/src/commands/mlx.rs:263-271`).
+  - 드롭다운의 `modelPath`는 `list_local_models`가 주는 링크 경로 그대로입니다 (`src-tauri/src/commands/modelhub.rs:433`). 이 함수는 HF 캐시 링크를 일부러 지원합니다(2026-07-27 주석).
+- **실패 시나리오:** `~/.kubemetal/models/X → ~/.cache/huggingface/.../snapshots/<hash>` 링크 모델로 학습하다 Killed가 되면, `list_adapter_resume_sources`는 이 후보를 돌려줍니다. 하지만 `s.base_model === modelPath`가 항상 거짓이라 드롭다운에 나타나지 않습니다. 백엔드는 같은 canonical 경로끼리 비교하므로 resume을 허용하는데, 사용자에게는 복구 경로가 보이지 않습니다.
+- **수정 방향:** 비교를 canonical 경로 기준으로 맞추면 됩니다. 이 경로의 테스트는 없습니다.
+
+**2. [Low] checkpoint manifest를 fsync하지 않은 채 "durable" 기록을 남김** — `src-tauri/src/services/artifact_manifest.rs:60`, `src-tauri/src/services/adapter_staging/checkpoints.rs:87-102`
+- `write_manifest`는 `fs::write`만 하고 파일 fsync를 하지 않습니다. 이후의 `sync_dir`은 디렉터리 엔트리만 동기화합니다. 그런데도 `persist(last_checkpoint)`는 fsync된 레코드로 남습니다.
+- **실패 시나리오:** 전원이 끊기면 레코드는 manifest_sha256을 가리키는데 manifest는 비어 있을 수 있습니다. 목록 IPC는 이 checkpoint를 후보로 보여주고, 선택하면 `prepare_resume`이 거부합니다. 결과는 fail-closed이지만 D49 문서의 "fsyncs … before emitting" 주장보다 약합니다.
+- macOS의 `sync_all`은 F_FULLFSYNC가 아닙니다. 이 점은 기존 패턴입니다.
+
+**3. [Low] airgap 프로브를 연속 재실행하면 "판정 불가"로 실패** — `scripts/airgap/verify_offline_images.sh:42`, `:85`
+- cleanup은 `--wait=false`로 namespace를 지우는데, namespace 생성은 이제 엄격하게 검사합니다.
+- **실패 시나리오:** `make verify-airgap`을 끝내자마자 다시 돌리면, 아직 Terminating인 `airgap-verify` 때문에 create가 AlreadyExists/forbidden으로 실패하고 exit 1이 됩니다.
+- 판정을 지어내지는 않으므로 D22 위반은 아닙니다. 다만 운영 중 오탐 실패가 됩니다. 삭제 완료를 기다리는 처리나 안내 메시지가 필요합니다.
+- 참고로 남이 만든 동명 namespace를 지우지 않게 된 점(trap을 생성 뒤로 옮김)은 개선입니다.
+
+**4. [Low] 기존 스크립트 옵션과 겹치는 SIGPIPE 오판 가능성** — `scripts/airgap/verify_offline_images.sh:33`
+- 스크립트는 `set -o pipefail`로 돕니다. 그래서 `kubectl config get-contexts -o name | grep -Fxq`에서 grep이 일찍 매치하고 종료한 뒤 kubectl이 더 쓰면 141로 실패합니다. 그러면 설정된 context를 "not configured"로 판정합니다.
+- 컨텍스트 수가 적으면 발생 확률은 낮습니다. `grep -Fx … >/dev/null`로 바꾸면 사라집니다.
+
+**5. [Low] 다운그레이드 호환성 깨짐** — `src-tauri/src/services/adapter_staging.rs:100-103`
+- 새 필드에 `skip_serializing_if`가 없어서, 모든 신규 레코드가 `"last_checkpoint": null, "resume_source": null`을 직렬화합니다.
+- 이전 빌드는 `deny_unknown_fields` 때문에 신규 attempt 전부를 Unknown으로 봅니다. 그 결과 crash-window의 Verified→Promoted 수렴(reconcile)도 멈춥니다.
+- 롤백 시에만 해당합니다.
+
+**6. [Low] 체크포인트 해싱 동안 학습이 멈출 수 있음** — `src-tauri/src/commands/mlx.rs:713`
+- checkpoint 복사와 해싱을 stdout 루프 안에서 await합니다. 그동안 파이프를 읽지 않습니다.
+- 어댑터가 크고 save_every=1이면 wrapper → mlx_lm 순으로 stdout이 막혀 학습이 매 저장마다 정지합니다. UI에서 1이 허용되고 상한도 없으며, 디스크 사용량도 저장 횟수에 비례해 두 배로 늘어납니다(out/ 번호 파일 + checkpoints/ 사본). D49에 비용으로 명시돼 있지만 UI 경고는 없습니다.
+
+**7. [Low] 의미 있는 테스트 누락**
+- `list_resume_sources`에는 단위 테스트가 0개입니다. 다음 경우의 제외가 회귀 보호를 받지 못합니다:
+  - Running / Interrupted / VerifiedUnpromoted 상태
+  - mlx-vlm
+  - checkpoint가 없는 attempt
+  - ScanFailed 시 에러 반환
+- `read_stdout_lines`에서 "검증 실패 시 이벤트 미발행, 영속화 후 발행" 순서를 지키는지 확인하는 테스트도 없습니다. native 증거 1회로만 관측됐습니다.
+- `useTrainingCheckpoints` 폴링과 pid 필터의 프론트엔드 테스트도 없습니다.
+
+## 확인한 것 (문제 없음)
+
+- **경로 격리:** `validate_name`, attempt_id와 디렉터리명 일치 검사, `ensure_real_dir`/`scan_out`(symlink·하드링크·비정규 파일 거부), O_NOFOLLOW + create_new 복사, 복사본의 pinned manifest 재검증, 경로는 받지 않고 ID만 받는 구조.
+- **레코드 소유권:**
+  - checkpoint 기록과 finalize가 같은 reader task에서 순차로 돌아 동시 기록자가 없습니다.
+  - 중지 후 버퍼에 남은 checkpoint 줄도 Running 상태에서 기록된 뒤 Killed로 넘어갑니다.
+  - prepare 실패는 Failed로 기록됩니다.
+  - resume/가 있으면 spawn 실패 시에도 attempt를 보존하고 Failed로 기록합니다.
+- **D45/D48:** resume/와 checkpoints/는 out/ 밖에 있어 승격 대상이 아닙니다. 별도 승격 경로는 없고, 서빙 게이트도 바뀌지 않았습니다.
+- **mlx-vlm:** Rust 준비 단계, wrapper, UI 세 곳에서 거부합니다.
+- **airgap:** context/API 사전 점검, pod 생성·조회·파싱 실패를 "판정 불가"로 즉시 종료, 시간 초과를 FAIL과 분리한 INCONCLUSIVE 보고.
+
+## 검증 한계
+
+이번 리뷰는 커밋 diff와 호출 경로를 읽은 정적 분석이며, 빌드·테스트·실행은 하지 않았습니다. 로그 증거와 추론을 나눠 적습니다.
+
+- **로그로 확인된 것:** 실기기 kill → warm-start 서비스 테스트 1건 통과(68.89s). native IPC 경로로 checkpoint 20 기록 및 UI 표시. managed context에서 `verify-airgap` 12/12 PASS.
+- **확인되지 않은 것:**
+  - UI의 Start/Resume 드롭다운 클릭 경로 (evidence/plan.md에 명시됨).
+  - mlx-lm이 `--resume-adapter-file`을 `strict=False`로 로드한다는 점에 기댄 동작. LoRA 설정이 달라지면 일부 가중치만 조용히 복원될 수 있습니다. 현재는 wrapper가 LoRA 파라미터를 고정하므로 추론상 저위험이지만 실측은 없습니다.
+  - 물리적으로 망을 끊은 상태의 기동.
+  - Terminating namespace에서 재실행하는 시나리오.

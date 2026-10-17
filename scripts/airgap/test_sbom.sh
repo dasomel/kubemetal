@@ -113,6 +113,40 @@ fi
 [ "$(wc -l < "$TEST_CALLS" | tr -d ' ')" -eq 1 ]
 : > "$TEST_CALLS"
 
+# A local-image verdict is not a successful probe until temporary pods are gone.
+mkdir -p "$TEST_DIR/probe-bin"
+cat > "$TEST_DIR/probe-bin/kubectl" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = config ]; then printf 'test\n'; exit 0; fi
+[ "$1" = --context ] && [ "$2" = test ] || exit 64
+shift 2
+case "$1:$2" in
+  get:namespace|create:namespace) exit 0 ;;
+  apply:-n) awk '/^  name: / {print $2}' >> "$TEST_PROBE_PODS"; exit 0 ;;
+  get:pods)
+    python3 - "$TEST_PROBE_PODS" <<'PY'
+import json, sys
+names = open(sys.argv[1], encoding="utf-8").read().splitlines()
+print(json.dumps({"items": [{"metadata": {"name": name},
+    "status": {"containerStatuses": [{"state": {"running": {}}}]}}
+    for name in names]}))
+PY
+    ;;
+  delete:namespace) exit 1 ;;
+  *) exit 64 ;;
+esac
+SH
+chmod +x "$TEST_DIR/probe-bin/kubectl"
+: > "$TEST_DIR/probe-pods"
+expect_failure 'offline probe does not print PASS when namespace cleanup fails' \
+  env TEST_PROBE_PODS="$TEST_DIR/probe-pods" KUBE_CONTEXT=test TIMEOUT_SECS=1 \
+    PATH="$TEST_DIR/probe-bin:$PATH" bash "$SCRIPT_DIR/verify_offline_images.sh"
+grep -q 'namespace cleanup failed' "$TEST_DIR/failure.out"
+if grep -q 'RESULT: PASS' "$TEST_DIR/failure.out"; then
+  echo 'FAIL cleanup error left a PASS banner' >&2
+  exit 1
+fi
+
 python3 - "$SCRIPT_DIR" <<'PY'
 import sys
 sys.path.insert(0, sys.argv[1])

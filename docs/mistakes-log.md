@@ -9,6 +9,9 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-10-15 | Opus의 D49 리뷰에서 checkpoint manifest는 `fs::write` 뒤 파일 fsync 없이 디렉터리만 동기화하는데, 영속화된 `last_checkpoint`가 그 manifest를 참조함을 발견했다 | checkpoint 전용 경로에서 manifest 파일을 `sync_all`한 뒤 디렉터리와 레코드를 순서대로 동기화한다. 정전 내구성은 OS/저장장치 계약 범위이며 무결성 검사 실패 시 복원은 계속 거부한다 |
+| 2026-10-15 | D49 레코드의 선택 필드에 `serde(default)`만 달아 이전 레코드는 읽었지만, 새 시도의 None 필드도 JSON null로 써서 `deny_unknown_fields`인 이전 빌드로 되돌리면 모든 신규 시도가 Unknown이 됐다 | None 필드는 직렬화에서 생략하고 이전 레코드 형식 회귀 테스트를 추가한다. 실제 checkpoint가 있는 레코드의 다운그레이드는 여전히 이전 빌드에서 지원되지 않는다 |
+| 2026-10-15 | 심볼릭 링크 모델의 복구 후보를 보이도록 UI 필터를 제거한 뒤에는 다른 모델 후보도 선택할 수 있게 됐는데, 서버가 attempt 생성 후에야 모델 불일치를 거부해 빈 Failed 시도가 계속 쌓일 수 있었다(Opus 2차 리뷰) | canonical 모델과 복구 후보 ID의 일치 여부를 attempt 생성 전에 읽기 전용으로 확인한다. `prepare_resume`의 재검증은 경쟁 방지를 위해 유지한다 |
 | 2026-10-15 | #17 support bundle 검증 시 check_no_symlinks_in_path가 부재하는 경로를 symlink_metadata 에러로 취급해 missing-file보다 먼저 symlink 실패로 오분류했다 | NotFound를 조기 탈출해 missing-file 검사로 위임하고, 크기 변조(size-mismatch)와 내용 변조(hash-mismatch) 검증을 단위 테스트로 명확히 분리했다 |
 | 2026-10-06 | #17 support verifier는 비문자열 path를 오류로 기록한 뒤 집합 연산을 계속해 배열/객체 manifest가 TypeError traceback으로 끝났다 | safe_rel_path 통과 경로만 set 연산에 사용한다. files/omitted 비문자열 10개 사례로 정형 FAIL 및 exit 1을 검증했다. 교훈: 검증 오류 기록 후에도 잘못된 입력 타입을 후속 처리하지 않는다 |
 | 2026-10-06 | staging reconciliation trusted persisted adapter names and silently treated directory/iterator read failures as an empty inventory | Revalidate adapter_name before recovery path joins and report ScanFailed for enumeration errors; only NotFound is empty. Collect every entry before any reconciliation writes. Regression tests cover escaped names, invalid staging roots and injected iterator failures. No IPC, UI, deletion or process policy changes. |
@@ -89,6 +92,7 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-10-15 | D49 resume UI가 모델 경로를 문자열로 비교했다. 목록의 HF 캐시 심볼릭 링크 경로와 Rust가 저장한 canonical 경로가 달라 같은 모델의 복구 후보가 숨겨졌다(Opus 리뷰) | 후보를 모두 표시하고 저장된 기본 모델 경로를 옵션에 적는다. 실제 동일 모델 판정은 시작 IPC가 canonical 경로로 수행하며, 다른 모델 선택은 거부한다 |
 | 2026-10-04 | #17 지원 번들 IPC가 등록되어 있었지만 프런트엔드 호출자가 없어 사용자가 진단 증거를 생성할 수 없었다 | 건강 패널에서 기존 명령을 호출하고 실제 저장 경로·누락 수·오류를 표시한다. 명령 등록뿐 아니라 사용자 진입점도 확인한다. |
 | 2026-09-29 | 헤더의 버전 표시가 `Header.tsx`에 `v0.1.0`으로 하드코딩되어, package.json·Cargo.toml이 0.2.0이고 v0.2.0 태그(2026-08-09)가 배포된 뒤에도 실행 중인 앱에 `v0.1.0`이 떠 있었다 — tsc·clippy·CI 어느 것도 못 잡았고 앱을 직접 띄워 봐야 보였다(같은 사실을 세 곳에 둔 것) | 헤더가 vite `define`의 `__APP_VERSION__`(package.json에서 읽음)을 쓰고 리터럴은 없앴다. `scripts/ci/check_versions.py`가 package.json·Cargo.toml `[package]`·tauri.conf.json(버전을 둘 때)이 갈라지면 실패하며 `make lint`에 연결됨(Cargo 버전을 임시로 바꿔 실패, 복원 후 통과 확인). 교훈: 사용자에게 보이는 버전 문자열은 파생값이어야 하고, 파생이 안 되는 복사본은 갈라지면 깨지는 검사를 붙일 것 |
 | 2026-09-29 | main에 react 19.3.0 + react-dom 19.2.8 조합이 올라와 dev 앱이 "Incompatible React versions"로 백지가 됐다. 두 패키지가 각각 다른 dependabot 범프로 들어왔고 tsc·빌드·CI 어느 것도 런타임 버전 불일치를 못 봐서 실행해 봐야 드러났다 | dependabot #109(react-dom 19.3.0)로 복구. 재발 방지로 `scripts/ci/check_versions.py`가 pnpm-lock.yaml의 react·react-dom 해석 버전이 같은지 대조한다(react-dom을 19.2.8로 바꿔 실패 확인, 복원 후 통과). 교훈: 짝으로 버전이 맞아야 하는 패키지는 컴파일러가 아니라 게이트가 강제할 것 |
@@ -116,6 +120,9 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-10-15 | #98 probe가 namespace 삭제를 `--wait=false`로 끝내 재실행 시 아직 Terminating인 같은 이름의 namespace 때문에 실패할 수 있었다(Opus 리뷰) | 삭제 완료를 최대 60초 기다리고 정리 실패를 비정상 종료로 보고한다. 검증 PASS는 임시 namespace 정리 완료 뒤에만 최종 성공으로 반환한다 |
+| 2026-10-15 | #98 context 존재 검사의 `grep -q`가 일찍 종료하면 `pipefail` 아래 kubectl의 SIGPIPE를 context 부재로 오판할 수 있었다(Opus 리뷰) | `grep -Fx`로 출력을 끝까지 소비해 파이프 공급자가 SIGPIPE를 받지 않게 한다 |
+| 2026-10-15 | #98 probe 정리를 기다리도록 고쳤지만 PASS 배너를 정리 전에 출력해, namespace 삭제가 실패할 때 로그는 PASS인데 종료 코드는 1이 될 수 있었다(Opus 2차 리뷰) | 성공 배너를 정리 완료 뒤로 옮기고, 정리 실패 시 PASS가 출력되지 않는 stub 회귀 테스트를 추가한다 |
 | 2026-10-15 | #18 배포·설치 작업이 확인 요약을 거친 후에도 백엔드에서 동시 실행 가드가 없어 사용자의 더블클릭이나 동시 컴포넌트 호출 시 동일 클러스터/네임스페이스에 복수의 kubectl/helm 명령이 병렬 실행될 수 있었다 | acquire_deploy_guard를 도입해 동일 (context, namespace) 대상 작업이 진행 중이면 Err(busy)로 거부하고, 고유 operation_id를 확인 요약에 포함하여 최근 5분 내 완료된 동일 작업의 재시도 시 캐시된 결과를 즉시 반환(멱등성 보장)한다. 컨텍스트별 격리로 서로 다른 클러스터 작업은 독립 실행을 보장한다 |
 | 2026-10-15 | #98 `verify_offline_images.sh`가 없는 managed Kubernetes context에서 파드 생성·조회 오류를 삼키고 12개 이미지를 모두 “레지스트리 필요”로 보고했다. 실제로는 이미지 판정을 시작하지도 못했다 | context 존재·API 연결을 파드 생성 전에 확인하고, namespace/pod 생성·조회 오류는 이미지 판정 불가로 즉시 종료한다. 시간 내 결론이 없는 이미지는 레지스트리 필요와 분리해 INCONCLUSIVE로 보고한다. 이로써 D22의 관측되지 않은 상태를 지어내지 않는 규칙을 probe 결과에도 적용한다 |
 | 2026-10-06 | #38 작은 Markdown 섹션 병합에서 이전 heading path를 현재 섹션 변수에 덮어써 후속 청크도 이전 제목으로 기록했다 | 병합 첫 청크의 경로만 분리하고 나머지는 원래 섹션 경로를 유지한다. 회귀 테스트는 수정 전 실패, 수정 후 전체 RAG 45건 통과. 교훈: 일부 결과 병합의 provenance 변경을 전체 묶음에 전파하지 않는다 |

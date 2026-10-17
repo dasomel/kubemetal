@@ -9,7 +9,7 @@ Preserved: guardrails, promote admission, model serving, Prefect, Colima, existi
 read-only S3 listing, retention/no automatic deletion. No commit, push or remote mutation.
 Verification: make verify; focused wrapper and service corruption/isolation tests;
 opt-in real MLX process-group kill followed by verified warm-start and isolated promotion.
-Native Tauri event delivery/UI is observed below; Opus owner approval remains outstanding.
+Native Tauri event delivery/UI is observed below; Opus 5.5 approval passed on 2026-10-15.
 Design adjustment: use an optional field on the existing run IPC plus one read-only recovery
 inventory IPC; no independent resume launcher or alternate training lifecycle.
 
@@ -38,8 +38,10 @@ The original my-adapter name was refused unchanged before this test.
 Review fixes: failed resume preparation records Failed; spawn failure preserves any
 resume evidence and attempt.json; killed/error source inventory refreshes every three
 seconds because stop intent can precede durable child-exit classification.
-Remaining owner check: Opus approval review. AGENTS.md's Codex worker role forbids
-spawning Claude subagents or a separate team, so this lane does not invoke that reviewer.
+The owner explicitly requested Opus review after the initial handoff. Three read-only
+Opus 5.5 passes are recorded in opus-review-raw.log, opus-review-final.log and
+opus-review-third.log; the final verdict is PASS. Follow-up fixes and limits are in
+opus-review-resolution.md.
 The separate managed Colima context later passed `make verify-airgap` for all 12 images;
 see evidence/airgap-sbom/. A physically disconnected host remains unverified. The
 existing default VM and adapters were not modified.

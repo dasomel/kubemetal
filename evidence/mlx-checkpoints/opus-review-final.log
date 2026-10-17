@@ -1,0 +1,68 @@
+# Opus 2차 승인 리뷰: #33 S4 (D49) + #98 수정분
+
+**판정: PASS.** Blocking이나 Medium 결함은 남아 있지 않습니다. 1차에서 지적한 7건은 모두 해소됐거나, 남은 비용이 문서에 적혀 수용 가능한 수준입니다. 이번에 새로 찾은 문제는 Low 3건과 Nit 1건이며, 머지를 막지 않습니다.
+
+**리뷰 모델:** Claude Opus 5.5 (`claude-opus-5-5`)
+**리뷰 범위:** HEAD 대비 working-tree diff 7개 파일과 주변 코드를 정적으로 읽었습니다. 파일 수정, 테스트·빌드·클러스터 실행, 다른 에이전트 호출은 하지 않았습니다.
+
+## 1차 지적 사항 재확인
+
+| # | 1차 지적 | 지금 상태 | 판정 |
+|---|---|---|---|
+| 1 Medium | symlink 모델이면 resume 후보가 안 보임 | `MlxFineTuneCard.tsx:134`: 이제 후보를 모두 표시하고 옵션에 `base_model`을 적습니다. 백엔드는 `mlx.rs:921`의 `validate_home_subpath`로 canonical 경로를 만들고 `mlx.rs:948`에 저장합니다. `checkpoints.rs:126`은 canonical 경로끼리 비교합니다. 다른 모델 후보를 고르면 `mlx.rs:959-967`에서 Failed로 기록되고 에러가 반환됩니다(fail-closed). | 해소 |
+| 2 Low | manifest fsync 없이 기록 | `checkpoints.rs:95-98`: manifest를 `sync_all`한 다음 hash → verify → `sync_dir`(snapshot, checkpoints) → `persist` 순서로 진행합니다. 순서가 맞습니다. 읽기 전용 fd에 대한 fsync도 유효합니다. | 해소 |
+| 3 Low | 삭제를 `--wait=false`로 해서 재실행이 실패 | `verify_offline_images.sh:42-51`: `--ignore-not-found --wait=true --timeout=60s`로 바뀌었습니다. 정리가 실패하면 `result=1`이고, `trap - EXIT`로 재진입을 막고 원래 `$?`를 유지합니다. trap은 namespace 생성 뒤(`:98`)에 걸리므로 남의 namespace를 지우지 않는 점도 그대로입니다. | 해소 |
+| 4 Low | `grep -q`와 pipefail로 SIGPIPE 오판 | `:33`이 `grep -Fx … >/dev/null`로 바뀌어 입력을 끝까지 읽습니다. | 해소 |
+| 5 Low | 롤백 시 직렬화 호환성 | `adapter_staging.rs:100,102`에 `skip_serializing_if = "Option::is_none"`이 붙었습니다. checkpoint가 실제로 있는 레코드는 이전 빌드에서 여전히 Unknown이 되지만, mistakes-log에 명시돼 있습니다. | 해소(잔여 한계는 문서화됨) |
+| 6 Low | stdout 백프레셔·디스크 비용 | 아래 별도 판단 참고 | 수용 |
+| 7 Low | 테스트 누락 | `checkpoints/tests.rs`에 3건이 추가됐습니다: 직렬화 시 필드 생략, 인벤토리 필터링(Running·체크포인트 없음·mlx-vlm·VerifiedUnpromoted 제외), ScanFailed 시 Err. | 대부분 해소, 일부 남음(L1) |
+
+## stdout 백프레셔·디스크 비용: blocker가 아님
+
+- **멈춤은 실제로는 짧습니다.** checkpoint 저장 줄을 받은 뒤 복사·해시하는 동안 reader가 파이프를 읽지 않습니다. 하지만 mlx_lm은 쓰기 버퍼(약 64KB)가 찰 때까지는 계속 학습합니다. 보고 줄이 짧으므로, 실제로 멈추려면 해시가 아주 오래 걸리거나 save 간격이 극단적으로 짧아야 합니다.
+- **디스크는 저장 횟수에 비례해 늘어납니다.** LoRA 어댑터 크기 × 저장 횟수만큼입니다. D49에 비용과 escape hatch(저장 간격 확대)가 적혀 있고, UI 경고 문구(ko/en)에도 반영됐습니다.
+- **정확성에는 영향이 없습니다.** 실패하면 fail-closed라서 깨진 checkpoint가 선택지에 나타나지 않습니다.
+- 그래서 blocker로 보지 않습니다. 후속 개선으로는 `save_every` 하한이나 경고 임계를 두는 방법이 있습니다.
+
+## 이번에 새로 찾은 문제
+
+**L1 [Low] 테스트가 아직 빠진 경로 2개** — `checkpoints/tests.rs`
+- 인벤토리 테스트에 Interrupted 상태(pid가 죽은 Running)가 없습니다. 지금 테스트의 `running`은 살아 있는 자기 pid를 쓰기 때문에, reconcile 이후의 Interrupted 제외는 검증되지 않습니다.
+- `read_stdout_lines`의 순서(검증 실패 시 이벤트 미발행, 영속화 후 발행)와 프론트엔드 폴링·pid 필터 테스트도 여전히 없습니다.
+- 실패 시나리오: 나중에 `list_attempts`의 reconcile 규칙이 바뀌어 Interrupted가 `Unchanged{Killed}`로 보고되면, 문서상 거부해야 하는 소스가 회귀 테스트 없이 후보에 들어갑니다.
+
+**L2 [Low] 다른 모델 소스를 고를 때마다 Failed attempt가 하나씩 남음** — `mlx.rs:939-967`
+- 필터를 없애면서, 모델이 다른 후보를 고르면 `create_attempt` 이후 `prepare_resume`이 거부하는 경로가 이제 UI에서 실제로 닿습니다.
+- 그때마다 빈 Failed attempt 디렉터리가 생기고, GC가 없어 계속 쌓입니다.
+- fail-closed라서 정확성 문제는 아닙니다. canonical 비교를 `create_attempt` 앞에서 미리 하면 막을 수 있습니다.
+
+**L3 [Low] PASS를 출력한 뒤 cleanup 실패로 exit 1이 될 수 있음** — `verify_offline_images.sh:46` / tail
+- k3s가 바쁠 때 namespace finalize가 60초를 넘기면, `RESULT: PASS` 배너는 이미 나왔는데 종료 코드는 1이 됩니다.
+- 판정을 지어내는 쪽이 아니라 보수적인 쪽이고 stderr 메시지도 나오므로 D22 위반은 아닙니다. 다만 사람이 로그만 읽으면 헷갈릴 수 있습니다.
+
+**N1 [Nit] 옵션 라벨에서 `attempt_id`가 빠짐** — `MlxFineTuneCard.tsx:137`
+- 이름·iter·모델이 같은 Killed attempt가 둘이면 드롭다운에서 구분할 수 없습니다. value는 고유하므로 잘못 선택되지는 않습니다.
+- 관련해서 `docs/03` D49 항목에 "implementation pending Opus owner review"가 아직 남아 있습니다. 승인 후 갱신이 필요합니다.
+
+## 증거 구분
+
+**정적 리뷰로 확인한 것 (직접 수행)**
+- diff 전체
+- `checkpoints.rs` 전체, `artifact_manifest::write_manifest`
+- `mlx.rs`의 canonicalize·start 경로(921-985)
+- airgap 스크립트 전체, Makefile `verify-airgap`
+- D49·IPC 문서와의 일관성
+
+**로그로만 확인한 것 (재실행하지 않음)**
+- `opus-verify.log`:
+  - `cargo test --lib` 423 passed / 0 failed / 2 ignored, 새 테스트 4건 ok(199/202/216/227행)
+  - `clippy -D warnings`, `tsc --noEmit`, `pnpm build` 실행 기록
+- `opus-verify-airgap-1.log`, `-2.log`:
+  - `colima-kubemetal` context에서 연속 2회 모두 12/12 PASS. 2회차의 namespace 생성이 성공했으므로 wait 수정이 재실행 문제를 해소했다는 간접 증거입니다.
+  - 두 로그 모두 종료 코드를 명시적으로 남기지 않았습니다. 그래서 cleanup 성공 여부는 make 에러 줄이 없다는 점으로만 추정합니다.
+
+**미검증**
+- UI에서 symlink 모델 + resume 선택을 실제로 클릭하는 흐름
+- 모델이 다른 소스를 골랐을 때의 거부 메시지 표시
+- 60초를 넘기는 Terminating 상황
+- 실제 정전 상황에서의 내구성(macOS `sync_all`은 F_FULLFSYNC가 아님, 기존 패턴)

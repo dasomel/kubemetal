@@ -6,7 +6,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'mlx.saveEvery': '체크포인트 저장 주기 (반복)',
     'mlx.resumeSource': '중단된 학습의 체크포인트',
     'mlx.newAttempt': '새로 시작',
-    'mlx.warmResumeHint': '가중치만 복원합니다. optimizer·데이터 위치는 초기화하고 요청한 반복 수만큼 새로 학습합니다. 새 adapter 이름을 사용하세요.',
+    'mlx.warmResumeHint': '체크포인트마다 가중치 복사·해시로 잠시 멈추고 디스크를 더 씁니다. 복원은 같은 기본 모델의 가중치만 사용하며 optimizer·데이터 위치는 초기화합니다. 새 adapter 이름을 사용하세요.',
     'mlx.vlmResumeUnavailable': 'mlx-vlm은 중간 체크포인트·resume을 지원하지 않습니다.',
     // Header & App
     'header.title': 'KubeMetal',
@@ -919,7 +919,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'mlx.saveEvery': 'Checkpoint interval (iterations)',
     'mlx.resumeSource': 'Checkpoint from stopped training',
     'mlx.newAttempt': 'Start fresh',
-    'mlx.warmResumeHint': 'Restore weights only. Optimizer and data position restart for the requested iterations. Use a new adapter name.',
+    'mlx.warmResumeHint': 'Each checkpoint copies and hashes weights, briefly pausing training and using more disk. Resume restores weights for the same base model only; optimizer and data position restart. Use a new adapter name.',
     'mlx.vlmResumeUnavailable': 'mlx-vlm does not support intermediate checkpoints or resume.',
     // Header & App
     'header.title': 'KubeMetal',

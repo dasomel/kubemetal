@@ -1,0 +1,86 @@
+colima --profile kubemetal stop
+time="2026-10-15T15:37:21+09:00" level=info msg="stopping colima [profile=kubemetal]"
+time="2026-10-15T15:37:22+09:00" level=info msg="stopping ..." context=kubernetes
++ [ -s /etc/systemd/system/k3s.service ]
++ basename /etc/systemd/system/k3s.service
++ systemctl stop k3s.service
++ [ -x /etc/init.d/k3s* ]
++ killtree
++ kill -9
++ do_unmount_and_remove /run/k3s
++ set +x
++ do_unmount_and_remove /var/lib/kubelet/pods
++ set +x
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/67663f5e-f839-4ae0-acb5-addc3dc56b40/volumes/kubernetes.io~projected/kube-api-access-xxdzs
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/3943760c-394c-4dd3-b063-1b8e772fd262/volumes/kubernetes.io~projected/kube-api-access-nsjrg
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/19e7c90e-d334-4dd9-974b-e310be97afc1/volumes/kubernetes.io~projected/kube-api-access-qhczs
++ do_unmount_and_remove /var/lib/kubelet/plugins
++ set +x
++ do_unmount_and_remove /run/netns/cni-
++ set +x
++ ip netns show
++ grep cni-
++ xargs -r -t -n 1 ip netns delete
++ remove_interfaces
++ grep+  master cni0
+ip link show
++ read ignore iface ignore
++ iface=veth7aaca8ef
++ [ -z veth7aaca8ef ]
++ ip link delete veth7aaca8ef
++ read ignore iface ignore
++ iface=veth1f64e6a5
++ [ -z veth1f64e6a5 ]
++ ip link delete veth1f64e6a5
++ read ignore iface ignore
++ iface=veth55ce3882
++ [ -z veth55ce3882 ]
++ ip link delete veth55ce3882
++ read ignore iface ignore
++ ip link delete cni0
++ ip link delete flannel.1
++ ip link delete flannel-v6.1
+Cannot find device "flannel-v6.1"
++ ip link delete kube-ipvs0
+Cannot find device "kube-ipvs0"
++ ip link delete flannel-wg
+Cannot find device "flannel-wg"
++ ip link delete flannel-wg-v6
+Cannot find device "flannel-wg-v6"
++ command -v tailscale
++ [ -n  ]
++ rm -rf /var/lib/cni/
+rm: cannot remove '/var/lib/cni/': Device or resource busy
++ iptables-save
++ grep -v KUBE-
++ grep -v CNI-
++ grep -iv flannel
++ iptables-restore
++ + + ip6tables-restore
+ip6tables-save
+grep -v KUBE-
++ grep -v CNI-
++ grep -iv flannel
+k8s_coredns_coredns-54bf7cdff9-9dpj4_kube-system_67663f5e-f839-4ae0-acb5-addc3dc56b40_2
+k8s_metrics-server_metrics-server-77dbbf84b-bp7fp_kube-system_3943760c-394c-4dd3-b063-1b8e772fd262_2
+k8s_local-path-provisioner_local-path-provisioner-69879d7dd7-9xqd5_kube-system_19e7c90e-d334-4dd9-974b-e310be97afc1_2
+k8s_POD_metrics-server-77dbbf84b-bp7fp_kube-system_3943760c-394c-4dd3-b063-1b8e772fd262_2
+k8s_POD_coredns-54bf7cdff9-9dpj4_kube-system_67663f5e-f839-4ae0-acb5-addc3dc56b40_2
+k8s_POD_local-path-provisioner-69879d7dd7-9xqd5_kube-system_19e7c90e-d334-4dd9-974b-e310be97afc1_2
+time="2026-10-15T15:37:25+09:00" level=info msg="stopping ..." context=docker
+Stopping 'docker.service', but its triggering units are still active:
+docker.socket
+colima-kubemetal
+time="2026-10-15T15:37:29+09:00" level=info msg="stopping ..." context=vm
+time="2026-10-15T15:37:29+09:00" level=info msg="Sending SIGINT to hostagent process 22134"
+time="2026-10-15T15:37:29+09:00" level=info msg="Waiting for the host agent and the driver processes to shut down"
+time="2026-10-15T15:37:29+09:00" level=info msg="[hostagent] Received SIGINT, shutting down the host agent"
+time="2026-10-15T15:37:29+09:00" level=info msg="[hostagent] Shutting down the host agent"
+time="2026-10-15T15:37:29+09:00" level=info msg="[hostagent] Stopping forwarding `/var/run/docker.sock` (guest) to `/Users/m/.colima/kubemetal/docker.sock` (host)"
+time="2026-10-15T15:37:29+09:00" level=info msg="[hostagent] Stopping forwarding `/var/run/containerd/containerd.sock` (guest) to `/Users/m/.colima/kubemetal/containerd.sock` (host)"
+time="2026-10-15T15:37:29+09:00" level=info msg="[hostagent] Unmounting disk `colima-kubemetal`"
+time="2026-10-15T15:37:29+09:00" level=info msg="[hostagent] Shutting down VZ"
+time="2026-10-15T15:37:30+09:00" level=info msg="[hostagent] [VZ] - vm state change: stopped"
+time="2026-10-15T15:37:30+09:00" level=info msg="Waiting for the instance to shut down"
+time="2026-10-15T15:37:30+09:00" level=info msg="The instance colima-kubemetal has shut down"
+time="2026-10-15T15:37:30+09:00" level=info msg=done
