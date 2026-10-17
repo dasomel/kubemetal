@@ -135,6 +135,7 @@ mod tests {
             thermal_state: Some("nominal".to_string()),
             thermal_pause_enabled: false,
             resume_overrides: vec![],
+            last_event: None,
         }
     }
 

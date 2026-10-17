@@ -17,8 +17,8 @@ use commands::deploy_target::{
     preflight_deploy_target, save_deploy_target,
 };
 use commands::guardrails::{
-    get_guardrail_status, pause_mlx_training, resume_mlx_training, set_guardrail_config,
-    GuardrailState,
+    get_guardrail_events, get_guardrail_status, pause_mlx_training, resume_mlx_training,
+    set_guardrail_config, GuardrailState,
 };
 use commands::health::get_system_health_summary;
 use commands::kagent::{
@@ -160,6 +160,7 @@ pub fn run() {
             crate::services::ports::get_host_ports,
             get_service_access,
             get_guardrail_status,
+            get_guardrail_events,
             set_guardrail_config,
             get_system_health_summary,
             pause_mlx_training,

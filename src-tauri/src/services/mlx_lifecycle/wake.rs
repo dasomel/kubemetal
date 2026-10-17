@@ -79,16 +79,49 @@ pub fn spawn_heartbeat(app: tauri::AppHandle) {
                             crate::services::mlx_lifecycle::session::tracked_mlx_pids(&state);
                         if let Ok(tracked) = tracked {
                             match crate::services::mlx_lifecycle::scan_orphaned_mlx_processes(
-                                &crate::services::mlx_lifecycle::marker_dir(std::path::Path::new(&home)),
+                                &crate::services::mlx_lifecycle::marker_dir(std::path::Path::new(
+                                    &home,
+                                )),
                                 &tracked,
-                            ).await {
-                                Ok(scan) => eprintln!("[mlx] Wake reconciliation observed {} orphan candidates and {} unreadable markers", scan.orphans.len(), scan.unreadable.len()),
-                                Err(error) => eprintln!("[mlx] Wake reconciliation failed: {error}"),
+                            )
+                            .await
+                            {
+                                Ok(scan) => {
+                                    eprintln!("[mlx] Wake reconciliation observed {} orphan candidates and {} unreadable markers", scan.orphans.len(), scan.unreadable.len());
+                                    crate::commands::guardrails::record_guardrail_event(
+                                        &app,
+                                        "reconcile",
+                                        "wake",
+                                        None,
+                                        Some(format!(
+                                            "orphans={}, unreadable={}",
+                                            scan.orphans.len(),
+                                            scan.unreadable.len()
+                                        )),
+                                    );
+                                }
+                                Err(error) => {
+                                    eprintln!("[mlx] Wake reconciliation failed: {error}");
+                                    crate::commands::guardrails::record_guardrail_event(
+                                        &app,
+                                        "reconcile",
+                                        "wake_error",
+                                        None,
+                                        Some(format!("error={error}")),
+                                    );
+                                }
                             }
                         }
                     }
                     Err(error) => {
-                        eprintln!("[mlx] Wake reconciliation cannot determine HOME: {error}")
+                        eprintln!("[mlx] Wake reconciliation cannot determine HOME: {error}");
+                        crate::commands::guardrails::record_guardrail_event(
+                            &app,
+                            "reconcile",
+                            "wake_error",
+                            None,
+                            Some(format!("no_home={error}")),
+                        );
                     }
                 }
                 if let Err(error) = app.emit("mlx-lifecycle-wake", ()) {

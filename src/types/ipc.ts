@@ -246,6 +246,15 @@ export interface ServiceAccess {
   credentials: CredentialItem[];
 }
 
+export interface GuardrailEvent {
+  correlation_id: string;
+  timestamp: string;
+  action: 'pause' | 'resume' | 'reconcile';
+  reason: string;
+  pid: number | null;
+  details: string | null;
+}
+
 export interface GuardrailStatus {
   memory_pressure_level: 'normal' | 'warn' | 'critical' | 'unknown';
   on_battery: boolean;
@@ -256,6 +265,8 @@ export interface GuardrailStatus {
   thermal_pause_enabled: boolean;
   /** D16 개정 — 수동 재개로 억제된 자동 일시정지 원인들. critical 메모리 압력은 억제 불가 */
   resume_overrides: string[];
+  /** #13: 최근 발생한 가드레일 이벤트 (correlation ID 및 전환 증적) */
+  last_event?: GuardrailEvent | null;
 }
 
 /** `get_system_health_summary`의 하위 조회 결과. 실패한 조회는 값 대신 해당 `*_error`에

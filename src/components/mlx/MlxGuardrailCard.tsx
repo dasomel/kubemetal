@@ -203,9 +203,16 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
           {isPaused && (
             <div className="pt-3 border-t border-hairline/8">
               <div className="flex items-center justify-between gap-3 p-3 rounded-lg bg-surfaceRaised">
-                <div className="flex items-center gap-1.5 text-caption text-warning">
-                  <span className="w-2 h-2 rounded-full bg-warning shrink-0" />
-                  <span>{pauseReasonLabel[training!.status] ?? t('mlx.guardrail.pausedGenericLabel')}</span>
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-1.5 text-caption text-warning">
+                    <span className="w-2 h-2 rounded-full bg-warning shrink-0" />
+                    <span>{pauseReasonLabel[training!.status] ?? t('mlx.guardrail.pausedGenericLabel')}</span>
+                  </div>
+                  {guardrailStatus.last_event?.correlation_id && (
+                    <div className="text-micro font-mono text-inkFaint pl-3.5">
+                      ref: {guardrailStatus.last_event.correlation_id}
+                    </div>
+                  )}
                 </div>
                 <button
                   type="button"

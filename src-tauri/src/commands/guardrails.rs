@@ -1,12 +1,24 @@
 use std::collections::HashSet;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
-use tauri::Manager;
+use serde::{Deserialize, Serialize};
+use tauri::{Emitter, Manager};
 
 use crate::commands::mlx::MlxState;
 use crate::services::process::external_command;
+
+/// 가드레일 제어 및 복구 이벤트 (#13).
+/// 모든 pause/resume/reconcile 전환은 고유 correlation_id를 발급받아 추적된다.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GuardrailEvent {
+    pub correlation_id: String,
+    pub timestamp: String,
+    pub action: String, // "pause" | "resume" | "reconcile"
+    pub reason: String, // "memory_pressure" | "battery" | "thermal" | "manual" | "wake"
+    pub pid: Option<u32>,
+    pub details: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GuardrailStatus {
@@ -21,6 +33,7 @@ pub struct GuardrailStatus {
     pub thermal_state: Option<String>,
     pub thermal_pause_enabled: bool,
     pub resume_overrides: Vec<String>,
+    pub last_event: Option<GuardrailEvent>,
 }
 
 #[derive(Default)]
@@ -33,6 +46,74 @@ pub struct GuardrailState {
     /// D16 개정: 수동 재개 오버라이드 저장소. (학습 pid, 억제된 원인 집합).
     /// 수동 재개는 사용자 의사 표명이므로 같은 원인의 advisory 신호로 다시 멈추지 않는다, critical은 예외.
     pub resume_overrides: Mutex<Option<(u32, HashSet<String>)>>,
+    /// #13: 최근 발생한 가드레일 이벤트 (단일 최신 및 최근 히스토리).
+    pub last_event: Mutex<Option<GuardrailEvent>>,
+    pub recent_events: Mutex<Vec<GuardrailEvent>>,
+}
+
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let year = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = mp + if mp < 10 { 3 } else { -9 };
+    (year + i64::from(month <= 2), month as u32, day as u32)
+}
+
+fn current_rfc3339_and_millis() -> (String, u128) {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let millis = now.as_millis();
+    let seconds = now.as_secs() as i64;
+    let days = seconds.div_euclid(86_400);
+    let seconds_of_day = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = seconds_of_day / 3600;
+    let minute = (seconds_of_day % 3600) / 60;
+    let second = seconds_of_day % 60;
+    let rfc3339 = format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z");
+    (rfc3339, millis)
+}
+
+pub fn record_guardrail_event(
+    app: &tauri::AppHandle,
+    action: &str,
+    reason: &str,
+    pid: Option<u32>,
+    details: Option<String>,
+) -> GuardrailEvent {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let (timestamp, millis) = current_rfc3339_and_millis();
+    let count = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let correlation_id = format!("gr-{millis}-{count}");
+
+    let event = GuardrailEvent {
+        correlation_id,
+        timestamp,
+        action: action.to_string(),
+        reason: reason.to_string(),
+        pid,
+        details,
+    };
+
+    let guardrail_state = app.state::<GuardrailState>();
+    if let Ok(mut last) = guardrail_state.last_event.lock() {
+        *last = Some(event.clone());
+    }
+    if let Ok(mut history) = guardrail_state.recent_events.lock() {
+        history.push(event.clone());
+        if history.len() > 50 {
+            history.remove(0);
+        }
+    }
+
+    let _ = app.emit("guardrail-event", &event);
+    event
 }
 
 /// 학습을 멈춰야 할 발열 단계. `serious`부터다 — `fair`는 부하가 걸린 정상 상태에서도
@@ -205,6 +286,12 @@ pub async fn get_guardrail_status(app: tauri::AppHandle) -> Result<GuardrailStat
         }
     };
 
+    let last_event = guardrail_state
+        .last_event
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
+
     Ok(GuardrailStatus {
         memory_pressure_level,
         on_battery,
@@ -214,7 +301,19 @@ pub async fn get_guardrail_status(app: tauri::AppHandle) -> Result<GuardrailStat
         thermal_state,
         thermal_pause_enabled,
         resume_overrides,
+        last_event,
     })
+}
+
+#[tauri::command]
+pub async fn get_guardrail_events(app: tauri::AppHandle) -> Result<Vec<GuardrailEvent>, String> {
+    let guardrail_state = app.state::<GuardrailState>();
+    let events = guardrail_state
+        .recent_events
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone();
+    Ok(events)
 }
 
 #[tauri::command]
@@ -273,20 +372,33 @@ async fn signal_pid(pid: u32, sig: i32) -> Result<(), String> {
     .map_err(|e| format!("failed to send signal {sig} to process group {pid}: {e}"))
 }
 
-async fn pause_pid(app: &tauri::AppHandle, pid: u32, status: &str) -> Result<(), String> {
+async fn pause_pid(
+    app: &tauri::AppHandle,
+    pid: u32,
+    status: &str,
+    reason: &str,
+    details: Option<String>,
+) -> Result<GuardrailEvent, String> {
     signal_pid(pid, libc::SIGSTOP).await?;
     let mlx_state = app.state::<MlxState>();
     let mut guard = mlx_state.training.lock().map_err(|e| e.to_string())?;
     apply_signal_transition(&mut guard, pid, status);
-    Ok(())
+    let event = record_guardrail_event(app, "pause", reason, Some(pid), details);
+    Ok(event)
 }
 
-async fn resume_pid(app: &tauri::AppHandle, pid: u32) -> Result<(), String> {
+async fn resume_pid(
+    app: &tauri::AppHandle,
+    pid: u32,
+    reason: &str,
+    details: Option<String>,
+) -> Result<GuardrailEvent, String> {
     signal_pid(pid, libc::SIGCONT).await?;
     let mlx_state = app.state::<MlxState>();
     let mut guard = mlx_state.training.lock().map_err(|e| e.to_string())?;
     apply_signal_transition(&mut guard, pid, "running");
-    Ok(())
+    let event = record_guardrail_event(app, "resume", reason, Some(pid), details);
+    Ok(event)
 }
 
 /// SIGSTOP/SIGCONT 후 슬롯 상태를 갱신한다. 같은 pid이고 아직 비종료일 때만 바꾼다 —
@@ -316,7 +428,7 @@ pub async fn pause_mlx_training(app: tauri::AppHandle) -> Result<bool, String> {
             _ => return Err("no running training to pause".into()),
         }
     };
-    pause_pid(&app, pid, "paused").await?;
+    pause_pid(&app, pid, "paused", "manual", None).await?;
     Ok(true)
 }
 
@@ -353,7 +465,8 @@ pub async fn resume_mlx_training(app: tauri::AppHandle) -> Result<bool, String> 
         }
     }
 
-    resume_pid(&app, pid).await?;
+    let details = format!("resumed_from={status}");
+    resume_pid(&app, pid, "manual", Some(details)).await?;
     Ok(true)
 }
 
@@ -470,7 +583,14 @@ async fn guardrail_loop(app: tauri::AppHandle, pid: u32) {
         let level = measure_memory_pressure_level().await;
         let mem_override = overrides.contains("memory_pressure");
         if memory_should_auto_pause(&level, mem_override) {
-            let _ = pause_pid(&app, pid, "paused_memory_pressure").await;
+            let _ = pause_pid(
+                &app,
+                pid,
+                "paused_memory_pressure",
+                "memory_pressure",
+                Some(format!("level={level}")),
+            )
+            .await;
             continue;
         }
 
@@ -486,7 +606,14 @@ async fn guardrail_loop(app: tauri::AppHandle, pid: u32) {
             battery_pause_enabled,
             bat_override,
         ) {
-            let _ = pause_pid(&app, pid, "paused_battery").await;
+            let _ = pause_pid(
+                &app,
+                pid,
+                "paused_battery",
+                "battery",
+                Some("on_battery=true".to_string()),
+            )
+            .await;
             continue;
         }
 
@@ -506,7 +633,11 @@ async fn guardrail_loop(app: tauri::AppHandle, pid: u32) {
         let th_override = overrides.contains("thermal");
         let thermal_st = crate::commands::metrics::read_thermal_state();
         if thermal_should_auto_pause(thermal_st.as_deref(), thermal_pause_enabled, th_override) {
-            let _ = pause_pid(&app, pid, "paused_thermal").await;
+            let details = format!(
+                "thermal_state={}",
+                thermal_st.as_deref().unwrap_or("unknown")
+            );
+            let _ = pause_pid(&app, pid, "paused_thermal", "thermal", Some(details)).await;
         }
     }
 }
@@ -699,5 +830,30 @@ mod tests {
             err.contains("failed to send signal"),
             "예상과 다른 오류: {err}"
         );
+    }
+
+    #[test]
+    fn correlation_id_is_unique_and_has_valid_format() {
+        let (ts1, ms1) = current_rfc3339_and_millis();
+        let (ts2, ms2) = current_rfc3339_and_millis();
+        assert!(ts1.ends_with('Z'));
+        assert!(ts2.ends_with('Z'));
+        assert!(ts1.contains('T'));
+        assert!(ms1 > 0 && ms2 >= ms1);
+
+        static TEST_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(100);
+        let id1 = format!(
+            "gr-{}-{}",
+            ms1,
+            TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+        let id2 = format!(
+            "gr-{}-{}",
+            ms2,
+            TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        );
+        assert_ne!(id1, id2);
+        assert!(id1.starts_with("gr-"));
+        assert!(id2.starts_with("gr-"));
     }
 }
