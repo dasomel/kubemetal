@@ -18,6 +18,7 @@ export const GpuBenchmarkCard: React.FC = () => {
   const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };
@@ -26,6 +27,7 @@ export const GpuBenchmarkCard: React.FC = () => {
   const runBenchmark = async () => {
     setRunning(true);
     setResult(null);
+    setCopied(false);
     setBlockedMessage(null);
     setError(null);
 
@@ -112,9 +114,18 @@ export const GpuBenchmarkCard: React.FC = () => {
             <button
               type="button"
               onClick={async () => {
-                await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
+                setCopied(false);
+                setError(null);
+                try {
+                  await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
+                  if (!mountedRef.current) return;
+                  setCopied(true);
+                  setTimeout(() => {
+                    if (mountedRef.current) setCopied(false);
+                  }, 2000);
+                } catch (err) {
+                  if (mountedRef.current) setError(String(err));
+                }
               }}
               className="px-3 py-1.5 rounded-md bg-surfaceRaised hover:brightness-95 text-caption font-medium text-ink flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
