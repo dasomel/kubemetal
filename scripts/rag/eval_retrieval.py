@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline retrieval evaluation harness for issue #38 (stdlib only).
 
-Measures recall@k and MRR per retrieval mode and per query type over a labeled
+Measures recall@k, binary nDCG@k, MRR and retrieval latency per query type over a labeled
 query set. Only modes that run without a model download or GPU are measured
 (lexical / SQLite FTS5). dense, hybrid and auto need an embedding model plus
 LanceDB; they are reported as "not measured", never estimated.
@@ -15,7 +15,9 @@ their first occurrence per document before scoring.
 
 import argparse
 import json
+import math
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -71,14 +73,37 @@ def reciprocal_rank(ranked, relevant):
     return 0.0
 
 
+def ndcg_at_k(ranked, relevant, k):
+    """Binary document relevance, normalized against all relevant documents."""
+    relevant = set(relevant)
+    ideal = sum(1 / math.log2(rank + 1) for rank in range(1, min(k, len(relevant)) + 1))
+    if not ideal:
+        return 0.0
+    dcg = sum(1 / math.log2(rank + 1) for rank, doc in enumerate(ranked[:k], 1)
+              if doc in relevant)
+    return dcg / ideal
+
+
+def percentile_nearest_rank(values, percentile):
+    """Observed sample at ceil(p * n), with no interpolated timing estimates."""
+    return sorted(values)[math.ceil(percentile * len(values)) - 1]
+
+
 def evaluate(chunks, queries, search_fn, ks):
-    """Return per-query rows: {id, type, ranked, recall: {k: v}, rr}."""
+    """Score document ranks and measure only each search call, in milliseconds."""
     rows = []
     for query in queries:
-        ranked = ranked_docs(search_fn(chunks, query["text"], CHUNK_FETCH))
+        # D-E1: time the production search call, including its temporary FTS index.
+        # Cost: single samples include host noise; rerun for comparison, never infer model latency.
+        started = time.perf_counter_ns()
+        results = search_fn(chunks, query["text"], CHUNK_FETCH)
+        latency_ms = (time.perf_counter_ns() - started) / 1_000_000
+        ranked = ranked_docs(results)
         rows.append({"id": query["id"], "type": query["type"], "ranked": ranked,
                      "recall": {k: recall_at_k(ranked, query["relevant"], k) for k in ks},
-                     "rr": reciprocal_rank(ranked, query["relevant"])})
+                     "rr": reciprocal_rank(ranked, query["relevant"]),
+                     "ndcg": {k: ndcg_at_k(ranked, query["relevant"], k) for k in ks},
+                     "latency_ms": latency_ms})
     return rows
 
 
@@ -89,7 +114,10 @@ def aggregate(rows, ks):
         groups.setdefault(row["type"], []).append(row)
     return {name: {"n": len(items),
                    **{f"recall@{k}": sum(r["recall"][k] for r in items) / len(items) for k in ks},
-                   "mrr": sum(r["rr"] for r in items) / len(items)}
+                   "mrr": sum(r["rr"] for r in items) / len(items),
+                   **{f"ndcg@{k}": sum(r["ndcg"][k] for r in items) / len(items) for k in ks},
+                   **{f"latency_p{p}_ms": percentile_nearest_rank(
+                       [r["latency_ms"] for r in items], p / 100) for p in (50, 95)}}
             for name, items in groups.items()}
 
 
@@ -120,12 +148,14 @@ def main():
         return
     counts = ", ".join(f"{mode}: {run['chunks']} chunks" for mode, run in runs.items())
     print(f"corpus: {args.docs_dir} ({counts}), {len(queries)} queries")
-    header = ["mode", "type", "n"] + [f"recall@{k}" for k in ks] + ["mrr"]
+    header = ["mode", "type", "n"] + [f"recall@{k}" for k in ks] + ["mrr"] + [f"ndcg@{k}" for k in ks] + ["p50_ms", "p95_ms"]
     print("  ".join(f"{h:<17}" if i < 2 else f"{h:>9}" for i, h in enumerate(header)))
     for mode, run in runs.items():
         for name, m in run["table"].items():
             cells = [f"{'lexical/' + mode:<17}", f"{name:<17}", f"{m['n']:>9}"]
             cells += [f"{m[f'recall@{k}']:>9.3f}" for k in ks] + [f"{m['mrr']:>9.3f}"]
+            cells += [f"{m[f'ndcg@{k}']:>9.3f}" for k in ks]
+            cells += [f"{m[f'latency_p{p}_ms']:>9.3f}" for p in (50, 95)]
             print("  ".join(cells))
     for mode, reason in NOT_MEASURED.items():
         print(f"{mode:<17}  not measured ({reason})")
