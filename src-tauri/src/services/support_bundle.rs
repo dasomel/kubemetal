@@ -663,6 +663,28 @@ fn check_no_symlinks_in_path(root: &Path, rel: &str) -> Result<(), String> {
     Ok(())
 }
 
+// D1 (local): Treat imported bundles as untrusted files. Nonblocking/no-follow opens
+// reject swapped FIFOs and symlinks; a bounded FD read costs at most limit + 1 bytes.
+// Larger supported bundles must raise the explicit limit, never remove the bound.
+fn read_verification_file(path: &Path, limit: usize) -> std::io::Result<Vec<u8>> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::other("not a regular file"));
+    }
+    let mut bytes = Vec::new();
+    file.take(limit as u64 + 1).read_to_end(&mut bytes)?;
+    if bytes.len() > limit {
+        return Err(std::io::Error::other(
+            "file exceeds verification size limit",
+        ));
+    }
+    Ok(bytes)
+}
+
 fn collect_bundle_files_rec(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), String> {
     let entries = fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     for entry in entries {
@@ -685,6 +707,11 @@ fn collect_bundle_files_rec(root: &Path, dir: &Path, out: &mut Vec<String>) -> R
                 .to_string_lossy()
                 .to_string();
             out.push(rel);
+        } else {
+            return Err(format!(
+                "{}: not a regular file or directory",
+                path.display()
+            ));
         }
     }
     Ok(())
@@ -804,7 +831,7 @@ pub fn verify_support_bundle_dir(
         });
     }
 
-    let manifest_raw = match fs::read(&manifest_path) {
+    let manifest_raw = match read_verification_file(&manifest_path, 16 * 1024 * 1024) {
         Ok(b) => b,
         Err(e) => {
             problems.push(VerificationProblem {
@@ -931,6 +958,13 @@ pub fn verify_support_bundle_dir(
             }
         };
 
+        if !file_meta.is_file() {
+            problems.push(VerificationProblem {
+                category: "unreadable".into(),
+                message: format!("{}: not a regular file", entry.path),
+            });
+            continue;
+        }
         if file_meta.len() > MAX_SCANNABLE_BYTES as u64 {
             problems.push(VerificationProblem {
                 category: "size".into(),
@@ -955,7 +989,7 @@ pub fn verify_support_bundle_dir(
             continue;
         }
 
-        let actual_bytes = match fs::read(&target_file_path) {
+        let actual_bytes = match read_verification_file(&target_file_path, MAX_SCANNABLE_BYTES) {
             Ok(b) => b,
             Err(e) => {
                 problems.push(VerificationProblem {
@@ -966,6 +1000,13 @@ pub fn verify_support_bundle_dir(
             }
         };
 
+        if actual_bytes.len() as u64 != entry.bytes {
+            problems.push(VerificationProblem {
+                category: "size-mismatch".into(),
+                message: format!("{}: size changed while reading", entry.path),
+            });
+            continue;
+        }
         let actual_hash = sha256_digest(&actual_bytes);
         if actual_hash.to_lowercase() != entry.sha256.to_lowercase() {
             problems.push(VerificationProblem {
@@ -1452,3 +1493,7 @@ mod tests {
         fs::remove_dir_all(base).unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "support_bundle/verification_tests.rs"]
+mod verification_tests;
