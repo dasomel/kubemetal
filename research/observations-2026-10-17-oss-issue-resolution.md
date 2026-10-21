@@ -42,3 +42,20 @@ Results and remaining issue dispositions will be appended after observation.
   message; `deploy_operation` tests 25/25 after the change.
 - Not run: real app, real colima, or CI. Nothing committed or pushed.
 - Not done: per-issue triage of the 29 open issues against acceptance criteria; PR #188 CI failure.
+
+## #38 eval harness run (2026-10-22, revision e706c3b, clean tree)
+
+`python3 scripts/rag/eval_retrieval.py --chunking both`, corpus = this repo's `docs/`
+(fixed 763 chunks / heading 682 chunks), 12 hand-labeled queries, one run, lexical (FTS5) only.
+dense/hybrid/auto: not measured (need embedding model + LanceDB).
+
+| mode | type | recall@3 | mrr | ndcg@3 | p50 ms | p95 ms |
+|---|---|---|---|---|---|---|
+| fixed | ALL | 0.750 | 0.692 | 0.678 | 9.873 | 11.267 |
+| fixed | natural_language | 0.500 | 0.385 | 0.355 | 9.967 | 10.201 |
+| heading | ALL | 0.833 | 0.695 | 0.719 | 9.318 | 12.763 |
+| heading | natural_language | 0.667 | 0.473 | 0.500 | 9.639 | 10.330 |
+
+Caveats: n=12 and single-sample latency (host noise included), so this is a regression
+baseline, not evidence that heading chunking beats fixed. Not added to
+`research/evidence/*.jsonl`: its schema validator lives in the neighboring OpenForge checkout.
