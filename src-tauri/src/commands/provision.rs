@@ -2,7 +2,8 @@ use tauri::Manager;
 
 use crate::commands::deploy_target::get_deploy_target;
 use crate::services::deploy_operation::{
-    acquire_deploy_guard, ensure_confirmed_target, ConfirmedOperationTarget, DeployGuardOutcome,
+    acquire_deploy_guard, ensure_confirmed_target, ConfirmedOperationTarget, DeployAction,
+    DeployGuardOutcome,
 };
 use crate::services::process::{external_command, resolve_bundled_resource};
 
@@ -21,7 +22,11 @@ pub async fn provision_mlops_stack(
     // 외부 클러스터의 기본 통합은 에이전트 온리다 — 풀스택 프로비저닝을 차단한다(D30).
     target.full_stack_gate()?;
 
+    let render_args = target.render_args()?;
+
     let guard = match acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &render_args,
         &target.context,
         &target.namespace,
         expected_target.operation_id.as_deref(),
@@ -29,9 +34,6 @@ pub async fn provision_mlops_stack(
         DeployGuardOutcome::AlreadyCompleted(cached) => return Ok(cached),
         DeployGuardOutcome::Acquired(guard) => guard,
     };
-
-    // 브리지가 미검증이면 여기서 막힌다 — 추측 주소를 클러스터로 보내지 않기 위해서다.
-    let render_args = target.render_args()?;
 
     let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
     let script = resolve_bundled_resource(&resource_dir, RENDER_SCRIPT);

@@ -1,3 +1,4 @@
+static GUARD_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 use super::*;
 use crate::commands::kagent::KAGENT_NAMESPACE;
 use crate::services::deploy_target::{
@@ -207,9 +208,23 @@ fn kagent_install_summary_rejects_empty_namespace() {
 
 #[test]
 fn deploy_guard_rejects_concurrent_operation_on_same_target() {
+    let _serial = GUARD_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     reset_deploy_state_for_test();
-    let _guard1 = acquire_deploy_guard("colima", "default", None).unwrap();
-    let err = match acquire_deploy_guard("colima", "default", None) {
+    let _guard1 = acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &[],
+        "colima",
+        "default",
+        None,
+    )
+    .unwrap();
+    let err = match acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &[],
+        "colima",
+        "default",
+        None,
+    ) {
         Err(e) => e,
         Ok(_) => panic!("second acquire on same target must fail"),
     };
@@ -219,28 +234,66 @@ fn deploy_guard_rejects_concurrent_operation_on_same_target() {
 
 #[test]
 fn deploy_guard_allows_concurrent_operations_on_different_contexts() {
+    let _serial = GUARD_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     reset_deploy_state_for_test();
-    let _guard1 = acquire_deploy_guard("colima", "default", None).unwrap();
-    let _guard2 = acquire_deploy_guard("narwhal", "team-ml", None).unwrap();
+    let _guard1 = acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &[],
+        "colima",
+        "default",
+        None,
+    )
+    .unwrap();
+    let _guard2 = acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &[],
+        "narwhal",
+        "team-ml",
+        None,
+    )
+    .unwrap();
     // 둘 다 성공 — 다른 컨텍스트/네임스페이스는 서로 방해하지 않는다 (#18 AC)
 }
 
 #[test]
 fn deploy_guard_releases_lock_on_drop() {
+    let _serial = GUARD_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     reset_deploy_state_for_test();
     {
-        let _guard = acquire_deploy_guard("colima", "default", None).unwrap();
+        let _guard = acquire_deploy_guard(
+            DeployAction::ProvisionMlopsStack,
+            &[],
+            "colima",
+            "default",
+            None,
+        )
+        .unwrap();
     }
     // guard가 드롭되었으므로 다시 획득 가능
-    let _guard2 = acquire_deploy_guard("colima", "default", None).unwrap();
+    let _guard2 = acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &[],
+        "colima",
+        "default",
+        None,
+    )
+    .unwrap();
 }
 
 #[test]
 fn deploy_guard_deduplicates_recent_completed_operation() {
+    let _serial = GUARD_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     reset_deploy_state_for_test();
     let op_id = "op-test-123";
     {
-        let outcome = acquire_deploy_guard("colima", "default", Some(op_id)).unwrap();
+        let outcome = acquire_deploy_guard(
+            DeployAction::ProvisionMlopsStack,
+            &[],
+            "colima",
+            "default",
+            Some(op_id),
+        )
+        .unwrap();
         match outcome {
             DeployGuardOutcome::Acquired(guard) => {
                 guard.complete("deployed successfully".into());
@@ -249,7 +302,14 @@ fn deploy_guard_deduplicates_recent_completed_operation() {
         }
     }
     // 동일한 op_id로 재시도 시 이미 완료된 결과 반환
-    let outcome2 = acquire_deploy_guard("colima", "default", Some(op_id)).unwrap();
+    let outcome2 = acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &[],
+        "colima",
+        "default",
+        Some(op_id),
+    )
+    .unwrap();
     match outcome2 {
         DeployGuardOutcome::AlreadyCompleted(msg) => {
             assert_eq!(msg, "deployed successfully");
@@ -268,4 +328,112 @@ fn operation_summary_generates_unique_operation_id() {
     assert!(!summary2.operation_id.is_empty());
     assert_ne!(summary1.operation_id, summary2.operation_id);
     assert!(summary1.operation_id.starts_with("op-start_cluster-"));
+}
+
+#[test]
+fn deploy_guard_rejects_completed_id_for_another_target() {
+    let _serial = GUARD_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    reset_deploy_state_for_test();
+    let id = "regression-cross-target";
+    let first = acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &[],
+        "regression-source",
+        "default",
+        Some(id),
+    )
+    .unwrap();
+    match first {
+        DeployGuardOutcome::Acquired(guard) => guard.complete("source completed".into()),
+        _ => panic!("first request must execute"),
+    }
+    let err = acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &[],
+        "regression-other",
+        "default",
+        Some(id),
+    )
+    .err()
+    .expect("reused id for another target must be rejected");
+    assert!(err.contains("different request"), "{err}");
+}
+
+#[test]
+fn deploy_guard_binds_action_and_parameters_and_releases_failed_ids() {
+    let _serial = GUARD_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    reset_deploy_state_for_test();
+    let params = vec!["--storage-class".into(), "local-path".into()];
+    let first = acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &params,
+        "colima",
+        "default",
+        Some("bound"),
+    )
+    .unwrap();
+    assert!(acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &params,
+        "other",
+        "default",
+        Some("bound")
+    )
+    .is_err());
+    drop(first); // Failed/cancelled execution may be retried; no cached success.
+    let retry = acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &params,
+        "colima",
+        "default",
+        Some("bound"),
+    )
+    .unwrap();
+    match retry {
+        DeployGuardOutcome::Acquired(guard) => guard.complete("ok".into()),
+        _ => panic!("failed execution must not cache success"),
+    }
+    assert!(acquire_deploy_guard(
+        DeployAction::InstallKagent,
+        &params,
+        "colima",
+        "default",
+        Some("bound")
+    )
+    .is_err());
+    assert!(acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &[],
+        "colima",
+        "default",
+        Some("bound")
+    )
+    .is_err());
+    assert!(acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &params,
+        "colima",
+        "other",
+        Some("bound")
+    )
+    .is_err());
+    assert!(matches!(
+        acquire_deploy_guard(
+            DeployAction::ProvisionMlopsStack,
+            &params,
+            "colima",
+            "default",
+            Some("bound")
+        )
+        .unwrap(),
+        DeployGuardOutcome::AlreadyCompleted(_)
+    ));
+    assert!(acquire_deploy_guard(
+        DeployAction::ProvisionMlopsStack,
+        &[],
+        "other",
+        "default",
+        Some(" ")
+    )
+    .is_err());
 }

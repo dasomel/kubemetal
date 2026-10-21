@@ -15,9 +15,17 @@ use crate::services::deploy_target::{colima_context, context_is_colima, DeployTa
 
 static COUNTER: AtomicU64 = AtomicU64::new(1);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RequestIdentity {
+    action: DeployAction,
+    target: (String, String),
+    parameters: Vec<String>,
+}
+
 struct DeployState {
-    in_flight: HashSet<String>,
-    completed: HashMap<String, (Instant, String)>,
+    in_flight: HashSet<(String, String)>,
+    active_ids: HashSet<String>,
+    completed: HashMap<String, (Instant, RequestIdentity, String)>,
 }
 
 static DEPLOY_STATE: OnceLock<Mutex<DeployState>> = OnceLock::new();
@@ -26,6 +34,7 @@ fn deploy_state() -> &'static Mutex<DeployState> {
     DEPLOY_STATE.get_or_init(|| {
         Mutex::new(DeployState {
             in_flight: HashSet::new(),
+            active_ids: HashSet::new(),
             completed: HashMap::new(),
         })
     })
@@ -131,7 +140,7 @@ pub enum DeployGuardOutcome {
 /// 배포 작업 실행 중 동일 타깃(context/namespace)에 대한 동시 실행 방지 RAII 가드.
 #[derive(Debug)]
 pub struct DeployOperationGuard {
-    key: String,
+    request: RequestIdentity,
     operation_id: Option<String>,
     completed_result: Option<String>,
 }
@@ -146,20 +155,26 @@ impl DeployOperationGuard {
 impl Drop for DeployOperationGuard {
     fn drop(&mut self) {
         let mut state = deploy_state().lock().unwrap_or_else(|e| e.into_inner());
-        state.in_flight.remove(&self.key);
+        state.in_flight.remove(&self.request.target);
+        if let Some(id) = &self.operation_id {
+            state.active_ids.remove(id);
+        }
         if let (Some(id), Some(result)) = (&self.operation_id, &self.completed_result) {
-            state
-                .completed
-                .insert(id.clone(), (Instant::now(), result.clone()));
+            state.completed.insert(
+                id.clone(),
+                (Instant::now(), self.request.clone(), result.clone()),
+            );
         }
     }
 }
 
 /// 배포 작업 실행 전 동시 실행 가드 및 멱등성 검사를 수행한다(#18).
-/// - 동일한 operation_id가 최근(5분 내) 이미 완료된 경우 캐시된 성공 결과를 즉시 반환(AlreadyCompleted).
+/// - 동일한 operation_id와 action/target/parameters가 최근(5분 내) 이미 완료된 경우 캐시된 성공 결과를 즉시 반환(AlreadyCompleted).
 /// - 동일한 (context, namespace) 대상에 이미 작업이 진행 중이면 Err(busy) 반환.
 /// - 그 외의 경우 배타적 실행 권한(Acquired)을 부여하며, 반환된 가드가 drop될 때 슬롯이 해제된다.
 pub fn acquire_deploy_guard(
+    action: DeployAction,
+    parameters: &[String],
     context: &str,
     namespace: &str,
     operation_id: Option<&str>,
@@ -170,24 +185,46 @@ pub fn acquire_deploy_guard(
     let now = Instant::now();
     state
         .completed
-        .retain(|_, (t, _)| now.duration_since(*t) < Duration::from_secs(300));
+        .retain(|_, (t, _, _)| now.duration_since(*t) < Duration::from_secs(300));
 
+    let request = RequestIdentity {
+        action,
+        target: (context.to_string(), namespace.to_string()),
+        parameters: parameters.to_vec(),
+    };
+    // D1 (#18 local): bind replay to the actual request, not a caller's ID alone.
+    // Cost: retain small parameter vectors for five minutes; omit the optional ID
+    // to opt out of replay while preserving the target concurrency guard.
     if let Some(id) = operation_id {
-        if let Some((_, cached_result)) = state.completed.get(id) {
+        if id.trim().is_empty() {
+            return Err("operation_id cannot be empty when provided".into());
+        }
+        if state.active_ids.contains(id) {
+            return Err("deploy operation busy: operation_id is already in progress".into());
+        }
+        if let Some((_, previous, cached_result)) = state.completed.get(id) {
+            if previous != &request {
+                return Err(
+                    "operation_id was already used for a different request; reconfirm".into(),
+                );
+            }
             return Ok(DeployGuardOutcome::AlreadyCompleted(cached_result.clone()));
         }
     }
 
-    let key = format!("{context}/{namespace}");
+    let key = request.target.clone();
     if state.in_flight.contains(&key) {
         return Err(format!(
             "deploy operation busy: an operation is already in progress on context='{context}', namespace='{namespace}'"
         ));
     }
 
-    state.in_flight.insert(key.clone());
+    state.in_flight.insert(key);
+    if let Some(id) = operation_id {
+        state.active_ids.insert(id.to_string());
+    }
     Ok(DeployGuardOutcome::Acquired(DeployOperationGuard {
-        key,
+        request,
         operation_id: operation_id.map(str::to_string),
         completed_result: None,
     }))
@@ -197,6 +234,7 @@ pub fn acquire_deploy_guard(
 pub fn reset_deploy_state_for_test() {
     let mut state = deploy_state().lock().unwrap_or_else(|e| e.into_inner());
     state.in_flight.clear();
+    state.active_ids.clear();
     state.completed.clear();
 }
 

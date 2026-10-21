@@ -8,7 +8,8 @@ use crate::commands::deploy_target::{get_deploy_target, kubectl_json};
 use crate::commands::mlx::MlxState;
 use crate::commands::provision::ensure_namespace;
 use crate::services::deploy_operation::{
-    acquire_deploy_guard, ensure_confirmed_target, ConfirmedOperationTarget, DeployGuardOutcome,
+    acquire_deploy_guard, ensure_confirmed_target, ConfirmedOperationTarget, DeployAction,
+    DeployGuardOutcome,
 };
 use crate::services::kagent_agents::{agent_manifest, TOGGLEABLE_AGENTS};
 use crate::services::process::colima_context;
@@ -396,6 +397,8 @@ pub async fn install_kagent(
     ensure_confirmed_target(&expected_target, &target_ctx, KAGENT_NAMESPACE)?;
 
     let guard = match acquire_deploy_guard(
+        DeployAction::InstallKagent,
+        &[],
         &target_ctx,
         KAGENT_NAMESPACE,
         expected_target.operation_id.as_deref(),
