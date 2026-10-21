@@ -347,15 +347,15 @@ fn deploy_guard_rejects_completed_id_for_another_target() {
         DeployGuardOutcome::Acquired(guard) => guard.complete("source completed".into()),
         _ => panic!("first request must execute"),
     }
-    let err = acquire_deploy_guard(
+    let Err(err) = acquire_deploy_guard(
         DeployAction::ProvisionMlopsStack,
         &[],
         "regression-other",
         "default",
         Some(id),
-    )
-    .err()
-    .expect("reused id for another target must be rejected");
+    ) else {
+        panic!("reused id for another target must be rejected");
+    };
     assert!(err.contains("different request"), "{err}");
 }
 
