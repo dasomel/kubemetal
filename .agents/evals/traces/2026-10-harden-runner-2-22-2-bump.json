@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-harden-runner-2.22.2-bump",
+  "task": "Add the operational trace required by Agent Behavior CI for the Dependabot bump of step-security/harden-runner from 2.21.1 to 2.22.2 in supply-chain-fixture.yml",
+  "changeContext": { "paths": [ ".github/workflows/**", ".agents/evals/traces/**" ] },
+  "events": [
+    { "id": "e1", "type": "scope_check", "summary": "The Dependabot change replaces one pinned SHA with another on the single step-security/harden-runner uses: line in .github/workflows/supply-chain-fixture.yml, keeping the version comment ('# v2.22.2'). No other workflow line changed; only this trace was added alongside" },
+    { "id": "e2", "type": "reproduction", "summary": "behavior-contract failed on this PR at 1dc6746: the change touches .github/workflows/** (high risk per risk-policy.json) and carried no trace file, so the risk gate blocked it while verify and supply-chain passed", "evidence": [ "ci:behavior-contract-1dc6746-failure" ] },
+    { "id": "e3", "type": "bug_fix", "summary": "A bot PR cannot author the operational trace, so the gate could never pass for it. The gap was fixed by adding this file, scoped to exactly the paths the PR changes; no workflow logic and no check was weakened or exempted" },
+    { "id": "e4", "type": "regression_verification", "status": "passed", "summary": "Ran locally: gh api repos/step-security/harden-runner/git/ref/tags/v2.22.2 returned commit dc2769abcc0fcfbadfc1df54081c1608579ef6b2, matching the SHA now pinned in supply-chain-fixture.yml; actionlint on the workflow exited 0. The bumped step was not executed locally; supply-chain-fixture.yml runs in CI on this PR", "scope": ".github/workflows/supply-chain-fixture.yml", "evidence": [ "artifact:.github/workflows/supply-chain-fixture.yml" ] },
+    { "id": "e5", "type": "completion_claim", "summary": "The harden-runner ref is pinned to the verified immutable SHA of v2.22.2 and the PR now carries the required trace", "evidence": [ "e4" ] },
+    { "id": "e6", "type": "task_outcome", "state": "A", "summary": "Complete: SHA pin verified against the upstream v2.22.2 tag, required operational trace added" }
+  ]
+}
