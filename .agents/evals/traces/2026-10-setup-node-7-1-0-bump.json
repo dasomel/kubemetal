@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-setup-node-7.1.0-bump",
+  "task": "Add the operational trace required by Agent Behavior CI for the Dependabot bump of actions/setup-node from 7.0.0 to 7.1.0 in ci.yml and release.yml",
+  "changeContext": { "paths": [ ".github/workflows/**", ".agents/evals/traces/**" ] },
+  "events": [
+    { "id": "e1", "type": "scope_check", "summary": "The Dependabot change replaces one pinned SHA with another on the single actions/setup-node uses: line in .github/workflows/ci.yml and the single one in .github/workflows/release.yml, keeping the '# v7' comment. No other workflow line changed; only this trace was added alongside" },
+    { "id": "e2", "type": "reproduction", "summary": "behavior-contract failed on this PR at 4263868: the change touches .github/workflows/** (high risk per risk-policy.json) and carried no trace file, so the risk gate blocked it while verify and supply-chain passed", "evidence": [ "ci:behavior-contract-4263868-failure" ] },
+    { "id": "e3", "type": "bug_fix", "summary": "A bot PR cannot author the operational trace, so the gate could never pass for it. The gap was fixed by adding this file, scoped to exactly the paths the PR changes; no workflow logic and no check was weakened or exempted" },
+    { "id": "e4", "type": "regression_verification", "status": "passed", "summary": "Ran locally: gh api repos/actions/setup-node/git/ref/tags/v7.1.0 returned commit 949feb2413d6458794dcd2491c4babbbce0c15c1, matching the SHA now pinned in ci.yml and release.yml; actionlint on both workflows exited 0; a grep of .github/workflows finds no actions/setup-node uses: ref other than that SHA. The bumped steps were not executed locally; they run in CI on this PR", "scope": ".github/workflows/ci.yml, .github/workflows/release.yml", "evidence": [ "artifact:.github/workflows/ci.yml", "artifact:.github/workflows/release.yml" ] },
+    { "id": "e5", "type": "completion_claim", "summary": "Both setup-node refs are pinned to the verified immutable SHA of v7.1.0 and the PR now carries the required trace; the release.yml step is not exercised by this PR's CI", "evidence": [ "e4" ] },
+    { "id": "e6", "type": "task_outcome", "state": "A", "summary": "Complete: SHA pin verified against the upstream v7.1.0 tag, required operational trace added" }
+  ]
+}
