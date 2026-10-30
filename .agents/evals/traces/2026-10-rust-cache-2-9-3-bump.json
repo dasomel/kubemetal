@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-rust-cache-2.9.3-bump",
+  "task": "Bump Swatinem/rust-cache from 2.9.2 to 2.9.3 in ci.yml and release.yml (replaces Dependabot #201) and add the operational trace required by Agent Behavior CI",
+  "changeContext": { "paths": [ ".github/workflows/**", ".agents/evals/traces/**" ] },
+  "events": [
+    { "id": "e1", "type": "scope_check", "summary": "The change replaces one pinned SHA with another on the single Swatinem/rust-cache uses: line in .github/workflows/ci.yml and the single one in .github/workflows/release.yml, updating the comment to '# v2.9.3'. It is the same two-line change Dependabot #201 proposed, rebuilt on current main because Dependabot did not answer rebase requests after ci.yml changed. No other workflow line changed; only this trace was added alongside" },
+    { "id": "e2", "type": "reproduction", "summary": "behavior-contract failed on Dependabot #201 at 66ef91a: the change touches .github/workflows/** (high risk per risk-policy.json) and carried no trace file, so the risk gate blocked it while verify and supply-chain passed", "evidence": [ "ci:behavior-contract-66ef91a-failure" ] },
+    { "id": "e3", "type": "bug_fix", "summary": "A bot PR cannot author the operational trace, so the gate could never pass for it. This PR carries the same bump together with a trace scoped to exactly the paths it changes; no workflow logic and no check was weakened or exempted" },
+    { "id": "e4", "type": "regression_verification", "status": "passed", "summary": "Ran locally: the v2.9.3 tag is an annotated tag, so its tag object 2201cc584a476d1b508be977bbe4b7d1c7a52e9c was dereferenced via gh api to commit d1527c8f67ef9af357290475d4af4b0fab8f12e0, matching the SHA now pinned in ci.yml and release.yml; actionlint on both workflows exited 0; a grep of .github/workflows finds no rust-cache uses: ref other than that SHA. The bumped steps were not executed locally; they run in CI on this PR", "scope": ".github/workflows/ci.yml, .github/workflows/release.yml", "evidence": [ "artifact:.github/workflows/ci.yml", "artifact:.github/workflows/release.yml" ] },
+    { "id": "e5", "type": "completion_claim", "summary": "Both rust-cache refs are pinned to the verified immutable SHA of v2.9.3 and the PR carries the required trace; the release.yml step is not exercised by this PR's CI", "evidence": [ "e4" ] },
+    { "id": "e6", "type": "task_outcome", "state": "A", "summary": "Complete: SHA pin verified against the upstream v2.9.3 tag, required operational trace added" }
+  ]
+}
