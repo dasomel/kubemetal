@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-setup-python-7.1.0-bump",
+  "task": "Add the operational trace required by Agent Behavior CI for the Dependabot bump of actions/setup-python from 7.0.0 to 7.1.0 in research-evidence.yml",
+  "changeContext": { "paths": [ ".github/workflows/**", ".agents/evals/traces/**" ] },
+  "events": [
+    { "id": "e1", "type": "scope_check", "summary": "The Dependabot change replaces one pinned SHA with another on the single actions/setup-python uses: line in .github/workflows/research-evidence.yml, updating the version comment to '# v7.1.0'. No other workflow line changed; only this trace was added alongside" },
+    { "id": "e2", "type": "reproduction", "summary": "behavior-contract failed on this PR at 246573c: the change touches .github/workflows/** (high risk per risk-policy.json) and carried no trace file, so the risk gate blocked it while verify and supply-chain passed", "evidence": [ "ci:behavior-contract-246573c-failure" ] },
+    { "id": "e3", "type": "bug_fix", "summary": "A bot PR cannot author the operational trace, so the gate could never pass for it. The gap was fixed by adding this file, scoped to exactly the paths the PR changes; no workflow logic and no check was weakened or exempted" },
+    { "id": "e4", "type": "regression_verification", "status": "passed", "summary": "Ran locally: gh api repos/actions/setup-python/git/ref/tags/v7.1.0 returned commit 6d4fd22b20465ccc0f7354476588e8df7c9ca0e0, matching the SHA now pinned in research-evidence.yml; actionlint on the workflow exited 0. The bumped step was not executed locally; research-evidence.yml is path-filtered to research/** and scripts/research/** so it may not execute on this PR", "scope": ".github/workflows/research-evidence.yml", "evidence": [ "artifact:.github/workflows/research-evidence.yml" ] },
+    { "id": "e5", "type": "completion_claim", "summary": "The setup-python ref is pinned to the verified immutable SHA of v7.1.0 and the PR now carries the required trace", "evidence": [ "e4" ] },
+    { "id": "e6", "type": "task_outcome", "state": "A", "summary": "Complete: SHA pin verified against the upstream v7.1.0 tag, required operational trace added" }
+  ]
+}
