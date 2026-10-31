@@ -127,8 +127,10 @@ fn unclosed_value_end(bytes: &[u8], start: usize) -> usize {
 
 // Accepted limits of the shell-quote handling below (each: reason, cost). None is pinned as
 // correct behaviour by a test except the over-redaction ones.
-// - Prose `"password: not set"` -> `"password: [REDACTED] set"`: a short real credential after
-//   `key: ` is indistinguishable from prose; narrowing reopens the leak. Cost: a masked word.
+// - Prose `"password: not set"` -> `"password: [REDACTED]"`: a sensitive key opened inside a
+//   quote masks everything to the closing quote (a multi-word credential like `Bearer S` cannot
+//   be told from prose, and word-level masking leaked the secret after the scheme). Cost: the
+//   rest of such a quoted phrase is masked, not just one word.
 // - A shell quote left open across a BLANK, whitespace-only or oversized (>64KB) line
 //   (`'Authorization: Basic` NEWLINE blank NEWLINE `SECRET'`) is not followed: the carry lasts
 //   exactly one line so a stray apostrophe cannot mask unrelated text. Cost: leak of that
@@ -214,9 +216,10 @@ fn replace_sensitive_values(line: &str) -> (String, bool, Option<u8>) {
         }
         if let Some(quote) = shell_quote {
             let found = quoted_end(bytes, sep, quote);
-            // Non-header keys only take the split form (`-H "X-Auth-Token:" "S"`); a closed
-            // `'x-token: v'` value still goes through the generic path below.
-            if header || found == Some(sep) {
+            // Every sensitive key opened inside a shell quote masks the WHOLE value up to the
+            // closing quote: single-word masking would mask only a scheme (`Bearer`) and let the
+            // real secret after it survive.
+            {
                 let close = found.unwrap_or_else(|| unclosed_value_end(bytes, sep));
                 // Cross-line carry only for a bare scheme at end of line (`'Authorization: Basic`
                 // NEWLINE `SECRET' x`); anything else with an open quote is unrelated text.
@@ -890,22 +893,22 @@ export HF_TOKEN=hf_abcdef1234567890
     fn test_shell_quoted_env_assignment_is_redacted() {
         assert_eq!(
             redact_text("docker run -e 'PASSWORD=S more' img", None),
-            "docker run -e 'PASSWORD=[REDACTED] more' img"
+            "docker run -e 'PASSWORD=[REDACTED]' img"
         );
     }
 
-    /// Accepted over-redaction (D-style: a short real credential after `key: ` is
-    /// indistinguishable from prose, and narrowing would reopen the shell-quote leak; cost is a
-    /// masked word in a log line).
+    /// Accepted over-redaction (D-style: a multi-word credential after `key: ` is
+    /// indistinguishable from prose, and narrowing would reopen the shell-quote leak; cost is the
+    /// rest of the quoted phrase in a log line).
     #[test]
     fn test_shell_quoted_prose_over_redaction_is_accepted() {
         assert_eq!(
             redact_text("\"session: started ok\"", None),
-            "\"session: [REDACTED] ok\""
+            "\"session: [REDACTED]\""
         );
         assert_eq!(
             redact_text("\"token: 5 left\"", None),
-            "\"token: [REDACTED] left\""
+            "\"token: [REDACTED]\""
         );
     }
 
@@ -964,5 +967,69 @@ export HF_TOKEN=hf_abcdef1234567890
         );
         let benign = r#"curl -H "Accept:" "application/json" https://x"#;
         assert_eq!(redact_text(benign, None), benign);
+    }
+
+    #[test]
+    fn test_shell_quoted_non_header_key_masks_whole_value() {
+        for (input, want) in [
+            (
+                "curl -H 'X-Auth-Token: Bearer SECRET' https://x",
+                "curl -H 'X-Auth-Token: [REDACTED]' https://x",
+            ),
+            (
+                r#"curl -H "X-Auth-Token: Bearer SECRET" https://x"#,
+                r#"curl -H "X-Auth-Token: [REDACTED]" https://x"#,
+            ),
+            (
+                "curl -H 'X-Auth-Token: Basic SECRET' https://x",
+                "curl -H 'X-Auth-Token: [REDACTED]' https://x",
+            ),
+            (
+                "curl -H 'X-Auth-Token: abc SECRET2' https://x",
+                "curl -H 'X-Auth-Token: [REDACTED]' https://x",
+            ),
+            (
+                "docker run -e 'API_TOKEN=SECRET more' img",
+                "docker run -e 'API_TOKEN=[REDACTED]' img",
+            ),
+            (
+                "curl -H 'Authorization: Bearer SECRET' https://x",
+                "curl -H 'Authorization: [REDACTED]' https://x",
+            ),
+        ] {
+            let out = redact_text(input, None);
+            assert!(!out.contains("SECRET"), "leaked: {out}");
+            assert_eq!(out, want);
+        }
+    }
+
+    #[test]
+    fn test_shell_quoted_non_header_key_continues_onto_next_line() {
+        let out = redact_text("curl -H 'X-Api-Key: Bearer\n  SECRET' x", None);
+        assert!(!out.contains("SECRET"), "leaked: {out}");
+        assert_eq!(out, "curl -H 'X-Api-Key: [REDACTED]\n[REDACTED]' x");
+    }
+
+    #[test]
+    fn test_shell_quoted_non_sensitive_values_stay_untouched() {
+        for input in [
+            "curl -H 'Content-Type: application/json' https://x",
+            "docker run -e 'LOG_LEVEL=debug more' img",
+        ] {
+            assert_eq!(redact_text(input, None), input);
+        }
+    }
+
+    #[test]
+    fn test_unclosed_non_header_shell_quote_keeps_json_structure() {
+        let compact = r#"{"cmd":"curl -H 'X-Auth-Token: Bearer SECRET","n":1}"#;
+        let out = redact_text(compact, None);
+        assert!(!out.contains("SECRET"), "leaked: {out}");
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["n"], 1);
+        assert_eq!(
+            redact_text("curl -H 'X-Auth-Token: abc SECRET more", None),
+            "curl -H 'X-Auth-Token: [REDACTED]"
+        );
     }
 }
