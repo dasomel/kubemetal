@@ -18,7 +18,8 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ compact = false }) =
   const memPercent = metrics?.memory_usage_percentage ?? 0;
   const cpuPercent = metrics?.cpu_usage_percentage ?? 0;
 
-  const gpuPercent = metrics?.gpu_usage_percentage ?? 0;
+  // GPU 값은 읽기 실패 시 응답에서 생략된다 — 0으로 채우면 "유휴"와 구분되지 않는다(D22).
+  const gpuPercent = metrics?.gpu_usage_percentage;
   // 발열은 값이 없을 때 "정상"으로 채우지 않는다 — 스로틀링 판단에 쓰이는 값이다(D22).
   const thermal = metrics?.thermal_state ?? null;
   const thermalTone: Record<string, string> = {
@@ -33,7 +34,8 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ compact = false }) =
     serious: t('mlx.guardrail.thermal.serious'),
     critical: t('mlx.guardrail.thermal.critical'),
   };
-  const gpuMemGb = metrics?.gpu_memory_used_gb ?? 0;
+  const gpuMemGb = metrics?.gpu_memory_used_gb;
+  const gpuUnavailable = t('mlx.guardrail.thermalUnavailable');
 
   const vmRec = recommendVmResources(totalRam);
 
@@ -63,8 +65,10 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ compact = false }) =
             </div>
             <div className="flex items-center gap-1.5 text-caption text-inkMuted">
               <Activity className="w-3.5 h-3.5 text-primary shrink-0" />
-              <span className="tabular-nums text-ink">{gpuPercent}%</span>
-              <span className="text-inkFaint">GPU ({gpuMemGb}GB)</span>
+              <span className="tabular-nums text-ink">
+                {gpuPercent === undefined ? gpuUnavailable : `${gpuPercent}%`}
+              </span>
+              <span className="text-inkFaint">GPU{gpuMemGb === undefined ? '' : ` (${gpuMemGb}GB)`}</span>
             </div>
           </>
         )}
@@ -148,14 +152,26 @@ export const MetricsPanel: React.FC<MetricsPanelProps> = ({ compact = false }) =
               <span>Apple Metal GPU</span>
             </div>
             <div className="flex items-baseline gap-1.5 mb-2">
-              <span className="text-metric tabular-nums text-ink font-mono">{gpuPercent}</span>
-              <span className="text-caption text-inkFaint">{t('metrics.gpuUsageLabel', { memGb: gpuMemGb })}</span>
+              {gpuPercent === undefined ? (
+                <span className="text-bodyStrong text-inkFaint">{gpuUnavailable}</span>
+              ) : (
+                <span className="text-metric tabular-nums text-ink font-mono">{gpuPercent}</span>
+              )}
+              <span className="text-caption text-inkFaint">
+                {gpuPercent !== undefined && gpuMemGb !== undefined
+                  ? t('metrics.gpuUsageLabel', { memGb: gpuMemGb })
+                  : gpuPercent !== undefined
+                    ? t('metrics.gpuPercentOnlyLabel')
+                    : gpuMemGb !== undefined
+                      ? `${gpuMemGb} GB`
+                      : ''}
+              </span>
             </div>
             {/* ProgressBar */}
-            <div className="w-full h-1.5 bg-base rounded-full overflow-hidden mb-3" role="progressbar" aria-valuenow={gpuPercent} aria-valuemin={0} aria-valuemax={100}>
+            <div className="w-full h-1.5 bg-base rounded-full overflow-hidden mb-3" role="progressbar" aria-valuenow={gpuPercent ?? undefined} aria-valuemin={0} aria-valuemax={100}>
               <div
                 className="h-full bg-primary transition-all duration-500 rounded-full"
-                style={{ width: `${Math.min(gpuPercent, 100)}%` }}
+                style={{ width: `${Math.min(gpuPercent ?? 0, 100)}%` }}
               />
             </div>
             <p className="text-caption text-inkFaint flex items-center gap-1">

@@ -204,34 +204,34 @@ sequenceDiagram
 텔레메트리(`GpuTelemetryBackend`)와 IPC 요약(§2)이 이미 있는 아키텍처 문서라서 골랐다.
 
 **NVIDIA 코드 경로는 없다.** `GpuTelemetryBackend` 구현체는 `AppleMetalBackend` 하나이고
-`gpu_backend`는 항상 `"apple_metal"`이다(`src-tauri/src/commands/metrics.rs:109-112`, `:239-256`, `:270`).
+`gpu_backend`는 항상 `"apple_metal"`이다(`src-tauri/src/commands/metrics.rs:113-116`, `:249-266`, `:280`).
 NVIDIA 백엔드는 실기기가 없어 보류했다(D41, `docs/03-mvp-design.md` D41 행). 아래 NVIDIA 열은 앱 지원 여부가
 아니라 `nvidia-smi`/NVML이 일반적으로 노출하는 지표이며, 이 저장소에는 그 근거(문서·코드·측정)가 없다.
 필드명은 일반 지식 기준이므로 NVIDIA 열의 "제공"은 저장소로 검증되지 않은 값이다(`미검증`).
 
 | 지표 | macOS (이 앱, sudo-free) | NVIDIA (`nvidia-smi`/NVML, 저장소 근거 없음) | KubeMetal 현재 보고 |
 |------|--------------------------|----------------------------|---------------------|
-| GPU 사용률 | `ioreg -l -d 1 -r -c IOAccelerator`의 `Device Utilization %` 파싱 (`metrics.rs:168-169`, `:228`) | 제공 (`utilization.gpu`) | `gpu_usage_percentage` (f32). 읽기 실패 시 `0.0`이며 프로세스당 1회 stderr 경고만 남는다 (`:104`, `:194-206`) |
-| GPU 메모리 사용량 | 같은 출력의 `In use system memory` (통합 메모리 중 GPU 사용분) (`:229`) | 제공 (`memory.used`) | `gpu_memory_used_gb` (f64, GB, 소수 2자리). 실패 시 `0` (`:105`, `:205-206`) |
-| GPU 메모리 총량 | 해당 필드 없음. 통합 메모리라 별도 VRAM 개념이 아니다 | 제공 (`memory.total`) | 보고 안 함. `total_memory_gb`는 시스템 RAM이다 (`:100`, `:264`) |
-| 온도(수치 °C) | 이 기기(M4 Pro, macOS 26, 2026-07-27)에서 `pmset -g therm`, `sysctl`, `ioreg AppleSMC` 모두 비어 있음을 실측 (`:117-120`) | 제공 (`temperature.gpu`) | 수치 없음 |
-| 발열 압력 | `NSProcessInfo.thermalState` (`:125-129`) | NVIDIA 쪽 동등 개념(슬로다운 사유 등)의 이름/의미는 미확인 | `thermal_state`: `nominal`/`fair`/`serious`/`critical`, 읽기 실패·미정의 값은 `None` (`:108`, `:135-149`). UI는 "조회 불가"로 표시 (`src/components/dashboard/MetricsPanel.tsx:169-170`) |
+| GPU 사용률 | `ioreg -l -d 1 -r -c IOAccelerator`의 `Device Utilization %` 파싱 (`metrics.rs:172-173`, `:238`) | 제공 (`utilization.gpu`) | `gpu_usage_percentage` (`Option<f32>`). 읽기 실패 시 응답에서 생략되고(`None`) 프로세스당 1회 stderr 경고만 남는다. 측정된 0은 `0`으로 남는다 (`:104-106`, `:163-210`) |
+| GPU 메모리 사용량 | 같은 출력의 `In use system memory` (통합 메모리 중 GPU 사용분) (`:239`) | 제공 (`memory.used`) | `gpu_memory_used_gb` (`Option<f64>`, GB, 소수 2자리). 실패 시 응답에서 생략 (`:107-109`, `:211-217`) |
+| GPU 메모리 총량 | 해당 필드 없음. 통합 메모리라 별도 VRAM 개념이 아니다 | 제공 (`memory.total`) | 보고 안 함. `total_memory_gb`는 시스템 RAM이다 (`:100`, `:303`) |
+| 온도(수치 °C) | 이 기기(M4 Pro, macOS 26, 2026-07-27)에서 `pmset -g therm`, `sysctl`, `ioreg AppleSMC` 모두 비어 있음을 실측 (`:121-124`) | 제공 (`temperature.gpu`) | 수치 없음 |
+| 발열 압력 | `NSProcessInfo.thermalState` (`:129-133`) | NVIDIA 쪽 동등 개념(슬로다운 사유 등)의 이름/의미는 미확인 | `thermal_state`: `nominal`/`fair`/`serious`/`critical`, 읽기 실패·미정의 값은 `None` (`:112`, `:139-153`). UI는 "조회 불가"로 표시 (`src/components/dashboard/MetricsPanel.tsx:185-186`) |
 | 전력(W) | `powermetrics`는 root 필요해 채택 안 함 (D2, `docs/02-requirements.md` FR-05.4). sudo-free 대체 경로는 미검증 | 제공 (`power.draw`) | 보고 안 함 |
 | 클럭 | 미검증 | 제공 (`clocks.sm` 등) | 보고 안 함 |
 | 프로세스별 GPU 사용 | 미검증 | 제공 (`--query-compute-apps`) | 보고 안 함 |
 | ECC/오류 카운터 | 미검증 | 지원 GPU에서 제공. 모델별 지원 범위는 미확인 | 보고 안 함 |
 | MIG | 미검증 (해당 개념이 macOS에 있는지 근거 없음) | MIG 지원 GPU에서 제공. 모델별 범위는 미확인 | 보고 안 함 |
 | GPU 코어 수(인벤토리) | `system_profiler SPDisplaysDataType`의 `Total Number of Cores` (`:70-83`) | 해당 지표 이름 미확인 | `HardwareSpec.gpu_cores` (`Option<u32>`, 실패 시 `None`) (`:91`) |
-| 처리량 벤치마크 | MLX matmul GFLOPS 실측 `run_gpu_benchmark` (`:433`, 결과 구조체 `GpuBenchmarkResult` `:289-299`, `docs/02-requirements.md` §4.1) | 미확인 | `gflops` 등. 실패는 전부 `Err` |
+| 처리량 벤치마크 | MLX matmul GFLOPS 실측 `run_gpu_benchmark` (`:462`, 결과 구조체 `GpuBenchmarkResult` `:318-328`, `docs/02-requirements.md` §4.1) | 미확인 | `gflops` 등. 실패는 전부 `Err` |
 
 ### 읽는 법과 주의
 
-- GPU 사용률/메모리는 **"0 = 유휴"와 "측정 실패"를 구분하지 못한다.** 파서는 `None`을 돌려주지만
-  (`:218-231`) 호출부가 `0.0`으로 바꾸고(`:206`), 프론트도 `?? 0`으로 채운다
-  (`MetricsPanel.tsx:21`, `:36`). `ioreg` 미발견·실행 실패·비정상 종료 경로도 모두 `(0.0, 0.0)`을
-  돌려준다(`:159-187`). 발열만 `null`을 "조회 불가"로 구분한다.
-- 사용률·메모리 수치는 한 번 파싱 불완전 경고가 나간 뒤에는 로그에 더 남지 않는다(`:151-153`).
-- `ioreg` 출력 형식 의존이다. 형식이 바뀌면 파싱이 조용히 비게 된다(`:197-199`의 경고 문구가 이를 인정한다).
+- GPU 사용률/메모리는 읽기 실패를 **0이 아니라 생략(`None`)** 으로 낸다. `ioreg` 미발견·실행 실패·
+  비정상 종료·파싱 실패 경로는 모두 `(None, None)`을 돌려주고(`:163-210`), 한쪽 필드만 읽히면 그
+  필드만 싣는다(`gpu_readings`, `:211-217`). 프론트는 값이 없으면 발열과 같은 "조회 불가"로
+  표시하며 `?? 0`으로 채우지 않는다(`MetricsPanel.tsx`, `Header.tsx`).
+- 사용률·메모리 수치는 한 번 파싱 불완전 경고가 나간 뒤에는 로그에 더 남지 않는다(`:155-157`).
+- `ioreg` 출력 형식 의존이다. 형식이 바뀌면 파싱이 조용히 비게 된다(`:201-203`의 경고 문구가 이를 인정한다).
 
 ### 이 절이 다루지 않는 이슈 #11 잔여 항목
 

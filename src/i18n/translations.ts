@@ -825,6 +825,7 @@ export const translations: Record<Language, Record<string, string>> = {
     // Metrics panel additions (hooks/useMetrics, dashboard/MetricsPanel)
     'metrics.err.load': '시스템 메트릭 로드 오류:',
     'metrics.gpuUsageLabel': '% 사용 · {memGb} GB',
+    'metrics.gpuPercentOnlyLabel': '% 사용',
     'metrics.gpuMonitoringNote': 'ioreg Metal 가속 모니터링',
     'metrics.thermalLabel': '발열',
 
@@ -1759,6 +1760,7 @@ export const translations: Record<Language, Record<string, string>> = {
     // Metrics panel additions (hooks/useMetrics, dashboard/MetricsPanel)
     'metrics.err.load': 'System metrics load error:',
     'metrics.gpuUsageLabel': '% used · {memGb} GB',
+    'metrics.gpuPercentOnlyLabel': '% used',
     'metrics.gpuMonitoringNote': 'ioreg Metal-accelerated monitoring',
     'metrics.thermalLabel': 'Thermal',
 

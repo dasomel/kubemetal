@@ -101,8 +101,12 @@ pub struct SystemMetrics {
     pub used_memory_gb: f64,
     pub memory_usage_percentage: f32,
     pub cpu_usage_percentage: f32,
-    pub gpu_usage_percentage: f32,
-    pub gpu_memory_used_gb: f64,
+    /// ioreg를 못 읽거나 필드가 없으면 None(직렬화 시 생략) — 0.0은 "측정한 유휴"만 뜻한다(D22).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_usage_percentage: Option<f32>,
+    /// 사용률과 독립적으로 판정한다. 못 읽으면 None(직렬화 시 생략).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_memory_used_gb: Option<f64>,
     /// `nominal` | `fair` | `serious` | `critical`. 값을 못 읽으면 None —
     /// "정상"으로 폴백하지 않는다(D22, 발열은 가드레일 판정에 쓰인다).
     pub thermal_state: Option<String>,
@@ -156,13 +160,13 @@ static GPU_METRICS_WARNED: Once = Once::new();
 /// 상속하지 않아(D5/mistakes-log 2026-07-20) ioreg를 못 찾고 항상 (0.0, 0.0)을 반환했다
 /// — 실기기 번들 앱에서 GPU 사용률이 0 고정으로 보이던 원인. `external_command`로
 /// `/usr/sbin`(SEARCH_PATHS에 포함, D16) 절대경로 탐색 + 보강 PATH를 적용한다.
-async fn get_metal_gpu_metrics() -> (f32, f64) {
+async fn get_metal_gpu_metrics() -> (Option<f32>, Option<f64>) {
     let cmd = external_command("ioreg");
     let Ok(mut cmd) = cmd else {
         GPU_METRICS_WARNED.call_once(|| {
             eprintln!("[metrics] ioreg executable not found, skipping GPU metrics.");
         });
-        return (0.0, 0.0);
+        return (None, None);
     };
 
     let output = cmd
@@ -174,7 +178,7 @@ async fn get_metal_gpu_metrics() -> (f32, f64) {
         GPU_METRICS_WARNED.call_once(|| {
             eprintln!("[metrics] ioreg execution failed, skipping GPU metrics.");
         });
-        return (0.0, 0.0);
+        return (None, None);
     };
     if !out.status.success() {
         GPU_METRICS_WARNED.call_once(|| {
@@ -183,7 +187,7 @@ async fn get_metal_gpu_metrics() -> (f32, f64) {
                 out.status
             );
         });
-        return (0.0, 0.0);
+        return (None, None);
     }
 
     let text = String::from_utf8_lossy(&out.stdout);
@@ -195,15 +199,21 @@ async fn get_metal_gpu_metrics() -> (f32, f64) {
         GPU_METRICS_WARNED.call_once(|| {
             eprintln!(
                 "[metrics] ioreg IOAccelerator parse incomplete (utilization: {}, memory: {}) \
-                 — possible format change or unsupported hardware; missing values report 0.",
+                 — possible format change or unsupported hardware; missing values are omitted.",
                 if pct.is_some() { "ok" } else { "MISSING" },
                 if mem_bytes.is_some() { "ok" } else { "MISSING" },
             );
         });
     }
 
-    let gpu_mem_gb = (mem_bytes.unwrap_or(0.0) / 1024.0 / 1024.0 / 1024.0 * 100.0).round() / 100.0;
-    (pct.unwrap_or(0.0), gpu_mem_gb)
+    gpu_readings(pct, mem_bytes)
+}
+
+/// 파싱 결과(사용률 %, 메모리 바이트) → (사용률, 메모리 GB). 필드별로 독립이라 한쪽이
+/// 없어도 다른 쪽을 0으로 채우지 않는다(D22).
+fn gpu_readings(pct: Option<f32>, mem_bytes: Option<f64>) -> (Option<f32>, Option<f64>) {
+    let mem_gb = mem_bytes.map(|b| (b / 1024.0 / 1024.0 / 1024.0 * 100.0).round() / 100.0);
+    (pct, mem_gb)
 }
 
 /// `ioreg -l -d 1 -r -c IOAccelerator` 출력에서 (사용률 %, 사용 중 시스템 메모리 바이트)를
@@ -239,8 +249,8 @@ fn parse_ioreg_accelerator(text: &str) -> (Option<f32>, Option<f64>) {
 trait GpuTelemetryBackend {
     /// [`SystemMetrics::gpu_backend`]에 그대로 실리는 식별자.
     fn name(&self) -> &'static str;
-    /// (GPU 사용률 %, 사용 중 GPU 메모리 GB).
-    async fn read(&self) -> (f32, f64);
+    /// (GPU 사용률 %, 사용 중 GPU 메모리 GB). 읽지 못한 값은 None — 0과 구분된다(D22).
+    async fn read(&self) -> (Option<f32>, Option<f64>);
 }
 
 struct AppleMetalBackend;
@@ -250,7 +260,7 @@ impl GpuTelemetryBackend for AppleMetalBackend {
         "apple_metal"
     }
 
-    async fn read(&self) -> (f32, f64) {
+    async fn read(&self) -> (Option<f32>, Option<f64>) {
         get_metal_gpu_metrics().await
     }
 }
@@ -268,18 +278,37 @@ pub async fn get_system_metrics(state: State<'_, Mutex<System>>) -> Result<Syste
     };
 
     let gpu_backend = AppleMetalBackend;
-    let (gpu_usage_percentage, gpu_memory_used_gb) = gpu_backend.read().await;
+    let gpu = gpu_backend.read().await;
 
-    Ok(SystemMetrics {
+    Ok(assemble_metrics(
+        total,
+        used,
+        cpu_usage_percentage,
+        gpu,
+        read_thermal_state(),
+        gpu_backend.name(),
+    ))
+}
+
+/// 수집된 원시 값 → IPC 응답. GPU 값은 가공 없이 그대로 싣는다(None이 0이 되지 않게).
+fn assemble_metrics(
+    total: f64,
+    used: f64,
+    cpu_usage_percentage: f32,
+    gpu: (Option<f32>, Option<f64>),
+    thermal_state: Option<String>,
+    gpu_backend: &str,
+) -> SystemMetrics {
+    SystemMetrics {
         total_memory_gb: (total * 100.0).round() / 100.0,
         used_memory_gb: (used * 100.0).round() / 100.0,
         memory_usage_percentage: ((used / total * 100.0) as f32 * 10.0).round() / 10.0,
         cpu_usage_percentage,
-        gpu_usage_percentage,
-        gpu_memory_used_gb,
-        thermal_state: read_thermal_state(),
-        gpu_backend: gpu_backend.name().to_string(),
-    })
+        gpu_usage_percentage: gpu.0,
+        gpu_memory_used_gb: gpu.1,
+        thermal_state,
+        gpu_backend: gpu_backend.to_string(),
+    }
 }
 
 /// 실측 MLX matmul 벤치마크 결과(이슈 #11 축소 스코프). `GpuTelemetryBackend`는 순간
@@ -682,15 +711,15 @@ mod tests {
 
         if direct_mem.is_some() {
             assert!(
-                mem_gb > 0.0,
-                "절대경로 ioreg는 메모리를 읽는데 external_command 경로는 0을 돌려줬다 — \
+                mem_gb.is_some_and(|g| g > 0.0),
+                "절대경로 ioreg는 메모리를 읽는데 external_command 경로는 {mem_gb:?}를 돌려줬다 — \
                  경로 해석이나 스폰이 깨졌다(D5/mistakes-log 2026-07-20의 증상)"
             );
         }
         if direct_pct.is_none() {
             // 이 환경은 사용률을 아예 노출하지 않는다(가상화 러너). 수집 경로도 같아야 한다.
             assert_eq!(
-                pct, 0.0,
+                pct, None,
                 "이 환경의 ioreg는 사용률을 내보내지 않는데 수집 경로가 값을 만들어냈다"
             );
         }
@@ -759,5 +788,51 @@ mod tests {
             (Some(0.0), Some(0.0)),
             "값이 0인 필드를 필드 부재(None)와 혼동했다"
         );
+    }
+
+    /// 읽기 실패한 백엔드(None)가 0으로 뭉개져 "GPU 유휴"처럼 보이면 안 된다(D22).
+    struct FailingBackend;
+    impl GpuTelemetryBackend for FailingBackend {
+        fn name(&self) -> &'static str {
+            "failing"
+        }
+        async fn read(&self) -> (Option<f32>, Option<f64>) {
+            (None, None)
+        }
+    }
+
+    #[tokio::test]
+    async fn failed_backend_read_yields_none_not_zero() {
+        let backend = FailingBackend;
+        let m = assemble_metrics(16.0, 8.0, 1.0, backend.read().await, None, backend.name());
+        assert_eq!(m.gpu_usage_percentage, None);
+        assert_eq!(m.gpu_memory_used_gb, None);
+    }
+
+    #[test]
+    fn zero_utilization_text_parses_as_some_zero() {
+        let (pct, mem) = parse_ioreg_accelerator(r#""Device Utilization %"=0"#);
+        assert_eq!(pct, Some(0.0));
+        assert_eq!(mem, None);
+    }
+
+    #[test]
+    fn partial_parse_reports_each_field_independently() {
+        assert_eq!(gpu_readings(Some(42.0), None), (Some(42.0), None));
+        assert_eq!(gpu_readings(None, Some(2147483648.0)), (None, Some(2.0)));
+        assert_eq!(gpu_readings(Some(0.0), Some(0.0)), (Some(0.0), Some(0.0)));
+    }
+
+    #[test]
+    fn gpu_fields_are_omitted_from_json_when_none_and_kept_when_zero() {
+        let none = assemble_metrics(16.0, 8.0, 1.0, (None, None), None, "apple_metal");
+        let v = serde_json::to_value(&none).unwrap();
+        assert!(v.get("gpu_usage_percentage").is_none());
+        assert!(v.get("gpu_memory_used_gb").is_none());
+
+        let zero = assemble_metrics(16.0, 8.0, 1.0, (Some(0.0), Some(0.0)), None, "apple_metal");
+        let v = serde_json::to_value(&zero).unwrap();
+        assert_eq!(v["gpu_usage_percentage"], 0.0);
+        assert_eq!(v["gpu_memory_used_gb"], 0.0);
     }
 }

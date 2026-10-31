@@ -33,7 +33,7 @@ export const Header: React.FC = () => {
               : t('header.hostMemory')}
           </span>
         </div>
-        {metrics && (metrics.gpu_usage_percentage ?? 0) > 0 && (
+        {metrics && metrics.gpu_usage_percentage !== undefined && (
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-surfaceRaised border border-hairline/8">
             <Cpu className="w-3.5 h-3.5 text-primary" />
             <span>GPU {metrics.gpu_usage_percentage}%</span>
