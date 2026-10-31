@@ -27,7 +27,7 @@ SUPPORTED_SCHEMA = 1  # SCHEMA_VERSION in support_bundle.rs
 # one is not something the service produced and is refused rather than hashed.
 DEFAULT_MAX_BYTES = 10 * 1024 * 1024
 MANIFEST_MAX_BYTES = 16 * 1024 * 1024
-KNOWN_RULES_VERSION = 2  # REDACTION_RULES_VERSION
+KNOWN_RULES_VERSION = 3  # REDACTION_RULES_VERSION
 REQUIRED_FILES = ("app_info.json", "health_summary.json")  # always written by the service
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 CREATED_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")

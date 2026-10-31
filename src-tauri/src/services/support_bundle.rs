@@ -20,7 +20,7 @@ use sysinfo::System;
 pub const SCHEMA_VERSION: u32 = 1;
 pub const MANIFEST_FILE: &str = "manifest.json";
 pub const MAX_SCANNABLE_BYTES: usize = 10 * 1024 * 1024; // 10 MiB limit
-pub const REDACTION_RULES_VERSION: u32 = 2;
+pub const REDACTION_RULES_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RedactionInfo {
@@ -1497,3 +1497,7 @@ mod tests {
 #[cfg(test)]
 #[path = "support_bundle/verification_tests.rs"]
 mod verification_tests;
+
+#[cfg(test)]
+#[path = "support_bundle/redaction_e2e_tests.rs"]
+mod redaction_e2e_tests;

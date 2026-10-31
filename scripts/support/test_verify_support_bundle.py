@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -39,7 +40,7 @@ def build_bundle(root, extra_files=None, omitted=None):
         entries.append({"path": rel, "sha256": sha(data), "bytes": len(data)})
     manifest = {
         "schema_version": 1,
-        "redaction": {"mode": "best-effort", "review_before_sharing": True, "rules_version": 2},
+        "redaction": {"mode": "best-effort", "review_before_sharing": True, "rules_version": v.KNOWN_RULES_VERSION},
         "created_at": "2026-10-06T01:02:03Z",
         "files": entries,
     }
@@ -287,7 +288,7 @@ class VerifyTest(unittest.TestCase):
         del m["redaction"]
         write_manifest(self.root, m)
         self.assertFails("manifest-malformed")
-        m["redaction"] = {"mode": "best-effort", "review_before_sharing": "yes", "rules_version": 2}
+        m["redaction"] = {"mode": "best-effort", "review_before_sharing": "yes", "rules_version": v.KNOWN_RULES_VERSION}
         write_manifest(self.root, m)
         self.assertFails("redaction-malformed")
         m["redaction"] = {"mode": "best-effort", "review_before_sharing": True}
@@ -322,6 +323,18 @@ class VerifyTest(unittest.TestCase):
     def test_real_bundle_from_app(self):
         code, out = run(os.environ["KUBEMETAL_REAL_BUNDLE"])
         self.assertEqual(code, 0, out)
+
+
+class RulesVersionSyncTest(unittest.TestCase):
+    def test_known_rules_version_matches_rust_constant(self):
+        rust = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
+                            "src-tauri", "src", "services", "support_bundle.rs")
+        with open(rust, encoding="utf-8") as f:
+            found = re.findall(r"^pub const REDACTION_RULES_VERSION: u32 = (\d+);",
+                               f.read(), re.MULTILINE)
+        self.assertEqual(len(found), 1, "expected exactly one REDACTION_RULES_VERSION in support_bundle.rs")
+        self.assertEqual(v.KNOWN_RULES_VERSION, int(found[0]),
+                         "bump KNOWN_RULES_VERSION together with REDACTION_RULES_VERSION")
 
 
 if __name__ == "__main__":

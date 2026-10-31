@@ -4,6 +4,9 @@ use std::path::Path;
 
 const MASK: &str = "[REDACTED]";
 const MAX_LINE_BYTES: usize = 64 * 1024;
+/// Bare auth schemes: a header value that is only one of these has its credential on the next
+/// line. Single list for the unquoted and the shell-quoted continuation paths.
+const AUTH_SCHEMES: [&str; 3] = ["bearer", "basic", "token"];
 
 fn redact_json(value: &mut serde_json::Value) {
     match value {
@@ -107,12 +110,48 @@ fn quoted_end(bytes: &[u8], start: usize, quote: u8) -> Option<usize> {
     None
 }
 
-fn replace_sensitive_values(line: &str) -> (String, bool) {
+/// End of a shell-quoted value whose closing quote never appears on the line. The line may be a
+/// JSON string body, so stop at the first unescaped `"`/`,`/`}`/`]` (kept) rather than eating
+/// the JSON structure; plain text without any of them runs to end of line.
+fn unclosed_value_end(bytes: &[u8], start: usize) -> usize {
+    let mut i = start;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b'"' | b',' | b'}' | b']' => return i,
+            _ => i += 1,
+        }
+    }
+    bytes.len()
+}
+
+// Accepted limits of the shell-quote handling below (each: reason, cost). None is pinned as
+// correct behaviour by a test except the over-redaction ones.
+// - Prose `"password: not set"` -> `"password: [REDACTED] set"`: a short real credential after
+//   `key: ` is indistinguishable from prose; narrowing reopens the leak. Cost: a masked word.
+// - A shell quote left open across a BLANK, whitespace-only or oversized (>64KB) line
+//   (`'Authorization: Basic` NEWLINE blank NEWLINE `SECRET'`) is not followed: the carry lasts
+//   exactly one line so a stray apostrophe cannot mask unrelated text. Cost: leak of that
+//   multi-line, separated shape.
+// - The carry also fires after a bare `'<sensitive-key>:` / `'<sensitive-key>=` at end of line
+//   (not only Authorization), so `echo 'password=` masks the whole next line. Cost: one
+//   unrelated line masked.
+// - `"Authorization:" Basic SECRET` (UNQUOTED follow-up after a split quote) and
+//   `curl -u user:SECRET` are not recognised: no key=value shape to anchor on without
+//   masking every word after any quote. Cost: leak.
+// - An unclosed quote ends its value at the first `,` `}` `]` `"`, so a secret containing a
+//   bare `,` is masked only up to it. Cost: partial leak of such a secret after the comma.
+
+/// Returns the redacted line, whether a block continuation follows, and the quote char of a
+/// shell-quoted value that is still open at end of line (D-style: the next line is masked up to
+/// that quote instead of wholesale, so text after the closing quote survives).
+fn replace_sensitive_values(line: &str) -> (String, bool, Option<u8>) {
     let bytes = line.as_bytes();
     let mut out = String::with_capacity(line.len());
     let mut cursor = 0;
     let mut i = 0;
     let mut continuation = false;
+    let mut open_quote = None;
     while i < bytes.len() {
         let quoted = (bytes[i] == b'"' || bytes[i] == b'\'')
             && i + 1 < bytes.len()
@@ -140,12 +179,15 @@ fn replace_sensitive_values(line: &str) -> (String, bool) {
         let header = key.to_ascii_lowercase().ends_with("authorization")
             || key.eq_ignore_ascii_case("cookie");
         let mut sep = end;
+        // Shell form `-H 'Authorization: x'`: the quote opens the whole header, so no quote
+        // follows the key. The value then ends at that same quote, not at end of line.
+        let mut shell_quote = None;
         if quoted {
-            if sep >= bytes.len() || bytes[sep] != bytes[i] {
-                i = end;
-                continue;
+            if sep < bytes.len() && bytes[sep] == bytes[i] {
+                sep += 1;
+            } else {
+                shell_quote = Some(bytes[i]);
             }
-            sep += 1;
         }
         while sep < bytes.len() && bytes[sep].is_ascii_whitespace() {
             sep += 1;
@@ -162,13 +204,62 @@ fn replace_sensitive_values(line: &str) -> (String, bool) {
         if sep == bytes.len()
             || matches!(bytes[sep], b'|' | b'>') && line[sep + 1..].trim().is_empty()
         {
-            continuation = true;
+            if shell_quote.is_some() {
+                open_quote = shell_quote;
+            } else {
+                continuation = true;
+            }
             i = sep.max(end);
             continue;
         }
+        if let Some(quote) = shell_quote {
+            let found = quoted_end(bytes, sep, quote);
+            // Non-header keys only take the split form (`-H "X-Auth-Token:" "S"`); a closed
+            // `'x-token: v'` value still goes through the generic path below.
+            if header || found == Some(sep) {
+                let close = found.unwrap_or_else(|| unclosed_value_end(bytes, sep));
+                // Cross-line carry only for a bare scheme at end of line (`'Authorization: Basic`
+                // NEWLINE `SECRET' x`); anything else with an open quote is unrelated text.
+                if found.is_none()
+                    && close == bytes.len()
+                    && AUTH_SCHEMES
+                        .iter()
+                        .any(|scheme| line[sep..close].trim().eq_ignore_ascii_case(scheme))
+                {
+                    open_quote = Some(quote);
+                }
+                if close > sep && &line[sep..close] != MASK {
+                    out.push_str(&line[cursor..sep]);
+                    out.push_str(MASK);
+                    cursor = close;
+                } else if close == sep {
+                    // Split forms `-H "Authorization:" "Basic S"` / `-H 'Authorization:'"Basic S"`:
+                    // the quote closes right after the key, so the credential is the next quoted
+                    // token. Covers every sensitive key, not only headers.
+                    let mut next = close + 1;
+                    while next < bytes.len() && bytes[next].is_ascii_whitespace() {
+                        next += 1;
+                    }
+                    if next < bytes.len() && matches!(bytes[next], b'"' | b'\'') {
+                        let value = next + 1;
+                        let value_end =
+                            quoted_end(bytes, value, bytes[next]).unwrap_or(bytes.len());
+                        if value_end > value && &line[value..value_end] != MASK {
+                            out.push_str(&line[cursor..value]);
+                            out.push_str(MASK);
+                            cursor = value_end;
+                        }
+                        i = value_end.max(i + 1);
+                        continue;
+                    }
+                }
+                i = close.max(i + 1);
+                continue;
+            }
+        }
         if header && !quoted {
             if key.eq_ignore_ascii_case("authorization")
-                && ["bearer", "basic", "token"]
+                && AUTH_SCHEMES
                     .iter()
                     .any(|scheme| line[sep..].trim().eq_ignore_ascii_case(scheme))
             {
@@ -203,7 +294,7 @@ fn replace_sensitive_values(line: &str) -> (String, bool) {
         i = next.max(i + 1);
     }
     out.push_str(&line[cursor..]);
-    (out, continuation)
+    (out, continuation, open_quote)
 }
 
 fn replace_bearer(line: &str) -> (String, bool) {
@@ -405,8 +496,11 @@ pub fn redact_text(text: &str, home: Option<&Path>) -> String {
     let text = redact_pem(text);
     let mut result = String::with_capacity(text.len());
     let mut block_indent = None;
+    let mut open_quote: Option<u8> = None;
     for line in text.split_inclusive('\n') {
         let bare = line.strip_suffix('\n').unwrap_or(line);
+        // Taken before any `continue` so oversized and blank lines also end the carry.
+        let carry = open_quote.take();
         if bare.len() > MAX_LINE_BYTES {
             result.push_str("[REDACTED:oversized-line]");
             if line.ends_with('\n') {
@@ -414,6 +508,25 @@ pub fn redact_text(text: &str, home: Option<&Path>) -> String {
             }
             continue;
         }
+        // A shell-quoted header value left open by the previous line: mask up to the closing
+        // quote. Lasts one line only, so a stray apostrophe cannot swallow the rest of the file.
+        let carried;
+        let bare = match carry.filter(|_| !bare.trim().is_empty()) {
+            Some(quote) => match quoted_end(bare.as_bytes(), 0, quote) {
+                Some(close) => {
+                    carried = format!("{MASK}{}", &bare[close..]);
+                    carried.as_str()
+                }
+                None => {
+                    result.push_str(MASK);
+                    if line.ends_with('\n') {
+                        result.push('\n');
+                    }
+                    continue;
+                }
+            },
+            None => bare,
+        };
         let trimmed = bare.trim_start();
         let indent = bare.len() - trimmed.len();
         if let Some(parent_indent) = block_indent {
@@ -437,7 +550,8 @@ pub fn redact_text(text: &str, home: Option<&Path>) -> String {
             None
         };
         let source = json.as_deref().unwrap_or(bare);
-        let (redacted, key_continuation) = replace_sensitive_values(source);
+        let (redacted, key_continuation, pending_quote) = replace_sensitive_values(source);
+        open_quote = pending_quote;
         let (redacted, bearer_continuation) = replace_bearer(&redacted);
         if key_continuation || bearer_continuation {
             block_indent = Some(indent);
@@ -674,5 +788,181 @@ export HF_TOKEN=hf_abcdef1234567890
         assert_eq!(value["normal"], "keep");
         assert!(!redacted.contains("secret"));
         assert!(!redacted.contains("second"));
+    }
+
+    #[test]
+    fn test_redact_shell_quoted_headers() {
+        let single = redact_text(
+            "curl -H 'Authorization: Basic dXNlcjpwYXNz' https://host/x",
+            None,
+        );
+        assert_eq!(single, "curl -H 'Authorization: [REDACTED]' https://host/x");
+        let double = redact_text(
+            r#"curl -H "Authorization: Bearer abc.def" https://host/x"#,
+            None,
+        );
+        assert_eq!(
+            double,
+            r#"curl -H "Authorization: [REDACTED]" https://host/x"#
+        );
+        let more = redact_text(
+            "kubectl run x -H 'Proxy-Authorization: Basic c2VjcmV0' --flag=1 --other",
+            None,
+        );
+        assert_eq!(
+            more,
+            "kubectl run x -H 'Proxy-Authorization: [REDACTED]' --flag=1 --other"
+        );
+        let cookie = redact_text("curl -H 'Cookie: sid=abc; t=def' https://host", None);
+        assert_eq!(cookie, "curl -H 'Cookie: [REDACTED]' https://host");
+    }
+
+    #[test]
+    fn test_redact_two_shell_quoted_headers_on_one_line() {
+        let out = redact_text(
+            "curl -H 'Authorization: Basic AAA111' -H 'X-Api-Key: BBB222' https://host",
+            None,
+        );
+        assert_eq!(
+            out,
+            "curl -H 'Authorization: [REDACTED]' -H 'X-Api-Key: [REDACTED]' https://host"
+        );
+    }
+
+    #[test]
+    fn test_unquoted_header_still_redacted() {
+        let out = redact_text("Authorization: Basic dXNlcjpwYXNz", None);
+        assert_eq!(out, "Authorization: [REDACTED]");
+    }
+
+    #[test]
+    fn test_shell_quoted_non_sensitive_key_untouched() {
+        let input = "curl -H 'Content-Type: application/json' -H 'Accept: text/plain' https://host";
+        assert_eq!(redact_text(input, None), input);
+    }
+
+    #[test]
+    fn test_shell_quoted_header_continues_onto_next_line() {
+        for (input, want) in [
+            (
+                "curl -H 'Authorization: Basic\n  SECRET' https://x",
+                "curl -H 'Authorization: [REDACTED]\n[REDACTED]' https://x",
+            ),
+            (
+                "curl -H \"Authorization: Bearer\n  SECRET\" -d x",
+                "curl -H \"Authorization: [REDACTED]\n[REDACTED]\" -d x",
+            ),
+            (
+                "curl -H 'Authorization:\nSECRET' https://x\nnext line",
+                "curl -H 'Authorization:\n[REDACTED]' https://x\nnext line",
+            ),
+        ] {
+            let out = redact_text(input, None);
+            assert!(!out.contains("SECRET"), "leaked: {out}");
+            assert_eq!(out, want);
+        }
+    }
+
+    #[test]
+    fn test_shell_quoted_continuation_is_bounded_to_one_line() {
+        let out = redact_text("curl -H 'Authorization: Basic\nno close\nkeep me", None);
+        assert_eq!(
+            out,
+            "curl -H 'Authorization: [REDACTED]\n[REDACTED]\nkeep me"
+        );
+    }
+
+    #[test]
+    fn test_split_quote_header_forms() {
+        assert_eq!(
+            redact_text(r#"curl -H "Authorization:" "Basic SECRET" https://x"#, None),
+            r#"curl -H "Authorization:" "[REDACTED]" https://x"#
+        );
+        assert_eq!(
+            redact_text(r#"curl -H 'Authorization:'"Basic SECRET" https://x"#, None),
+            r#"curl -H 'Authorization:'"[REDACTED]" https://x"#
+        );
+        let benign = r#"curl -H "Accept:" "application/json" https://x"#;
+        assert_eq!(redact_text(benign, None), benign);
+    }
+
+    #[test]
+    fn test_shell_quoted_env_assignment_is_redacted() {
+        assert_eq!(
+            redact_text("docker run -e 'PASSWORD=S more' img", None),
+            "docker run -e 'PASSWORD=[REDACTED] more' img"
+        );
+    }
+
+    /// Accepted over-redaction (D-style: a short real credential after `key: ` is
+    /// indistinguishable from prose, and narrowing would reopen the shell-quote leak; cost is a
+    /// masked word in a log line).
+    #[test]
+    fn test_shell_quoted_prose_over_redaction_is_accepted() {
+        assert_eq!(
+            redact_text("\"session: started ok\"", None),
+            "\"session: [REDACTED] ok\""
+        );
+        assert_eq!(
+            redact_text("\"token: 5 left\"", None),
+            "\"token: [REDACTED] left\""
+        );
+    }
+
+    #[test]
+    fn test_unclosed_shell_quote_keeps_json_structure() {
+        let compact = r#"{"cmd":"curl -H 'Authorization: Basic SECRET","n":1}"#;
+        let out = redact_text(compact, None);
+        assert!(!out.contains("SECRET"), "leaked: {out}");
+        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(parsed["n"], 1);
+        let pretty = "{\n  \"cmd\": \"curl -H 'Authorization: Basic SECRET\",\n  \"other\": 1\n}\n";
+        let out = redact_text(pretty, None);
+        assert!(!out.contains("SECRET"), "leaked: {out}");
+        assert!(out.contains("\"other\": 1"), "structure eaten: {out}");
+        serde_json::from_str::<serde_json::Value>(&out).unwrap();
+        // Non-JSON: still masked to end of line.
+        assert_eq!(
+            redact_text("curl -H 'Authorization: Basic SECRET more", None),
+            "curl -H 'Authorization: [REDACTED]"
+        );
+    }
+
+    #[test]
+    fn test_carry_only_after_bare_scheme_and_lasts_one_line() {
+        assert_eq!(
+            redact_text("curl -H 'Authorization: Basic\n  SECRET' x", None),
+            "curl -H 'Authorization: [REDACTED]\n[REDACTED]' x"
+        );
+        let unrelated = "event 'Authorization: pending\nkubelet ready pods=3 status=ok\n";
+        assert_eq!(
+            redact_text(unrelated, None),
+            "event 'Authorization: [REDACTED]\nkubelet ready pods=3 status=ok\n"
+        );
+        // Oversized line consumes the carry; the line after it is untouched.
+        let big = "x".repeat(MAX_LINE_BYTES + 1);
+        let out = redact_text(
+            &format!("curl -H 'Authorization: Basic\n{big}\nkeep me\n"),
+            None,
+        );
+        assert!(
+            out.ends_with("[REDACTED:oversized-line]\nkeep me\n"),
+            "{out}"
+        );
+        // Accepted limit: a blank line ends the carry (the blank line itself survives).
+        assert_eq!(
+            redact_text("curl -H 'Authorization: Basic\n\nkeep me\n", None),
+            "curl -H 'Authorization: [REDACTED]\n\nkeep me\n"
+        );
+    }
+
+    #[test]
+    fn test_split_quote_form_covers_non_header_keys() {
+        assert_eq!(
+            redact_text(r#"curl -H "X-Auth-Token:" "SECRET" https://x"#, None),
+            r#"curl -H "X-Auth-Token:" "[REDACTED]" https://x"#
+        );
+        let benign = r#"curl -H "Accept:" "application/json" https://x"#;
+        assert_eq!(redact_text(benign, None), benign);
     }
 }

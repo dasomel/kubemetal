@@ -9,6 +9,7 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-11-01 | #17 서포트 번들 redactor가 쉘 따옴표로 감싼 헤더(`curl -H 'Authorization: Basic …'`)를 놓쳐 토큰이 번들에 그대로 남았다. 줄 끝 스킴 뒤 다음 줄, `"Authorization:" "Basic S"` 분리 따옴표 형태도 같은 부류였다. 번들 verifier(`verify_support_bundle.py`)는 manifest의 redaction 메타데이터만 검사해 파일 내용 누출을 잡지 못했다 | 쉘 따옴표 경로에 다음 줄 연속 마스킹과 분리 따옴표 처리를 추가하고 `REDACTION_RULES_VERSION`을 3으로 올렸다(Rust 상수와 Python `KNOWN_RULES_VERSION` 일치를 단위 테스트로 강제). `redaction_e2e_tests.rs`가 모든 출처에 센티넬을 심어 번들의 모든 파일 내용을 걷고, 음성 대조군을 출처별로 확인한다. 교훈: 메타데이터가 "redacted"라는 사실은 내용이 깨끗하다는 증거가 아니다 — 산출물 내용을 직접 검사할 것. 남은 한계: 인용되지 않은 분리 토큰과 산문의 과잉 마스킹(`session: started`)은 수용 |
 | 2026-10-17 | #18 멱등 캐시가 operation_id만 비교해 다른 대상·작업·렌더 설정의 요청에 이전 성공을 돌려줬다. 테스트도 공유 상태를 병렬 초기화했다 | 성공 캐시를 action/대상/실행 인자에 결속하고 실행 중 ID 재사용을 거부한다. 실패 시 예약은 해제하며 guard 테스트는 직렬화한다. 다른 대상 ID 재사용 회귀 테스트가 수정 전 실패했다 |
 | 2026-10-15 | Opus의 D49 리뷰에서 checkpoint manifest는 `fs::write` 뒤 파일 fsync 없이 디렉터리만 동기화하는데, 영속화된 `last_checkpoint`가 그 manifest를 참조함을 발견했다 | checkpoint 전용 경로에서 manifest 파일을 `sync_all`한 뒤 디렉터리와 레코드를 순서대로 동기화한다. 정전 내구성은 OS/저장장치 계약 범위이며 무결성 검사 실패 시 복원은 계속 거부한다 |
 | 2026-10-15 | D49 레코드의 선택 필드에 `serde(default)`만 달아 이전 레코드는 읽었지만, 새 시도의 None 필드도 JSON null로 써서 `deny_unknown_fields`인 이전 빌드로 되돌리면 모든 신규 시도가 Unknown이 됐다 | None 필드는 직렬화에서 생략하고 이전 레코드 형식 회귀 테스트를 추가한다. 실제 checkpoint가 있는 레코드의 다운그레이드는 여전히 이전 빌드에서 지원되지 않는다 |
