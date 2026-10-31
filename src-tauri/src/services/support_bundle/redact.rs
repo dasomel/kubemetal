@@ -6,7 +6,7 @@ const MASK: &str = "[REDACTED]";
 const MAX_LINE_BYTES: usize = 64 * 1024;
 /// Bare auth schemes: a header value that is only one of these has its credential on the next
 /// line. Single list for the unquoted and the shell-quoted continuation paths.
-const AUTH_SCHEMES: [&str; 3] = ["bearer", "basic", "token"];
+const AUTH_SCHEMES: [&str; 6] = ["bearer", "basic", "token", "digest", "negotiate", "ntlm"];
 
 fn redact_json(value: &mut serde_json::Value) {
     match value {
@@ -286,6 +286,28 @@ fn replace_sensitive_values(line: &str) -> (String, bool, Option<u8>) {
                 && !matches!(bytes[end], b',' | b';' | b'&' | b'}' | b'\'' | b'"')
             {
                 end += 1;
+            }
+            // `<key>: Bearer SECRET`: masking only the scheme would leave the credential, so the
+            // scheme and the one token after it are masked together. Other words keep the
+            // first-word-only rule.
+            if AUTH_SCHEMES
+                .iter()
+                .any(|scheme| line[sep..end].eq_ignore_ascii_case(scheme))
+            {
+                let mut cred = end;
+                while cred < bytes.len() && bytes[cred].is_ascii_whitespace() {
+                    cred += 1;
+                }
+                let mut cred_end = cred;
+                while cred_end < bytes.len()
+                    && !bytes[cred_end].is_ascii_whitespace()
+                    && !matches!(bytes[cred_end], b',' | b';' | b'&' | b'}' | b'\'' | b'"')
+                {
+                    cred_end += 1;
+                }
+                if cred_end > cred && cred > end {
+                    end = cred_end;
+                }
             }
             (sep, end, end)
         };
@@ -1031,5 +1053,37 @@ export HF_TOKEN=hf_abcdef1234567890
             redact_text("curl -H 'X-Auth-Token: abc SECRET more", None),
             "curl -H 'X-Auth-Token: [REDACTED]"
         );
+    }
+
+    #[test]
+    fn test_unquoted_scheme_after_non_authorization_key_masks_credential() {
+        for (input, want) in [
+            ("X-Auth-Token: Bearer SECRET", "X-Auth-Token: [REDACTED]"),
+            ("X-Auth-Token: Basic SECRET", "X-Auth-Token: [REDACTED]"),
+            // Digest/Negotiate/NTLM are schemes too: masking only the scheme word would leave
+            // the credential behind (found by a key x scheme sweep, 48/672 cases leaked).
+            ("X-Auth-Token: Digest SECRET", "X-Auth-Token: [REDACTED]"),
+            (
+                "Set-Cookie=Negotiate SECRET tail",
+                "Set-Cookie=[REDACTED] tail",
+            ),
+            ("password: NTLM SECRET tail", "password: [REDACTED] tail"),
+            (
+                "x-api-key: Bearer SECRET rest",
+                "x-api-key: [REDACTED] rest",
+            ),
+            (
+                r#"level=info msg="header X-Auth-Token: Bearer SECRET received""#,
+                r#"level=info msg="header X-Auth-Token: [REDACTED] received""#,
+            ),
+            // Unchanged behaviour: first word only, no scheme involved.
+            ("token: SECRET", "token: [REDACTED]"),
+            ("password: abc SECRET", "password: [REDACTED] SECRET"),
+            // Non-sensitive key with a scheme-looking value stays untouched.
+            ("Content-Type: Bearer", "Content-Type: Bearer"),
+        ] {
+            let out = redact_text(input, None);
+            assert_eq!(out, want, "input: {input}");
+        }
     }
 }

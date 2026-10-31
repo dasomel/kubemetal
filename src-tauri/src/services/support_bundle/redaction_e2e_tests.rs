@@ -15,6 +15,7 @@ const SENTINELS: &[(&str, &str)] = &[
     ("authorization-basic", "SENT-AUTHBASIC-2b8d40e6"),
     ("authorization-shell-quoted", "SENT-AUTHQUOTED-6a1c93d2"),
     ("shell-quoted-x-auth-token", "SENT-XAUTHTOKEN-9c2e5f18"),
+    ("unquoted-x-auth-token-bearer", "SENT-UNQXAUTH-5b3d7e21"),
     ("authorization-shell-continued", "SENT-AUTHCONT-4e7b2a91"),
     ("authorization-split-quote", "SENT-AUTHSPLIT-1d58c3f0"),
     ("authorization-unclosed-json", "SENT-AUTHUNCLOSED-8b3f1e57"),
@@ -67,6 +68,7 @@ fn bundle_contents() -> (TestDir, Vec<(PathBuf, String)>) {
              Authorization: Basic {hdr}\n\
              curl -H 'Authorization: Bearer-less {quoted}' https://x\n\
              curl -H 'X-Auth-Token: Bearer {xtoken}' https://x\n\
+             X-Auth-Token: Bearer {unqx}\n\
              curl -H 'Authorization: Basic\n  {cont}' https://x\n\
              curl -H \"Authorization:\" \"Basic {split}\" https://x\n\
              {{\"cmd\":\"curl -H 'Authorization: Basic {unclosed}\",\"n\":1}}\n\
@@ -78,6 +80,7 @@ fn bundle_contents() -> (TestDir, Vec<(PathBuf, String)>) {
             hdr = s("authorization-basic"),
             quoted = s("authorization-shell-quoted"),
             xtoken = s("shell-quoted-x-auth-token"),
+            unqx = s("unquoted-x-auth-token-bearer"),
             cont = s("authorization-shell-continued"),
             split = s("authorization-split-quote"),
             unclosed = s("authorization-unclosed-json"),
