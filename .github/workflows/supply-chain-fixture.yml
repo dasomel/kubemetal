@@ -23,7 +23,7 @@ on:
 
 jobs:
   probe:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       # 필요한 최소 엔드포인트만 허용한다: github.com:443(체크아웃; step-security/
       # harden-runner 리포 자체의 도그푸딩 CI에서 실측된 값)과 static.rust-lang.org:443

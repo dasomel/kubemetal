@@ -10,7 +10,7 @@ on:
 jobs:
   verify:
     # Apple Silicon 전용 앱 — arm64 macOS 러너에서만 의미 있는 검증이다.
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install pinned Rust toolchain
@@ -30,7 +30,7 @@ jobs:
         run: make verify
 
   supply-chain:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install pinned Rust toolchain
