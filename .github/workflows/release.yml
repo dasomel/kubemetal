@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   build-release:
-    runs-on: macos-14
+    runs-on: macos-15
     # 컨텍스트 값은 run 셸에 직접 보간하지 않고 env로 넘긴다(인젝션 방지 관행).
     env:
       TAG: ${{ github.ref_name }}

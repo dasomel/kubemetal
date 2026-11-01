@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-ci-runner-macos-14-to-15",
+  "task": "Move the macOS jobs in ci.yml, release.yml and supply-chain-fixture.yml from the macos-14 runner image to macos-15 because GitHub is retiring macos-14 on 2026-11-02 and is cancelling its jobs during brownouts",
+  "changeContext": {
+    "paths": [
+      ".github/workflows/**",
+      ".agents/evals/traces/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "The change replaces 'runs-on: macos-14' with 'runs-on: macos-15' on four lines: two in ci.yml, one in release.yml, one in supply-chain-fixture.yml. The ubuntu-latest workflows are untouched, no step, action ref or check was changed, and only this trace was added alongside"
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "CI run 41318425852 on e287250 was cancelled within one second on both jobs (supply-chain, verify) and attempt 2 of the same run was cancelled the same way. The job annotation reads: scheduled macOS 14 runner image brownout, macOS 14 images retire on November 2, 2026. No step ran, so the cancellation says nothing about the code under test",
+      "evidence": [
+        "ci:run-41318425852-cancelled-macos14-brownout"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "macos-15 is an Apple Silicon (arm64) image like macos-14, so the Apple-Silicon-only build target is preserved. The runner label is the only thing changed"
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "CI run 41318652980 on 4535a93 (this PR's first commit) ran both macOS jobs on the macos-15 label, provisioned image macos-15-arm64: verify succeeded with all 13 steps green and supply-chain with all 7 steps green. actionlint exited 0 locally on all three changed workflows. release.yml is not exercised by this PR",
+      "scope": ".github/workflows/ci.yml, .github/workflows/release.yml, .github/workflows/supply-chain-fixture.yml",
+      "evidence": [
+        "ci:run-41318652980-verify-supply-chain-macos-15-arm64",
+        "artifact:.github/workflows/ci.yml"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "completion_claim",
+      "summary": "The four macos-14 runner labels now say macos-15 and the CI pipeline (verify, supply-chain) passes on macos-15-arm64; the release.yml job is not exercised by this PR and runs on macos-15 untested until the next release",
+      "evidence": [
+        "e4"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete: runner labels moved to macos-15 and CI observed green on macos-15-arm64; release.yml remains unexercised"
+    }
+  ]
+}
