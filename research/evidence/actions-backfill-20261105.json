@@ -1,0 +1,30 @@
+{
+  "schema_version": "openforge-actions-backfill/v1",
+  "repository": "dasomel/kubemetal",
+  "collection_date": "2026-11-05",
+  "records_in_export": 493,
+  "appended_records": 493,
+  "original_stats": {
+    "excluded_not_on_main": 626,
+    "fetched": 1119,
+    "included": 493,
+    "not_on_main_other_event": 16,
+    "not_on_main_pull_request": 610,
+    "per_month": {
+      "2026-07": 8,
+      "2026-08": 43,
+      "2026-09": 281,
+      "2026-10": 156,
+      "2026-11": 5
+    },
+    "repository": "dasomel/kubemetal"
+  },
+  "removed_exact_duplicates": 0,
+  "methodology_url": "https://github.com/dasomel/openforge/blob/main/docs/research-evidence.md#github-actions-historical-backfill",
+  "limitations": [
+    "Main-reachable history only; not representative of all PR failures.",
+    "Latest available workflow attempt only; expired or deleted runs unavailable.",
+    "duration_ms measures run_started_at to updated_at, not job execution time.",
+    "Human intervention and review correction counters are unobserved schema placeholders; metadata flags are false."
+  ]
+}
