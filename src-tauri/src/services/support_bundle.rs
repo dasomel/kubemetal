@@ -220,8 +220,8 @@ pub fn collect_app_os_version_info(app: Option<&tauri::AppHandle>) -> AppOsVersi
         app_name,
         app_version,
         os: std::env::consts::OS.to_string(),
-        os_version: System::os_version(),
-        kernel_version: System::kernel_version(),
+        os_version: System::os_version().ok(),
+        kernel_version: System::kernel_version().ok(),
         arch: std::env::consts::ARCH.to_string(),
     }
 }

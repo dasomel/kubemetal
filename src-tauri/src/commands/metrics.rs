@@ -265,17 +265,38 @@ impl GpuTelemetryBackend for AppleMetalBackend {
     }
 }
 
-#[tauri::command]
-pub async fn get_system_metrics(state: State<'_, Mutex<System>>) -> Result<SystemMetrics, String> {
-    let (total, used, cpu_usage_percentage) = {
-        let mut sys = state.lock().map_err(|e| e.to_string())?;
+/// sysinfo 0.40의 `System` 생성자는 `Result`를 반환한다. 기동 시점 초기화 실패로 앱 전체가
+/// 패닉하지 않게 결과를 보관하되, 조회 시에는 0으로 뭉개지 않고 에러로 표면화한다(D22).
+/// `lib.rs`의 `.manage(...)`와 `State<'_, ...>`가 내부 제네릭을 각자 적으면 컴파일은 통과하고
+/// 런타임 조회에서만 패닉이 나므로 단일 뉴타입으로 묶는다.
+pub struct SystemMetricsState(Mutex<Result<System, sysinfo::Error>>);
+
+impl Default for SystemMetricsState {
+    fn default() -> Self {
+        Self(Mutex::new(System::new_all()))
+    }
+}
+
+impl SystemMetricsState {
+    fn read_cpu_memory(&self) -> Result<(f64, f64, f32), String> {
+        let mut guard = self.0.lock().map_err(|e| e.to_string())?;
+        let sys = guard
+            .as_mut()
+            .map_err(|e| format!("Failed to initialize system metrics: {e}"))?;
         sys.refresh_memory();
         sys.refresh_cpu_usage();
         let total = sys.total_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
         let used = sys.used_memory() as f64 / 1024.0 / 1024.0 / 1024.0;
         let cpu_usage_percentage = (sys.global_cpu_usage() * 10.0).round() / 10.0;
-        (total, used, cpu_usage_percentage)
-    };
+        Ok((total, used, cpu_usage_percentage))
+    }
+}
+
+#[tauri::command]
+pub async fn get_system_metrics(
+    state: State<'_, SystemMetricsState>,
+) -> Result<SystemMetrics, String> {
+    let (total, used, cpu_usage_percentage) = state.read_cpu_memory()?;
 
     let gpu_backend = AppleMetalBackend;
     let gpu = gpu_backend.read().await;
@@ -834,5 +855,31 @@ mod tests {
         let v = serde_json::to_value(&zero).unwrap();
         assert_eq!(v["gpu_usage_percentage"], 0.0);
         assert_eq!(v["gpu_memory_used_gb"], 0.0);
+    }
+
+    #[test]
+    fn system_metrics_state_surfaces_init_failure_without_zero_fallback() {
+        let state = SystemMetricsState(Mutex::new(Err(sysinfo::Error::Unsupported)));
+        let err = state
+            .read_cpu_memory()
+            .expect_err("sysinfo init failure must propagate rather than fabricate zeros (D22)");
+        assert!(
+            err.contains("unsupported"),
+            "expected underlying sysinfo error in message, got: {err}"
+        );
+    }
+
+    #[test]
+    fn system_metrics_state_reads_live_host_cpu_and_memory() {
+        let state = SystemMetricsState::default();
+        let (total, used, cpu) = state
+            .read_cpu_memory()
+            .expect("macOS host sysinfo System::new_all must succeed");
+        assert!(
+            total > 0.0,
+            "expected positive total_memory_gb, got {total}"
+        );
+        assert!(used >= 0.0 && used <= total * 2.0);
+        assert!(cpu >= 0.0);
     }
 }

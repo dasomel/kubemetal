@@ -176,7 +176,7 @@ pub fn process_start_time(pid: u32) -> Option<u64> {
     if pid == 0 || pid > i32::MAX as u32 {
         return None;
     }
-    let mut system = sysinfo::System::new();
+    let mut system = sysinfo::System::new().ok()?;
     let pid = sysinfo::Pid::from_u32(pid);
     system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
     system.process(pid).map(sysinfo::Process::start_time)
@@ -187,7 +187,9 @@ pub(crate) fn process_group_members(pgid: u32) -> Vec<(u32, u64)> {
     if pgid == 0 || pgid > i32::MAX as u32 {
         return Vec::new();
     }
-    let mut system = sysinfo::System::new();
+    let Ok(mut system) = sysinfo::System::new() else {
+        return Vec::new();
+    };
     system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     system
         .processes()
@@ -218,7 +220,8 @@ pub(crate) async fn get_process_argv(pid: u32) -> Result<Vec<String>, String> {
         return Err(format!("invalid pid {pid}"));
     }
     tokio::task::spawn_blocking(move || {
-        let mut system = sysinfo::System::new();
+        let mut system = sysinfo::System::new()
+            .map_err(|e| format!("Failed to initialize sysinfo System: {e}"))?;
         let pid = sysinfo::Pid::from_u32(pid);
         system.refresh_processes_specifics(
             sysinfo::ProcessesToUpdate::Some(&[pid]),

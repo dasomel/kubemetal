@@ -123,10 +123,13 @@ pub async fn get_cluster_status() -> Result<ClusterStatus, String> {
     })
 }
 
-#[tauri::command]
-pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
-    let _lifecycle_guard = lifecycle_guard::acquire(Operation::StartCluster)?;
-    let mut sys = sysinfo::System::new_all();
+fn clamp_vm_resources_with(
+    cpu: u32,
+    memory: u32,
+    sys: Result<sysinfo::System, sysinfo::Error>,
+) -> Result<(u32, u32), String> {
+    let mut sys =
+        sys.map_err(|e| format!("Failed to inspect host resources for VM sizing: {e}"))?;
     sys.refresh_memory();
     sys.refresh_cpu_usage();
     let host_ram_gb = sys.total_memory() / 1024 / 1024 / 1024;
@@ -138,6 +141,13 @@ pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
     };
     let memory = memory.min(max_memory_gb as u32).max(1);
     let cpu = cpu.clamp(1, host_cores);
+    Ok((cpu, memory))
+}
+
+#[tauri::command]
+pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
+    let _lifecycle_guard = lifecycle_guard::acquire(Operation::StartCluster)?;
+    let (cpu, memory) = clamp_vm_resources_with(cpu, memory, sysinfo::System::new_all())?;
 
     let output = colima_command()?
         .args([
@@ -720,5 +730,12 @@ mod tests {
                 "{image}: read an imagePullPolicy value as an image"
             );
         }
+    }
+
+    #[test]
+    fn clamp_vm_resources_surfaces_sysinfo_init_failure() {
+        let err = clamp_vm_resources_with(6, 12, Err(sysinfo::Error::Unsupported))
+            .expect_err("sysinfo failure must not silently fall into the 0..=23GB tier (D4/D22)");
+        assert!(err.contains("Failed to inspect host resources for VM sizing"));
     }
 }
