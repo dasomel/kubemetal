@@ -1,9 +1,6 @@
 mod commands;
 mod services;
 
-use std::sync::Mutex;
-use sysinfo::System;
-
 use commands::access::get_service_access;
 use commands::colima::{
     check_latest_airgap_versions, get_airgap_status, get_cluster_status, list_kubeconfig_contexts,
@@ -44,7 +41,9 @@ use commands::local_inference_ops::{
     list_local_inference_adapters, preflight_local_inference_model_load,
     probe_local_inference_api_capabilities,
 };
-use commands::metrics::{get_hardware_spec, get_system_metrics, run_gpu_benchmark};
+use commands::metrics::{
+    get_hardware_spec, get_system_metrics, run_gpu_benchmark, SystemMetricsState,
+};
 use commands::mlx::{
     check_for_orphaned_mlx_processes, check_mlx_env, delete_adapter_checkpoint,
     get_last_known_good_serving, get_mlx_status, kill_mlx_process, list_adapter_resume_sources,
@@ -76,7 +75,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .manage(Mutex::new(System::new_all()))
+        .manage(SystemMetricsState::default())
         .manage(PortForwardState::default())
         .manage(ModelHubState::default())
         .manage(MlxState::default())
