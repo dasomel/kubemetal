@@ -88,6 +88,18 @@ pub fn external_command_at(
 
 // D43: isolate our VM; cost: old default VM remains; escape: KUBEMETAL_COLIMA_PROFILE.
 pub const KUBEMETAL_COLIMA_PROFILE: &str = include_str!("../../../scripts/colima-profile.txt");
+// D1 (2026-11-08): colima 0.10.3 picks a random k3s_listen_port on VM creation (kubernetes.port: 0)
+// and reuses /etc/colima/colima.json over flags/colima.yaml; k3s writes server/cred/*.kubeconfig
+// once at bootstrap (listen+1) -> crash loop if stored port changes. Pin new VMs; cost: taken
+// port fails start loudly, existing VMs need a one-time /etc/colima/colima.json edit + restart;
+// escape: edit scripts/colima-k3s-port.txt (+ colima.json on existing VM), `make cluster-repair`.
+pub const K3S_LISTEN_PORT_SRC: &str = include_str!("../../../scripts/colima-k3s-port.txt");
+pub fn k3s_listen_port() -> u16 {
+    K3S_LISTEN_PORT_SRC
+        .trim()
+        .parse()
+        .expect("scripts/colima-k3s-port.txt must hold a u16")
+}
 static MANAGED_PROFILE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
     std::env::var_os("KUBEMETAL_COLIMA_PROFILE")
         .map(|value| value.to_string_lossy().into_owned())

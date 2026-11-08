@@ -3,7 +3,8 @@ use tauri::Manager;
 
 use crate::services::lifecycle_guard::{self, Operation};
 use crate::services::process::{
-    colima_command, colima_context, colima_profile, external_command, resolve_bundled_resource,
+    colima_command, colima_context, colima_profile, external_command, k3s_listen_port,
+    resolve_bundled_resource,
 };
 
 /// colima 0.10.x `status --json` 실측 스키마: 기동 중일 때만 exit 0 + stdout에
@@ -148,6 +149,8 @@ pub async fn start_cluster(cpu: u32, memory: u32) -> Result<String, String> {
             "--vm-type=vz",
             "--mount-type=virtiofs",
             "--kubernetes",
+            "--k3s-listen-port",
+            &k3s_listen_port().to_string(),
         ])
         .output()
         .await
@@ -592,6 +595,29 @@ mod tests {
             .parent()
             .expect("repo root")
             .join("scripts/k8s")
+    }
+
+    #[test]
+    fn k3s_listen_port_source_parses_and_is_unprivileged() {
+        let port = k3s_listen_port();
+        assert!((1024..65535).contains(&port), "port {port} out of range");
+    }
+
+    #[test]
+    fn makefile_and_start_cluster_share_the_k3s_port_source() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("repo root");
+        let makefile = std::fs::read_to_string(root.join("Makefile")).expect("Makefile");
+        let up = makefile
+            .split("\ncluster-up:")
+            .nth(1)
+            .and_then(|r| r.lines().nth(1))
+            .expect("cluster-up recipe");
+        assert!(up.contains("--k3s-listen-port $(K3S_LISTEN_PORT)"), "{up}");
+        assert!(makefile.contains("cat scripts/colima-k3s-port.txt"));
+        let src = include_str!("colima.rs");
+        assert!(src.contains("\"--k3s-listen-port\",\n            &k3s_listen_port().to_string()"));
     }
 
     #[test]

@@ -10,6 +10,7 @@ gate is split the way it is (offline-vs-network, verify-vs-release).
 | `check` | `cargo check` | — | no |
 | `test` | `cargo test`, Python RAG/MLX unittest, `test_sbom.sh`, `test_digest_lock.sh`, `scripts/k8s/test_simulated_gpu.sh` | `ci.yml` → `make verify` | no |
 | `sim-gpu-up` / `sim-gpu-down` / `sim-gpu-status` / `sim-gpu-verify` | `scripts/k8s/simulated-gpu.sh {advertise N\|retract\|status\|verify}` against the managed colima context only (D52, scheduling-only simulated `nvidia.com/gpu`) | — (needs a running cluster; its offline stub test runs inside `make test`) | no (pause image already on the node) |
+| `cluster-up` / `cluster-repair` | `colima start ... --kubernetes --k3s-listen-port <scripts/colima-k3s-port.txt>`; `scripts/k8s/repair-k3s-cred-port.sh` rewrites k3s cred kubeconfigs to the measured apiserver port, restarts k3s and prints OK only after 30s of NRestarts 0 and a Ready node (D1); its offline stub test `scripts/k8s/test_repair_k3s_cred_port.sh` runs inside `make test` | — (needs the VM) | no |
 | `lint` | `cargo fmt --check`, `cargo clippy -D warnings`, `tsc --noEmit`, `design.md lint`, `scripts/ci/check_ipc_types.py` | `ci.yml` → `make verify` | no |
 | `license-check` | `scripts/release/check_licenses.sh --self-test` + (no args) | `ci.yml` → `make verify`; `release.yml` (direct, not via `make`) | no (lockfile only) |
 | `dependency-diff` | `scripts/release/gen_dependency_diff.sh` | — (manual review tool, issue #9) | yes (`git worktree` + `pnpm install`) |
