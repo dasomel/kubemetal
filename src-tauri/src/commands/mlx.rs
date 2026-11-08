@@ -1218,6 +1218,24 @@ pub(crate) async fn terminate_pid(
     use_process_group: bool,
     expected_start_time: Option<u64>,
 ) -> Result<(), String> {
+    terminate_pid_with_group_lookup(
+        pid,
+        use_process_group,
+        expected_start_time,
+        services::process::process_group_members,
+    )
+    .await
+}
+
+async fn terminate_pid_with_group_lookup<F>(
+    pid: u32,
+    use_process_group: bool,
+    expected_start_time: Option<u64>,
+    group_members_fn: F,
+) -> Result<(), String>
+where
+    F: FnOnce(u32) -> Result<Vec<(u32, u64)>, String> + Send + 'static,
+{
     let target = match resolve_signal_target(pid, use_process_group) {
         Some(t) => t,
         None => return Ok(()),
@@ -1241,9 +1259,15 @@ pub(crate) async fn terminate_pid(
         ));
     }
     let members = if target < 0 {
-        tokio::task::spawn_blocking(move || services::process::process_group_members(pid))
+        // D22/D-MLX-GROUP-1: group-member lookup failure cannot masquerade as an empty group,
+        // or SIGTERM can reap the leader without a pre-TERM witness and leave stragglers alive.
+        tokio::task::spawn_blocking(move || group_members_fn(pid))
             .await
-            .map_err(|e| format!("Failed to inspect training group {pid}: {e}"))?
+            .map_err(|e| format!("Failed to inspect training group {pid}: {e}"))
+            .and_then(|res| res.map_err(|e| format!("Failed to inspect training group {pid}: {e}")))
+            .inspect_err(|msg| {
+                eprintln!("[mlx] {msg}");
+            })?
     } else {
         Vec::new()
     };
@@ -3018,5 +3042,40 @@ mod tests {
         // PID 0은 시그널 전송이나 sleep 대기 없이 즉시 no-op으로 반환되어야 한다.
         assert!(terminate_pid(0, false, None).await.is_ok());
         assert!(terminate_pid(0, true, None).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn terminate_pid_fails_closed_when_group_member_lookup_fails() {
+        use std::os::unix::process::CommandExt;
+
+        let mut group_leader = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .spawn()
+            .expect("spawn dedicated sleep process group");
+        let pid = group_leader.id();
+        let start_time = services::process::process_start_time(pid)
+            .expect("sleep process start_time must resolve");
+
+        let result = terminate_pid_with_group_lookup(pid, true, Some(start_time), |_| {
+            Err("Failed to initialize sysinfo System: unsupported".to_string())
+        })
+        .await;
+
+        let alive_after_failed_lookup = services::process::pid_is_alive(pid);
+        unsafe {
+            libc::kill(-(pid as i32), libc::SIGKILL);
+        }
+        let _ = group_leader.wait();
+
+        let err = result.expect_err("group lookup failure must fail closed rather than stop blind");
+        assert!(
+            err.contains("Failed to inspect training group") && err.contains("unsupported"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            alive_after_failed_lookup,
+            "training group must not be half-signaled without pre-TERM witness"
+        );
     }
 }

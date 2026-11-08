@@ -183,15 +183,20 @@ pub fn process_start_time(pid: u32) -> Option<u64> {
 }
 
 /// Capture birth times for existing members of an owned training group before TERM.
-pub(crate) fn process_group_members(pgid: u32) -> Vec<(u32, u64)> {
+pub(crate) fn process_group_members(pgid: u32) -> Result<Vec<(u32, u64)>, String> {
+    process_group_members_with(pgid, sysinfo::System::new)
+}
+
+fn process_group_members_with(
+    pgid: u32,
+    init: impl FnOnce() -> Result<sysinfo::System, sysinfo::Error>,
+) -> Result<Vec<(u32, u64)>, String> {
     if pgid == 0 || pgid > i32::MAX as u32 {
-        return Vec::new();
+        return Err(format!("invalid pgid {pgid}"));
     }
-    let Ok(mut system) = sysinfo::System::new() else {
-        return Vec::new();
-    };
+    let mut system = init().map_err(|e| format!("Failed to initialize sysinfo System: {e}"))?;
     system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-    system
+    Ok(system
         .processes()
         .iter()
         .filter_map(|(pid, process)| {
@@ -201,7 +206,7 @@ pub(crate) fn process_group_members(pgid: u32) -> Vec<(u32, u64)> {
                 && unsafe { libc::getpgid(pid as i32) } == pgid as i32)
                 .then_some((pid, process.start_time()))
         })
-        .collect()
+        .collect())
 }
 
 pub(crate) fn process_still_in_group(pid: u32, start_time: u64, pgid: u32) -> bool {
@@ -362,5 +367,19 @@ mod tests {
     #[test]
     fn pid_is_alive_reports_current_process_as_alive() {
         assert!(pid_is_alive(std::process::id()));
+    }
+
+    #[test]
+    fn process_group_members_surfaces_sysinfo_init_failure_and_invalid_pgid() {
+        let err =
+            process_group_members_with(std::process::id(), || Err(sysinfo::Error::Unsupported))
+                .expect_err("sysinfo init failure must not masquerade as an empty group (D22)");
+        assert!(
+            err.contains("Failed to initialize sysinfo System") && err.contains("unsupported"),
+            "unexpected error: {err}"
+        );
+
+        assert!(process_group_members(0).is_err());
+        assert!(process_group_members(i32::MAX as u32 + 1).is_err());
     }
 }
