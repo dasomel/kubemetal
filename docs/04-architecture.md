@@ -135,8 +135,10 @@ DRA/Kueue는 위 조건을 만족하는 **실제 Kubernetes 관리 가능 resour
 | `useMetrics` | 1000ms | `get_system_metrics` |
 | `useColima` | 5000ms | `get_cluster_status` (+ `start_cluster` 트리거) |
 
-발열(고온 시 배치 축소) 가드레일과 powermetrics 기반 Metal GPU 모니터링은 아직 커맨드로
-노출되지 않는다 — docs/01-proposal.md §7 로드맵의 Phase 3 미착수 항목.
+발열 가드레일과 Metal GPU 모니터링은 계획과 다른 방식으로 구현됐다(docs/01-proposal.md §7
+Phase 3): 발열은 배치 축소가 아니라 `thermalState` `serious` 이상에서의 옵트인 학습 일시정지(D28,
+`set_guardrail_config`의 `thermal_pause`), GPU는 `powermetrics`가 아니라 sudo-free `ioreg`
+파싱으로 `get_system_metrics`에 실린다(D2 개정, FR-05.4, §7).
 
 ## 3. 포트 맵 (D1)
 
@@ -187,11 +189,11 @@ sequenceDiagram
 
 ## 6. Phase 3 잔여 범위
 
-- 발열 가드레일 — 고온 진입 시 MLX 배치 크기 자동 축소. `commands/guardrails.rs`는
-  memory pressure(D16)·배터리 상태·caffeinate 연동까지만 구현되어 있고 온도 기반
-  트리거는 아직 없다.
-- Metal GPU 사용률 모니터링 — `powermetrics` 기반, root 권한 필요한 privileged helper
-  방식으로 Phase 3 선택 기능(D2), 미착수.
+- 발열 가드레일 — 구현됨. 계획했던 "MLX 배치 크기 자동 축소"가 아니라 `thermalState`가
+  `serious` 이상일 때의 옵트인 학습 일시정지(D28)와 스폰 전 admission 거부(D40)다. 배치 크기
+  자동 축소는 구현하지 않았다.
+- Metal GPU 사용률 모니터링 — 구현됨. `powermetrics`/privileged helper가 아니라 sudo-free
+  `ioreg -c IOAccelerator` 파싱(D2 개정, FR-05.4). `powermetrics`는 채택하지 않는다.
 
 `run_mlx_finetune`/`kill_mlx_process`(파인튜닝 실행·프로세스 그룹 종료, D17),
 `pause_mlx_training`/`resume_mlx_training`(메모리 압박·배터리 가드레일 연동, D16)은
