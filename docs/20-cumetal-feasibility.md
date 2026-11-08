@@ -362,3 +362,40 @@ Metal 툴체인 없이는 실패한다.**
 - D50 프로브 live: `state=available`, doctor success. D51 harness live: `all_passed=true`,
   `metal_toolchain_present=true`. 앱(dev 빌드)에서 D50 카드 "사용 가능", D51 smoke 3종 "통과" 렌더 확인.
 
+## 2026-11-08 업데이트 — NVML shim 실측 (NVIDIA 지표 열 채울 수 있는가)
+
+결론: **채울 수 없다.** CuMetal 0.7.1의 `lib/libnvidia-ml.dylib`는 dlopen으로 직접 호출해 유휴/부하(`saxpy` 57회
+반복) 두 시점에서 측정했다. 원문 로그와 프로브 소스는 `.omc/logs/cumetal-nvml-2026-11-08.md`(로컬) 참조.
+
+| 지표 | shim 반환 (measured) | 구현 (업스트림 `runtime/rt/nvml.cpp`, read) | NVIDIA 열에 사용 |
+|---|---|---|---|
+| GPU 사용률 | `NVML_ERROR_NOT_SUPPORTED`(rc=3), 유휴·부하 동일 | L164-169 무조건 NOT_SUPPORTED | 불가 |
+| 온도 | rc=3 | L171-178 | 불가 |
+| 전력(W) | rc=3 | L180-184 | 불가 |
+| 클럭 | rc=3 (세 종류 모두) | L186-192 | 불가 |
+| GPU 메모리 | rc=0, total=68719476736 | L142-162: total=`hw.memsize`, free=호스트 VM free+inactive 페이지 | **불가 — 머신 전체 RAM이지 GPU 할당이 아니다.** 같은 순간 `ioreg` "In use system memory"는 0.5–0.8 GB |
+| 발열 압력 | API 없음 | — | 불가 |
+
+- 장치 이름은 CPU 브랜드 문자열("Apple Silicon (Apple M4 Pro)"), UUID는 하드코딩된 합성 값 — 측정값이 아니다.
+- `nvidia-smi` 류 도구는 동봉되지 않는다. `nvmlDeviceGetCudaComputeCapability`는 export되지 않는다.
+- 따라서 NVML 기반 도구를 이 Mac에 붙이면 "GPU 메모리 사용량"이 호스트 RAM 사용량으로 보고된다 — KubeMetal은
+  이 값을 GPU 지표로 쓰지 않는다(D22). GPU 지표의 출처는 계속 D2 개정의 `ioreg`다.
+
+## 2026-11-08 업데이트 — Phase 2 호환성 매트릭스 (measured-local)
+
+`scripts/cumetal/matrix/run_matrix.sh <out.json>`: 프로브 14종을 AOT(`cumetalc`)와 JIT(clang CUDA) **두 경로로 각각**
+빌드해 `CUMETAL_TRACE_GPU=1`로 3회씩 실행하고, 이슈의 어휘(supported/partial/unavailable/failed/unverified)로
+fail-closed 분류한다 — 컴파일 성공만으로는 supported가 되지 않고, 커널을 띄운 프로브는 provenance가
+`device=apple_gpu launch_success=true`여야 한다. 결과 JSON(매니페스트·프로브 sha256 포함)은
+`.omc/logs/cumetal-matrix-2026-11-08.json`(로컬, 약 75초). CuMetal 0.7.1, Apple metal 32023.922, M4 Pro.
+
+| 프로브 | AOT | JIT | 비고 |
+|---|---|---|---|
+| launch 1D/2D/3D, shared+`__syncthreads`, atomics(int add·CAS·float add), warp shuffle, stream+event+`cudaMemcpyAsync`, managed memory, 수기 SGEMM(512², 오차 5.8e-9), NaN/Inf 검출 | supported | supported | 3회 비트 동일, 모든 launch `semantic_quality=exact` |
+| FP64 | partial | partial | 오차 9.1e-15(허용 1e-9) 통과, 그러나 CuMetal이 `semantic_emulation`(AOT)·`reduced_precision_fp64`(JIT)로 보고 — 네이티브 FP64 아님 |
+| cuBLAS `cublasSgemm` | partial | partial | 수치 통과, provenance 줄 없음 → GPU 실행 미증명 |
+| cuFFT 1D C2C 왕복 | partial | partial | 수치 통과, provenance 없음. **AOT는 3회 중 순방향 출력 비트가 2종**(허용 오차 내, 두 번의 전체 실행에서 재현) — 비결정적 |
+| cuRAND host API | partial | partial | 분포 검사 통과, provenance 없음 |
+
+- 이번 실행에서 unavailable/failed는 0건 — 즉 분류기의 거부·실패 분기는 실측으로 아직 한 번도 타지 않았다.
+- 미검증: cuSPARSE, cuSOLVER, cuDNN, NCCL, NVRTC, device-side cuRAND, FP16, 다른 하드웨어.
