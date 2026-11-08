@@ -73,7 +73,7 @@ flowchart TB
 | Backend | 실행 경계 | 현재 상태 | 핵심 검증 |
 |---|---|---|---|
 | `host-mlx` | macOS host native | **기본 / 실측 검증** | MLX 학습·서빙, 메모리/thermal guardrail |
-| `host-cumetal` | macOS host compatibility layer | **Experimental** | CUDA API/workload correctness·성능 (#84) |
+| `host-cumetal` | macOS host compatibility layer | **Experimental** — 탐지 슬라이스 구현됨(D50: `get_cumetal_status`, 읽기 전용); D51: `run_cumetal_smoke` clang 등록/JIT smoke 구현됨(AOT `cumetalc`는 Metal 툴체인 필요로 보류) | CUDA API/workload correctness·성능 (#84) |
 | `krunkit-container` | Colima guest/container | **Experimental** | GPU container → K3s Pod → scheduling boundary (#94) |
 | `remote-kubernetes` | 외부 K8s accelerator cluster | **확장 경로** | capability/data-boundary/routing (#24) |
 
@@ -124,6 +124,8 @@ DRA/Kueue는 위 조건을 만족하는 **실제 Kubernetes 관리 가능 resour
 | | `get_mlx_status`, `kill_mlx_process` | 환경/학습/서빙 통합 상태 조회, SIGTERM→SIGKILL 종료(학습은 그룹 전체 대상; 리더 선종료 시 TERM 전 자식의 시작 시각·PGID·native argv의 MLX 신원을 재검증하며 증거가 없으면 거부, D17) |
 | | `start_model_serving`, `stop_model_serving` | `mlx_lm server` 기동/정지. D48: 어댑터를 서빙하기 전 `adapter_serving_gate`(`services/mlx_artifacts.rs`, `verify_manifest` 재사용)로 manifest를 검증한다. 변조/누락/추가 파일이 있으면 spawn 없이 거부, manifest 없는 레거시 어댑터는 검증 없이 서빙(UI 미표시). 해싱은 `spawn_blocking`. `revert_to_last_serving`은 실행 중 서버를 멈추기 전에 같은 게이트를 먼저 건다 |
 | | `list_registered_models` | MLflow Model Registry 조회 → 파이프라인 뷰 "등록" 단계 노출 (FR-08) |
+| | `get_cumetal_status` | D50: CuMetal(Lulzx/cuda-metal) **읽기 전용 탐지** — `xcrun --find metal/metallib`, `cumetal`/`cumetalc` 경로, `cumetal version`/`doctor`(모두 `external_command` + 타임아웃). 모두 충족해야 `available`, 아니면 첫 실패 사유와 함께 `unavailable`. 설치·컴파일·실행·NVIDIA 텔레메트리 없음 |
+| | `run_cumetal_smoke` | D51: vectorAdd/SAXPY/reduction `.cu`(임베드)를 clang CUDA 등록/JIT 경로로 compile -> link -> run, 단계별 별도 상태 + parity + `CUMETAL_PROVENANCE` 파싱 + 버전 manifest. 학습/서빙/벤치마크 점유 중 거부. `device=apple_gpu`·`launch_success=true` provenance가 있어야 `passed`(자기 보고 기반). NVIDIA 텔레메트리 없음 |
 | 접근 콘솔 (Phase 2d) | `get_service_access` | MLflow/SeaweedFS S3·Filer/Model Serving 4종 헬스 + S3 크리덴셜 Secret 조회 (FR-09) |
 | 하드웨어 가드레일 (Phase 3) | `get_guardrail_status`, `set_guardrail_config` | memory pressure(D16)·배터리 상태 조회, 배터리 시 자동 일시정지 설정 |
 | | `pause_mlx_training`, `resume_mlx_training` | 학습 프로세스 그룹에 SIGSTOP/SIGCONT (D17) |

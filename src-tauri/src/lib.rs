@@ -9,6 +9,7 @@ use commands::colima::{
     check_latest_airgap_versions, get_airgap_status, get_cluster_status, list_kubeconfig_contexts,
     start_cluster, stop_cluster, trigger_airgap_download, trigger_airgap_install,
 };
+use commands::cumetal::{get_cumetal_status, run_cumetal_smoke};
 use commands::data_ingest::{
     get_ingest_status, list_ingested_datasets, run_data_ingest, DataIngestState,
 };
@@ -137,6 +138,8 @@ pub fn run() {
             delete_adapter_checkpoint,
             list_adapter_staging,
             list_adapter_resume_sources,
+            get_cumetal_status,
+            run_cumetal_smoke,
             terminate_orphaned_mlx_process,
             get_local_inference_status,
             probe_local_inference_runtime,

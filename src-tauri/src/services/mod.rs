@@ -1,6 +1,7 @@
 #[allow(dead_code)] // Training wired in S2; reconcile/list consumers follow in S3.
 pub mod adapter_staging;
 pub mod artifact_manifest;
+pub mod cumetal;
 pub mod deploy_operation;
 pub mod deploy_target;
 pub(crate) mod gpu_benchmark;

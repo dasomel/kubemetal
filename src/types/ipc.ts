@@ -587,3 +587,76 @@ export interface TrainingCheckpointEvent {
   pid: number;
   checkpoint: { iter: number; manifest_sha256: string };
 }
+
+/** D50: CuMetal detection (snake_case, same as the Rust serde output). Read-only. */
+export interface CumetalStatus {
+  state: 'available' | 'unavailable';
+  reason: string | null;
+  metal_toolchain: {
+    metal: string | null;
+    metallib: string | null;
+    metal_error: string | null;
+    metallib_error: string | null;
+  };
+  cumetal_path: string | null;
+  cumetal_error: string | null;
+  cumetalc_path: string | null;
+  cumetalc_error: string | null;
+  version: string | null;
+  version_error: string | null;
+  doctor: {
+    success: boolean;
+    exit_code: number | null;
+    output_excerpt: string;
+    truncated: boolean;
+  } | null;
+  doctor_error: string | null;
+}
+
+/** D51: CUDA smoke harness (clang registration/JIT path). Snake_case, same as the Rust serde output. */
+export type CumetalStepStatus = 'ok' | 'failed' | 'timeout' | 'skipped';
+
+export interface CumetalStepResult {
+  status: CumetalStepStatus;
+  exit_code: number | null;
+  excerpt: string;
+}
+
+export interface CumetalLaunchProvenance {
+  kernel: string | null;
+  source: string | null;
+  semantic_quality: string | null;
+  device: string | null;
+  device_name: string | null;
+  launch_success: boolean | null;
+  unsupported_reason: string | null;
+}
+
+export interface CumetalWorkloadResult {
+  name: string;
+  source_sha256: string;
+  compile: CumetalStepResult;
+  link: CumetalStepResult;
+  run: CumetalStepResult;
+  parity: { status: 'pass' | 'fail' | 'unknown'; metric_line: string | null };
+  provenance: { status: 'verified' | 'failed' | 'unverified'; launches: CumetalLaunchProvenance[] };
+  verdict: 'passed' | 'notpassed';
+  verdict_reason: string | null;
+}
+
+export interface CumetalSmokeReport {
+  state: 'ran' | 'unavailable';
+  reason: string | null;
+  all_passed: boolean;
+  manifest: {
+    cumetal_version: string | null;
+    clang_version: string | null;
+    macos_version: string | null;
+    arch: string;
+    metal_toolchain_present: boolean;
+    prefix: string;
+    timestamp_unix: number;
+    errors: string[];
+  } | null;
+  workloads: CumetalWorkloadResult[];
+}
