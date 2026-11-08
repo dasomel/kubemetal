@@ -30,7 +30,7 @@ Changing a D-registry decision requires updating all affected docs in the same t
 
 - **K8s never runs compute** — MLX/Metal work is host processes spawned by the Rust backend.
 - **Ports (D1)**: MLflow host-forward **5001** (AirPlay owns 5000), SeaweedFS S3 8333,
-  Filer UI 8888, Prefect 4200, model serving 8080, **kagent UI 8090** (never 8080 —
+  Filer UI 8888, Prefect 4200, **k3s API 36443** (apiserver 36444; pinned, `scripts/colima-k3s-port.txt`), model serving 8080, **kagent UI 8090** (never 8080 —
   serving owns it). All local URLs use `127.0.0.1`, never `localhost`. Object storage is
   SeaweedFS; orchestration is Prefect 3 (D19).
 - **Metrics (D2, amended)**: sysinfo RAM/CPU + sudo-free GPU via `ioreg -c IOAccelerator`

@@ -15,6 +15,8 @@ $(error Invalid managed Colima profile; see diagnostic above)
 endif
 override KUBEMETAL_COLIMA_PROFILE := $(COLIMA_PROFILE_CHECK)
 COLIMA_CONTEXT := colima-$(KUBEMETAL_COLIMA_PROFILE)
+# D1 (2026-11-08): pinned k3s API port; single source shared with Rust (process.rs K3S_LISTEN_PORT).
+K3S_LISTEN_PORT := $(strip $(shell cat scripts/colima-k3s-port.txt))
 CONTEXT ?= $(COLIMA_CONTEXT)
 NAMESPACE ?= $(if $(filter $(COLIMA_CONTEXT),$(CONTEXT)),default,kubemetal)
 STORAGE_CLASS ?=
@@ -36,7 +38,7 @@ VITE_PORT := 5173
 .DEFAULT_GOAL := help
 
 .PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap airgap-sbom verify-airgap-sbom verify-support-bundle \
-        lint fmt verify license-check dependency-diff runtime-license-inventory model-license-check vuln-check supply-chain-check clean-light cluster-up cluster-down sim-gpu-up sim-gpu-down sim-gpu-status sim-gpu-verify provision provision-all kagent-up \
+        lint fmt verify license-check dependency-diff runtime-license-inventory model-license-check vuln-check supply-chain-check clean-light cluster-up cluster-down cluster-repair sim-gpu-up sim-gpu-down sim-gpu-status sim-gpu-verify provision provision-all kagent-up \
         preflight render export-gitops \
         forward forward-stop status index-code analyze-code serve-codegraph clean
 
@@ -107,6 +109,7 @@ test: ## Rust·Python·Air-gap·시뮬레이션 GPU 회귀 테스트
 	bash scripts/airgap/test_sbom.sh
 	bash scripts/airgap/test_digest_lock.sh
 	bash scripts/k8s/test_simulated_gpu.sh
+	bash scripts/k8s/test_repair_k3s_cred_port.sh
 
 test-e2e: ## 종합 E2E 자율 피드백 검증 스위트 실행 (합성데이터→파인튜닝→kagent진단→코딩패치)
 	./scripts/e2e/run_full_e2e_verification.sh
@@ -190,10 +193,13 @@ verify: test lint license-check ## 완료 게이트 스위트 (test + lint + 라
 	pnpm build
 
 cluster-up: ## Colima K3s 시작 (vz/virtiofs, 6CPU/12GB — 64GB 호스트 D4 값)
-	colima --profile $(KUBEMETAL_COLIMA_PROFILE) start --cpu 6 --memory 12 --vm-type=vz --mount-type=virtiofs --kubernetes
+	colima --profile $(KUBEMETAL_COLIMA_PROFILE) start --cpu 6 --memory 12 --vm-type=vz --mount-type=virtiofs --kubernetes --k3s-listen-port $(K3S_LISTEN_PORT)
 
 cluster-down: ## Colima 정지
 	colima --profile $(KUBEMETAL_COLIMA_PROFILE) stop
+
+cluster-repair: ## k3s 자격증명 kubeconfig의 옛 API 포트 복구(D1) — 실행 중인 VM에서 측정한 포트로 재작성 후 안정성 확인
+	bash scripts/k8s/repair-k3s-cred-port.sh
 
 # D52: 스케줄링 전용 가짜 nvidia.com/gpu (디바이스 패스스루 아님). colima 컨텍스트만 허용 — 스크립트가 거부한다.
 GPUS ?= 1
