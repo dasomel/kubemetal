@@ -266,7 +266,8 @@ impl GpuTelemetryBackend for AppleMetalBackend {
 }
 
 /// sysinfo 0.40의 `System` 생성자는 `Result`를 반환한다. 기동 시점 초기화 실패로 앱 전체가
-/// 패닉하지 않게 결과를 보관하되, 조회 시에는 0으로 뭉개지 않고 에러로 표면화한다(D22).
+/// 패닉하지 않게 결과를 보관하되, 저장된 값이 `Err`이면 다음 조회에서 `System::new_all()`을
+/// 재시도해 성공 시 교체하고 여전히 실패하면 0으로 뭉개지 않고 에러로 표면화한다(D22).
 /// `lib.rs`의 `.manage(...)`와 `State<'_, ...>`가 내부 제네릭을 각자 적으면 컴파일은 통과하고
 /// 런타임 조회에서만 패닉이 나므로 단일 뉴타입으로 묶는다.
 pub struct SystemMetricsState(Mutex<Result<System, sysinfo::Error>>);
@@ -279,7 +280,17 @@ impl Default for SystemMetricsState {
 
 impl SystemMetricsState {
     fn read_cpu_memory(&self) -> Result<(f64, f64, f32), String> {
+        self.read_cpu_memory_with(System::new_all)
+    }
+
+    fn read_cpu_memory_with(
+        &self,
+        init: impl FnOnce() -> Result<System, sysinfo::Error>,
+    ) -> Result<(f64, f64, f32), String> {
         let mut guard = self.0.lock().map_err(|e| e.to_string())?;
+        if guard.is_err() {
+            *guard = init();
+        }
         let sys = guard
             .as_mut()
             .map_err(|e| format!("Failed to initialize system metrics: {e}"))?;
@@ -861,12 +872,47 @@ mod tests {
     fn system_metrics_state_surfaces_init_failure_without_zero_fallback() {
         let state = SystemMetricsState(Mutex::new(Err(sysinfo::Error::Unsupported)));
         let err = state
-            .read_cpu_memory()
+            .read_cpu_memory_with(|| Err(sysinfo::Error::Unsupported))
             .expect_err("sysinfo init failure must propagate rather than fabricate zeros (D22)");
         assert!(
             err.contains("unsupported"),
             "expected underlying sysinfo error in message, got: {err}"
         );
+    }
+
+    #[test]
+    fn system_metrics_state_retries_after_init_failure_and_replaces_stored_state() {
+        let state = SystemMetricsState(Mutex::new(Err(sysinfo::Error::Unsupported)));
+        let retry_calls = std::cell::Cell::new(0usize);
+
+        let err = state
+            .read_cpu_memory_with(|| {
+                retry_calls.set(retry_calls.get() + 1);
+                Err(sysinfo::Error::Unsupported)
+            })
+            .expect_err("failed retry must still surface error (D22)");
+        assert_eq!(retry_calls.get(), 1);
+        assert!(err.contains("unsupported"), "unexpected error: {err}");
+
+        let (total, used, cpu) = state
+            .read_cpu_memory_with(|| {
+                retry_calls.set(retry_calls.get() + 1);
+                System::new_all()
+            })
+            .expect("retry with working constructor must recover from initial Err");
+        assert_eq!(retry_calls.get(), 2);
+        assert!(total > 0.0);
+        assert!(used >= 0.0 && used <= total * 2.0);
+        assert!(cpu >= 0.0);
+
+        let (total_again, _, _) = state
+            .read_cpu_memory_with(|| {
+                retry_calls.set(retry_calls.get() + 1);
+                panic!("stored Ok(System) must be reused without re-initializing");
+            })
+            .expect("subsequent reads must reuse stored System");
+        assert_eq!(retry_calls.get(), 2);
+        assert!(total_again > 0.0);
     }
 
     #[test]
