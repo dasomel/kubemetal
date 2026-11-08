@@ -68,6 +68,24 @@ pub fn external_command(bin: &str) -> Result<tokio::process::Command, String> {
     Ok(cmd)
 }
 
+/// 절대경로로 이미 알고 있는 실행 파일용 `Command`. `resolve_cli_path`의 `SEARCH_PATHS`에 없는
+/// **keg-only** 도구(예: `/opt/homebrew/opt/llvm/bin/clang++`는 PATH에 노출되지 않는다)와, 임시
+/// 디렉터리에서 방금 빌드한 바이너리를 실행할 때 쓴다. PATH는 `external_command`와 같이 보강하되,
+/// `path_prefix`가 있으면 맨 앞에 붙인다 — clang CUDA 드라이버는 `ptxas`/`fatbinary`를 PATH에서
+/// 찾기 때문이다.
+pub fn external_command_at(
+    program: &std::path::Path,
+    path_prefix: Option<&std::path::Path>,
+) -> tokio::process::Command {
+    let mut path = augmented_path();
+    if let Some(prefix) = path_prefix {
+        path = format!("{}:{path}", prefix.display());
+    }
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.env("PATH", path);
+    cmd
+}
+
 // D43: isolate our VM; cost: old default VM remains; escape: KUBEMETAL_COLIMA_PROFILE.
 pub const KUBEMETAL_COLIMA_PROFILE: &str = include_str!("../../../scripts/colima-profile.txt");
 static MANAGED_PROFILE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {

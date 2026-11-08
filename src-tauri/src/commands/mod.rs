@@ -5,6 +5,7 @@ pub mod access;
 #[allow(dead_code, clippy::too_many_arguments)]
 pub mod agent_execution_security;
 pub mod colima;
+pub mod cumetal;
 pub mod data_ingest;
 pub mod deploy_target;
 pub mod guardrails;

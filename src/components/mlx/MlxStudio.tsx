@@ -9,6 +9,8 @@ import { GpuBenchmarkCard } from './GpuBenchmarkCard';
 import { MlxServingCard } from './MlxServingCard';
 import { MlxOrphanedProcessesCard } from './MlxOrphanedProcessesCard';
 import { AdapterStagingCard } from './AdapterStagingCard';
+import { CumetalCard } from './CumetalCard';
+import { CumetalSmokeCard } from './CumetalSmokeCard';
 import { LocalInferenceRuntimeCard } from './LocalInferenceRuntimeCard';
 import { LocalInferenceBridgeCard } from './LocalInferenceBridgeCard';
 import { LocalInferenceOpsCard } from './LocalInferenceOpsCard';
@@ -119,6 +121,8 @@ export const MlxStudio: React.FC = () => {
         <GpuBenchmarkCard />
         <LocalInferenceReadinessCard />
         <MlxOrphanedProcessesCard />
+        <CumetalCard />
+        <CumetalSmokeCard />
       </div>
 
       {/* 추론 런타임 / Runtime */}

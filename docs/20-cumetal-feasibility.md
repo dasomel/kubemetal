@@ -180,10 +180,10 @@ Error: No available formula with the name "cumetal". Did you mean metals?
 | Acceptance | 상태 | 근거 |
 |---|---|---|
 | M4/Mac mini에서 설치/탐지/doctor 결과 재현 가능 | **blocked** | CuMetal 미설치. Xcode Metal 컴파일러도 없음(§2 측정) — 설치 자체가 이 조사의 read-only 스코프 밖. next-step: `brew tap lulzx/tap && brew install lulzx/tap/cumetal` (설치 승인 필요) |
-| `.cu` smoke workload 3종 자동 compile/run | **next-step** | 코드 미작성. next-step: §4의 5-8 단계 구현, `src-tauri/src/services/compute_backend/cumetal.rs` 신설 |
-| 미설치/불일치 환경을 `unavailable`로 명확 표시 | **next-step** | `resolve_cli_path` 실패 시 조기 반환 패턴은 기존 코드에 선례 있음(`runtime_adapter.rs` install_hint 패턴 참고), CuMetal 전용 상태 enum만 추가하면 됨 |
-| compile 성공/execution 성공을 별도 상태로 기록 | **next-step** | §4-5 설계 |
-| Mac model/SoC/GPU cores/RAM/macOS/Xcode/CuMetal version 연결 | **next-step** | `metrics.rs`의 `system_profiler`/`sysctl` 수집 경로 재사용 가능(§3), Xcode 버전은 `xcodebuild -version` 또는 `xcrun --version`으로 추가 |
+| `.cu` smoke workload 3종 자동 compile/run | **done on the JIT path (D51, 2026-11-06)** | `run_cumetal_smoke`(`services/cumetal/harness.rs`)가 `scripts/cumetal/smoke/*.cu` 3종을 clang 등록/JIT 경로로 compile -> link -> run하고 CPU 참조 parity와 `CUMETAL_PROVENANCE`를 판정. 이 Mac live 실행에서 3종 모두 `device=apple_gpu`로 통과. `cumetalc` AOT 경로는 Xcode Metal 툴체인이 없어 **여전히 blocked** |
+| 미설치/불일치 환경을 `unavailable`로 명확 표시 | **done (D50, 2026-11-02)** | `get_cumetal_status`(`services/cumetal.rs`)가 metal/metallib/cumetal/cumetalc/doctor 프로브를 수행하고 첫 실패 사유와 함께 `unavailable`을 반환. 단위 테스트 14건(`cargo test cumetal`) 통과 — 모든 분기는 주입된 러너로, 실제 프로세스 일관성은 live 테스트로 확인. 이 Mac의 앱 수준 확인은 별도 |
+| compile 성공/execution 성공을 별도 상태로 기록 | **done (D51, JIT path)** | compile/link/run/parity/provenance를 각각 별도 상태로 기록하고 단계별 타임아웃 적용. AOT 경로의 별도 상태는 Xcode 이후 |
+| Mac model/SoC/GPU cores/RAM/macOS/Xcode/CuMetal version 연결 | **partial (D51 manifest)** | D51 manifest가 cumetal/clang++/macOS 버전, arch, Metal 툴체인 유무, 소스 sha256, 타임스탬프를 기록(offline 재실행용 버전 manifest 항목은 JIT 경로에서 충족). SoC/GPU 코어/RAM/Xcode 버전 연결은 **next-step**: `metrics.rs`의 `system_profiler`/`sysctl` 수집 경로 재사용 가능(§3), Xcode 버전은 `xcodebuild -version` 또는 `xcrun --version`으로 추가 |
 
 ### Phase 2 — CUDA API/Library Compatibility Matrix + Numerical Validation
 
@@ -271,3 +271,94 @@ evidence 스키마는 이 한 조각이 실제로 이 Mac에서 `Unavailable("xc
 metal failed")`를 정직하게 반환하는 것을 테스트로 확인한 뒤 다음 슬라이스로
 넘긴다 — Xcode 없는 이 개발 호스트에서는 그 결과 자체가 유효한 Phase 1
 acceptance 증거("미설치/불일치 환경을 unavailable로 명확히 표시")가 된다.
+
+## 2026-11-02 업데이트 — Phase 1 탐지 슬라이스 (D50)
+
+- 업스트림 최신 릴리스 `v0.7.0` (published_at 2026-10-28T14:07:02Z)
+  [upstream-doc, `gh api repos/Lulzx/cuda-metal/releases/latest`, 측정 2026-11-02].
+  이 문서 §1의 `v0.6.0`(2026-09-28 기준)은 더 이상 최신이 아니다.
+- Homebrew tap formula `Lulzx/homebrew-tap` `Formula/cumetal.rb` [upstream-doc, 측정 2026-11-02]:
+  - `url`은 **v0.4.0**에 고정돼 있다 — 최신 릴리스(v0.7.0)와 어긋난다. 따라서 `brew install`로
+    설치되는 버전은 업스트림 최신이 아니다(`cumetal version` 결과로 확인해야 하며 UI는 보고된 값만 표시).
+  - `depends_on`: llvm, cmake, arm64, macOS Sonoma 이상.
+  - `xcrun --find metal`과 `xcrun --find metallib` 중 하나라도 실패하면 `odie`한다 —
+    D50 preflight가 같은 두 조회를 그대로 사용하는 이유.
+  - `-DCUMETAL_ENABLE_BINARY_SHIM=OFF`로 빌드한다.
+  - formula test는 `CUMETAL_TRACE_GPU=1`로 실행해 출력에 `device=apple_gpu`와
+    `launch_success=true`를 기대한다 — 향후 "실제로 Apple GPU에서 실행됐는가"를 판정할
+    GPU provenance 신호로 쓸 수 있다(이번 슬라이스는 실행하지 않으므로 미사용).
+- 이 호스트: `xcrun -f metal`이 여전히 실패한다(Command Line Tools만 설치,
+  `/Library/Developer/CommandLineTools`) [measured-local, 2026-11-02]. 따라서 이 Mac에서
+  `get_cumetal_status`의 기대 결과는 `unavailable`(`xcrun --find metal failed ...`)이다.
+- 구현: `src-tauri/src/services/cumetal.rs`, 커맨드 `get_cumetal_status`, 카드
+  `src/components/mlx/CumetalCard.tsx`. 결정 근거는 D50(`docs/03-mvp-design.md` §4).
+  모듈 위치는 §4 스케치의 `compute_backend/cumetal.rs`가 아니라 `services/cumetal.rs`다 —
+  `ComputeBackend` trait이 아직 없어 디렉터리를 먼저 만들지 않았다.
+- Phase 1 표 갱신: "미설치/불일치 환경을 `unavailable`로 명확 표시"만 done.
+  나머지 행(설치/doctor 재현, `.cu` smoke 3종, compile/execution 별도 상태, 환경 연결 기록)은
+  그대로 blocked/next-step이다. Owner decision 3(optional dependency)은 "런타임 무해, feature flag
+  없음"으로 D50이 잠정 결정했다.
+
+## 2026-11-06 업데이트 — 실제 설치·실행 (measured-local)
+
+**결론: Metal 툴체인(Xcode) 없이도 clang CUDA → PTX 등록 → 런타임 MSL JIT 경로로 smoke 3종이
+Apple GPU에서 실행되고 CPU 참조와 정확히 일치한다. 반면 `cumetalc` AOT 경로와 `cumetal doctor`는
+Metal 툴체인 없이는 실패한다.**
+
+- 설치 [measured-local, 2026-11-06]: tap 공식(이제 v0.7.1 핀)은 `xcrun --find metal`이 없으면 odie하므로
+  사용하지 않고, `v0.7.1`(548e79a) 소스를 공식과 같은 옵션(`Release`, `-DCUMETAL_BUILD_TESTS=OFF`,
+  `-DCUMETAL_ENABLE_BINARY_SHIM=OFF`, Homebrew LLVM 23.1.4)으로 빌드했다. prefix `~/.local/opt/cumetal`,
+  `cumetal`/`cumetalc`만 `/opt/homebrew/bin`에 심볼릭 링크(`resolve_cli_path` 탐색 경로). 업스트림
+  `docs/build.md`가 "Metal 도구 없이도 host 빌드와 runtime Metal compilation은 가능"이라고 명시한다.
+  제거: 두 링크와 `~/.local/opt/cumetal` 삭제(`install_manifest.txt` 동봉).
+- `cumetal version` → `cumetal 0.7.1`. `cumetal doctor` → exit 1, `[✗] Metal toolchain (metal/metallib not
+  found)`, 나머지(Apple Silicon, macOS 27.0.1, CuMetal, CUDA-capable Clang) ✓.
+- D50 프로브 실측: `state=unavailable`(사유: `xcrun --find metal` 실패), `cumetal_path`/`cumetalc_path`=
+  `/opt/homebrew/bin/…`, `version=0.7.1`, `doctor.success=false, exit_code=1` — doctor 판정과 일치.
+- `cumetalc <w>.cu -o <w>`(기본·`--mode experimental` 모두) → `failed to compile .metal to .air with xcrun
+  metal`. AOT 경로는 Metal 툴체인 필수.
+- 등록(JIT) 경로: 업스트림 `tests/cuda_projects/softmax/build.sh`와 같은 방식 —
+  `clang++ -x cuda --cuda-gpu-arch=sm_80 -nocudainc -nocudalib -include cuda_runtime.h` (PATH 앞에
+  `scripts/cuda_toolchain`) → `xcrun clang++ … -lcumetal -Wl,-rpath,<prefix>/lib`. 첫 실행 시 PTX를 MSL로
+  낮춰 `newLibraryWithSource`로 컴파일한다(`CUMETAL_DEBUG_REGISTRATION=1`: `metallib='' ptx_size=1168`).
+
+| workload (n=2^20) | source sha256 (앞 12자) | 결과 | GPU provenance (`CUMETAL_TRACE_GPU=1`) |
+|---|---|---|---|
+| vectorAdd | `9d220ac488df` | `max_abs_error=0` | `device=apple_gpu device_name="Apple M4 Pro" launch_success=true semantic_quality=exact` |
+| SAXPY | `1857a9f1d794` | `max_rel_error=0` | `device=apple_gpu launch_success=true` |
+| reduction (shared mem + `__syncthreads` + 64-bit `atomicAdd`) | `bbc671a3324d` | `got=36699887 expected=36699887` | `device=apple_gpu launch_success=true` |
+
+  각 프로세스 wall time 0.05–0.07s(첫 실행 JIT 포함, 벤치마크 아님). provenance는 CuMetal 런타임의
+  자기 보고다 — 독립 교차 확인(ioreg 활동 diff)은 아직 하지 않았다.
+- **D50 판정과의 간극**: 지금 D50은 doctor를 따라 `unavailable`을 보이지만, 위처럼 JIT 경로로는 CUDA
+  실행이 된다. "AOT 불가 / JIT 가능"을 구분하는 상태를 둘지는 오너 결정(Phase 1 harness 설계와 함께).
+
+## 2026-11-06 구현 — Phase 1 smoke harness (D51, JIT 경로)
+
+- 구현: `src-tauri/src/services/cumetal/harness.rs`, 커맨드 `run_cumetal_smoke`, 카드
+  `src/components/mlx/CumetalSmokeCard.tsx`, fixture `scripts/cumetal/smoke/*.cu`(위 측정과 동일한 소스,
+  sha256 앞 12자 `9d220ac488df`/`1857a9f1d794`/`bbc671a3324d`). 결정 근거는 D51(`docs/03-mvp-design.md` §4).
+- §4 스케치와의 차이: AOT `cumetalc` 대신 JIT 경로를 쓰고(Metal 툴체인 불필요), GPU provenance는
+  `ioreg` diff가 아니라 CuMetal의 `CUMETAL_PROVENANCE` 자기 보고를 쓴다 — **독립 교차 확인은 아직 없다**.
+  CPU 참조 비교는 각 `.cu`가 스스로 수행해 종료 코드(0/1)와 metric 줄로 보고한다(별도 Rust 참조 구현 없음).
+- 이 Mac live 실행(`cargo test live_smoke -- --nocapture`): 3종 모두 compile/link/run/parity 통과,
+  provenance `device=apple_gpu device_name="Apple M4 Pro" launch_success=true semantic_quality=exact`.
+- D50 `state`는 doctor 기준 그대로(`unavailable`)다. 카드가 "AOT 불가 / JIT 검증 가능" 안내를 덧붙인다.
+- 여전히 blocked: `cumetalc` AOT 경로(Xcode Metal 툴체인 필요). 앱 UI 수준 관찰은 별도.
+
+## 2026-11-08 업데이트 — Xcode 설치 후 AOT 경로 검증 (measured-local)
+
+- Xcode 27.2(27B52) 설치. 이 버전은 Metal 툴체인을 별도 구성요소로 배포한다 — Xcode만 깔면 `xcrun --find metal`이
+  경로를 돌려주지만 그것은 스텁이고(`cannot execute tool 'metal' due to missing Metal Toolchain`), `metallib`은 없다.
+  필요한 순서(모두 실측): `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` →
+  `sudo xcodebuild -license accept` → `sudo xcodebuild -runFirstLaunch`(없으면 CoreSimulator 플러그인 로드 실패로
+  `-downloadComponent`도 실패) → `xcodebuild -downloadComponent MetalToolchain`(838.9 MB, sudo 불필요,
+  Status: installed, 27B47). 툴체인은 cryptex 마운트(`/var/run/com.apple.security.cryptexd/mnt/…/Metal.xctoolchain`)에서
+  실행된다. `metal --version` → `Apple metal version 32023.922`.
+- `cumetal doctor` → exit 0, "No issues found!".
+- `cumetalc <w>.cu -o <w>`(AOT) 3종 모두 compile exit 0, run exit 0, CPU 참조 일치(vectorAdd `max_abs_error=0`,
+  SAXPY `max_rel_error=0`, reduction `got=expected=36699887`), provenance `device=apple_gpu launch_success=true
+  semantic_quality=exact source=generic_nvvm`(JIT 경로는 `generic_ptx` — 두 경로가 실제로 다른 lowering을 탄다).
+- D50 프로브 live: `state=available`, doctor success. D51 harness live: `all_passed=true`,
+  `metal_toolchain_present=true`. 앱(dev 빌드)에서 D50 카드 "사용 가능", D51 smoke 3종 "통과" 렌더 확인.
+
