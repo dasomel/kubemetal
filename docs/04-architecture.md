@@ -51,6 +51,10 @@ flowchart TB
   대체하지 않고 별도 capability/evidence gate를 통과한 뒤 확장한다.
 
 
+> **시뮬레이션 NVIDIA GPU (D52)**: `make sim-gpu-up`은 앱 자체 k3s 노드에 `nvidia.com/gpu`를 *스케줄링 전용*으로
+> 광고해 NVIDIA 타깃 매니페스트(`resources.limits`)를 로컬에서 스케줄 테스트하게 해줄 뿐이다. GPU 패스스루가
+> 아니며 파드는 어떤 디바이스도 받지 않는다 — K8s는 연산을 실행하지 않고 실제 GPU 작업은 호스트 CuMetal/MLX가 맡는다.
+
 ### 1.1 ComputeBackend 확장 모델
 
 KubeMetal의 장기 방향은 특정 런타임 하나를 모든 AI workload의 실행 환경으로 고정하지 않고

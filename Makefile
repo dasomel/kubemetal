@@ -36,7 +36,7 @@ VITE_PORT := 5173
 .DEFAULT_GOAL := help
 
 .PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap airgap-sbom verify-airgap-sbom verify-support-bundle \
-        lint fmt verify license-check dependency-diff runtime-license-inventory model-license-check vuln-check supply-chain-check clean-light cluster-up cluster-down provision provision-all kagent-up \
+        lint fmt verify license-check dependency-diff runtime-license-inventory model-license-check vuln-check supply-chain-check clean-light cluster-up cluster-down sim-gpu-up sim-gpu-down sim-gpu-status sim-gpu-verify provision provision-all kagent-up \
         preflight render export-gitops \
         forward forward-stop status index-code analyze-code serve-codegraph clean
 
@@ -99,13 +99,14 @@ install-app: app ## .app 빌드 후 /Applications에 설치(기존본 교체)
 check: ## Rust 타입/컴파일 체크
 	cargo check --locked --manifest-path $(CARGO_MANIFEST)
 
-test: ## Rust·Python·Air-gap 회귀 테스트
+test: ## Rust·Python·Air-gap·시뮬레이션 GPU 회귀 테스트
 	cargo test --locked --manifest-path $(CARGO_MANIFEST) --lib
 	python3 -m unittest discover -s tests/rag -v
 	python3 -m unittest discover -s tests/mlx -v
 	python3 -m unittest discover -s scripts/support -v
 	bash scripts/airgap/test_sbom.sh
 	bash scripts/airgap/test_digest_lock.sh
+	bash scripts/k8s/test_simulated_gpu.sh
 
 test-e2e: ## 종합 E2E 자율 피드백 검증 스위트 실행 (합성데이터→파인튜닝→kagent진단→코딩패치)
 	./scripts/e2e/run_full_e2e_verification.sh
@@ -193,6 +194,20 @@ cluster-up: ## Colima K3s 시작 (vz/virtiofs, 6CPU/12GB — 64GB 호스트 D4 �
 
 cluster-down: ## Colima 정지
 	colima --profile $(KUBEMETAL_COLIMA_PROFILE) stop
+
+# D52: 스케줄링 전용 가짜 nvidia.com/gpu (디바이스 패스스루 아님). colima 컨텍스트만 허용 — 스크립트가 거부한다.
+GPUS ?= 1
+sim-gpu-up: ## 시뮬레이션 NVIDIA GPU 광고(스케줄링 전용, D52): make sim-gpu-up GPUS=2 (1..8)
+	KUBE_CONTEXT=$(COLIMA_CONTEXT) scripts/k8s/simulated-gpu.sh advertise $(GPUS)
+
+sim-gpu-down: ## 시뮬레이션 NVIDIA GPU 광고 철회(D52)
+	KUBE_CONTEXT=$(COLIMA_CONTEXT) scripts/k8s/simulated-gpu.sh retract
+
+sim-gpu-status: ## 노드가 실제로 보고하는 nvidia.com/gpu 상태(D52)
+	KUBE_CONTEXT=$(COLIMA_CONTEXT) scripts/k8s/simulated-gpu.sh status
+
+sim-gpu-verify: ## 시뮬레이션 GPU 스케줄링 검증: 요청 1 → Running, N+1 → Pending(D52)
+	KUBE_CONTEXT=$(COLIMA_CONTEXT) scripts/k8s/simulated-gpu.sh verify
 
 # 매니페스트 목록은 `scripts/k8s/kustomization.yaml`이 단일 출처다 — 예전에는 여기와
 # `provision.rs::MANIFESTS`에 같은 목록이 이중으로 있어 한쪽만 바뀌면 조용히 어긋났다.
