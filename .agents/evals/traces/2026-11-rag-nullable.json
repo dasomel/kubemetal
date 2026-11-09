@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-rag-nullable-2026-11-10",
+  "task": "Issue #38 follow-up to 20fd15b: preserve nullable RAG metadata across all modes and consumers.",
+  "changeContext": {
+    "paths": [
+      "scripts/rag/rag_host.py",
+      "src-tauri/src/commands/rag.rs",
+      "src/types/ipc.ts",
+      "src/components/pipeline/RagCard.tsx",
+      "src/components/mlx/ModelChatPlayground.tsx",
+      "src/i18n/translations.ts",
+      "tests/rag/test_rag_nullable.py",
+      "docs/mistakes-log.md",
+      ".agents/evals/traces/2026-11-rag-nullable.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Read AGENTS.md, relevant mistakes log, Makefile and project runtime skill. Confined code changes to this worktree; no cluster commands, push, PR or D-registry rows."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before fixes: python3 -m unittest discover -s tests/rag -p test_rag_nullable.py -v failed six mode subcases (empty string != None); cargo test --manifest-path src-tauri/Cargo.toml --locked --lib query_response_preserves_null_metadata_in_all_modes failed with invalid type: null, expected a string.",
+      "evidence": [
+        "/tmp/rag-null-evidence/python-before.log",
+        "/tmp/rag-null-evidence/rust-before.log"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "All Python modes preserve null/missing text, filename and source. Hybrid tie sorting handles null source. Rust Option<String> and TS nullable types match serde output. Localized RagCard labels replace unknown source/text; chat filters textless context chunks. D22 contract comments and mistakes-log row added."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "scripts/rag, tests/rag, src-tauri/src/commands/rag.rs",
+      "summary": "python3 -m unittest discover -s tests/rag -v: Ran 57 tests, OK. cargo test --manifest-path src-tauri/Cargo.toml --locked --lib commands::rag::retrieval_mode_tests: 3 passed; 0 failed. SDK/embedding mocked, not live LanceDB/MLX.",
+      "evidence": [
+        "/tmp/rag-null-evidence/python-after.log",
+        "/tmp/rag-null-evidence/rust-after.log"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "src-tauri and TypeScript consumers",
+      "summary": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: Finished dev profile, exit 0. cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0. pnpm exec tsc --noEmit: no output, exit 0. python3 scripts/ci/check_ipc_types.py: OK. git diff --check: exit 0.",
+      "evidence": [
+        "/tmp/rag-null-evidence/clippy.log",
+        "/tmp/rag-null-evidence/fmt.log",
+        "/tmp/rag-null-evidence/tsc.log"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "passed",
+      "scope": "RagCard SSR with mocked useRAG state and real translations",
+      "summary": "node /tmp/rag-null-evidence/render.mjs: en/ko real RagCard rendered; assertions passed for null/empty/whitespace sources, known source preservation, null text labels. HTML saved as rag-en.html and rag-ko.html.",
+      "evidence": [
+        "/tmp/rag-null-evidence/render.log",
+        "/tmp/rag-null-evidence/render.mjs",
+        "/tmp/rag-null-evidence/rag-en.html",
+        "/tmp/rag-null-evidence/rag-ko.html"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "environment_limit",
+      "summary": "Initial dependency install SANDBOX-BLOCKED: ENOTFOUND registry.npmjs.org. Escalated frozen install succeeded; tsc found the chat null dereference and passed after fixing it. Initial SSR websocket SANDBOX-BLOCKED: listen EPERM 0.0.0.0:24678. Disabled websocket and reran successfully. No interactive Tauri/browser, live LanceDB/MLX or cluster checks performed; successful evidence is unit/static/SSR only."
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "Nullable metadata corrected across all modes and IPC/UI consumers; requested regression, clippy, fmt and tsc checks pass within stated unit/static/SSR scope.",
+      "evidence": [
+        "e4",
+        "e5",
+        "e6"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Requested checks and localized SSR assertions passed. Interactive native runtime remains outside the performed verification scope."
+    }
+  ]
+}

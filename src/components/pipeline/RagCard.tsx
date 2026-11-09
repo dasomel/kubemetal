@@ -172,7 +172,7 @@ export const RagCard: React.FC = () => {
                 <div className="flex items-center justify-between text-caption">
                   <span className="text-primary font-semibold truncate flex items-center gap-1">
                     <FileText className="w-3 h-3 inline shrink-0" />
-                    {item.source || item.id}
+                    {item.source?.trim() || t('rag.unknownSource')}
                   </span>
                   <span className="px-1.5 py-0.5 rounded bg-surface text-inkMuted text-[11px]">
                     {item.mode === 'exact'
@@ -184,7 +184,7 @@ export const RagCard: React.FC = () => {
                       : `${t('rag.similarity')} ${(item.score * 100).toFixed(1)}%`}
                   </span>
                 </div>
-                <p className="text-body text-ink text-sm leading-relaxed">{item.text}</p>
+                <p className="text-body text-ink text-sm leading-relaxed">{item.text?.trim() ? item.text : t('rag.unknownText')}</p>
                 {item.mode === 'hybrid' && item.provenance && (
                   <div className="text-caption text-inkMuted">
                     {t('rag.provenance', {

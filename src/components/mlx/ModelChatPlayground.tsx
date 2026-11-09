@@ -231,7 +231,10 @@ export const ModelChatPlayground: React.FC<ModelChatPlaygroundProps> = ({
         });
         if (results && results.length > 0) {
           // 상위 3청크만 사용하고, 합산 2,000자 상한을 넘는 부분은 절단 표기와 함께 잘라낸다.
-          const limitedResults = results.slice(0, RAG_MAX_CHUNKS);
+          // D22: metadata-only hits remain searchable but cannot supply model context.
+          const limitedResults = results
+            .filter((r): r is RagSearchResult & { text: string } => r.text !== null && r.text.trim().length > 0)
+            .slice(0, RAG_MAX_CHUNKS);
           let remainingChars = RAG_MAX_CHARS;
           const contextBlocks = limitedResults
             .map((r, idx) => {

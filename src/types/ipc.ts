@@ -319,15 +319,15 @@ export interface RetrievalProvenance {
 }
 
 export interface RagSearchResult {
-  id?: string;
-  text: string;
+  id: string | null;
+  text: string | null;
   /** Dense: vector distance. Lexical: SQLite bm25(). Hybrid: RRF (higher is better). Exact: metadata match (1.0). */
   score: number;
-  source?: string;
-  filename?: string;
+  source: string | null;
+  filename: string | null;
   chunk_index?: number;
   mode: RetrievalMode;
-  provenance?: RetrievalProvenance;
+  provenance?: RetrievalProvenance | null;
 }
 
 export interface RagQueryResponse {
