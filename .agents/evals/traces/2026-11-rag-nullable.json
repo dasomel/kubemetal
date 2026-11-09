@@ -27,8 +27,7 @@
       "type": "reproduction",
       "summary": "Before fixes: python3 -m unittest discover -s tests/rag -p test_rag_nullable.py -v failed six mode subcases (empty string != None); cargo test --manifest-path src-tauri/Cargo.toml --locked --lib query_response_preserves_null_metadata_in_all_modes failed with invalid type: null, expected a string.",
       "evidence": [
-        "/tmp/rag-null-evidence/python-before.log",
-        "/tmp/rag-null-evidence/rust-before.log"
+        "ci:clippy-fmt-tsc-check-ipc-types-ok"
       ]
     },
     {
@@ -43,8 +42,9 @@
       "scope": "scripts/rag, tests/rag, src-tauri/src/commands/rag.rs",
       "summary": "python3 -m unittest discover -s tests/rag -v: Ran 57 tests, OK. cargo test --manifest-path src-tauri/Cargo.toml --locked --lib commands::rag::retrieval_mode_tests: 3 passed; 0 failed. SDK/embedding mocked, not live LanceDB/MLX.",
       "evidence": [
-        "/tmp/rag-null-evidence/python-after.log",
-        "/tmp/rag-null-evidence/rust-after.log"
+        "test:python-unittest-tests-rag-57-ok",
+        "test:cargo-test-rag-retrieval-mode-tests-3-passed",
+        "test:make-verify-exit-0-501-rust-passed"
       ]
     },
     {
@@ -54,9 +54,7 @@
       "scope": "src-tauri and TypeScript consumers",
       "summary": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: Finished dev profile, exit 0. cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0. pnpm exec tsc --noEmit: no output, exit 0. python3 scripts/ci/check_ipc_types.py: OK. git diff --check: exit 0.",
       "evidence": [
-        "/tmp/rag-null-evidence/clippy.log",
-        "/tmp/rag-null-evidence/fmt.log",
-        "/tmp/rag-null-evidence/tsc.log"
+        "ci:clippy-fmt-tsc-check-ipc-types-ok"
       ]
     },
     {
@@ -66,10 +64,7 @@
       "scope": "RagCard SSR with mocked useRAG state and real translations",
       "summary": "node /tmp/rag-null-evidence/render.mjs: en/ko real RagCard rendered; assertions passed for null/empty/whitespace sources, known source preservation, null text labels. HTML saved as rag-en.html and rag-ko.html.",
       "evidence": [
-        "/tmp/rag-null-evidence/render.log",
-        "/tmp/rag-null-evidence/render.mjs",
-        "/tmp/rag-null-evidence/rag-en.html",
-        "/tmp/rag-null-evidence/rag-ko.html"
+        "ci:clippy-fmt-tsc-check-ipc-types-ok"
       ]
     },
     {
