@@ -64,6 +64,41 @@ MLOps의 핵심은 **"클릭 한 번으로 학습부터 평가까지 자동화"*
 
 ---
 
+## 저장소 I/O 실측 (독립 opt-in CLI, #11)
+
+앱의 GPU matmul 벤치마크와 별도로, 호스트 Python 표준 라이브러리만으로
+지정한 파일시스템의 임시 파일 write+fsync/read를 측정할 수 있습니다.
+기본 실행은 OS 임시 디렉터리에 **16 MiB**, `--size-mib`는 정수 **1–256 MiB**로
+제한합니다. `--directory`는 이미 존재하는 디렉터리여야 합니다.
+
+```sh
+python3 -B scripts/mlx/storage_benchmark.py --directory /tmp --size-mib 1 > storage-io.json
+# 같은 CLI를 실행하는 Make 진입점 (JSON 앞에 recipe 출력이 없도록 -s 사용)
+make -s storage-benchmark STORAGE_BENCH_ARGS='--directory /tmp --size-mib 1' > storage-io.json
+```
+
+stdout의 JSON 한 줄은 `status`, `requested_bytes`, `write_fsync`/`read`의 실제
+`bytes`와 `elapsed_seconds`, `environment`의 OS·버전·CPU 아키텍처·Python·실제
+디렉터리, `temporary_file_closed`, `limitations`, `errors`를 담습니다.
+쓰기 시간은 write·flush·`os.fsync` 전체, 읽기 시간은 seek 이후 순차 읽기와
+내용 비교를 포함합니다. 임의 바이트 청크를 반복하며 청크 생성·파일 생성·정리는
+측정 시간에서 제외합니다. 단일 표본이므로 호스트 부하·파일시스템 압축·저장장치
+캐시에 영향을 받습니다.
+
+**Buffered/cache 한계:** 읽기는 방금 쓴 데이터를 OS 캐시에서 읽을 수 있으며,
+cold disk·direct I/O 성능이나 공유 모델 캐시 적중률을 측정하지 않습니다.
+캐시를 비우거나 공유 캐시를 변경하지 않습니다. `fsync`는 macOS `F_FULLFSYNC`가
+아니므로 전원 장애 내구성을 입증하지 않습니다. 모델·학습 데이터에는 접근하지 않고
+전용 익명 임시 파일을 사용하며 정상 종료·오류·중단에서 파일을 닫습니다
+(POSIX에서는 생성 직후 unlink되어 프로세스 종료에도 이름 있는 파일을 남기지 않음).
+
+실패하면 `status: "error"`, 오류 단계·종류·메시지·errno와 **종료 코드 1**을 반환합니다.
+완료하지 못한 측정 시간은 `null`, 바이트 수는 그때까지 확인한 전송량입니다.
+쓰기 바이트는 Python write가 수락한 양이며 디스크에 영속화된 양을 뜻하지 않습니다.
+파일 생성 전에는 `temporary_file_closed: null`, 닫기 실패는 `false`이며 정리 실패도
+오류에 남습니다. 성공 표본으로 해석하기 전에 종료 코드와 `status`를 모두 확인하세요.
+새 IPC·UI·예약 실행·MLflow 자동 export는 추가하지 않습니다.
+
 ## 🛠️ 상황별 사용 가이드 (Cheat Sheet)
 
 | 하고 싶은 작업 | 이동할 탭 | 실행할 버튼 / 작업 |
