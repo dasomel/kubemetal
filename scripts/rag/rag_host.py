@@ -134,6 +134,25 @@ def ensure_fts5(connection_factory=sqlite3.connect):
     except sqlite3.Error as exc:
         raise RuntimeError(f"SQLite FTS5 is unavailable: {exc}") from exc
 
+def exact_search(chunks, query, top_k):
+    """Match stored filename/source literally; ties never depend on table row order."""
+    # D22: no fuzzy fallback or embedding on a miss. A full metadata scan costs O(n);
+    # a future metadata index can replace it while preserving this literal contract.
+    matches = [item for item in chunks
+               if item.get("filename") == query or item.get("source") == query]
+    ranked = sorted(matches, key=lambda item: (
+        item.get("source") or "",
+        item.get("chunk_index") if item.get("chunk_index") is not None else 0,
+        item.get("id") or "",
+        item.get("filename") or "",
+        item.get("text") or "",
+    ))
+    return [{"id": item.get("id"), "text": item.get("text", ""),
+             "filename": item.get("filename", ""), "source": item.get("source", ""),
+             "chunk_index": item.get("chunk_index") if item.get("chunk_index") is not None else 0,
+             "score": 1.0, "mode": "exact"}
+            for item in ranked[:max(0, top_k)]]
+
 def lexical_search(chunks, query, top_k, connection_factory=sqlite3.connect):
     tokens = []
     token = []
@@ -379,7 +398,9 @@ def cmd_query(args):
         resolved_mode = args.mode
         rule_name = "explicit"
 
-    if resolved_mode == "lexical":
+    if resolved_mode == "exact":
+        search_results = exact_search(table.to_arrow().to_pylist(), query_str, top_k)
+    elif resolved_mode == "lexical":
         # LanceTable has no .to_list() on the installed lancedb (0.34.0) -
         # measured on this Mac (AttributeError). to_arrow().to_pylist() is
         # the stable route since pyarrow is a hard lancedb dependency.
@@ -499,7 +520,7 @@ def main():
     p_query.add_argument("--collection", default="default")
     p_query.add_argument("--top-k", type=int, default=3)
     p_query.add_argument("--model", default="sentence-transformers/all-MiniLM-L6-v2")
-    p_query.add_argument("--mode", choices=("auto", "dense", "lexical", "hybrid"), default="dense")
+    p_query.add_argument("--mode", choices=("auto", "dense", "lexical", "hybrid", "exact"), default="dense")
 
     # dvc-commit subcommand
     p_dvc = subparsers.add_parser("dvc-commit")

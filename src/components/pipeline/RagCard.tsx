@@ -141,6 +141,7 @@ export const RagCard: React.FC = () => {
             <option value="auto">{t('rag.modeAuto')}</option>
             <option value="dense">{t('rag.modeDense')}</option>
             <option value="lexical">{t('rag.modeLexical')}</option>
+            <option value="exact">{t('rag.modeExact')}</option>
             <option value="hybrid">{t('rag.modeHybrid')}</option>
           </select>
           <button
@@ -174,7 +175,9 @@ export const RagCard: React.FC = () => {
                     {item.source || item.id}
                   </span>
                   <span className="px-1.5 py-0.5 rounded bg-surface text-inkMuted text-[11px]">
-                    {item.mode === 'lexical'
+                    {item.mode === 'exact'
+                      ? t('rag.exactMatch')
+                      : item.mode === 'lexical'
                       ? `${t('rag.score')} ${item.score.toExponential(2)}`
                       : item.mode === 'hybrid'
                       ? `${t('rag.rrfScore')} ${item.score.toFixed(4)}`

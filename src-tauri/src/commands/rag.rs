@@ -31,7 +31,7 @@ pub struct RagSearchResult {
     pub filename: String,
     pub source: String,
     pub chunk_index: u32,
-    /// Dense mode is vector distance; lexical mode is SQLite bm25(); hybrid is RRF (higher is better).
+    /// Dense mode is vector distance; lexical mode is SQLite bm25(); hybrid is RRF (higher is better); exact is a metadata match (1.0).
     pub score: f64,
     pub mode: String,
     pub provenance: Option<RetrievalProvenance>,
@@ -56,7 +56,10 @@ fn validate_retrieval_mode(mode: Option<String>) -> Result<String, String> {
         "dense" => Ok("dense".into()),
         "lexical" => Ok("lexical".into()),
         "hybrid" => Ok("hybrid".into()),
-        _ => Err("Unsupported retrieval mode. Choose auto, dense, lexical, or hybrid.".into()),
+        "exact" => Ok("exact".into()),
+        _ => {
+            Err("Unsupported retrieval mode. Choose auto, dense, lexical, hybrid, or exact.".into())
+        }
     }
 }
 
@@ -498,6 +501,11 @@ mod retrieval_mode_tests {
             validate_retrieval_mode(Some("hybrid".into())).unwrap(),
             "hybrid"
         );
+        assert_eq!(
+            validate_retrieval_mode(Some("exact".into())).unwrap(),
+            "exact"
+        );
+        assert_eq!(retrieval_mode_args("exact"), ["--mode", "exact"]);
         assert_eq!(retrieval_mode_args("auto"), ["--mode", "auto"]);
         assert_eq!(retrieval_mode_args("dense"), ["--mode", "dense"]);
         assert_eq!(retrieval_mode_args("hybrid"), ["--mode", "hybrid"]);
@@ -516,6 +524,32 @@ mod retrieval_mode_tests {
         assert_eq!(empty.resolved_mode, "lexical");
         assert_eq!(empty.rule, "symbol_or_casing");
         assert!(empty.results.is_empty());
+
+        let exact = parse_query_response(serde_json::json!({
+            "resolved_mode": "exact", "rule": "explicit", "results": []
+        }))
+        .unwrap();
+        assert_eq!(exact.resolved_mode, "exact");
+        assert!(exact.results.is_empty());
+
+        let exact_hit = parse_query_response(serde_json::json!({
+            "resolved_mode": "exact", "rule": "explicit",
+            "results": [{
+                "id": "item_1",
+                "text": "content",
+                "filename": "README.md",
+                "source": "/docs/README.md",
+                "chunk_index": 0,
+                "score": 1.0,
+                "mode": "exact"
+            }]
+        }))
+        .unwrap();
+        assert_eq!(exact_hit.resolved_mode, "exact");
+        assert_eq!(exact_hit.results.len(), 1);
+        assert_eq!(exact_hit.results[0].mode, "exact");
+        assert_eq!(exact_hit.results[0].score, 1.0);
+        assert_eq!(exact_hit.results[0].filename, "README.md");
 
         // Per-hit routing fields emitted by rag_host.py are tolerated but not part of the shape.
         let hit = parse_query_response(serde_json::json!({
