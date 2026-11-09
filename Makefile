@@ -37,7 +37,7 @@ VITE_PORT := 5173
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install dev free-dev-port build bin app install-app check test test-e2e verify-airgap airgap-sbom verify-airgap-sbom verify-support-bundle \
+.PHONY: help install dev free-dev-port build bin app install-app check test test-frontend test-e2e verify-airgap airgap-sbom verify-airgap-sbom verify-support-bundle \
         lint fmt verify license-check dependency-diff runtime-license-inventory model-license-check vuln-check supply-chain-check clean-light cluster-up cluster-down cluster-repair sim-gpu-up sim-gpu-down sim-gpu-status sim-gpu-verify provision provision-all kagent-up \
         preflight render export-gitops \
         forward forward-stop status index-code analyze-code serve-codegraph clean
@@ -101,7 +101,10 @@ install-app: app ## .app 빌드 후 /Applications에 설치(기존본 교체)
 check: ## Rust 타입/컴파일 체크
 	cargo check --locked --manifest-path $(CARGO_MANIFEST)
 
-test: ## Rust·Python·Air-gap·시뮬레이션 GPU 회귀 테스트
+test-frontend: ## 임시 TypeScript 컴파일 + Node 프론트엔드 회귀 테스트
+	pnpm test:frontend
+
+test: test-frontend ## 프론트엔드·Rust·Python·Air-gap·시뮬레이션 GPU 회귀 테스트
 	cargo test --locked --manifest-path $(CARGO_MANIFEST) --lib
 	python3 -m unittest discover -s tests/rag -v
 	python3 -m unittest discover -s tests/mlx -v

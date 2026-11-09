@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test:frontend": "node tests/frontend/run.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"
