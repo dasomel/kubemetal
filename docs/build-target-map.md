@@ -8,7 +8,8 @@ gate is split the way it is (offline-vs-network, verify-vs-release).
 | `make` target | Underlying command(s) | Run by CI | Network required |
 |---|---|---|---|
 | `check` | `cargo check` | — | no |
-| `test` | `cargo test`, Python RAG/MLX unittest, `test_sbom.sh`, `test_digest_lock.sh`, `scripts/k8s/test_simulated_gpu.sh` | `ci.yml` → `make verify` | no |
+| `test-frontend` | `pnpm test:frontend`: existing `tsc` emits into a unique temporary directory under `node_modules`, then `node --test tests/frontend/*.test.mjs`; output is removed on success/failure (Node 22.15+ for `registerHooks`, CI uses Node 22) | `ci.yml` → `make verify` → `make test` | no |
+| `test` | `test-frontend`, `cargo test`, Python RAG/MLX unittest, `test_sbom.sh`, `test_digest_lock.sh`, `scripts/k8s/test_simulated_gpu.sh` | `ci.yml` → `make verify` | no |
 | `sim-gpu-up` / `sim-gpu-down` / `sim-gpu-status` / `sim-gpu-verify` | `scripts/k8s/simulated-gpu.sh {advertise N\|retract\|status\|verify}` against the managed colima context only (D52, scheduling-only simulated `nvidia.com/gpu`) | — (needs a running cluster; its offline stub test runs inside `make test`) | no (pause image already on the node) |
 | `cluster-up` / `cluster-repair` | `colima start ... --kubernetes --k3s-listen-port <scripts/colima-k3s-port.txt>`; `scripts/k8s/repair-k3s-cred-port.sh` rewrites k3s cred kubeconfigs to the measured apiserver port, restarts k3s and prints OK only after 30s of NRestarts 0 and a Ready node (D1); its offline stub test `scripts/k8s/test_repair_k3s_cred_port.sh` runs inside `make test` | — (needs the VM) | no |
 | `lint` | `cargo fmt --check`, `cargo clippy -D warnings`, `tsc --noEmit`, `design.md lint`, `scripts/ci/check_ipc_types.py` | `ci.yml` → `make verify` | no |
@@ -16,7 +17,7 @@ gate is split the way it is (offline-vs-network, verify-vs-release).
 | `dependency-diff` | `scripts/release/gen_dependency_diff.sh` | — (manual review tool, issue #9) | yes (`git worktree` + `pnpm install`) |
 | `vuln-check` | `trivy fs --scanners vuln --severity HIGH,CRITICAL` | `release.yml` (direct, not via `make`) | yes (trivy vulnerability DB) |
 | `supply-chain-check` | `cargo deny --config deny.toml check advisories sources` | `ci.yml` → `make supply-chain-check` | yes (advisory DB) |
-| `verify` | `test` (Rust + Python + air-gap SBOM/digest-lock regressions) + `lint` + `license-check` + `pnpm build` | `ci.yml` (top-level job) | no |
+| `verify` | `test` (frontend + Rust + Python + air-gap SBOM/digest-lock regressions) + `lint` + `license-check` + `pnpm build` | `ci.yml` (top-level job) | no |
 | `verify-airgap` | `make verify-airgap-sbom` then offline `imagePullPolicy: Never` startup probe (D25) | — (manual, needs a running cluster and collected bundle) | no |
 | `airgap-sbom` | `scripts/airgap/generate_sbom.sh` → syft SPDX JSON + digest manifest + license summary | — (required bundle evidence, issue #98) | no (existing bundle archives; syft + python3 required) |
 | `verify-airgap-sbom` | `scripts/airgap/verify_sbom.sh` → SBOM sha256 + complete `digests.lock` coverage | — (required by offline installer) | no (python3 only) |

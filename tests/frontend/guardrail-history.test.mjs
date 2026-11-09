@@ -1,4 +1,4 @@
-// Run: pnpm exec tsc --noEmit false --allowImportingTsExtensions false --rootDir src --outDir dist/guardrail-tests && node --test tests/frontend/guardrail-history.test.mjs
+// Run: make test-frontend (or pnpm test:frontend).
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { registerHooks } from 'node:module';
@@ -7,16 +7,18 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 // tsc preserves extensionless bundler imports; resolve only those emitted local files.
+const output = process.env.FRONTEND_TEST_OUTPUT;
+assert.ok(output, 'Run via make test-frontend or pnpm test:frontend');
 registerHooks({ resolve(specifier, context, next) {
-  if (specifier.startsWith('.') && context.parentURL?.includes('/dist/guardrail-tests/')) {
+  if (specifier.startsWith('.') && context.parentURL?.startsWith(output)) {
     const candidate = new URL(`${specifier}.js`, context.parentURL);
     if (existsSync(candidate)) return next(candidate.href, context);
   }
   return next(specifier, context);
 } });
-const { observeGuardrailHistory, GuardrailEventHistoryView } = await import('../../dist/guardrail-tests/components/mlx/GuardrailEventHistory.js');
-const { I18nContext } = await import('../../dist/guardrail-tests/i18n/i18nContext.js');
-const { translations } = await import('../../dist/guardrail-tests/i18n/translations.js');
+const { observeGuardrailHistory, GuardrailEventHistoryView } = await import(new URL('components/mlx/GuardrailEventHistory.js', output));
+const { I18nContext } = await import(new URL('i18n/i18nContext.js', output));
+const { translations } = await import(new URL('i18n/translations.js', output));
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => {
   let resolve, reject;
