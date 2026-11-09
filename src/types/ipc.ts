@@ -305,7 +305,7 @@ export interface EvalMetric {
   timestamp_ms: number;
 }
 
-export type RetrievalMode = 'auto' | 'dense' | 'lexical' | 'hybrid';
+export type RetrievalMode = 'auto' | 'dense' | 'lexical' | 'hybrid' | 'exact';
 
 export interface RetrieverHit {
   rank: number;
@@ -321,7 +321,7 @@ export interface RetrievalProvenance {
 export interface RagSearchResult {
   id?: string;
   text: string;
-  /** Dense: vector distance. Lexical: SQLite bm25(). Hybrid: RRF (higher is better). */
+  /** Dense: vector distance. Lexical: SQLite bm25(). Hybrid: RRF (higher is better). Exact: metadata match (1.0). */
   score: number;
   source?: string;
   filename?: string;

@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-38-exact-retrieval",
+  "task": "Add explicit exact metadata retrieval mode to query IPC and UI without embedding model load (#38)",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "scripts/rag/**",
+      "src/**",
+      "tests/rag/**",
+      "docs/**",
+      ".agents/evals/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Implement issue #38 slice: add explicit exact retrieval mode to rag_host.py, src-tauri/src/commands/rag.rs, RagCard.tsx, translations.ts, and docs/06-mlops-user-guide.md without loading embeddings or altering default retrieval behavior."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Observed partial diff on gpt/issue-38 where exact mode lacked None-safety in chunk sorting and Rust unit tests lacked RagSearchResult deserialization coverage for exact hits."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Hardened exact_search against None metadata and negative top_k, added unit test coverage in test_rag_lexical.py and Rust retrieval_mode_tests, and preserved default dense/auto behaviors."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "python3 -B -m unittest discover -s tests/rag -v passed 55 tests; cargo test --manifest-path src-tauri/Cargo.toml --locked retrieval_mode passed 2 tests.",
+      "scope": "src-tauri, scripts/rag, tests/rag",
+      "evidence": [
+        "test:python3-unittest-tests-rag-55-passed",
+        "test:cargo-test-retrieval-mode-2-passed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "make verify exited 0 across cargo test (502 passed), Python rag/mlx/support suites, airgap/k8s shell tests, cargo fmt, clippy, tsc, DESIGN.md lint, check_ipc_types.py, check_licenses.sh, and pnpm build.",
+      "scope": "src-tauri, scripts/rag, src, tests/rag, docs",
+      "evidence": [
+        "test:make-verify-exit-0",
+        "ci:check-ipc-types-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "environment_limit",
+      "summary": "Verification covered hermetic unit tests, clippy, tsc, and build gates on macOS Apple Silicon; live Colima/k3s cluster mutation and remote PR pushing were omitted per task rules."
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "Explicit exact retrieval mode is fully implemented and verified across Rust, Python, UI components, translations, user guide, and all make verify gates without regressions.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified across make verify (exit 0, 502 Rust tests passed, 55 Python rag tests passed) and agent trace gates."
+    }
+  ]
+}
