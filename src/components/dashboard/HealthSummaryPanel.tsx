@@ -54,6 +54,9 @@ export const HealthSummaryPanel: React.FC = () => {
 
   const valueLabel = (value: boolean) => t(value ? 'health.value.yes' : 'health.value.no');
   const unavailable = t('health.value.unavailable');
+  // D22 (#17): retain evidence at the cost of stale detail; only a successful
+  // refresh restores current verdicts and success colors, never a retry itself.
+  const stale = error !== null;
 
   return (
     <section className="animate-card-in rounded-xl bg-surface p-4 shadow-panel" aria-labelledby="health-summary-title">
@@ -73,7 +76,7 @@ export const HealthSummaryPanel: React.FC = () => {
         </button>
       </div>
 
-      {error && (
+      {error !== null && (
         <p className="rounded-lg bg-surfaceRaised p-3 text-caption text-danger flex gap-2" role="alert">
           <AlertTriangle className="w-4 h-4 shrink-0" />
           <span>{t('health.fetchFailed', { error })}</span>
@@ -83,13 +86,14 @@ export const HealthSummaryPanel: React.FC = () => {
       {summary && (
         <>
           <div className="flex items-center gap-2 mb-3 text-caption text-inkMuted">
-            <StatusIndicator tone={overallTone[summary.overall]} />
-            <span className="text-bodyStrong text-ink">{t(`health.overall.${summary.overall}`)}</span>
+            <StatusIndicator tone={stale ? 'muted' : overallTone[summary.overall]} />
+            <span className="text-bodyStrong text-ink">{t(stale ? 'health.currentUnavailable' : `health.overall.${summary.overall}`)}</span>
             {fetchedAt && <span className="text-inkFaint">{t('health.fetchedAt', { time: fetchedAt })}</span>}
           </div>
+          {stale && <p className="text-caption text-inkMuted mb-3">{t('health.previousSnapshot')}</p>}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <HealthComponent title={t('health.component.colima')} error={summary.colima_error}>
+            <HealthComponent title={t('health.component.colima')} error={summary.colima_error} stale={stale}>
               {summary.colima && (
                 <StatusLines lines={[
                   [t('health.colima.running'), summary.colima.is_running],
@@ -101,7 +105,7 @@ export const HealthSummaryPanel: React.FC = () => {
               )}
             </HealthComponent>
 
-            <HealthComponent title={t('health.component.guardrails')} error={summary.guardrails_error}>
+            <HealthComponent title={t('health.component.guardrails')} error={summary.guardrails_error} stale={stale}>
               {summary.guardrails && (
                 <div className="space-y-1 text-caption text-inkMuted">
                   <p>{t('health.guardrails.memoryPressure', { level: t(`health.memoryPressure.${summary.guardrails.memory_pressure_level}`) })}</p>
@@ -110,7 +114,7 @@ export const HealthSummaryPanel: React.FC = () => {
               )}
             </HealthComponent>
 
-            <HealthComponent title={t('health.component.kagent')} error={summary.kagent_error}>
+            <HealthComponent title={t('health.component.kagent')} error={summary.kagent_error} stale={stale}>
               {summary.kagent && (
                 <div className="space-y-1 text-caption text-inkMuted">
                   <p>{t('health.kagent.context', { context: summary.kagent.target_context })}</p>
@@ -254,9 +258,10 @@ export const HealthSummaryPanel: React.FC = () => {
   );
 };
 
-const HealthComponent: React.FC<{ title: string; error: string | null; children: React.ReactNode }> = ({
+const HealthComponent: React.FC<{ title: string; error: string | null; stale: boolean; children: React.ReactNode }> = ({
   title,
   error,
+  stale,
   children,
 }) => {
   const { t } = useTranslation();
@@ -264,7 +269,7 @@ const HealthComponent: React.FC<{ title: string; error: string | null; children:
   return (
     <div className="rounded-lg bg-surfaceRaised p-3 min-w-0">
       <div className="flex items-center gap-1.5 mb-2">
-        <StatusIndicator tone={error ? 'warning' : 'success'} />
+        <StatusIndicator tone={stale ? 'muted' : error ? 'warning' : 'success'} />
         <h3 className="text-bodyStrong text-ink">{title}</h3>
       </div>
       {error ? (
@@ -274,7 +279,9 @@ const HealthComponent: React.FC<{ title: string; error: string | null; children:
         </div>
       ) : children ? (
         <>
-          <p className="text-label text-success uppercase mb-1.5">{t('health.probeSucceeded')}</p>
+          <p className={`text-label uppercase mb-1.5 ${stale ? 'text-inkFaint' : 'text-success'}`}>
+            {t(stale ? 'health.previousSnapshot' : 'health.probeSucceeded')}
+          </p>
           {children}
         </>
       ) : (
