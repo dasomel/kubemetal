@@ -3,6 +3,7 @@ import { ShieldCheck, Loader2, PlayCircle, PauseCircle, BatteryCharging, Battery
 import type { GuardrailStatus, MlxTrainingState } from '../../types/ipc';
 import { useMlx } from '../../hooks/useMlx';
 import { useTranslation } from '../../i18n/i18nContext';
+import { GuardrailEventHistory } from './GuardrailEventHistory';
 
 interface MlxGuardrailCardProps {
   guardrailStatus: GuardrailStatus | null;
@@ -256,6 +257,7 @@ export const MlxGuardrailCard: React.FC<MlxGuardrailCardProps> = ({
           )}
         </div>
       )}
+      <GuardrailEventHistory />
     </div>
   );
 };
