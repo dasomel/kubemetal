@@ -106,6 +106,7 @@ test: ## Rust·Python·Air-gap·시뮬레이션 GPU 회귀 테스트
 	python3 -m unittest discover -s tests/rag -v
 	python3 -m unittest discover -s tests/mlx -v
 	python3 -m unittest discover -s scripts/support -v
+	python3 -B -m unittest discover -s tests/cumetal -v
 	bash scripts/airgap/test_sbom.sh
 	bash scripts/airgap/test_digest_lock.sh
 	bash scripts/k8s/test_simulated_gpu.sh

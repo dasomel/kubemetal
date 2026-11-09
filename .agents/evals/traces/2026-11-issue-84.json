@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-84-2026-11-09",
+  "task": "Require GPU provenance in every Phase 2 matrix repetition; extract classifier and add regression fixtures (#84).",
+  "changeContext": {
+    "paths": [
+      "scripts/cumetal/matrix/**",
+      "tests/cumetal/**",
+      "Makefile",
+      "docs/20-cumetal-feasibility.md",
+      "docs/mistakes-log.md",
+      ".agents/evals/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Only matrix classification, fixtures, Make test wiring, feasibility docs, required mistakes-log row and trace. No IPC, UI, D-registry, runtime, cluster or external edits."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "python3 -B -m unittest discover -s tests/cumetal -v against original run_matrix.sh inlined classifier: repeated execution provenance was pooled, so 1 repetition with GPU evidence returned supported; library calls ignored CPU/failed launches; malformed parity raised AttributeError."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Extracted classify.py with import-safe structure, retaining runs[].provenance and requiring valid GPU/exact/success/source evidence for every repetition across both kernel and library probes. Preserved failed execution/parity, unavailable unsupported API, partial missing GPU evidence, and tolerance stability. Runner hashes classifier in manifest."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "python3 -B -m unittest discover -s tests/cumetal -v passed 10 tests. Fixtures cover missing/CPU/mixed/failed launches, missing/empty source, semantic emulation, unsupported reason, missing runs, compile refusal/timeout, API failures, abnormal exits, numeric mismatch with/without digest, malformed parity, digest stability, and CLI JSON/Markdown. bash -n scripts/cumetal/matrix/run_matrix.sh and git diff --check exited 0.",
+      "scope": "scripts/cumetal/matrix, tests/cumetal",
+      "evidence": [
+        "test:python-cumetal-10-ok",
+        "syntax:bash-n-exit-0",
+        "diff:check-exit-0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "make verify exited 0 across cargo test (500 passed, 2 ignored), Python cumetal/rag/mlx/support unittests, airgap SBOM/digest-lock and k8s simulated-gpu/repair-k3s-cred-port suites, cargo fmt --check, cargo clippy --all-targets -D warnings, npx tsc --noEmit, DESIGN.md lint, check_ipc_types.py, check_versions.py, check_tauri_versions.py, test_colima_profile.py, check_licenses.sh (465 components), and pnpm build.",
+      "scope": "src-tauri, scripts, tests, Makefile, docs, .agents",
+      "evidence": [
+        "test:make-verify-exit-0",
+        "test:cargo-test-500-passed-2-ignored",
+        "test:cargo-clippy-exit-0",
+        "test:cargo-fmt-exit-0",
+        "test:tsc-noemit-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "environment_limit",
+      "summary": "Synthetic evidence only; live CuMetal compilation and Colima/kubectl cluster operations were intentionally not run per task constraints. Native build, unit, lint, and typecheck gates were fully executed and verified locally."
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "Phase 2 matrix classification separation, per-run provenance requirement, and synthetic regression fixture suite (#84) pass all tests and make verify within the environment limits noted in e6.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified across python unit tests (10 passed), cargo test (500 passed, 2 ignored), make verify (exit 0), check-agent-trace-requirement.py, check-agent-trace-evidence.py, and gate.py against baseline.eval.json."
+    }
+  ]
+}

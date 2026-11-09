@@ -399,3 +399,19 @@ fail-closed 분류한다 — 컴파일 성공만으로는 supported가 되지 �
 
 - 이번 실행에서 unavailable/failed는 0건 — 즉 분류기의 거부·실패 분기는 실측으로 아직 한 번도 타지 않았다.
 - 미검증: cuSPARSE, cuSOLVER, cuDNN, NCCL, NVRTC, device-side cuRAND, FP16, 다른 하드웨어.
+
+## 2026-11-09 수정 — Phase 2 회차별 provenance 판정 (#84)
+
+분류기는 `scripts/cumetal/matrix/classify.py`로 분리했다. 커널·라이브러리 프로브 모두
+**매 회차** parity PASS, exit 0 및 `kernel_launch` 증거가 있어야 `supported`가 된다.
+각 회차의 모든 launch가 `device=apple_gpu`, `launch_success=true`,
+`semantic_quality=exact`, source 존재, unsupported_reason 없음 조건을 만족해야 한다.
+한 회차만 증거가 있거나 CPU·실패 launch·불완전 provenance가 섞이면 `partial`이다.
+실행 timeout·수치 불일치·누락된 실행 결과는 `failed`이며, 명시적 unsupported API
+실패는 기존대로 `unavailable`이다. 허용 오차 내 digest 차이는 판정을 강등하지 않는다.
+
+JSON의 `runs[].provenance`는 회차별 증거, 경로의 `provenance`는 전체 회차 집계다.
+집계는 판정에 사용하지 않는다. runner manifest는 분류기 sha256도 포함한다.
+`python3 -B -m unittest discover -s tests/cumetal -v`가 합성 로그 회귀를 실행하며
+`make test`/`make verify`에 포함된다. 위 11월 8일 실측 표는 과거 결과이며 이 수정으로
+GPU 실행을 새로 검증한 것은 아니다. CuMetal 자기 보고의 독립 교차 확인은 여전히 미검증이다.
