@@ -112,6 +112,11 @@ test: ## Rust·Python·Air-gap·시뮬레이션 GPU 회귀 테스트
 	bash scripts/k8s/test_simulated_gpu.sh
 	bash scripts/k8s/test_repair_k3s_cred_port.sh
 
+# Standalone opt-in measurement; verify runs its unit tests, never this workload.
+.PHONY: storage-benchmark
+storage-benchmark: ## 임시 파일 write+fsync/read JSON 측정: make storage-benchmark STORAGE_BENCH_ARGS='--directory /tmp --size-mib 1'
+	python3 -B scripts/mlx/storage_benchmark.py $(STORAGE_BENCH_ARGS)
+
 test-e2e: ## 종합 E2E 자율 피드백 검증 스위트 실행 (합성데이터→파인튜닝→kagent진단→코딩패치)
 	./scripts/e2e/run_full_e2e_verification.sh
 

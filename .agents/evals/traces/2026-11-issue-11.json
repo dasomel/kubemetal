@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-11-storage-benchmark-2026-11-10",
+  "task": "Issue #11 slice: standalone opt-in temporary-file storage I/O benchmark CLI (write+fsync/read, size bounded, POSIX temporary file cleanup, buffered/cache limitations explicitly recorded, no new IPC or cache mutation).",
+  "changeContext": {
+    "paths": [
+      "scripts/mlx/**",
+      "tests/mlx/**",
+      "Makefile",
+      "docs/**",
+      ".agents/evals/**"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Implement standalone opt-in storage I/O benchmark CLI under scripts/mlx/storage_benchmark.py, unit tests under tests/mlx/test_storage_benchmark.py, Makefile storage-benchmark target, and docs/06-mlops-user-guide.md. Exclude GPU benchmark card UI/IPC, MLflow export, and shared model-cache manipulation per approved slice."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Issue #11 previously implemented GPU matmul benchmark and UI while explicitly deferring storage/cache I/O; scripts/mlx/storage_benchmark.py and tests/mlx/test_storage_benchmark.py were missing from the repo, preventing independent verification of filesystem write+fsync/read throughput with bounded temporary files."
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added scripts/mlx/storage_benchmark.py with 1-256 MiB bounded temporary file I/O, os.fsync timing, buffered/cache limitation disclosure, and D22-compliant JSON error reporting; added tests/mlx/test_storage_benchmark.py covering size bounds, chunking, directory validation, mock/live I/O failures, cleanup, and subprocess execution; updated Makefile and docs/06-mlops-user-guide.md."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "summary": "python3 -B -m unittest discover -s tests/mlx -v passed 23 tests (including 11 storage benchmark tests covering argument validation, real file write+fsync/read, cleanup, I/O errors, and subprocess execution); cargo test --manifest-path src-tauri/Cargo.toml --locked --lib passed isolated regression checks; cargo fmt --check passed; cargo clippy --all-targets --locked -- -D warnings passed with 0 warnings; pnpm exec tsc --noEmit passed with 0 errors.",
+      "scope": "scripts/mlx, tests/mlx, src-tauri, src",
+      "evidence": [
+        "test:python-unittest-mlx-23-passed",
+        "test:cargo-clippy-0-warnings",
+        "test:tsc-no-emit-0-errors"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "summary": "Executed standalone storage benchmark via make -s storage-benchmark STORAGE_BENCH_ARGS='--directory /tmp --size-mib 1' and python3 -B scripts/mlx/storage_benchmark.py returning status ok with real write_fsync and read timings; make verify completed successfully with all test suites passing.",
+      "scope": "scripts/mlx, tests/mlx, Makefile, docs/06-mlops-user-guide.md",
+      "evidence": [
+        "runtime:storage-benchmark-1mib-exit-0",
+        "test:make-verify-exit-0"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "environment_limit",
+      "summary": "Benchmarks were run against macOS local temporary filesystem (/private/tmp); cold disk / unbuffered direct I/O and shared cache eviction were intentionally not performed per benchmark limitations."
+    },
+    {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "Standalone opt-in storage I/O benchmark CLI, comprehensive unit tests, Makefile recipe, and user documentation are complete, verified by unit tests, static checks, runtime execution, and make verify.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified across unit tests, runtime small-size execution, clippy, tsc, and make verify."
+    }
+  ]
+}
