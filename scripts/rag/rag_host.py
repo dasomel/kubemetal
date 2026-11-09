@@ -147,8 +147,8 @@ def exact_search(chunks, query, top_k):
         item.get("filename") or "",
         item.get("text") or "",
     ))
-    return [{"id": item.get("id"), "text": item.get("text", ""),
-             "filename": item.get("filename", ""), "source": item.get("source", ""),
+    return [{"id": item.get("id"), "text": item.get("text"),
+             "filename": item.get("filename"), "source": item.get("source"),
              "chunk_index": item.get("chunk_index") if item.get("chunk_index") is not None else 0,
              "score": 1.0, "mode": "exact"}
             for item in ranked[:max(0, top_k)]]
@@ -173,7 +173,7 @@ def lexical_search(chunks, query, top_k, connection_factory=sqlite3.connect):
         connection = connection_factory(str(Path(temp_dir) / "chunks.sqlite3"))
         connection.execute("CREATE VIRTUAL TABLE chunks USING fts5(text, filename, source, tokenize='unicode61')")
         connection.executemany("INSERT INTO chunks(text, filename, source) VALUES (?, ?, ?)",
-                               [(item.get("text", ""), item.get("filename", ""), item.get("source", "")) for item in chunks])
+                               [(item.get("text"), item.get("filename"), item.get("source")) for item in chunks])
         # Quote each token so user input cannot introduce FTS operators or column filters.
         match_query = " OR ".join('"' + value.replace('"', '""') + '"' for value in tokens)
         rows = connection.execute(
@@ -183,8 +183,8 @@ def lexical_search(chunks, query, top_k, connection_factory=sqlite3.connect):
         results = []
         for rowid, score in rows:
             item = chunks[rowid - 1]
-            results.append({"id": item.get("id"), "text": item.get("text", ""), "filename": item.get("filename", ""),
-                            "source": item.get("source", ""), "chunk_index": item.get("chunk_index", 0),
+            results.append({"id": item.get("id"), "text": item.get("text"), "filename": item.get("filename"),
+                            "source": item.get("source"), "chunk_index": item.get("chunk_index", 0),
                             "score": float(score), "mode": "lexical"})
         connection.close()
         return results
@@ -204,12 +204,12 @@ def rrf_fuse(lexical_results, dense_results, top_k, k=RRF_K):
 
             # Ingest ids use the basename only, so same-named files collide; fuse on
             # the chunk's true identity (source path + index) instead.
-            key = (result.get("source", ""), result.get("chunk_index", 0), chunk_id)
+            key = (result.get("source"), result.get("chunk_index", 0), chunk_id)
             entry = fused.setdefault(key, {
                 "id": chunk_id,
-                "text": result.get("text", ""),
-                "filename": result.get("filename", ""),
-                "source": result.get("source", ""),
+                "text": result.get("text"),
+                "filename": result.get("filename"),
+                "source": result.get("source"),
                 "chunk_index": result.get("chunk_index", 0),
                 "score": 0.0,
                 "hits": {},
@@ -220,7 +220,7 @@ def rrf_fuse(lexical_results, dense_results, top_k, k=RRF_K):
             entry["score"] += 1.0 / (k + rank)
             entry["hits"][retriever] = {"rank": rank, "score": retrieval_score(result)}
 
-    ranked = sorted(fused.values(), key=lambda item: (-item["score"], item["source"], item["chunk_index"], item["id"]))
+    ranked = sorted(fused.values(), key=lambda item: (-item["score"], item["source"] or "", item["chunk_index"], item["id"]))
     return [{
         "id": item["id"],
         "text": item["text"],
@@ -420,13 +420,16 @@ def cmd_query(args):
         dense_results = table.search(query_vector).limit(candidate_count).to_list()
         search_results = rrf_fuse(lexical_results, dense_results, top_k)
 
+    # D22: all modes preserve absent text/filename/source as null, never invented
+    # metadata. Consumers must label unknown values; requiring metadata later
+    # would need explicit validation (and reject otherwise searchable legacy rows).
     formatted_results = []
     for r in search_results:
         formatted = {
             "id": r.get("id"),
-            "text": r.get("text", ""),
-            "filename": r.get("filename", ""),
-            "source": r.get("source", ""),
+            "text": r.get("text"),
+            "filename": r.get("filename"),
+            "source": r.get("source"),
             "chunk_index": r.get("chunk_index", 0),
             "score": retrieval_score(r),
             "mode": r.get("mode", resolved_mode),

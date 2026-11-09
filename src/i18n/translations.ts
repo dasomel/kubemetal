@@ -372,6 +372,8 @@ export const translations: Record<Language, Record<string, string>> = {
     'rag.rrfScore': 'RRF 점수:',
     'rag.provenance': '검색기: {retrievers} · Lexical {lexical} · Dense {dense}',
     'rag.notHit': '미적중',
+    'rag.unknownSource': '출처 알 수 없음',
+    'rag.unknownText': '본문 알 수 없음',
     'rag.noResults': '검색 결과가 없습니다.',
 
     // Pipeline Card - DVC
@@ -1360,6 +1362,8 @@ export const translations: Record<Language, Record<string, string>> = {
     'rag.rrfScore': 'RRF score:',
     'rag.provenance': 'Retrievers: {retrievers} · Lexical {lexical} · Dense {dense}',
     'rag.notHit': 'not hit',
+    'rag.unknownSource': 'Unknown source',
+    'rag.unknownText': 'Text unavailable',
     'rag.noResults': 'No search results found.',
 
     // Pipeline Card - DVC

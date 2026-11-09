@@ -27,9 +27,10 @@ pub struct RetrievalProvenance {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RagSearchResult {
     pub id: Option<String>,
-    pub text: String,
-    pub filename: String,
-    pub source: String,
+    // D22: legacy rows may lack metadata in any mode; retain null rather than invent it.
+    pub text: Option<String>,
+    pub filename: Option<String>,
+    pub source: Option<String>,
     pub chunk_index: u32,
     /// Dense mode is vector distance; lexical mode is SQLite bm25(); hybrid is RRF (higher is better); exact is a metadata match (1.0).
     pub score: f64,
@@ -483,6 +484,31 @@ mod retrieval_mode_tests {
     use super::{parse_query_response, retrieval_mode_args, validate_retrieval_mode};
 
     #[test]
+    fn query_response_preserves_null_metadata_in_all_modes() {
+        for mode in ["exact", "lexical", "dense", "hybrid"] {
+            for metadata in [
+                serde_json::json!({"source": null, "filename": null, "text": null}),
+                serde_json::json!({}),
+            ] {
+                let mut row = serde_json::json!({
+                    "id": null, "chunk_index": 0, "score": 1.0, "mode": mode
+                });
+                row.as_object_mut()
+                    .unwrap()
+                    .extend(metadata.as_object().unwrap().clone());
+                let response = parse_query_response(serde_json::json!({
+                    "resolved_mode": mode, "rule": "explicit", "results": [row]
+                }))
+                .unwrap();
+                let serialized = serde_json::to_value(response).unwrap();
+                for field in ["source", "filename", "text"] {
+                    assert_eq!(serialized["results"][0][field], serde_json::Value::Null);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn retrieval_mode_allowlist_and_default() {
         assert_eq!(validate_retrieval_mode(None).unwrap(), "dense");
         assert_eq!(
@@ -549,7 +575,7 @@ mod retrieval_mode_tests {
         assert_eq!(exact_hit.results.len(), 1);
         assert_eq!(exact_hit.results[0].mode, "exact");
         assert_eq!(exact_hit.results[0].score, 1.0);
-        assert_eq!(exact_hit.results[0].filename, "README.md");
+        assert_eq!(exact_hit.results[0].filename.as_deref(), Some("README.md"));
 
         // Per-hit routing fields emitted by rag_host.py are tolerated but not part of the shape.
         let hit = parse_query_response(serde_json::json!({
