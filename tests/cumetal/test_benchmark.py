@@ -174,6 +174,9 @@ int main() {
                         self.assertEqual(result['thermal_after']['state'], state)
                         if failure:
                             self.assertTrue(result['thermal_before']['reason'])
+                    else:
+                        # D22: a failed run exposes no numbers under the result key.
+                        self.assertIsNone(result.get('timing'))
 
     def test_stage_clock_timeout_and_missing_tool(self):
         ticks = iter((100, 175))

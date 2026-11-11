@@ -59,7 +59,11 @@ def stage(command, timeout, env=None, clock=time.monotonic_ns):
                 os.killpg(proc.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            result['output'] = proc.communicate()[0]
+            try:
+                result['output'] = proc.communicate(timeout=5)[0]
+            except subprocess.TimeoutExpired:
+                # A descendant that left the process group still holds the pipe; do not hang.
+                result['output'] = ''
             result['error'] = 'timeout'
     except OSError as error:
         result['error'] = str(error)
@@ -172,6 +176,9 @@ def collect(args, work, run=stage, prefix=None):
     else:
         doc['status'] = 'measured'
         doc['performance_success'] = True
+    if not doc['performance_success']:
+        # D22: a failed run must not expose numbers under the key consumers read as the result.
+        doc['timing_unverified'] = doc.pop('timing', None)
     return doc
 
 
