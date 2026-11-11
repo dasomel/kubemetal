@@ -1,4 +1,5 @@
 #include "common.h"
+#include "parity.h"
 // FP64 policy: CuMetal virtualises double (default fast48 = ~48 significand bits), so tolerance is 1e-9 rel, not bit-exact.
 __global__ void k(const double* a, const double* b, double* o, int n) {
   int i = blockIdx.x * blockDim.x + threadIdx.x; if (i < n) o[i] = a[i] * b[i] + sqrt(a[i]) / (1.0 + b[i]);
@@ -10,7 +11,7 @@ int main() {
   CK(cudaMemcpy(da, a, n * 8, cudaMemcpyHostToDevice)); CK(cudaMemcpy(db, b, n * 8, cudaMemcpyHostToDevice));
   k<<<n / 256, 256>>>(da, db, dout, n); CK(cudaGetLastError()); CK(cudaDeviceSynchronize());
   CK(cudaMemcpy(o, dout, n * 8, cudaMemcpyDeviceToHost));
-  double mx = 0; for (int i = 0; i < n; ++i) { double r = a[i] * b[i] + sqrt(a[i]) / (1.0 + b[i]); mx = fmax(mx, fabs(o[i] - r) / fabs(r)); }
-  char buf[64]; snprintf(buf, sizeof buf, "max_rel_error=%.3e tol=1e-9", mx);
-  return report("fp64", mx < 1e-9, fnv(o, n * 8), true, buf);
+  parity::Check check; check.scan(o, n); for (int i = 0; i < n; ++i) { double r = a[i] * b[i] + sqrt(a[i]) / (1.0 + b[i]); check.add(i, parity::ratio(fabs(o[i] - r), fabs(r))); }
+  char buf[160]; check.detail(buf, sizeof buf, 1e-9);
+  return report("fp64", check.passes(1e-9), fnv(o, n * 8), true, buf);
 }

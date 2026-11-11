@@ -1,4 +1,5 @@
 #include "common.h"
+#include "parity.h"
 #define T 16
 __global__ void sgemm(int N, const float* A, const float* B, float* C) {
   __shared__ float As[T][T], Bs[T][T];
@@ -18,11 +19,11 @@ int main() {
   CK(cudaMemcpy(dA, A, b, cudaMemcpyHostToDevice)); CK(cudaMemcpy(dB, B, b, cudaMemcpyHostToDevice));
   sgemm<<<dim3(N / T, N / T), dim3(T, T)>>>(N, dA, dB, dC); CK(cudaGetLastError()); CK(cudaDeviceSynchronize());
   CK(cudaMemcpy(C, dC, b, cudaMemcpyDeviceToHost));
-  double worst = 0;  // error normalised by sum|a||b| so cancellation near zero does not inflate it
+  parity::Check check; check.scan(C, (size_t)N * N);  // normalise by sum|a||b|
   for (int i = 0; i < N; i += 7) for (int j = 0; j < N; j += 5) {
     double r = 0, m = 0; for (int k = 0; k < N; ++k) { r += (double)A[i * N + k] * B[k * N + j]; m += fabs((double)A[i * N + k] * B[k * N + j]); }
-    worst = fmax(worst, fabs(C[i * N + j] - r) / m);
+    check.add(i * N + j, parity::ratio(fabs(C[i * N + j] - r), m));
   }
-  char buf[64]; snprintf(buf, sizeof buf, "N=%d max_norm_err=%.3e tol=1e-5", N, worst);
-  return report("sgemm_handwritten", worst < 1e-5, fnv(C, b), true, buf);
+  char buf[160]; check.detail(buf, sizeof buf, 1e-5);
+  return report("sgemm_handwritten", check.passes(1e-5), fnv(C, b), true, buf);
 }
