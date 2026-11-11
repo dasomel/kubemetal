@@ -39,8 +39,9 @@ $ grep -n vmType ~/.colima/_lima/colima/lima.yaml ~/.colima/default/colima.yaml
 - `colima start --vm-type krunkit`은 CLI 플래그로는 이미 노출되어 있다(colima 0.10.3). 그러나
   `krunkit` 바이너리 자체는 이 머신에 설치돼 있지 않다 — 별도 tap(`slp/krunkit`, deprecated →
   후속 tap)에서 설치해야 한다. `[measured-local]` + `[upstream-doc]`(아래 §1)
-- `smolvm` CLI는 Homebrew 기본 탭에 없다 — 업스림 저장소에서 직접 빌드/설치해야 한다.
-  `[measured-local]`
+- `smolvm` CLI는 Homebrew 기본 탭에 없다(`brew search smolvm` 매치 없음) `[measured-local]`.
+  업스트림 저장소에서 직접 빌드하거나 릴리스 바이너리를 가져오는 구체적인 설치 경로는 이번 조사에서
+  설치를 시도하지 않아 미검증 상태다(`[unverified]`, §3 줄 167-169).
 
 ---
 
@@ -204,11 +205,13 @@ GitHub에 동명 저장소가 다수 존재해 혼동 위험이 있다(`agustif/
 
 ## 5. Recommended next slice
 
-**하나만**: `docs/04-architecture.md`의 `krunkit-container` 상태 표(줄 73-79)에 이번 조사에서
-확인한 kiac(alpha, device-plugin/DRA on K8s 1.36+) existence-proof를 각주로 추가하고, 동시에
-`src-tauri/src/commands/colima.rs:121-149`에 `vm_type: String` 파라미터를 추가해
-`--vm-type=vz`(현재 하드코딩, 줄 143)를 `--vm-type={vm_type}`으로 바꾸되 **기본값은 여전히
-`"vz"`로 고정**하는 최소 PR을 낸다 — 이것만으로 Phase A "krunkit capability를 스키마에 추가"의
-첫 전제(호출 경로에서 vm-type을 선택 가능하게 함)를 코드 변경 없이 실제 krunkit 기동 없이도
-충족시키고, 기존 `vz` 기본 경로를 전혀 바꾸지 않는다. krunkit 실제 기동/GPU 실측은 별도 후속
-이슈로 남긴다(오너 결정 1, 2 해결 후).
+- **읽기 전용 탐지 및 증거 정리(권장)**: `docs/04-architecture.md`의 `krunkit-container` 상태 표(줄 73-79)에
+  이번 조사에서 확인한 kiac(alpha, device-plugin/DRA on K8s 1.36+) existence-proof 각주를 보강하고,
+  호스트 실측 조사에서 수집된 바이너리 부재 및 전제조건 상태를 읽기 전용 문서로 정돈한다.
+- **VM 타입 선택 노출은 별도 설계·승인 경계**: 실제 `src-tauri/src/commands/colima.rs:159`는 여전히
+  `--vm-type=vz`로 고정되어 있다. 조사 문서의 이전 권고에서 언급한 `vm_type` IPC 인자 추가는
+  Tauri 커맨드 시그니처 및 IPC 계약(`docs/02-requirements.md` §4.1)을 변경하는 작업이므로 "코드 변경 없이"
+  수행될 수 없다. VM 타입 선택 노출은 클러스터 라이프사이클에 직접 영향을 주는 설계 변경이므로 별도
+  설계 검토와 오너 승인이 선행되어야 하는 명확한 경계다.
+- **실행 및 구현 보류**: krunkit 후속 tap/버전 확정, smolvm 설치 경로 검증, VM 실제 기동,
+  `ComputeBackend` 코드 구현은 본 조사의 다음 조각에 포함하지 않으며, 오너 결정(§4) 전까지 진행하지 않는다.
