@@ -2,99 +2,72 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "kubemetal-team2-slice5-2026-11",
-  "task": "#84 D51 ioreg observation review fix N=5: independent cancellable sampler; correlation never changes verdict.",
+  "task": "#84 D51 ioreg observation review round 2: separate raw stdout and failure reason, retain correlation-only verdict.",
   "changeContext": {
     "paths": [
+      "src-tauri/src/services/gpu_observation.rs",
       "src-tauri/src/services/cumetal/harness.rs",
       "src-tauri/src/services/cumetal/harness/tests.rs",
-      "src-tauri/src/commands/metrics.rs",
-      "src-tauri/src/services/gpu_observation.rs",
-      "src-tauri/src/services/mod.rs",
-      "src/types/ipc.ts",
       "docs/20-cumetal-feasibility.md",
-      ".agents/evals/traces/2026-11-team2-slice5.json",
-      "docs/mistakes-log.md"
+      "docs/mistakes-log.md",
+      ".agents/evals/traces/2026-11-team2-slice5.json"
     ]
   },
   "events": [
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Read AGENTS.md, Rust/macOS mistakes log, D2/D51, docs/20, Makefile, hybrid-runtime skill and CLAUDE.md. Claude-only orchestration pointer is not applicable. Current branch/worktree only; no installs, colima/kubectl, push or PR. This fix changes harness.rs, its tests, docs/20, mistakes-log and this trace; other paths describe the preceding slice."
+      "summary": "Read AGENTS.md, Rust/macOS mistakes log, D2/D51, docs/20, Makefile recipes and hybrid-runtime skill. CLAUDE.md adds Claude-only orchestration pointers. Current worktree/branch only. Existing unavailable_reason already mirrored in IPC; no schema change. No installs, cluster operations, push, or live smoke/matrix run."
     },
     {
       "id": "e2",
-      "type": "reproduction",
-      "summary": "Added observation_total_time_is_capped before production changes; the old implementation exceeded the 2s observation budget.",
-      "evidence": [
-        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml observation_total_time_is_capped -- --skip live_smoke --skip live_matrix: FAILED, 0 passed, 1 failed; 2s observation budget exceeded: 7",
-        "artifact:/tmp/t2-5-red.log"
-      ]
+      "type": "bug_fix",
+      "summary": "Internal ProbeFailure separates stdout and reason for both metrics collector and smoke StepRunner. Non-zero exits retain bounded stdout (PerformanceStatistics lines when present); errors remain in unavailable_reason. Timeout/spawn failure leave raw_excerpt empty. Timeout explicitly says no captured stdout available. No parsing of failed probes. Docs/20 and mistakes log updated; D22/D51 verdict unchanged."
     },
     {
       "id": "e3",
-      "type": "bug_fix",
-      "summary": "Run bounded during probes in a Tokio task (16 samples, total 2s); abort and await cancellation on workload completion, then promptly sample after. Parent-drop guard aborts sampler; existing kill_on_drop cleans probe children. Preserve completed samples via bounded channel. Busy 49% baseline weakens increase detection; observations remain correlation only and never affect D51 verdict."
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Requested targeted tests; two new synthetic tests plus one strengthened/renamed test; no CuMetal live workload run",
+      "summary": "New gpu_observation_nonzero_exit_preserves_stdout_and_error covers exit 1, stderr and UTF-8 bounded stdout; gpu_observation_step_runner_preserves_failure_evidence covers non-zero stdout and TimedOut conversion. Existing gpu_observation_errors_and_timeout_never_become_zero now requires empty excerpts and explicit timeout reason. CuMetal count 50 -> 52; gpu_observation filter selects these 3 tests. Metrics includes existing host/process checks, 1 ignored.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml cumetal -- --skip live_smoke --skip live_matrix: test result: ok. 52 passed; 0 failed; 0 ignored; 0 measured; 463 filtered out; finished in 7.26s; exit 0",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml gpu_observation -- --skip live_smoke --skip live_matrix: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 512 filtered out; finished in 1.00s; exit 0",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml metrics -- --skip live_smoke --skip live_matrix: test result: ok. 31 passed; 0 failed; 1 ignored; 0 measured; 483 filtered out; finished in 2.12s; exit 0",
+        "artifact:/tmp/t2-5b-cumetal.log",
+        "artifact:/tmp/t2-5b-gpu_observation.log",
+        "artifact:/tmp/t2-5b-metrics.log"
+      ]
     },
     {
       "id": "e4",
-      "type": "regression_verification",
+      "type": "verification",
       "status": "passed",
-      "scope": "Synthetic CuMetal lifecycle/observation tests; live_smoke/live_matrix excluded",
-      "summary": "This fix adds exactly three tests: observation_total_time_is_capped, workload_shorter_than_probe_is_prompt_and_inconclusive, sampler_cancelled_on_successful_workload_completion. Existing 16-sample cap and failed-workload cancellation tests remain. Preceding slice added six tests (corrected from seven); this fix increases CuMetal filtered total from 47 to 50.",
+      "scope": "Requested Rust/TypeScript static checks and IPC consistency",
       "evidence": [
-        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml cumetal -- --skip live_smoke --skip live_matrix: 50 passed, 0 failed; 463 filtered out; 7.34s",
-        "artifact:/tmp/t2-5-test.log"
+        "ci:cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.44s; exit 0",
+        "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: (no output); exit 0",
+        "ci:pnpm exec tsc --noEmit: (no output); exit 0",
+        "ci:python3 scripts/ci/check_ipc_types.py: invoke 호출 102건 — 대조 30 · 구조체 반환 62 · 타입 인자 없음 10; OK: Rust 반환 타입과 invoke<T> 주석이 일치한다.; exit 0",
+        "artifact:/tmp/t2-5b-clippy.log",
+        "artifact:/tmp/t2-5b-fmt.log",
+        "artifact:/tmp/t2-5b-tsc.log",
+        "artifact:/tmp/t2-5b-ipc.log",
+        "artifact:/tmp/t2-5b-verification.txt"
       ]
     },
     {
       "id": "e5",
-      "type": "verification",
-      "status": "passed",
-      "scope": "Rust static checks",
-      "evidence": [
-        "ci:cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: Finished dev profile in 20.99s, exit 0",
-        "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0",
-        "ci:git diff --check: exit 0",
-        "artifact:/tmp/t2-5-clippy.log"
-      ]
+      "type": "external_input",
+      "provenance": "User-provided measured-local orchestrator runs on this Mac, 2026-11-12",
+      "reviewed": true,
+      "summary": "First run: 3 workloads passed, observations all inconclusive, 49% baseline from other apps. Second run after concurrent sampler: 3 workloads passed, activity_increase for 1 and inconclusive for 2; live test wall time 4.5–6.1 s. Added to docs/20 as supplied evidence; not rerun by worker. Correlation varies run to run and never changes D51 verdict."
     },
     {
       "id": "e6",
-      "type": "verification",
-      "status": "pending",
-      "scope": "make verify completion suite",
-      "summary": "SANDBOX-BLOCKED: socket bind Operation not permitted in four ports tests and verifier_rejects_unlisted_socket. Frontend passed; Rust suite stopped remaining make recipes. Temporary PATH cargo wrapper only adds --skip live_smoke --skip live_matrix; Makefile unchanged.",
-      "evidence": [
-        "ci:PATH=/tmp/t2-5-bin:$PATH make verify: exit 2, make test Error 101; Rust 505 passed, 5 failed, 2 ignored, 1 filtered out; socket PermissionDenied Operation not permitted",
-        "artifact:/tmp/t2-5-verify.log",
-        "artifact:/tmp/t2-5-bin/cargo"
-      ]
-    },
-    {
-      "id": "e7",
-      "type": "external_input",
-      "provenance": "User-provided measured-local orchestrator-run on this Mac, 2026-11-12",
-      "reviewed": true,
-      "summary": "All three workloads passed; gpu_observation inconclusive, No utilization increase captured; before Device Utilization 49% from other apps. Appended to docs/20 with provenance. This worker did not rerun live smoke."
-    },
-    {
-      "id": "e9",
-      "type": "environment_limit",
-      "summary": "Trace evidence checker passed. Comparison gate exits 1 solely because evidence-before-claim is true -> na: no completion claim while make verify is sandbox-blocked (state B). Bug-fix-verification now passes. No completion claim invented to satisfy baseline.",
-      "evidence": [
-        "ci:python3 scripts/ci/check-agent-trace-evidence.py --policy .agents/evals/risk-policy.json --changed-files /tmp/t2-5-changed.txt --trace .agents/evals/traces/2026-11-team2-slice5.json: exit 0, passed true, failures empty",
-        "ci:python3 .agents/evals/gate.py --trace .agents/evals/traces/2026-11-team2-slice5.json --baseline .agents/evals/baseline.eval.json: exit 1, one true-to-na regression (evidence-before-claim)",
-        "artifact:/tmp/t2-5-trace-check.log",
-        "artifact:/tmp/t2-5-gate.log"
-      ]
-    },
-    {
-      "id": "e8",
       "type": "task_outcome",
-      "state": "B",
-      "summary": "Sampler fix and three new synthetic regression tests verified; full completion suite blocked by sandbox socket permissions. No new live GPU claim.",
-      "next": "Orchestrator reruns make verify where socket binds are allowed, continuing to exclude live_smoke/live_matrix unless explicitly authorized."
+      "state": "A",
+      "summary": "Requested round-2 fix verified by targeted commands above. Full make verify and live_smoke/live_matrix not run this round; prior round recorded sandbox-blocked make verify. Remaining limitation: timeout output unavailable with current runner; GPU attribution remains system-wide correlation only. No UI or cluster changes."
     }
   ]
 }
