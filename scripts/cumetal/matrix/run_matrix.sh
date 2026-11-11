@@ -22,7 +22,7 @@ REPEATS=3
 
 # probe:extra-lib (lib only added to the JIT link line; cumetalc resolved the libs on its own in measurement)
 ALL_PROBES=(launch_1d launch_2d launch_3d shared_sync atomics warp_shuffle stream_event managed_memory fp64
-  sgemm_handwritten cublas_sgemm:cublas cufft_c2c:cufft curand_host:curand nan_inf)
+  sgemm_handwritten cublas_sgemm:cublas cufft_c2c:cufft curand_host:curand cusparse_spmv:cusparse nan_inf)
 if [ "$#" -gt 0 ]; then PROBES=("$@"); else PROBES=("${ALL_PROBES[@]}"); fi
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/cumetal-matrix.XXXXXX")"

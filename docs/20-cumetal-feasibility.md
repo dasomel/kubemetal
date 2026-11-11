@@ -415,3 +415,30 @@ JSON의 `runs[].provenance`는 회차별 증거, 경로의 `provenance`는 전�
 `python3 -B -m unittest discover -s tests/cumetal -v`가 합성 로그 회귀를 실행하며
 `make test`/`make verify`에 포함된다. 위 11월 8일 실측 표는 과거 결과이며 이 수정으로
 GPU 실행을 새로 검증한 것은 아니다. CuMetal 자기 보고의 독립 교차 확인은 여전히 미검증이다.
+
+## 2026-11-12 추가 — cuSPARSE CSR SpMV 프로브 (#84, runtime unverified)
+
+`cusparse_spmv.cu`를 기본 매트릭스의 15번째 프로브로 등록했다. 측정 범위는
+FP32, 32-bit/0-based CSR, non-transpose `cusparseSpMV`의 기본 알고리즘 하나다.
+4×5 행렬(7개 nonzero, 빈 행 포함)에 `y = 1.25 A x - 0.5 y`를 적용하고 모든
+출력을 double CPU reference와 비교한다. 각 원소는 finite여야 하며
+`abs(error) <= 1e-5 + 1e-5 * abs(reference)`를 만족해야 한다.
+결과에는 finite 여부·최대 절대 오차·허용 오차·출력 FNV digest를 남기며,
+CUDA/cuSPARSE 실패는 호출 위치·반환 코드와 함께 비정상 종료한다.
+runner는 기존대로 AOT/JIT 각각 3회의 종료 코드·출력·provenance를 보존한다.
+수치 PASS만으로 `supported`가 되지 않으며 회차별 GPU provenance 검사를 그대로 적용한다.
+이 한 subset의 결과를 cuSPARSE 전체 지원으로 확대하지 않는다. cuFFT/cuRAND는 변경하지 않았다.
+
+CPU fake API fault injection은 실제 프로브의 정상·허용 오차·mismatch·NaN/Inf·API 실패와
+workspace 유무 분기를 검사한다. 합성 classifier fixture는 두 경로의 라이브러리 등록,
+provenance 누락, API 실패, 수치 실패 및 회차별 digest 차이를 검사한다.
+이는 실제 CuMetal 빌드·GPU 실행 증거가 아니다. 헤더·dylib 존재도 실행 지원 증거가 아니다.
+위 11월 8일 실측 14종 표는 그대로 과거 결과다.
+
+실측은 오케스트레이터가 학습·서빙 등 GPU 작업이 없는 유휴 상태를 확인한 뒤 실행한다.
+독립 shell matrix는 D40 예약을 획득하지 않는다. 설치·업그레이드 없이 실패도 JSON/Markdown
+증거로 보존한다. 이번 구현 레인에서는 새 SpMV matrix를 실행하지 않았다:
+
+```bash
+bash scripts/cumetal/matrix/run_matrix.sh <evidence-out.json> cusparse_spmv:cusparse
+```

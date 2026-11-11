@@ -123,7 +123,7 @@ def main(work, out_json, repeats):
     manifest = dict(env); manifest["probe_sha256"] = sha
 
     # Probes that launch __global__ kernels from user code (library probes launch none themselves).
-    LIB_PROBES = {"cublas_sgemm", "cufft_c2c", "curand_host"}
+    LIB_PROBES = {"cublas_sgemm", "cufft_c2c", "curand_host", "cusparse_spmv"}
     rows = []
     for name in sorted(os.listdir(work)):
         d = f"{work}/{name}"
@@ -146,7 +146,7 @@ def main(work, out_json, repeats):
         rows.append(row)
 
     order = ["launch_1d","launch_2d","launch_3d","shared_sync","atomics","warp_shuffle","stream_event","managed_memory","fp64",
-             "sgemm_handwritten","cublas_sgemm","cufft_c2c","curand_host","nan_inf"]
+             "sgemm_handwritten","cublas_sgemm","cufft_c2c","curand_host","cusparse_spmv","nan_inf"]
     rows.sort(key=lambda r: order.index(r["probe"]) if r["probe"] in order else 99)
     doc = {"schema": "cumetal-matrix/1", "issue": 84, "manifest": manifest, "repeats": repeats,
            "vocabulary": ["supported", "partial", "unavailable", "failed", "unverified"], "results": rows,
