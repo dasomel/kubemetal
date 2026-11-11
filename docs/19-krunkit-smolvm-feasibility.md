@@ -37,8 +37,9 @@ $ grep -n vmType ~/.colima/_lima/colima/lima.yaml ~/.colima/default/colima.yaml
 - 이 Mac은 64GB RAM → D4 sizing(64GB+→12GB/6CPU)과 실행 중인 `default` 프로필(12GiB/6CPU)이
   정확히 일치한다 — D4가 실측 호스트에서 실제로 적용되고 있음을 교차 확인. `[measured-local]`
 - `colima start --vm-type krunkit`은 CLI 플래그로는 이미 노출되어 있다(colima 0.10.3). 그러나
-  `krunkit` 바이너리 자체는 이 머신에 설치돼 있지 않다 — 별도 tap(`slp/krunkit`, deprecated →
-  후속 tap)에서 설치해야 한다. `[measured-local]` + `[upstream-doc]`(아래 §1)
+  `krunkit` 바이너리 자체는 이 머신에 설치돼 있지 않다 `[measured-local]`. 업스트림 문서는 별도
+  tap(`slp/krunkit`, deprecated → 후속 tap)을 안내하지만 `[upstream-doc]`(아래 §1), 그 설치 경로가
+  이 Mac에서 동작하는지는 `[unverified]`다.
 - `smolvm` CLI는 Homebrew 기본 탭에 없다(`brew search smolvm` 매치 없음) `[measured-local]`.
   업스트림 저장소에서 직접 빌드하거나 릴리스 바이너리를 가져오는 구체적인 설치 경로는 이번 조사에서
   설치를 시도하지 않아 미검증 상태다(`[unverified]`, §3 줄 167-169).
