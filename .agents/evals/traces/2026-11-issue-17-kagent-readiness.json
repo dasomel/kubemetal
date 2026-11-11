@@ -81,27 +81,21 @@
       ]
     },
     {
-      "id": "e8",
-      "type": "verification",
-      "status": "passed",
-      "scope": "make verify completion suite, re-run by the orchestrator outside the lane sandbox on the macOS host",
-      "summary": "The lane sandbox blocked socket-binding tests (PermissionDenied), so the orchestrator re-ran make verify on the host: exit 0, 523 Rust tests passed, 0 failed, 2 ignored; frontend suite, lint, licence check and web build passed.",
-      "evidence": [
-        "test:make-verify-exit-0-523-rust-passed-0-failed-2-ignored",
-        "ci:make-verify-lint-license-build-ok"
-      ]
-    },
-    {
       "id": "e9",
       "type": "completion_claim",
-      "status": "pending",
-      "summary": "Backend fix and focused regression are verified. Full completion is not claimed; host/runtime verification remains pending."
+      "summary": "The backend aggregation fix is verified by the focused regression tests (fail before, pass after) and by make verify on the host (exit 0, 523 Rust tests). This claim covers the aggregation logic only: the native app was not observed visually and no real-cluster fault injection was performed.",
+      "evidence": [
+        "e4",
+        "e5",
+        "e6",
+        "e7"
+      ]
     },
     {
       "id": "e10",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete and verified for the approved slice: regression tests and make verify (exit 0, 523 Rust tests) on the host. Follow-ups named in the slice remain out of scope.",
+      "summary": "Complete and verified for the approved backend slice (regression tests + host make verify, exit 0, 523 Rust tests). Not done: visual observation in the native app and real-cluster fault injection of an installed-but-not-ready kagent.",
       "next": "Host: PATH=/private/tmp/issue17-tools:$PATH make verify (wrapper excludes live_smoke/live_matrix). Visually observe installed/not-ready fixture in running app. No GPU live run or real cluster fault injection is necessary for this aggregation-only slice. Requested report is the sole explicit outside-worktree artifact exception."
     }
   ]
