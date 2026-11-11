@@ -76,7 +76,7 @@ impl Drop for Fixture {
 
 type Override = (fn(&StepSpec) -> bool, fn(&StepSpec) -> RunOutcome);
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct FakeRunner {
     overrides: Vec<Override>,
 }
@@ -665,15 +665,17 @@ async fn correlation_only_uses_during_utilization_and_never_proves_process_use()
     }
 }
 
+#[derive(Clone)]
 struct ObservedFailureRunner {
-    probes: std::cell::Cell<usize>,
-    active: std::cell::Cell<usize>,
+    succeed: bool,
+    probes: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    active: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
 
-struct ProbeGuard<'a>(&'a std::cell::Cell<usize>);
+struct ProbeGuard<'a>(&'a std::sync::Arc<std::sync::atomic::AtomicUsize>);
 impl Drop for ProbeGuard<'_> {
     fn drop(&mut self) {
-        self.0.set(self.0.get() - 1);
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -683,18 +685,24 @@ impl StepRunner for ObservedFailureRunner {
     }
     async fn run(&self, spec: &StepSpec) -> RunOutcome {
         if name(spec) == "ioreg" {
-            self.probes.set(self.probes.get() + 1);
-            self.active.set(self.active.get() + 1);
+            self.probes
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.active
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let _guard = ProbeGuard(&self.active);
             // The during probe is still in flight when the workload fails.
-            if self.probes.get() % 3 == 2 {
+            if self.probes.load(std::sync::atomic::Ordering::SeqCst) % 3 == 2 {
                 std::future::pending::<()>().await;
             }
             return ok(r#""Device Utilization %"=0,"In use system memory"=0"#);
         }
         if WORKLOADS.iter().any(|w| name(spec) == w.name) {
             tokio::time::sleep(Duration::from_millis(10)).await;
-            return exit(10, "", "CUDA launch failed");
+            return if self.succeed {
+                healthy_default(spec)
+            } else {
+                exit(10, "", "CUDA launch failed")
+            };
         }
         healthy_default(spec)
     }
@@ -704,8 +712,9 @@ impl StepRunner for ObservedFailureRunner {
 async fn failed_smoke_stops_observation_and_releases_reservation() {
     let fx = fixture("observation-failure", &[]);
     let runner = ObservedFailureRunner {
-        probes: 0.into(),
-        active: 0.into(),
+        succeed: false,
+        probes: Default::default(),
+        active: Default::default(),
     };
     let state = crate::commands::mlx::MlxState::default();
     {
@@ -725,13 +734,13 @@ async fn failed_smoke_stops_observation_and_releases_reservation() {
                 vec!["before", "after"]
             );
         }
-        assert_eq!(runner.active.get(), 0);
+        assert_eq!(runner.active.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
     assert!(state.claim_benchmark_reservation().is_ok());
-    let count = runner.probes.get();
+    let count = runner.probes.load(std::sync::atomic::Ordering::SeqCst);
     tokio::time::sleep(Duration::from_millis(120)).await;
     assert_eq!(
-        runner.probes.get(),
+        runner.probes.load(std::sync::atomic::Ordering::SeqCst),
         count,
         "no detached observer survives failure"
     );
@@ -761,6 +770,7 @@ async fn ioreg_step_failures_do_not_change_self_report_verdict() {
 
 #[tokio::test]
 async fn ioreg_resolver_failure_is_preserved() {
+    #[derive(Clone)]
     struct Missing;
     impl StepRunner for Missing {
         fn resolve(&self, _: &str) -> Result<PathBuf, String> {
@@ -779,6 +789,7 @@ async fn ioreg_resolver_failure_is_preserved() {
 
 #[tokio::test]
 async fn during_sampling_is_bounded_and_kept_separate_from_verdict() {
+    #[derive(Clone)]
     struct Slow;
     impl StepRunner for Slow {
         fn resolve(&self, bin: &str) -> Result<PathBuf, String> {
@@ -804,4 +815,93 @@ async fn during_sampling_is_bounded_and_kept_separate_from_verdict() {
             .all(|s| s.phase == "during"));
         assert_eq!(observation.status, "inconclusive");
     }
+}
+
+#[derive(Clone)]
+struct DelayedProbeRunner;
+
+impl StepRunner for DelayedProbeRunner {
+    fn resolve(&self, bin: &str) -> Result<PathBuf, String> {
+        Ok(PathBuf::from(format!("/usr/bin/{bin}")))
+    }
+    async fn run(&self, spec: &StepSpec) -> RunOutcome {
+        if WORKLOADS.iter().any(|w| name(spec) == w.name) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        healthy_default(spec)
+    }
+    async fn observe_gpu(&self, phase: &str, _: &Path) -> GpuSample {
+        gpu_observation::collect_with(phase, async {
+            if phase == "during" {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+            Ok(r#""Device Utilization %"=49"#.into())
+        })
+        .await
+    }
+}
+
+#[tokio::test]
+async fn observation_total_time_is_capped() {
+    #[derive(Clone)]
+    struct LongRun;
+    impl StepRunner for LongRun {
+        fn resolve(&self, bin: &str) -> Result<PathBuf, String> {
+            DelayedProbeRunner.resolve(bin)
+        }
+        async fn run(&self, spec: &StepSpec) -> RunOutcome {
+            if WORKLOADS.iter().any(|w| name(spec) == w.name) {
+                tokio::time::sleep(Duration::from_millis(2400)).await;
+            }
+            healthy_default(spec)
+        }
+        async fn observe_gpu(&self, phase: &str, dir: &Path) -> GpuSample {
+            DelayedProbeRunner.observe_gpu(phase, dir).await
+        }
+    }
+    let fx = fixture("observation-deadline", &[]);
+    let report = run_smoke_with(&LongRun, fx.inputs()).await;
+    for workload in report.workloads {
+        let samples = workload.gpu_observation.unwrap().samples;
+        let during = samples.iter().filter(|s| s.phase == "during").count();
+        assert!(during <= 6, "2s observation budget exceeded: {during}");
+    }
+}
+
+#[tokio::test]
+async fn workload_shorter_than_probe_is_prompt_and_inconclusive() {
+    let fx = fixture("short-observation", &[]);
+    let start = std::time::Instant::now();
+    let report = run_smoke_with(&DelayedProbeRunner, fx.inputs()).await;
+    assert!(start.elapsed() < Duration::from_millis(200));
+    assert!(report.all_passed);
+    for workload in report.workloads {
+        let observation = workload.gpu_observation.unwrap();
+        assert_eq!(observation.status, "inconclusive");
+        assert_eq!(observation.samples.len(), 2);
+        assert_eq!(observation.samples[1].phase, "after");
+    }
+}
+
+#[tokio::test]
+async fn sampler_cancelled_on_successful_workload_completion() {
+    let fx = fixture("successful-cancellation", &[]);
+    let runner = ObservedFailureRunner {
+        succeed: true,
+        probes: Default::default(),
+        active: Default::default(),
+    };
+    let report = run_smoke_with(&runner, fx.inputs()).await;
+    assert!(report.all_passed);
+    assert_eq!(runner.active.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let count = runner.probes.load(std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(
+        count, 9,
+        "before, cancelled during, prompt after per workload"
+    );
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    assert_eq!(
+        runner.probes.load(std::sync::atomic::Ordering::SeqCst),
+        count
+    );
 }

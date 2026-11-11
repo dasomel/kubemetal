@@ -352,13 +352,13 @@ Metal 툴체인 없이는 실패한다.**
   `services/gpu_observation.rs` 수집기·파서로 각 workload **실행 직전/실행 중/직후**를
   관측하고 기존 JSON의 `workloads[].gpu_observation`에 별도로 기록한다. compile/link 실패로
   실행하지 않으면 이 필드는 `null`이다. 신규 IPC나 샘플 기반 자동 승인은 없다.
-- 각 ioreg는 1초 timeout, 실행 중에는 100ms 간격·최대 16회(전후 포함 최대 18회)다.
-  실행이 끝나면 진행 중인 관측 future와 자식을 정리하고 직후 샘플을 수집한다.
+- 각 ioreg는 1초 timeout, 실행 중에는 별도 Tokio task로 100ms 간격·최대 16회(전후 포함 최대 18회), 총 2초 상한이다.
+  실행이 끝나면 샘플러를 즉시 abort해 진행 중인 probe와 kill_on_drop 자식을 정리하고 직후 샘플을 수집한다.
   실패/timeout에도 관측이 백그라운드에 남지 않고 기존 예약 guard가 해제된다.
 - 샘플은 phase, 시작 Unix ms(시계 오류 시 null), 소요 ms, 사용률/메모리의 선택값,
   최대 4 KiB raw 발췌와 관측 불가 사유를 보존한다. 필드 누락·실행 실패·timeout은 0이 아니다.
 - `activity_increase`는 실행 중 사용률이 직전보다 증가한 **시스템 전체 상관 증거**일 뿐,
-  해당 프로세스의 GPU 사용 증명이 아니다. 다른 프로세스가 원인일 수 있다. 직후의 증가나
+  해당 프로세스의 GPU 사용 증명이 아니다. 다른 프로세스가 원인일 수 있고, 이미 바쁜 baseline에서는 증가 감지가 약하다. 판정에 사용하지 않는다. 직후의 증가나
   메모리 할당량 증가는 활동 증가로 판정하지 않는다. 짧은 커널 미포착·0·감소·필드 부재는
   `inconclusive`이며 CPU 실행으로 단정하지 않는다. 기존 CuMetal provenance/verdict는 독립이다.
 - 이 변경의 GPU live 실행은 수행하지 않았다. 오케스트레이터가 idle Mac에서
@@ -468,3 +468,11 @@ bash scripts/cumetal/matrix/run_matrix.sh <evidence-out.json> cusparse_spmv:cusp
 CuMetal은 이 라이브러리 호출에 `CUMETAL_PROVENANCE` 줄을 하나도 내지 않았으므로(`events={}`)
 분류는 두 경로 모두 **`partial`** — "numeric parity only; GPU execution not independently proven".
 cuBLAS/cuFFT/cuRAND와 같은 결론이며, 이 subset이 GPU에서 실행됐다는 증거는 없다.
+
+## 2026-11-12 ioreg live 관측 (measured-local, orchestrator-run)
+
+오케스트레이터가 이 Mac에서 실행한 결과: smoke workload 3종 모두 통과했지만
+`gpu_observation.status=inconclusive`, 사유는 `No utilization increase captured`였다.
+실행 전 `Device Utilization`은 다른 앱 부하로 이미 **49%**였다. 바쁜 baseline은
+증가 감지를 약화시키므로 이 관측은 시스템 전체 상관 증거로만 남기며 D51 verdict에는
+사용하지 않는다. 이번 수정 작업에서는 live smoke를 재실행하지 않았다.

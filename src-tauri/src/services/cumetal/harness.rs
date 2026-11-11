@@ -232,41 +232,48 @@ pub(crate) struct StepSpec {
 }
 
 /// 테스트가 실제 컴파일러/CuMetal 없이 모든 분기를 덮도록 스폰을 주입한다.
-pub(crate) trait StepRunner {
+pub(crate) trait StepRunner: Clone + Send + Sync + 'static {
     fn resolve(&self, bin: &str) -> Result<PathBuf, String>;
-    async fn run(&self, spec: &StepSpec) -> RunOutcome;
+    fn run(&self, spec: &StepSpec) -> impl std::future::Future<Output = RunOutcome> + Send;
 
-    async fn observe_gpu(&self, phase: &str, dir: &Path) -> GpuSample {
-        gpu_observation::collect_with(phase, async {
-            let s = spec(
-                self.resolve("ioreg")?,
-                gpu_observation::ARGS.map(String::from).to_vec(),
-                dir,
-                gpu_observation::TIMEOUT,
-            );
-            match self.run(&s).await {
-                RunOutcome::Finished {
-                    success: true,
-                    stdout,
-                    ..
-                } => Ok(stdout),
-                RunOutcome::Finished {
-                    exit_code,
-                    stdout,
-                    stderr,
-                    ..
-                } => Err(format!(
-                    "ioreg failed (exit {exit_code:?}): {stderr}\n{stdout}"
-                )),
-                RunOutcome::SpawnFailed(e) => Err(e),
-                RunOutcome::TimedOut => Err("ioreg timed out after 1s".into()),
-            }
-        })
-        .await
+    fn observe_gpu(
+        &self,
+        phase: &str,
+        dir: &Path,
+    ) -> impl std::future::Future<Output = GpuSample> + Send {
+        async move {
+            gpu_observation::collect_with(phase, async {
+                let s = spec(
+                    self.resolve("ioreg")?,
+                    gpu_observation::ARGS.map(String::from).to_vec(),
+                    dir,
+                    gpu_observation::TIMEOUT,
+                );
+                match self.run(&s).await {
+                    RunOutcome::Finished {
+                        success: true,
+                        stdout,
+                        ..
+                    } => Ok(stdout),
+                    RunOutcome::Finished {
+                        exit_code,
+                        stdout,
+                        stderr,
+                        ..
+                    } => Err(format!(
+                        "ioreg failed (exit {exit_code:?}): {stderr}\n{stdout}"
+                    )),
+                    RunOutcome::SpawnFailed(e) => Err(e),
+                    RunOutcome::TimedOut => Err("ioreg timed out after 1s".into()),
+                }
+            })
+            .await
+        }
     }
 }
 
 /// 운영 구현: 모든 스폰은 `external_command_at`(D5 확장)을 거친다.
+#[derive(Clone)]
 pub(crate) struct SystemStepRunner;
 
 impl StepRunner for SystemStepRunner {
@@ -648,24 +655,39 @@ async fn run_workload<R: StepRunner>(
         r.env = vec![("CUMETAL_TRACE_GPU".into(), "1".into())];
         // 종료 코드 0=parity 통과, 1=불일치(실행은 끝났다). 그 외(10/11 = CUDA API 실패 등)는 실패.
         let mut samples = vec![runner.observe_gpu("before", dir).await];
-        // D51: bounded, scoped futures (no detached sampler). Failure/cancellation drops both
-        // children via kill_on_drop; reservation remains held until this function returns.
-        // Cost: up to 1s per probe, <=18 probes/run. Escape hatch: remove observation only.
-        let observe = async {
-            for _ in 0..16 {
-                samples.push(runner.observe_gpu("during", dir).await);
-                tokio::time::sleep(Duration::from_millis(100)).await;
+        // D51: isolate observation from workload timing; abort drops the in-flight
+        // kill_on_drop child. Cost: <=16 during samples / 2s; remove observation to opt out.
+        // A busy baseline (49% on 2026-11-12 from other apps) weakens increase detection.
+        // Samples are system-wide correlation only and never enter the verdict.
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+        let observer = runner.clone();
+        let observation_dir = dir.to_path_buf();
+        let sampler = tokio::spawn(async move {
+            let _ = tokio::time::timeout(Duration::from_secs(2), async {
+                for _ in 0..16 {
+                    let sample = observer.observe_gpu("during", &observation_dir).await;
+                    if tx.send(sample).await.is_err() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            })
+            .await;
+        });
+        // Parent cancellation must also abort the sampler, rather than detach it.
+        struct AbortSampler(tokio::task::AbortHandle);
+        impl Drop for AbortSampler {
+            fn drop(&mut self) {
+                self.0.abort();
             }
-            std::future::pending::<()>().await;
-        };
-        let outcome = {
-            tokio::pin!(observe);
-            tokio::select! {
-                biased;
-                outcome = runner.run(&r) => outcome,
-                () = &mut observe => unreachable!("observation remains pending until run completes"),
-            }
-        };
+        }
+        let _abort = AbortSampler(sampler.abort_handle());
+        let outcome = runner.run(&r).await;
+        sampler.abort();
+        let _ = sampler.await;
+        while let Ok(sample) = rx.try_recv() {
+            samples.push(sample);
+        }
         samples.push(runner.observe_gpu("after", dir).await);
         gpu_observation = Some(GpuObservation::from_samples(samples));
         let (result, stdout, stderr) = step_result(outcome, &[0, 1]);
