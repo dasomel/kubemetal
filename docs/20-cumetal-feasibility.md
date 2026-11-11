@@ -507,3 +507,15 @@ bash scripts/cumetal/matrix/run_matrix.sh /tmp/cumetal-parity.json sgemm_handwri
 
 `make test`/`make verify`의 기존 `tests/cumetal` discovery가 host C++ helper와
 MISMATCH classifier 전파 테스트를 실행한다. 이번 레인은 GPU 실행을 하지 않았다.
+
+**실측 (measured-local, 2026-11-12, M4 Pro, CuMetal 0.7.1, 오케스트레이터 실행):** NaN/Inf 방어를 넣은 뒤
+`run_matrix.sh` 전체 15종을 다시 돌렸다. 4개 수치 프로브(SGEMM·cuBLAS SGEMM·FP64·cuFFT)는 모든 회차에서
+`finite=true failed_index=-1`로 통과했고 분류는 이전과 같다(경로별 supported 20 / partial 10).
+즉 이 Mac에서는 실제 NaN이 숨어 있지 않았다 — 고친 것은 "NaN이 나와도 PASS가 될 수 있던" 판정 결함이다.
+
+**설치 주의 (measured-local, 2026-11-12):** `cumetalc`는 FP64 지원 셰이더
+(`compiler/metal/support/cumetal_fp64_inline_support.metal`)를 **빌드에 쓴 소스 트리의 절대 경로**에서 읽는다.
+11-06에 `/tmp/cumetal-src`에서 빌드했더니 macOS의 `/tmp` 정리로 그 파일이 지워져, 같은 날 `fp64` AOT가
+`compile refused: textual include input must be an existing .metal file`로 `unavailable`이 됐다(main에서도 재현,
+코드 변경과 무관). 소스를 `~/.local/src/cuda-metal`(v0.7.1, 548e79a)에 두고 같은 옵션으로 재빌드·재설치해
+해소했다 — 소스 트리는 설치 후에도 지우면 안 된다.
