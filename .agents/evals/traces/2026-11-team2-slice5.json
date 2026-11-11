@@ -69,7 +69,7 @@
     {
       "id": "e7",
       "type": "completion_claim",
-      "summary": "Independent ioreg GPU observation appended to the D51 CuMetal smoke report as correlation-only evidence (#84 slice) is implemented and passes its regression tests and make verify (513 Rust tests) on the host.",
+      "summary": "Independent ioreg GPU observation appended to the D51 CuMetal smoke report as correlation-only evidence (#84 slice) is implemented and passes its regression tests and make verify (522 Rust tests) on the host.",
       "evidence": [
         "e3",
         "e4"
@@ -79,7 +79,7 @@
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete and verified for the approved slice: regression tests and make verify (exit 0, 513 Rust tests) on the host. Follow-ups named in the slice remain out of scope."
+      "summary": "Complete and verified for the approved slice: regression tests and make verify (exit 0, 522 Rust tests) on the host. Follow-ups named in the slice remain out of scope."
     }
   ]
 }
