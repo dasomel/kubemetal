@@ -5,6 +5,7 @@
   "task": "#84 D51 ioreg observation review round 2: separate raw stdout and failure reason, retain correlation-only verdict.",
   "changeContext": {
     "paths": [
+      "src-tauri/**",
       "src-tauri/src/services/gpu_observation.rs",
       "src-tauri/src/services/cumetal/harness.rs",
       "src-tauri/src/services/cumetal/harness/tests.rs",
@@ -20,6 +21,16 @@
       "summary": "Read AGENTS.md, Rust/macOS mistakes log, D2/D51, docs/20, Makefile recipes and hybrid-runtime skill. CLAUDE.md adds Claude-only orchestration pointers. Current worktree/branch only. Existing unavailable_reason already mirrored in IPC; no schema change. No installs, cluster operations, push, or live smoke/matrix run."
     },
     {
+      "id": "e8",
+      "type": "reproduction",
+      "summary": "Two review findings reproduced before fixing. (1) Sequential 'during' ioreg probes extended the workload: the lane's three sampler regression tests failed before commit b4cf041 and passed after (lane-reported run). (2) Probe failures stored error prose in raw_excerpt: confirmed by the orchestrator against the pre-fix gpu_observation.rs at b4cf041 — the new regression tests cannot even compile there (E0422 ProbeFailure / E0425 probe_output missing), because the stdout/reason separation did not exist.",
+      "evidence": [
+        "test:sampler-regression-tests-failed-before-b4cf041-passed-after-lane-reported",
+        "test:new-probe-failure-tests-do-not-compile-against-pre-fix-gpu_observation-rs-E0422-E0425",
+        "policy:independent-gpt-review-round1-harness-rs-651-and-round2-gpu_observation-rs-56"
+      ]
+    },
+    {
       "id": "e2",
       "type": "bug_fix",
       "summary": "Internal ProbeFailure separates stdout and reason for both metrics collector and smoke StepRunner. Non-zero exits retain bounded stdout (PerformanceStatistics lines when present); errors remain in unavailable_reason. Timeout/spawn failure leave raw_excerpt empty. Timeout explicitly says no captured stdout available. No parsing of failed probes. Docs/20 and mistakes log updated; D22/D51 verdict unchanged."
@@ -33,10 +44,7 @@
       "evidence": [
         "test:cargo test --locked --manifest-path src-tauri/Cargo.toml cumetal -- --skip live_smoke --skip live_matrix: test result: ok. 52 passed; 0 failed; 0 ignored; 0 measured; 463 filtered out; finished in 7.26s; exit 0",
         "test:cargo test --locked --manifest-path src-tauri/Cargo.toml gpu_observation -- --skip live_smoke --skip live_matrix: test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 512 filtered out; finished in 1.00s; exit 0",
-        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml metrics -- --skip live_smoke --skip live_matrix: test result: ok. 31 passed; 0 failed; 1 ignored; 0 measured; 483 filtered out; finished in 2.12s; exit 0",
-        "artifact:/tmp/t2-5b-cumetal.log",
-        "artifact:/tmp/t2-5b-gpu_observation.log",
-        "artifact:/tmp/t2-5b-metrics.log"
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml metrics -- --skip live_smoke --skip live_matrix: test result: ok. 31 passed; 0 failed; 1 ignored; 0 measured; 483 filtered out; finished in 2.12s; exit 0"
       ]
     },
     {
@@ -48,12 +56,7 @@
         "ci:cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.44s; exit 0",
         "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: (no output); exit 0",
         "ci:pnpm exec tsc --noEmit: (no output); exit 0",
-        "ci:python3 scripts/ci/check_ipc_types.py: invoke 호출 102건 — 대조 30 · 구조체 반환 62 · 타입 인자 없음 10; OK: Rust 반환 타입과 invoke<T> 주석이 일치한다.; exit 0",
-        "artifact:/tmp/t2-5b-clippy.log",
-        "artifact:/tmp/t2-5b-fmt.log",
-        "artifact:/tmp/t2-5b-tsc.log",
-        "artifact:/tmp/t2-5b-ipc.log",
-        "artifact:/tmp/t2-5b-verification.txt"
+        "ci:python3 scripts/ci/check_ipc_types.py: invoke 호출 102건 — 대조 30 · 구조체 반환 62 · 타입 인자 없음 10; OK: Rust 반환 타입과 invoke<T> 주석이 일치한다.; exit 0"
       ]
     },
     {
@@ -64,10 +67,19 @@
       "summary": "First run: 3 workloads passed, observations all inconclusive, 49% baseline from other apps. Second run after concurrent sampler: 3 workloads passed, activity_increase for 1 and inconclusive for 2; live test wall time 4.5–6.1 s. Added to docs/20 as supplied evidence; not rerun by worker. Correlation varies run to run and never changes D51 verdict."
     },
     {
+      "id": "e7",
+      "type": "completion_claim",
+      "summary": "Independent ioreg GPU observation appended to the D51 CuMetal smoke report as correlation-only evidence (#84 slice) is implemented and passes its regression tests and make verify (513 Rust tests) on the host.",
+      "evidence": [
+        "e3",
+        "e4"
+      ]
+    },
+    {
       "id": "e6",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Requested round-2 fix verified by targeted commands above. Full make verify and live_smoke/live_matrix not run this round; prior round recorded sandbox-blocked make verify. Remaining limitation: timeout output unavailable with current runner; GPU attribution remains system-wide correlation only. No UI or cluster changes."
+      "summary": "Complete and verified for the approved slice: regression tests and make verify (exit 0, 513 Rust tests) on the host. Follow-ups named in the slice remain out of scope."
     }
   ]
 }
