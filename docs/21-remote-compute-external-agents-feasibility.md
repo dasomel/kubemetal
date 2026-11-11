@@ -201,10 +201,16 @@ Host/AgentRun 분리, RuntimeEvent, 모델 공급자 추상화, 로컬 우선 �
 
 ## Recommended next slice
 
-**`process.rs`의 `SEARCH_PATHS`가 `codex`/`claude`를 해석하지 못한다는 측정된 사실 하나만 놓고**,
-`ExternalAgentRunner` PoC 이전에 먼저 처리할 최소 단위 작업: 사용자 홈 기준 CLI 설치 경로 탐색을
-`resolve_cli_path`와 분리된 새 함수(예: `resolve_agent_cli_path`, 홈 디렉터리 하위 후보 경로 목록을
-인자로 받음)로 추가하고, `resolve_cli_path_finds_system_shells`류 회귀 테스트와 동일한 패턴으로
-"이 머신에 설치된 codex/claude/gemini 중 하나 이상을 실제로 해석하는지" 유닛 테스트를 추가한다. 이는
-#96/#63 두 이슈의 어떤 아키텍처 결정에도 앞서 필요한, 되돌리기 쉬운 단일 파일 변경이며 지금 이미
-측정된 구체적 실패를 고친다.
+- **읽기 전용 증거 정리**: 현재 `src-tauri/src/services/process.rs:10`의 `SEARCH_PATHS`가 시스템 및
+  Homebrew 고정 경로(`/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin`, `/usr/sbin`, `/sbin`)에
+  한정되어 사용자 홈 디렉터리(`~/.local/bin` 등)에 위치한 외부 CLI(`codex`, `claude`)를 해석하지 못한다는
+  측정된 사실과 실패 양상을 읽기 전용 조사 증거로 정돈해 유지한다.
+- **별도 resolver/allowlist는 오너 승인 선행 경계**: 사용자 홈 기준 CLI 탐색 경로를 추가하거나 별도
+  에이전트 CLI resolver(예: `resolve_agent_cli_path`)를 도입하는 것은 단순한 유틸리티 확장이 아니며,
+  D5 시스템 바이너리 신뢰 경계 분리(§Owner decisions needed 항목 2) 및 `agent_execution_security.rs`의
+  신뢰/권한 모델 연계(§Owner decisions needed 항목 4)에 직결된다. 따라서 "어떤 아키텍처 결정에도 앞서
+  착수할 수 있는 작업"이 아니며, 오너의 승인 및 보안/신뢰 경계 결정이 선행된 후에만 별도 resolver 및
+  allowlist PoC를 진행할 수 있다.
+- **러너 구현 및 권한 변경 보류**: `ExternalAgentRunner` 코드 작성, 임의 사용자 디렉터리 PATH 탐색 확장,
+  CLI 어댑터 구현은 오너 결정 전까지 착수하지 않고 보류(D) 상태를 유지한다. 본 조사의 정정 범위에서
+  새 ADR, 신규 D 번호, 공급자 정책, PATH/실행 권한 결정을 임의로 생성하지 않는다.
