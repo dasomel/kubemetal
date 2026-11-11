@@ -153,7 +153,8 @@ Host/AgentRun 분리, RuntimeEvent, 모델 공급자 추상화, 로컬 우선 �
   ("could not find executable 'codex'. Search paths: ...")을 그대로 반환하며 실패한다.
   이는 설계 이전에 나온 **구체적이고 재현 가능한 구현 장애물**이며, 이슈의 "executable discovery(PATH)"
   요구사항이 이 저장소의 기존 discovery 함수와 그대로 맞지 않는다는 뜻이다.
-- next-step (정확한 위치): `process.rs:10`의 `SEARCH_PATHS` 배열에 사용자 홈 기준 CLI 설치 경로
+- 설계 선택지 (**owner 결정 이후에만 착수** — §Owner decisions, §Recommended next slice 참조; 결정 전에는
+  구현하지 않는다): `process.rs:10`의 `SEARCH_PATHS` 배열에 사용자 홈 기준 CLI 설치 경로
   (`~/.local/bin`, 그리고 node/npm 전역 설치 시 흔한 `~/.npm-global/bin` 등)를 추가하거나, 외부 에이전트
   CLI 전용으로 사용자 설정 가능한 추가 탐색 경로를 `ExternalAgentRunner`가 별도로 주입하는 설계가
   필요하다. `SEARCH_PATHS`를 무조건 넓히면 시스템 바이너리 탐색(D5 원래 목적)과 목적이 섞이므로,
