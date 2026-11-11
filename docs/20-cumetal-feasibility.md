@@ -442,3 +442,10 @@ provenance 누락, API 실패, 수치 실패 및 회차별 digest 차이를 검�
 ```bash
 bash scripts/cumetal/matrix/run_matrix.sh <evidence-out.json> cusparse_spmv:cusparse
 ```
+
+**실측 (measured-local, 2026-11-12, M4 Pro, CuMetal 0.7.1, 유휴 상태 확인 후 오케스트레이터 실행):**
+위 명령을 실행한 결과 AOT·JIT 모두 컴파일 성공, 3회 모두 `status=PASS`
+(`rows=4 cols=5 nnz=7 finite=true max_abs_err=0.000e+00`, digest `ff8d415ec1f5d36a` 동일)였다.
+CuMetal은 이 라이브러리 호출에 `CUMETAL_PROVENANCE` 줄을 하나도 내지 않았으므로(`events={}`)
+분류는 두 경로 모두 **`partial`** — "numeric parity only; GPU execution not independently proven".
+cuBLAS/cuFFT/cuRAND와 같은 결론이며, 이 subset이 GPU에서 실행됐다는 증거는 없다.
