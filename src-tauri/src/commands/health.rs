@@ -78,7 +78,8 @@ fn split_result<T>(result: Result<T, String>) -> (Option<T>, Option<String>) {
 ///     채워지는 미검증 값이라(guardrails.rs, 다른 레인 소유— 여기서 고치지 않는다)
 ///     "healthy"의 근거로 쓰지 않는다(원래도 안 썼다 — 앞으로도 추가하지 않는다는
 ///     것을 명시).
-///   - kagent: `pod_issues_count > 0`만 본다. **`kagent_installed == false`는
+///   - kagent: 스택의 `pod_issues_count > 0` 또는 설치된 kagent의 준비 실패를 본다.
+///     **`kagent_installed == false`는
 ///     이상 신호가 아니다** — kagent는 옵트인 설치이므로(D30/D33) 미설치가 기본
 ///     상태다. 설치 안 됨을 degraded로 잡으면 kagent를 안 쓰는 대다수 설치에서
 ///     이 커맨드가 항상 degraded를 반환하게 된다.
@@ -102,7 +103,10 @@ fn derive_overall_status(
             || g.memory_pressure_level == "unknown"
             || g.thermal_state.is_none()
     });
-    let kagent_unhealthy = kagent.is_some_and(|k| k.pod_issues_count > 0);
+    // D22: pod_issues_count는 스택만 보므로 kagent 준비 실패도 반영한다.
+    // 기존 필드만 사용하며, 미설치 예외는 유지한다. 세부 구분이 필요하면 원본 report를 본다.
+    let kagent_unhealthy =
+        kagent.is_some_and(|k| k.pod_issues_count > 0 || (k.kagent_installed && !k.kagent_ready));
 
     if any_lookup_failed || colima_unhealthy || guardrails_unhealthy || kagent_unhealthy {
         "degraded".to_string()
@@ -177,12 +181,19 @@ mod tests {
 
     #[test]
     fn one_failed_lookup_yields_degraded() {
+        let colima = healthy_colima();
         let guardrails = healthy_guardrails();
         let kagent = healthy_kagent();
-        assert_eq!(
-            derive_overall_status(None, Some(&guardrails), Some(&kagent)),
-            "degraded"
-        );
+        for (colima, guardrails, kagent) in [
+            (None, Some(&guardrails), Some(&kagent)),
+            (Some(&colima), None, Some(&kagent)),
+            (Some(&colima), Some(&guardrails), None),
+        ] {
+            assert_eq!(
+                derive_overall_status(colima, guardrails, kagent),
+                "degraded"
+            );
+        }
     }
 
     #[test]
@@ -248,5 +259,31 @@ mod tests {
             derive_overall_status(Some(&colima), Some(&guardrails), Some(&kagent)),
             "healthy"
         );
+    }
+
+    #[test]
+    fn kagent_readiness_and_pod_issues_matrix() {
+        let colima = healthy_colima();
+        let guardrails = healthy_guardrails();
+        for (installed, ready, issues, expected) in [
+            (false, false, 0, "healthy"),
+            (false, true, 0, "healthy"),
+            (true, false, 0, "degraded"),
+            (true, true, 0, "healthy"),
+            (false, false, 1, "degraded"),
+            (false, true, 1, "degraded"),
+            (true, false, 1, "degraded"),
+            (true, true, 1, "degraded"),
+        ] {
+            let mut kagent = healthy_kagent();
+            kagent.kagent_installed = installed;
+            kagent.kagent_ready = ready;
+            kagent.pod_issues_count = issues;
+            assert_eq!(
+                derive_overall_status(Some(&colima), Some(&guardrails), Some(&kagent)),
+                expected,
+                "installed={installed}, ready={ready}, issues={issues}"
+            );
+        }
     }
 }

@@ -9,6 +9,7 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-11-12 | #17 전체 health가 스택 네임스페이스의 `pod_issues_count`만 확인해 설치된 kagent가 not-ready여도 healthy로 집계됐다 | 기존 pod 장애 조건에 `kagent_installed && !kagent_ready`를 추가한다. 옵트인 미설치 예외는 유지하며 installed/ready/issues 8개 조합과 세 probe 조회 실패를 회귀로 고정한다. 수정 전 installed=true/ready=false/issues=0에서 healthy 오판을 재현했다. 앱 fixture는 실클러스터 장애 증거가 아니다 |
 | 2026-11-12 | #221 빈 HF 트리·필터 후 파일 0개도 전송 성공으로 처리해 빈 staging이 로컬 모델로 승격됐다 | 파일 목록 검증은 시도 생성 전에 거부하며, 승격도 빈 staging을 거부하고 정리한다(D22). 트리·승격 회귀 테스트 2개가 수정 전 실패함을 확인했다. 기존 빈 모델 정리는 범위 밖이다 |
 | 2026-11-12 | #221 HF 다운로드가 최종 `models/<slug>`에 직접 파일을 써 두 번째 파일 실패·중단만으로 부분 모델이 카탈로그에 노출됐고 재시도가 기존 파일을 덮었다 | 시도별 `model-downloads` 형제 디렉터리에 전송하고 전체 성공 후 macOS exclusive rename으로만 승격한다. 기존 목적지와 외부·dangling symlink는 보존하며 EXDEV는 실패한다. 정상 오류는 해당 시도만 정리하고 정리 실패도 원래 오류에 덧붙인다. 임시 루트 테스트와 로컬 curl fixture로 비노출·재시도 승격을 검증하며, 강제 종료 잔재와 기존 부분 모델 정리는 후속이다 |
 | 2026-11-12 | #84 ioreg 실패 시 오류 문구를 raw_excerpt에 넣어 원시 증거와 혼동했다 | 비정상 종료의 stdout 발췌와 unavailable_reason을 분리한다. timeout은 캡처된 stdout이 없어 빈 발췌와 명시적 사유를 기록한다. 비정상 종료·timeout 회귀로 고정한다 |
