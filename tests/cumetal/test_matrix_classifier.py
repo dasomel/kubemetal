@@ -1,6 +1,7 @@
 """Synthetic on-disk evidence; no CuMetal, GPU or subprocess mocks required."""
 import importlib.util
 import json
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -193,6 +194,104 @@ class MatrixClassifierTests(unittest.TestCase):
         self.assertEqual(row['overall'], 'partial')
         self.assertEqual(doc['summary'], {'partial': 1, 'unverified': 1})
         self.assertIn('partial', output.with_suffix('.md').read_text())
+
+    def test_cusparse_runner_registration(self):
+        runner = (SCRIPT.parent / 'run_matrix.sh').read_text()
+        self.assertIn('cusparse_spmv:cusparse', runner.split('ALL_PROBES=(', 1)[1].split(')', 1)[0])
+        self.assertTrue((SCRIPT.parent / 'cusparse_spmv.cu').is_file())
+
+    def test_cusparse_library_cli_fixtures(self):
+        self.probe = self.probe.rename(self.work / 'cusparse_spmv')
+        self.write('lib', 'cusparse')
+        result = RESULT.replace('launch_1d', 'cusparse_spmv')
+        cases = (
+            (0, GPU + result, 'supported', 'bit_identical', ''),
+            (0, result, 'partial', 'bit_identical', 'library call: numeric parity only'),
+            (21, 'MATRIX_API_FAIL cusparseSpMV -> NOT_SUPPORTED', 'unavailable', None, 'API failure'),
+            (21, 'MATRIX_API_FAIL cusparseCreate -> allocation error', 'failed', None, 'API failure'),
+            (1, GPU + result.replace('PASS', 'MISMATCH'), 'failed', None, 'numeric mismatch'),
+            (1, GPU + result.replace('PASS', 'MISMATCH') + 'finite=false value=nan\n',
+             'failed', None, 'numeric mismatch'),
+            (0, GPU + result.replace('abc', 'def'), 'supported', 'within_tolerance', 'output bits differed'),
+            (142, '', 'failed', None, 'run timed out'),
+        )
+        for path in ('aot', 'jit'):
+            for rc, output, expected, stability, note in cases:
+                with self.subTest(path=path, rc=rc, output=output):
+                    for mode in ('aot', 'jit'):
+                        for run in range(1, 4):
+                            self.write(f'{mode}.run{run}.rc', '0')
+                            self.write(f'{mode}.run{run}.out', GPU + result)
+                    self.write(f'{path}.run2.rc', str(rc))
+                    self.write(f'{path}.run2.out', output)
+                    target = self.work / 'matrix.json'
+                    proc = subprocess.run([sys.executable, '-I', '-B', str(SCRIPT), str(self.work),
+                                           str(target), '3'], capture_output=True, text=True)
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    row = json.loads(target.read_text())['results'][0]
+                    self.assertEqual(row['lib'], 'cusparse')
+                    self.assertEqual(row[path]['class'], expected)
+                    self.assertIn(note, row['note'])
+                    self.assertEqual(row['overall'], 'partial' if expected == 'unavailable' else expected)
+                    if stability:
+                        self.assertEqual(row[path]['stability'], stability)
+
+    def test_cusparse_probe_cpu_fault_injection(self):
+        # Host-only fake APIs exercise the actual probe, never CuMetal or a GPU.
+        compiler = shutil.which('c++')
+        if not compiler:
+            self.skipTest('host C++ compiler unavailable')
+        for name in ('common.h', 'cusparse_spmv.cu'):
+            shutil.copyfile(SCRIPT.parent / name, self.work / name)
+        (self.work / 'cuda_runtime.h').write_text('''#pragma once
+#include <cstdlib>
+#include <cstring>
+typedef int cudaError_t;
+const int cudaSuccess=0, cudaMemcpyHostToDevice=1, cudaMemcpyDeviceToHost=2;
+inline const char* cudaGetErrorString(int) { return "injected CUDA error"; }
+template<class T> int cudaMalloc(T** p, size_t n) { *p=(T*)malloc(n); return 0; }
+inline int cudaFree(void* p) { free(p); return 0; }
+inline int cudaMemcpy(void* d, const void* s, size_t n, int) { memcpy(d,s,n); return 0; }
+inline int cudaDeviceSynchronize() { return getenv("SYNC_FAIL") ? 1 : 0; }
+''')
+        (self.work / 'cusparse.h').write_text('''#pragma once
+typedef int cusparseStatus_t, cusparseHandle_t, cusparseSpMatDescr_t, cusparseDnVecDescr_t;
+const int CUSPARSE_STATUS_SUCCESS=0, CUSPARSE_INDEX_32I=0, CUSPARSE_INDEX_BASE_ZERO=0;
+const int CUDA_R_32F=0, CUSPARSE_OPERATION_NON_TRANSPOSE=0, CUSPARSE_SPMV_ALG_DEFAULT=0;
+inline const char* cusparseGetErrorString(int) { return "injected API error"; }
+#define SIMPLE(name) template<class... T> int name(T...) { return getenv("API_FAIL") ? 3 : 0; }
+SIMPLE(cusparseCreate) SIMPLE(cusparseCreateCsr) SIMPLE(cusparseDestroyDnVec)
+SIMPLE(cusparseDestroySpMat) SIMPLE(cusparseDestroy)
+static float* output;
+inline int cusparseCreateDnVec(int*, int, float* p, int) { output=p; return 0; }
+inline int cusparseSpMV_bufferSize(int,int,float*,int,int,float*,int,int,int,size_t* n) {
+  *n=getenv("WORKSPACE") ? 64 : 0; return 0;
+}
+inline int cusparseSpMV(int,int,float*,int,int,float*,int,int,int,void*) {
+  float expected[]={-4.25f,1.0f,-1.34375f,-18.25f};
+  memcpy(output,expected,sizeof expected);
+  const char* value=getenv("OUTPUT"); if(value) output[2]=strtof(value,nullptr);
+  return 0;
+}
+''')
+        binary = self.work / 'probe'
+        build = subprocess.run([compiler, '-std=c++17', '-x', 'c++', '-I', str(self.work),
+                                str(self.work / 'cusparse_spmv.cu'), '-o', str(binary)],
+                               capture_output=True, text=True)
+        self.assertEqual(build.returncode, 0, build.stderr)
+        for env, rc, marker in (({}, 0, 'status=PASS'), ({'WORKSPACE': '1'}, 0, 'status=PASS'),
+                                ({'OUTPUT': '-1.34374'}, 0, 'status=PASS'),
+                                ({'OUTPUT': '0'}, 1, 'status=MISMATCH'),
+                                ({'OUTPUT': 'nan'}, 1, 'finite=false'),
+                                ({'OUTPUT': 'inf'}, 1, 'finite=false'),
+                                ({'API_FAIL': '1'}, 21, 'MATRIX_API_FAIL'),
+                                ({'SYNC_FAIL': '1'}, 20, 'MATRIX_API_FAIL')):
+            with self.subTest(env=env):
+                proc = subprocess.run([str(binary)], env=env, capture_output=True, text=True)
+                self.assertEqual(proc.returncode, rc, proc.stderr)
+                self.assertIn(marker, proc.stdout + proc.stderr)
+                if rc in (0, 1):
+                    self.assertRegex(proc.stdout, r'digest=[0-9a-f]{16}')
 
 
 if __name__ == '__main__':
