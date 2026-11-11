@@ -295,6 +295,22 @@ fn update_status(app: &tauri::AppHandle, repo_id: &str, f: impl FnOnce(&mut Down
     }
 }
 
+fn download_files(tree: &[u8]) -> Result<Vec<HfTreeEntry>, String> {
+    let entries: Vec<HfTreeEntry> =
+        serde_json::from_slice(tree).map_err(|e| format!("Failed to parse file list: {e}"))?;
+    let files: Vec<HfTreeEntry> = entries
+        .into_iter()
+        .filter(|e| e.entry_type == "file")
+        .collect();
+
+    // D22: reject missing payload before creating an attempt. Cost: empty repos
+    // cannot download; retry once the repository contains files.
+    if files.is_empty() {
+        return Err("Hugging Face file tree contains no downloadable files".into());
+    }
+    Ok(files)
+}
+
 async fn run_download_inner(app: &tauri::AppHandle, repo_id: &str) -> Result<(), String> {
     validate_repo_id(repo_id)?;
     let tree_url = format!("https://huggingface.co/api/models/{repo_id}/tree/main?recursive=true");
@@ -309,12 +325,7 @@ async fn run_download_inner(app: &tauri::AppHandle, repo_id: &str) -> Result<(),
             String::from_utf8_lossy(&output.stderr)
         ));
     }
-    let entries: Vec<HfTreeEntry> = serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("Failed to parse file list: {e}"))?;
-    let files: Vec<HfTreeEntry> = entries
-        .into_iter()
-        .filter(|e| e.entry_type == "file")
-        .collect();
+    let files = download_files(&output.stdout)?;
 
     update_status(app, repo_id, |s| {
         s.total_files = files.len() as u32;
@@ -661,6 +672,17 @@ pub async fn list_registered_models() -> Result<Vec<RegisteredModel>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn empty_download_tree_is_rejected() {
+        for tree in [r#"[]"#, r#"[{"type":"directory","path":"nested"}]"#] {
+            let error = download_files(tree.as_bytes()).unwrap_err();
+            assert!(error.contains("no downloadable files"), "{error}");
+        }
+        let files = download_files(br#"[{"type":"directory","path":"nested"},{"type":"file","path":"nested/config.json"}]"#).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "nested/config.json");
+    }
 
     #[test]
     fn dtype_byte_width_covers_known_safetensors_dtypes() {
