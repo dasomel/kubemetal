@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-17-kagent-readiness-2026-11-12",
+  "task": "#17: Degrade overall health for installed/not-ready kagent; preserve optional uninstalled exception.",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "src-tauri/src/commands/health.rs",
+      "docs/mistakes-log.md",
+      ".agents/evals/traces/2026-11-issue-17-kagent-readiness.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Read AGENTS.md, Rust/Tauri mistakes log, health/kagent implementations, Makefile, risk policy and reference trace. Current branch/worktree only. No IPC/schema/UI/D-registry changes, cluster operations, installations, GPU workloads, push or PR. CLAUDE.md additionally names runtime skill loading and Claude harness; aggregation-only fix changes neither runtime integration nor orchestration."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "New matrix test failed before production fix: installed=true, ready=false, issues=0 returned healthy instead of degraded.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml --lib commands::health -- --skip live_smoke --skip live_matrix: exit 101; 8 passed, 1 failed, 516 filtered out; assertion left healthy, right degraded"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Add installed && !ready to existing pod issue predicate; preserve optional uninstalled exception. Add 8-combination matrix and extend existing lookup failure test to all three probes. Existing --lib runner includes tests in make test/make verify. Add mistakes-log row."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Backend health aggregation unit tests only, no Kubernetes probes",
+      "summary": "Readiness/issues matrix, optional uninstalled exception and other probe failures pass after minimal predicate fix.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml --lib commands::health -- --skip live_smoke --skip live_matrix: exit 0; 9 passed, 0 failed, 516 filtered out"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Rust static checks, frontend suite and Python regression suites",
+      "summary": "Requested static/unit checks pass; root Python discovery finds zero tests, so each existing test directory was also run explicitly.",
+      "evidence": [
+        "ci:cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: exit 0",
+        "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0",
+        "ci:pnpm exec tsc --noEmit: exit 0",
+        "test:make test-frontend: exit 0; 23 passed, 0 failed",
+        "test:python3 -B -m unittest discover -s . -v: exit 0; 0 tests",
+        "test:python3 -B -m unittest discover -s tests/rag -v: exit 0; 57 tests OK",
+        "test:python3 -B -m unittest discover -s tests/mlx -v: exit 0; 23 tests OK",
+        "test:python3 -B -m unittest discover -s scripts/support -v: exit 0; 26 tests OK, 1 skipped (no real bundle supplied)",
+        "test:python3 -B -m unittest discover -s tests/cumetal -v: exit 0; 13 tests OK"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Existing React HealthSummaryView server-rendered fixture in Korean and English, not real cluster fault injection",
+      "summary": "Fixture renders degraded, installed=yes, ready=no, pod issues=0 in both languages. Initial temporary assertion matched unrelated normal text in Korean; corrected to exact overall span and rerun passed. No UI code changes.",
+      "evidence": [
+        "test:pnpm exec tsc --noEmit false --allowImportingTsExtensions false --rootDir src --outDir node_modules/.issue17-fixture --noEmitOnError: exit 0",
+        "test:FRONTEND_TEST_OUTPUT=file://$PWD/node_modules/.issue17-fixture/ node node_modules/.issue17-fixture-check.mjs: exit 0; PASS ko and en degraded/installed=yes/ready=no/issues=0"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "verification",
+      "status": "pending",
+      "scope": "make verify completion suite",
+      "summary": "SANDBOX-BLOCKED: make exited 2 after Rust socket-binding failures (PermissionDenied/Operation not permitted). 517 passed, 5 failed, 2 ignored, 1 filtered out. Five failures are four services::ports tests and verifier_rejects_unlisted_socket. Downstream make stages did not run; separate requested static/Python checks did pass. Host rerun required.",
+      "evidence": [
+        "ci:PATH=/private/tmp/issue17-tools:$PATH make verify: temporary cargo wrapper appends -- --skip live_smoke --skip live_matrix to cargo test only; Makefile unchanged",
+        "test:PATH=/private/tmp/issue17-tools:$PATH make verify: exit 2; 517 passed, 5 failed, 2 ignored, 1 filtered out; socket bind Os code 1 kind PermissionDenied message Operation not permitted; verification pending host rerun"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "verification",
+      "status": "pending",
+      "scope": "Visual browser/native app observation",
+      "summary": "SANDBOX-BLOCKED: fixture HTTP server bind failed with PermissionDenied/Operation not permitted; browser tool timed out. Only server-rendered React fixture is verified. No visual/native app or real cluster fault injection evidence claimed.",
+      "evidence": [
+        "runtime:cua.createBrowserTab(iab, http://127.0.0.1:5187): timed out; visual confirmation unverified",
+        "runtime:python3 -B -m http.server 5187 --bind 127.0.0.1 --directory node_modules/.issue17-fixture: exit 1; PermissionError Errno 1 Operation not permitted on socket bind"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "completion_claim",
+      "status": "pending",
+      "summary": "Backend fix and focused regression are verified. Full completion is not claimed; host/runtime verification remains pending."
+    },
+    {
+      "id": "e10",
+      "type": "task_outcome",
+      "state": "B",
+      "summary": "B: backend fix and regressions verified; make verify SANDBOX-BLOCKED on 5 socket tests; browser timed out. No complete runtime claim.",
+      "next": "Host: PATH=/private/tmp/issue17-tools:$PATH make verify (wrapper excludes live_smoke/live_matrix). Visually observe installed/not-ready fixture in running app. No GPU live run or real cluster fault injection is necessary for this aggregation-only slice. Requested report is the sole explicit outside-worktree artifact exception."
+    }
+  ]
+}
