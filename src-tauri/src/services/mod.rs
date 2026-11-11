@@ -12,6 +12,7 @@ pub mod local_inference;
 pub mod mlx_artifacts;
 pub mod mlx_lifecycle;
 pub mod mlx_serving_recovery;
+pub(crate) mod model_download;
 pub mod ports;
 pub mod process;
 pub mod runtime_adapter;

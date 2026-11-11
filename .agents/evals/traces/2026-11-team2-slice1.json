@@ -1,0 +1,101 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-team2-slice1-221-2026-11-12",
+  "task": "Issue #221 approved slice: per-attempt model staging and exclusive promotion only.",
+  "changeContext": {
+    "paths": [
+      "src-tauri/src/commands/modelhub.rs",
+      "src-tauri/src/services/model_download.rs",
+      "src-tauri/src/services/model_download/tests.rs",
+      "src-tauri/src/services/mod.rs",
+      "docs/06-mlops-user-guide.md",
+      "docs/mistakes-log.md",
+      ".agents/evals/traces/2026-11-team2-slice1.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Read AGENTS.md, Rust/Tauri mistakes log, Makefile, risk policy and runtime skill. Approved files and trace only; no new IPC, D-registry changes, installs, cluster commands, GPU workloads, push or PR. Requested report path is the only reporting exception outside the worktree."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Temporarily restored direct-final transfer output at the new service seam; source restored in finally. This controlled negative test recreates old behavior, not an origin/main test of a service absent there.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml model_download::tests::second_file_failure_is_invisible_and_retry_promotes with direct-final negative control: exit 101; 0 passed, 1 failed; partial first file leaked"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Private per-attempt staging outside models; cleanup only that attempt on normal error, preserving cleanup error with original. macOS renamex_np(RENAME_EXCL) alone promotes; EXDEV fails without copying. Existing destinations and symlinks refuse before transfer and at atomic promotion. Done follows promotion; curl kill_on_drop stops a cancelled transfer. Catalog semantics unchanged; root injection only for testing. Documents explicitly defer orphan/legacy cleanup."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "model_download lifecycle with temporary macOS filesystem roots and existing catalog implementation",
+      "summary": "Seven regressions cover second-file failure/retry, task abort, EXDEV, existing directory/file/external and dangling symlink, destination creation race, cleanup errors preserving transfer/promotion error, invalid staging root and pre/post catalog visibility. Initial test ownership compile errors corrected before passing final runs.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml model_download: 7 passed; 0 failed",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml model_download -- --nocapture: 7 passed; 0 failed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "real Darwin arm64 filesystem, exclusive rename and resolved curl file transport; no HF account/GPU/cluster",
+      "summary": "After writing partial bytes, aborted a task; existing catalog empty. Retried with actual curl file:// fixture; complete bytes promoted and one orphan remained outside catalog. Controlled task interruption, not interactive Tauri or remote HF verification.",
+      "evidence": [
+        "runtime:cargo test --locked --manifest-path src-tauri/Cargo.toml model_download -- --nocapture printed macOS local fixture: interrupted -> catalog empty -> curl file retry promoted; orphan remains outside catalog",
+        "runtime:uname -sm: Darwin arm64"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Rust static gates and existing Python regression suites; no Python code changed",
+      "summary": "Final clippy and fmt exit 0. Python suites rag 57, mlx 23, support 26 (1 skipped), cumetal 10 all OK. git diff --check exit 0.",
+      "evidence": [
+        "ci:cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: exit 0",
+        "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0",
+        "test:python3 -B -m unittest discover -s tests/rag -v: Ran 57 tests; OK",
+        "test:python3 -B -m unittest discover -s tests/mlx -v: Ran 23 tests; OK",
+        "test:python3 -B -m unittest discover -s scripts/support -v: Ran 26 tests; OK (skipped=1)",
+        "test:python3 -B -m unittest discover -s tests/cumetal -v: Ran 10 tests; OK",
+        "ci:git diff --check: exit 0"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "verification",
+      "status": "pending",
+      "scope": "frontend typecheck/tests and make verify completion suite",
+      "summary": "DEPENDENCY-BLOCKED, not SANDBOX-BLOCKED: node_modules absent; installation prohibited. tsc exit 254; Command tsc not found. Frontend and verify exit 2 at ENOENT mkdtemp node_modules/.frontend-tests-XXXXXX; later make stages not run.",
+      "evidence": [
+        "ci:pnpm exec tsc --noEmit: exit 254; ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL Command tsc not found",
+        "test:make test-frontend: exit 2; ENOENT mkdtemp node_modules/.frontend-tests-XXXXXX",
+        "ci:make verify: exit 2; missing node_modules frontend prerequisite"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "external_input",
+      "provenance": ".agents/skills/kubemetal-hybrid-runtime-change/SKILL.md (repository-owned skill)",
+      "reviewed": true,
+      "summary": "Runtime skill reviewed. CLAUDE.md alone also names runtime skill loading and Claude harness; AGENTS.md lacks these Claude-only adapter lines. No design decisions changed."
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "B",
+      "summary": "Scoped implementation and Mac local-fixture behavior verified; required full completion remains pending frontend prerequisites. Issue #221 full AC remains open. No interactive Tauri/HF/GPU/cluster claims.",
+      "next": "Orchestrator provides frontend dependencies, reruns pnpm exec tsc --noEmit, make test-frontend and make verify. GPU-heavy CuMetal matrix/live_smoke is orchestrator-owned, not run here; no GPU behavior changed. Orphan UI/IPC/TTL and legacy cleanup remain follow-ups."
+    }
+  ]
+}
