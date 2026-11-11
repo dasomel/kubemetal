@@ -5,8 +5,8 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, State};
 
-use crate::services::ports;
 use crate::services::process::external_command;
+use crate::services::{model_download, ports};
 
 /// Hugging Face `/api/models?search=...` 실측 스키마(2026-07-21, `Qwen/Qwen3-*` 대상 확인)
 /// 응답에는 `_id`, `tags`, `library_name` 등 다른 필드도 있으나 여기서 쓰는 필드만 매핑한다.
@@ -320,42 +320,46 @@ async fn run_download_inner(app: &tauri::AppHandle, repo_id: &str) -> Result<(),
         s.total_files = files.len() as u32;
     });
 
-    let dir = models_root()?.join(slug(repo_id));
-
-    for file in &files {
-        let rel = safe_rel(&file.path)?;
-        let dest = dir.join(&rel);
-        if !dest.starts_with(&dir) {
-            return Err(format!("Path traversal detected: {}", file.path));
-        }
-        let file_url = format!(
-            "https://huggingface.co/{repo_id}/resolve/main/{}",
-            rel_to_url_path(&rel)
-        );
-        if let Some(parent) = dest.parent() {
-            tokio::fs::create_dir_all(parent)
+    model_download::download(models_root()?, slug(repo_id), |dir| async move {
+        for file in &files {
+            let rel = safe_rel(&file.path)?;
+            let dest = dir.join(&rel);
+            if !dest.starts_with(&dir) {
+                return Err(format!("Path traversal detected: {}", file.path));
+            }
+            let file_url = format!(
+                "https://huggingface.co/{repo_id}/resolve/main/{}",
+                rel_to_url_path(&rel)
+            );
+            if let Some(parent) = dest.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(|e| format!("Failed to create directory: {e}"))?;
+            }
+            let out = external_command("curl")?
+                .kill_on_drop(true)
+                .arg("-sfL")
+                .arg("-o")
+                .arg(&dest)
+                .arg(&file_url)
+                .output()
                 .await
-                .map_err(|e| format!("Failed to create directory: {e}"))?;
+                .map_err(|e| format!("curl execution failed: {e}"))?;
+            if !out.status.success() {
+                return Err(format!(
+                    "{} download failed: {}",
+                    file.path,
+                    String::from_utf8_lossy(&out.stderr)
+                ));
+            }
+            update_status(app, repo_id, |s| {
+                s.done_files += 1;
+            });
         }
-        let out = external_command("curl")?
-            .arg("-sfL")
-            .arg("-o")
-            .arg(&dest)
-            .arg(&file_url)
-            .output()
-            .await
-            .map_err(|e| format!("curl execution failed: {e}"))?;
-        if !out.status.success() {
-            return Err(format!(
-                "{} download failed: {}",
-                file.path,
-                String::from_utf8_lossy(&out.stderr)
-            ));
-        }
-        update_status(app, repo_id, |s| {
-            s.done_files += 1;
-        });
-    }
+
+        Ok(())
+    })
+    .await?;
 
     update_status(app, repo_id, |s| {
         s.state = "done".into();
@@ -413,13 +417,16 @@ pub async fn get_model_downloads(
 
 #[tauri::command]
 pub fn list_local_models() -> Result<Vec<LocalModel>, String> {
-    let root = models_root()?;
+    list_local_models_at(&models_root()?)
+}
+
+pub(crate) fn list_local_models_at(root: &Path) -> Result<Vec<LocalModel>, String> {
     if !root.is_dir() {
         return Ok(Vec::new());
     }
     let mut result = Vec::new();
     let entries =
-        std::fs::read_dir(&root).map_err(|e| format!("Failed to read model directory: {e}"))?;
+        std::fs::read_dir(root).map_err(|e| format!("Failed to read model directory: {e}"))?;
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
         // `entry.file_type()`은 심볼릭 링크를 따라가지 않는다 — HF 캐시의 모델을 수 GB
