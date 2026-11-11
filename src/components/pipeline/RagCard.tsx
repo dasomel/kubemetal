@@ -3,6 +3,7 @@ import { Database, Search, FileText, Loader2, Play } from 'lucide-react';
 import { useRAG } from '../../hooks/useRAG';
 import { useTranslation } from '../../i18n/i18nContext';
 import type { RetrievalMode } from '../../types/ipc';
+import { RagSearchResults } from './RagSearchResults';
 
 const inputClass =
   'w-full px-3.5 py-2 rounded-md bg-surfaceRaised text-ink text-body placeholder:text-inkFaint border border-hairline/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary';
@@ -154,60 +155,12 @@ export const RagCard: React.FC = () => {
           </button>
         </form>
 
-        {hasSearched && routing && (
-          <div className="text-caption text-inkMuted">
-            {t('rag.resolved', {
-              mode: routing.resolved_mode,
-              rule: routing.rule,
-            })}
-          </div>
-        )}
-
-        {/* 검색 결과 목록 */}
-        {searchResults.length > 0 && (
-          <div className="space-y-2 mt-3">
-            <div className="text-label uppercase text-inkFaint">{t('rag.searchResultsHeader', { count: searchResults.length })}</div>
-            {searchResults.map((item) => (
-              <div key={item.id} className="p-3 rounded-lg bg-surfaceRaised border border-hairline/8 space-y-1">
-                <div className="flex items-center justify-between text-caption">
-                  <span className="text-primary font-semibold truncate flex items-center gap-1">
-                    <FileText className="w-3 h-3 inline shrink-0" />
-                    {item.source?.trim() || t('rag.unknownSource')}
-                  </span>
-                  <span className="px-1.5 py-0.5 rounded bg-surface text-inkMuted text-[11px]">
-                    {item.mode === 'exact'
-                      ? t('rag.exactMatch')
-                      : item.mode === 'lexical'
-                      ? `${t('rag.score')} ${item.score.toExponential(2)}`
-                      : item.mode === 'hybrid'
-                      ? `${t('rag.rrfScore')} ${item.score.toFixed(4)}`
-                      : `${t('rag.similarity')} ${(item.score * 100).toFixed(1)}%`}
-                  </span>
-                </div>
-                <p className="text-body text-ink text-sm leading-relaxed">{item.text?.trim() ? item.text : t('rag.unknownText')}</p>
-                {item.mode === 'hybrid' && item.provenance && (
-                  <div className="text-caption text-inkMuted">
-                    {t('rag.provenance', {
-                      retrievers: item.provenance.retrievers.join(', '),
-                      lexical: item.provenance.lexical
-                        ? `#${item.provenance.lexical.rank} (${item.provenance.lexical.score.toExponential(2)})`
-                        : t('rag.notHit'),
-                      dense: item.provenance.dense
-                        ? `#${item.provenance.dense.rank} (${item.provenance.dense.score.toFixed(4)})`
-                        : t('rag.notHit'),
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {searchResults.length === 0 && hasSearched && !searching && (
-          <div className="py-3 text-center text-inkFaint text-caption">
-            {t('rag.noResults')}
-          </div>
-        )}
+        <RagSearchResults
+          searchResults={searchResults}
+          routing={routing}
+          hasSearched={hasSearched}
+          searching={searching}
+        />
       </div>
     </div>
   );
