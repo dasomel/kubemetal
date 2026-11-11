@@ -9,6 +9,8 @@ use tauri::{Manager, State};
 use crate::commands::guardrails::GuardrailState;
 use crate::commands::mlx::{check_current_spawn_admission, MlxState};
 use crate::services::gpu_benchmark::check_workloads;
+#[cfg(test)]
+use crate::services::gpu_observation::parse_ioreg_accelerator;
 use crate::services::process::{augmented_path, external_command, resolve_bundled_resource};
 
 /// 정적 하드웨어 스펙. `gpu_cores`만 `Option`인 이유 — sysctl은 어떤 Mac에서도 CPU/RAM을
@@ -156,57 +158,12 @@ fn thermal_state_name(state: objc2_foundation::NSProcessInfoThermalState) -> Opt
 /// 1회만 stderr에 남긴다.
 static GPU_METRICS_WARNED: Once = Once::new();
 
-/// bare `Command::new("ioreg")`는 PATH 탐색에 의존하는데, GUI 번들 앱은 로그인 셸 PATH를
-/// 상속하지 않아(D5/mistakes-log 2026-07-20) ioreg를 못 찾고 항상 (0.0, 0.0)을 반환했다
-/// — 실기기 번들 앱에서 GPU 사용률이 0 고정으로 보이던 원인. `external_command`로
-/// `/usr/sbin`(SEARCH_PATHS에 포함, D16) 절대경로 탐색 + 보강 PATH를 적용한다.
 async fn get_metal_gpu_metrics() -> (Option<f32>, Option<f64>) {
-    let cmd = external_command("ioreg");
-    let Ok(mut cmd) = cmd else {
-        GPU_METRICS_WARNED.call_once(|| {
-            eprintln!("[metrics] ioreg executable not found, skipping GPU metrics.");
-        });
-        return (None, None);
-    };
-
-    let output = cmd
-        .args(["-l", "-d", "1", "-r", "-c", "IOAccelerator"])
-        .output()
-        .await;
-
-    let Ok(out) = output else {
-        GPU_METRICS_WARNED.call_once(|| {
-            eprintln!("[metrics] ioreg execution failed, skipping GPU metrics.");
-        });
-        return (None, None);
-    };
-    if !out.status.success() {
-        GPU_METRICS_WARNED.call_once(|| {
-            eprintln!(
-                "[metrics] ioreg exited abnormally ({}), skipping GPU metrics.",
-                out.status
-            );
-        });
-        return (None, None);
+    let sample = crate::services::gpu_observation::collect("metrics").await;
+    if let Some(reason) = &sample.unavailable_reason {
+        GPU_METRICS_WARNED.call_once(|| eprintln!("[metrics] {reason}"));
     }
-
-    let text = String::from_utf8_lossy(&out.stdout);
-    let (pct, mem_bytes) = parse_ioreg_accelerator(&text);
-
-    // 필드별로 판정한다. 예전에는 "둘 중 하나라도 잡히면 성공"이라 사용률만 읽히고 메모리가
-    // 통째로 실패해도 경고가 뜨지 않았다 — 실제로 그 상태였고, 화면은 0 GB를 조용히 띄웠다.
-    if pct.is_none() || mem_bytes.is_none() {
-        GPU_METRICS_WARNED.call_once(|| {
-            eprintln!(
-                "[metrics] ioreg IOAccelerator parse incomplete (utilization: {}, memory: {}) \
-                 — possible format change or unsupported hardware; missing values are omitted.",
-                if pct.is_some() { "ok" } else { "MISSING" },
-                if mem_bytes.is_some() { "ok" } else { "MISSING" },
-            );
-        });
-    }
-
-    gpu_readings(pct, mem_bytes)
+    gpu_readings(sample.utilization_pct, sample.memory_bytes)
 }
 
 /// 파싱 결과(사용률 %, 메모리 바이트) → (사용률, 메모리 GB). 필드별로 독립이라 한쪽이
@@ -214,30 +171,6 @@ async fn get_metal_gpu_metrics() -> (Option<f32>, Option<f64>) {
 fn gpu_readings(pct: Option<f32>, mem_bytes: Option<f64>) -> (Option<f32>, Option<f64>) {
     let mem_gb = mem_bytes.map(|b| (b / 1024.0 / 1024.0 / 1024.0 * 100.0).round() / 100.0);
     (pct, mem_gb)
-}
-
-/// `ioreg -l -d 1 -r -c IOAccelerator` 출력에서 (사용률 %, 사용 중 시스템 메모리 바이트)를
-/// 뽑는다. 읽지 못한 값은 `None`이다 — 0.0으로 뭉개면 "GPU 유휴"와 구분되지 않는다(D22).
-///
-/// 셸 실행에서 분리한 순수 함수인 이유: 이 파서는 실측 출력 형태를 잘못 가정해 **메모리를
-/// 영원히 0으로 보고하고 있었다**. `PerformanceStatistics`는 키가 줄마다 나뉘지 않고 한 줄에
-/// 딕셔너리로 들어오며, 그 줄에는 `"In use system memory (driver)"=0`이 실제 값과 **함께**
-/// 있다. 그래서 줄 단위로 `driver`를 배제하던 가드가 메모리 분기를 통째로 막았다.
-/// 실제 구분은 검색 패턴이 이미 하고 있다 — `(driver)` 키는 `memory` 뒤에 `"=`가 오지 않아
-/// `In use system memory"=`와 매치되지 않는다.
-fn parse_ioreg_accelerator(text: &str) -> (Option<f32>, Option<f64>) {
-    /// `<키>"=<숫자>` 형태에서 첫 숫자를 읽는다. 키가 값 없이 등장하는 자리(IOReportLegend의
-    /// 채널 이름 목록)는 `"=`가 뒤따르지 않으므로 자연히 걸러진다.
-    fn field_after<'a>(text: &'a str, key: &str) -> Option<&'a str> {
-        let needle = format!("{key}\"=");
-        let rest = text.split(&needle).nth(1)?;
-        let end = rest.find(|c: char| !c.is_numeric()).unwrap_or(rest.len());
-        Some(&rest[..end]).filter(|s| !s.is_empty())
-    }
-
-    let pct = field_after(text, "Device Utilization %").and_then(|s| s.parse::<f32>().ok());
-    let mem = field_after(text, "In use system memory").and_then(|s| s.parse::<f64>().ok());
-    (pct, mem)
 }
 
 /// GPU 텔레메트리 백엔드 공통 인터페이스 (이슈 #1 — GPU Telemetry Interoperability).

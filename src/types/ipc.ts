@@ -640,6 +640,19 @@ export interface CumetalWorkloadResult {
   run: CumetalStepResult;
   parity: { status: 'pass' | 'fail' | 'unknown'; metric_line: string | null };
   provenance: { status: 'verified' | 'failed' | 'unverified'; launches: CumetalLaunchProvenance[] };
+  gpu_observation: {
+    status: 'activity_increase' | 'inconclusive';
+    reason: string;
+    samples: {
+      phase: string;
+      timestamp_unix_ms: number | null;
+      elapsed_ms: number;
+      utilization_pct: number | null;
+      memory_bytes: number | null;
+      raw_excerpt: string;
+      unavailable_reason: string | null;
+    }[];
+  } | null;
   verdict: 'passed' | 'notpassed';
   verdict_reason: string | null;
 }

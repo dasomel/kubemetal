@@ -137,6 +137,7 @@ fn metric_for(w: &str) -> &'static str {
 
 fn healthy_default(spec: &StepSpec) -> RunOutcome {
     match name(spec).as_str() {
+        "ioreg" => ok(r#""Device Utilization %"=0,"In use system memory"=0"#),
         "cumetal" => ok("cumetal 0.7.1\n"),
         "sw_vers" => ok("27.0.1\n"),
         "clang++" if spec.args == ["--version"] => {
@@ -596,5 +597,211 @@ async fn live_smoke_against_real_install() {
             .launches
             .iter()
             .all(|l| l.device.as_deref() == Some("apple_gpu")));
+    }
+}
+
+#[tokio::test]
+async fn observation_preserves_missing_zero_partial_and_raw_evidence() {
+    for (raw, pct, mem) in [
+        ("no counters", None, None),
+        (
+            r#""Device Utilization %"=0,"In use system memory"=0"#,
+            Some(0.0),
+            Some(0.0),
+        ),
+        (r#""Device Utilization %"=12"#, Some(12.0), None),
+    ] {
+        let sample = gpu_observation::collect_with("before", async { Ok(raw.into()) }).await;
+        assert_eq!((sample.utilization_pct, sample.memory_bytes), (pct, mem));
+        assert_eq!(sample.raw_excerpt, raw);
+        assert!(sample.timestamp_unix_ms.is_some());
+        assert_eq!(
+            sample.unavailable_reason.is_some(),
+            pct.is_none() || mem.is_none()
+        );
+    }
+    let raw = format!("noise\nPerformanceStatistics {}\nother", "가".repeat(4096));
+    let sample = gpu_observation::collect_with("during", async { Ok(raw) }).await;
+    assert!(sample.raw_excerpt.starts_with("PerformanceStatistics"));
+    assert!(sample.raw_excerpt.len() <= 4096);
+}
+
+#[tokio::test]
+async fn observation_errors_and_timeout_never_become_zero() {
+    let sample =
+        gpu_observation::collect_with("during", async { Err("spawn denied".into()) }).await;
+    assert_eq!(sample.unavailable_reason.as_deref(), Some("spawn denied"));
+    assert_eq!(sample.raw_excerpt, "spawn denied");
+    assert_eq!((sample.utilization_pct, sample.memory_bytes), (None, None));
+    let sample = gpu_observation::collect_with("during", std::future::pending()).await;
+    assert!(sample.unavailable_reason.unwrap().contains("timed out"));
+    assert!(sample.elapsed_ms >= 1000);
+    assert_eq!((sample.utilization_pct, sample.memory_bytes), (None, None));
+}
+
+#[tokio::test]
+async fn correlation_only_uses_during_utilization_and_never_proves_process_use() {
+    for (before, during, after, expected) in [
+        (Some(0), Some(0), Some(90), "inconclusive"),
+        (Some(30), Some(10), Some(0), "inconclusive"),
+        (Some(0), Some(20), Some(0), "activity_increase"),
+        (None, Some(20), None, "inconclusive"),
+        (Some(0), None, None, "inconclusive"),
+    ] {
+        let mut samples = Vec::new();
+        for (phase, value) in [("before", before), ("during", during), ("after", after)] {
+            samples.push(
+                gpu_observation::collect_with(phase, async {
+                    Ok(value
+                        .map(|v| format!("\"Device Utilization %\"={v}"))
+                        .unwrap_or_default())
+                })
+                .await,
+            );
+        }
+        let observation = GpuObservation::from_samples(samples);
+        assert_eq!(observation.status, expected);
+        assert!(observation.reason.contains("does not"));
+    }
+}
+
+struct ObservedFailureRunner {
+    probes: std::cell::Cell<usize>,
+    active: std::cell::Cell<usize>,
+}
+
+struct ProbeGuard<'a>(&'a std::cell::Cell<usize>);
+impl Drop for ProbeGuard<'_> {
+    fn drop(&mut self) {
+        self.0.set(self.0.get() - 1);
+    }
+}
+
+impl StepRunner for ObservedFailureRunner {
+    fn resolve(&self, bin: &str) -> Result<PathBuf, String> {
+        Ok(PathBuf::from(format!("/usr/bin/{bin}")))
+    }
+    async fn run(&self, spec: &StepSpec) -> RunOutcome {
+        if name(spec) == "ioreg" {
+            self.probes.set(self.probes.get() + 1);
+            self.active.set(self.active.get() + 1);
+            let _guard = ProbeGuard(&self.active);
+            // The during probe is still in flight when the workload fails.
+            if self.probes.get() % 3 == 2 {
+                std::future::pending::<()>().await;
+            }
+            return ok(r#""Device Utilization %"=0,"In use system memory"=0"#);
+        }
+        if WORKLOADS.iter().any(|w| name(spec) == w.name) {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            return exit(10, "", "CUDA launch failed");
+        }
+        healthy_default(spec)
+    }
+}
+
+#[tokio::test]
+async fn failed_smoke_stops_observation_and_releases_reservation() {
+    let fx = fixture("observation-failure", &[]);
+    let runner = ObservedFailureRunner {
+        probes: 0.into(),
+        active: 0.into(),
+    };
+    let state = crate::commands::mlx::MlxState::default();
+    {
+        let _reservation = state.claim_benchmark_reservation().unwrap();
+        let report = run_smoke_with(&runner, fx.inputs()).await;
+        assert!(!report.all_passed);
+        for workload in &report.workloads {
+            assert_eq!(workload.run.status, StepStatus::Failed);
+            let observation = workload.gpu_observation.as_ref().unwrap();
+            assert_eq!(observation.status, "inconclusive");
+            assert_eq!(
+                observation
+                    .samples
+                    .iter()
+                    .map(|s| s.phase.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["before", "after"]
+            );
+        }
+        assert_eq!(runner.active.get(), 0);
+    }
+    assert!(state.claim_benchmark_reservation().is_ok());
+    let count = runner.probes.get();
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    assert_eq!(
+        runner.probes.get(),
+        count,
+        "no detached observer survives failure"
+    );
+    assert_eq!(std::fs::read_dir(&fx.work_root).unwrap().count(), 0);
+}
+
+#[tokio::test]
+async fn ioreg_step_failures_do_not_change_self_report_verdict() {
+    let failures: [fn(&StepSpec) -> RunOutcome; 3] = [
+        |_| RunOutcome::SpawnFailed("ioreg not found".into()),
+        |_| RunOutcome::TimedOut,
+        |_| exit(2, "raw stdout", "permission denied"),
+    ];
+    for failure in failures {
+        let fx = fixture("ioreg-error", &[]);
+        let runner = FakeRunner::default().on(|s| name(s) == "ioreg", failure);
+        let report = run_smoke_with(&runner, fx.inputs()).await;
+        assert!(report.all_passed);
+        for workload in report.workloads {
+            for sample in workload.gpu_observation.unwrap().samples {
+                assert!(sample.unavailable_reason.is_some());
+                assert_eq!(sample.utilization_pct, None);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn ioreg_resolver_failure_is_preserved() {
+    struct Missing;
+    impl StepRunner for Missing {
+        fn resolve(&self, _: &str) -> Result<PathBuf, String> {
+            Err("ioreg resolution failed".into())
+        }
+        async fn run(&self, _: &StepSpec) -> RunOutcome {
+            panic!("must not spawn")
+        }
+    }
+    let sample = Missing.observe_gpu("before", Path::new("/tmp")).await;
+    assert_eq!(
+        sample.unavailable_reason.as_deref(),
+        Some("ioreg resolution failed")
+    );
+}
+
+#[tokio::test]
+async fn during_sampling_is_bounded_and_kept_separate_from_verdict() {
+    struct Slow;
+    impl StepRunner for Slow {
+        fn resolve(&self, bin: &str) -> Result<PathBuf, String> {
+            Ok(PathBuf::from(format!("/usr/bin/{bin}")))
+        }
+        async fn run(&self, spec: &StepSpec) -> RunOutcome {
+            if WORKLOADS.iter().any(|w| name(spec) == w.name) {
+                tokio::time::sleep(Duration::from_millis(1800)).await;
+            }
+            healthy_default(spec)
+        }
+    }
+    let fx = fixture("bounded-sampling", &[]);
+    let report = run_smoke_with(&Slow, fx.inputs()).await;
+    assert!(report.all_passed);
+    for workload in report.workloads {
+        let observation = workload.gpu_observation.unwrap();
+        assert_eq!(observation.samples.len(), 18);
+        assert_eq!(observation.samples[0].phase, "before");
+        assert_eq!(observation.samples[17].phase, "after");
+        assert!(observation.samples[1..17]
+            .iter()
+            .all(|s| s.phase == "during"));
+        assert_eq!(observation.status, "inconclusive");
     }
 }
