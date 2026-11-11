@@ -130,6 +130,17 @@ def main(work, out_json, repeats):
     for l in rd(f"{work}/manifest/sha256.txt").splitlines():
         h, _, n = l.partition("  "); sha[n.lstrip("./")] = h
     manifest = dict(env); manifest["probe_sha256"] = sha
+    host_path = f"{work}/manifest/host.json"
+    if os.path.exists(host_path):
+        with open(host_path, encoding="utf-8") as stream:
+            host = json.load(stream)
+        manifest["host"] = host
+        for field in ("cumetal_version", "llvm_clang", "xcrun_clang", "metal_version"):
+            manifest[field] = host[field]
+        # Compatibility: hw_model historically contained the SoC brand, not hw.model.
+        manifest["hw_model"] = host["soc"]
+        manifest["hw_model_meaning"] = "legacy SoC brand (machdep.cpu.brand_string); model identifier is host.mac_model"
+        manifest["sw_vers"] = host["macos"]
 
     # Probes that launch __global__ kernels from user code (library probes launch none themselves).
     LIB_PROBES = {"cublas_sgemm", "cufft_c2c", "curand_host", "cusparse_spmv"}

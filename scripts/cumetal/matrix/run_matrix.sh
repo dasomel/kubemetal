@@ -56,16 +56,11 @@ mkdir -p "$WORK/manifest"
 {
   echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "prefix=$PREFIX"
-  echo "cumetal_version=$("$CUMETAL" --version 2>&1 | head -1 || true)"
-  echo "llvm_clang=$("$CLANGXX" --version 2>&1 | head -1 || true)"
-  echo "xcrun_clang=$(/usr/bin/xcrun clang++ --version 2>&1 | head -1 || true)"
-  echo "sw_vers=$(/usr/bin/sw_vers 2>&1 | tr '\n\t' ';;' || true)"
-  echo "metal_version=$(/usr/bin/xcrun metal --version 2>&1 | head -1 || true)"
-  echo "hw_model=$(/usr/sbin/sysctl -n machdep.cpu.brand_string 2>&1 || true)"
   echo "doctor_rc=$(t 120 "$CUMETAL" doctor >"$WORK/manifest/doctor.log" 2>&1 && echo 0 || echo $?)"
 } >"$WORK/manifest/env.txt"
+"$PY" -I -B "$HERE/host_manifest.py" "$WORK/manifest/host.json" --cumetal "$CUMETAL" --clang "$CLANGXX"
 mkdir "$WORK/manifest/sources"
-cp "$HERE/common.h" "$HERE/run_matrix.sh" "$HERE/classify.py" "$HERE/evidence.py" "$HERE/"*.cu "$WORK/manifest/sources/"
+cp "$HERE/common.h" "$HERE/run_matrix.sh" "$HERE/classify.py" "$HERE/evidence.py" "$HERE/host_manifest.py" "$HERE/"*.cu "$WORK/manifest/sources/"
 ( cd "$WORK/manifest/sources" && /usr/bin/shasum -a 256 ./* ) >"$WORK/manifest/sha256.txt"
 
 for spec in "${PROBES[@]}"; do

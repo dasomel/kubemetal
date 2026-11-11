@@ -599,3 +599,45 @@ bash scripts/cumetal/matrix/run_matrix.sh /tmp/matrix-84.json launch_1d
 재분류 판정 동일성과 로그 변조 거부를 검사한다. 기존 `make test`의
 `python3 -B -m unittest discover -s tests/cumetal -v`를 통해 `make verify`에도 포함된다.
 이는 GPU 실측 증거가 아니다.
+
+## #84 matrix 호스트 식별 manifest (smoke 범위 제외)
+
+`host_manifest.py`는 고정된 읽기 전용 명령을 각각 최대 5초, `LC_ALL=C`로 실행한다.
+`manifest/host.json` 원문·종료 코드·argv·수집/파싱 오류를 원시 증거 해시 목록에 포함하고,
+분류 결과의 `manifest.host`에 연결한다. 수집 필드는 다음과 같다.
+
+| 필드 | 원본 |
+|---|---|
+| `mac_model` | `sysctl -n hw.model` (Mac model identifier) |
+| `soc` | `sysctl -n machdep.cpu.brand_string` |
+| `ram_bytes` | `sysctl -n hw.memsize` (양의 정수 bytes) |
+| `gpu_cores` | `system_profiler SPDisplaysDataType -detailLevel mini -json`의 단일 GPU `sppci_cores` |
+| `macos` | `sw_vers`의 버전과 build |
+| `xcode_version` | `xcodebuild -version`의 Xcode 버전과 build |
+| `cumetal_version`, `llvm_clang`, `xcrun_clang`, `metal_version` | 해당 tool의 전체 원시 `--version` 출력과 첫 줄 식별값 |
+
+개인 정보를 제외하는 mini displays 조회만 사용하며 하드웨어 serial/UUID 조회는 하지 않는다.
+누락·비정상 종료·timeout·빈 출력·잘못된 RAM/GPU 정수·복수 GPU는 해당 값을 `null`로 두고
+`errors`에 이유를 기록한다. timeout은 종료 코드를 추정하지 않고 `returncode=null`로 두며
+가능한 부분 stdout/stderr를 보존한다. 수집기가 JSON을 썼다는 것은 장비/toolchain 정상
+판정이 아니다. CLT-only 환경의 clang 버전을 Xcode 버전으로 대체하지 않는다.
+기존 `manifest.hw_model`은 호환을 위해 **SoC brand 별칭**으로 유지하며
+`hw_model_meaning`으로 의미를 명시한다. 실제 model identifier는 `manifest.host.mac_model`이다.
+기존 버전 별칭과 `sw_vers`도 유지한다. 옛 결과에 없는 하드웨어 값을 채워 넣지 않는다.
+
+수집기만 실행할 때는 GPU workload가 없다 (기존 목적지는 거부한다):
+
+```bash
+/usr/bin/python3 -I -B scripts/cumetal/matrix/host_manifest.py /tmp/matrix-host-84.json \
+  --cumetal /opt/homebrew/bin/cumetal --clang /opt/homebrew/opt/llvm/bin/clang++
+```
+
+**수집기 전용 실측 (measured-local, 2026-11-12)**: 이 Mac에서 `mac_model=Mac16,11`,
+`soc=Apple M4 Pro`, `ram_bytes=68719476736`, `gpu_cores=20`,
+`Xcode 27.2 / Build version 27B52`, macOS 27.0.1 / 26A434,
+CuMetal 0.7.1, Homebrew clang 23.1.5, Apple clang 21.0.0,
+Metal 32023.922를 수집했으며 `errors={}`였다. sysctl 3종·system_profiler·xcodebuild를
+독립 재조회하여 원문과 종료 코드 일치를 확인했다. GPU 실행 증거는 아니다.
+`tests/cumetal/test_host_manifest.py`의 형식·CLT-only·누락/timeout·malformed·Unicode·별칭
+회귀는 기존 Python discover를 통해 `make test`/`make verify`에 포함된다.
+이 변경은 **matrix만** 보강한다. D51 smoke manifest와 그 하드웨어 AC는 미완료로 남긴다.
