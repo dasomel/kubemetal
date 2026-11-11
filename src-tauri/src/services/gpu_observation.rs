@@ -20,6 +20,35 @@ pub struct GpuSample {
     pub unavailable_reason: Option<String>,
 }
 
+pub(crate) struct ProbeFailure {
+    pub stdout: String,
+    pub reason: String,
+}
+
+impl From<String> for ProbeFailure {
+    fn from(reason: String) -> Self {
+        Self {
+            stdout: String::new(),
+            reason,
+        }
+    }
+}
+
+pub(crate) fn probe_output(out: std::process::Output) -> Result<String, ProbeFailure> {
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    if !out.status.success() {
+        return Err(ProbeFailure {
+            stdout,
+            reason: format!(
+                "ioreg failed ({}): {}",
+                out.status,
+                String::from_utf8_lossy(&out.stderr)
+            ),
+        });
+    }
+    Ok(stdout)
+}
+
 pub(crate) async fn collect(phase: &str) -> GpuSample {
     collect_with(phase, async {
         let mut cmd = external_command("ioreg")?;
@@ -29,22 +58,14 @@ pub(crate) async fn collect(phase: &str) -> GpuSample {
             .output()
             .await
             .map_err(|e| format!("ioreg execution failed: {e}"))?;
-        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-        if !out.status.success() {
-            return Err(format!(
-                "ioreg failed ({}): {}\n{stdout}",
-                out.status,
-                String::from_utf8_lossy(&out.stderr)
-            ));
-        }
-        Ok(stdout)
+        probe_output(out)
     })
     .await
 }
 
 pub(crate) async fn collect_with(
     phase: &str,
-    probe: impl Future<Output = Result<String, String>>,
+    probe: impl Future<Output = Result<String, ProbeFailure>>,
 ) -> GpuSample {
     let timestamp_unix_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -53,8 +74,11 @@ pub(crate) async fn collect_with(
     let start = Instant::now();
     let result = tokio::time::timeout(TIMEOUT, probe).await;
     let (text, error) = match result {
-        Err(_) => (String::new(), Some("ioreg timed out after 1s".to_string())),
-        Ok(Err(e)) => (e.clone(), Some(e)),
+        Err(_) => (
+            String::new(),
+            Some("ioreg timed out after 1s; no captured stdout available".to_string()),
+        ),
+        Ok(Err(e)) => (e.stdout, Some(e.reason)),
         Ok(Ok(text)) => (text, None),
     };
     let (utilization_pct, memory_bytes) = if error.is_none() {
@@ -71,7 +95,10 @@ pub(crate) async fn collect_with(
             )
         })
     });
-    // D22: keep raw evidence even on partial parsing/failure; cap each IPC sample at 4 KiB.
+    // D22: preserve bounded stdout on non-zero exit, with errors only in unavailable_reason.
+    // Timeout kills the child; this runner captures no stdout then, so the excerpt is empty.
+    // Cost: no partial timeout evidence; escape hatch: a streaming capture runner.
+    // Keep PerformanceStatistics lines when present; cap each excerpt at 4 KiB.
     let raw = if text.contains("PerformanceStatistics") {
         text.lines()
             .filter(|line| line.contains("PerformanceStatistics"))

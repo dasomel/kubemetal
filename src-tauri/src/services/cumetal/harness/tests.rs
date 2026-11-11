@@ -627,14 +627,19 @@ async fn observation_preserves_missing_zero_partial_and_raw_evidence() {
 }
 
 #[tokio::test]
-async fn observation_errors_and_timeout_never_become_zero() {
+async fn gpu_observation_errors_and_timeout_never_become_zero() {
     let sample =
-        gpu_observation::collect_with("during", async { Err("spawn denied".into()) }).await;
+        gpu_observation::collect_with("during", async { Err("spawn denied".to_string().into()) })
+            .await;
     assert_eq!(sample.unavailable_reason.as_deref(), Some("spawn denied"));
-    assert_eq!(sample.raw_excerpt, "spawn denied");
+    assert!(sample.raw_excerpt.is_empty());
     assert_eq!((sample.utilization_pct, sample.memory_bytes), (None, None));
     let sample = gpu_observation::collect_with("during", std::future::pending()).await;
-    assert!(sample.unavailable_reason.unwrap().contains("timed out"));
+    assert!(sample
+        .unavailable_reason
+        .unwrap()
+        .contains("timed out after 1s; no captured stdout available"));
+    assert!(sample.raw_excerpt.is_empty());
     assert!(sample.elapsed_ms >= 1000);
     assert_eq!((sample.utilization_pct, sample.memory_bytes), (None, None));
 }
@@ -903,5 +908,55 @@ async fn sampler_cancelled_on_successful_workload_completion() {
     assert_eq!(
         runner.probes.load(std::sync::atomic::Ordering::SeqCst),
         count
+    );
+}
+
+#[tokio::test]
+async fn gpu_observation_nonzero_exit_preserves_stdout_and_error() {
+    use std::os::unix::process::ExitStatusExt;
+    let raw = format!("PerformanceStatistics {}", "가".repeat(4096));
+    let sample = gpu_observation::collect_with("during", async {
+        gpu_observation::probe_output(std::process::Output {
+            status: std::process::ExitStatus::from_raw(1 << 8),
+            stdout: raw.as_bytes().to_vec(),
+            stderr: b"probe denied".to_vec(),
+        })
+    })
+    .await;
+    assert!(sample
+        .unavailable_reason
+        .as_deref()
+        .unwrap()
+        .contains("probe denied"));
+    assert!(raw.starts_with(&sample.raw_excerpt));
+    assert!(sample.raw_excerpt.len() <= 4096);
+    assert!(sample.raw_excerpt.len() >= 4094);
+    assert_eq!((sample.utilization_pct, sample.memory_bytes), (None, None));
+}
+
+#[tokio::test]
+async fn gpu_observation_step_runner_preserves_failure_evidence() {
+    let runner = FakeRunner::default().on(
+        |s| name(s) == "ioreg",
+        |_| RunOutcome::Finished {
+            success: false,
+            exit_code: Some(1),
+            stdout: "partial stdout".into(),
+            stderr: "probe denied".into(),
+        },
+    );
+    let sample = runner.observe_gpu("during", Path::new("/tmp")).await;
+    assert_eq!(sample.raw_excerpt, "partial stdout");
+    assert_eq!(
+        sample.unavailable_reason.as_deref(),
+        Some("ioreg failed (exit Some(1)): probe denied")
+    );
+    assert_eq!((sample.utilization_pct, sample.memory_bytes), (None, None));
+    let runner = FakeRunner::default().on(|s| name(s) == "ioreg", |_| RunOutcome::TimedOut);
+    let sample = runner.observe_gpu("during", Path::new("/tmp")).await;
+    assert!(sample.raw_excerpt.is_empty());
+    assert_eq!(
+        sample.unavailable_reason.as_deref(),
+        Some("ioreg timed out after 1s; no captured stdout available")
     );
 }

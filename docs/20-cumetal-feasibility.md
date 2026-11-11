@@ -356,7 +356,11 @@ Metal 툴체인 없이는 실패한다.**
   실행이 끝나면 샘플러를 즉시 abort해 진행 중인 probe와 kill_on_drop 자식을 정리하고 직후 샘플을 수집한다.
   실패/timeout에도 관측이 백그라운드에 남지 않고 기존 예약 guard가 해제된다.
 - 샘플은 phase, 시작 Unix ms(시계 오류 시 null), 소요 ms, 사용률/메모리의 선택값,
-  최대 4 KiB raw 발췌와 관측 불가 사유를 보존한다. 필드 누락·실행 실패·timeout은 0이 아니다.
+  최대 4 KiB `raw_excerpt`(PerformanceStatistics 줄이 있으면 그 줄들, 없으면 stdout)와
+  별도 `unavailable_reason`을 기록한다. 비정상 종료에도 stdout 발췌를 보존하고 오류는
+  `unavailable_reason`에만 둔다. timeout은 자식을 종료하며 현재 runner에는 캡처된 출력이
+  없어 `raw_excerpt`가 빈 문자열이고 사유에 이를 명시한다. spawn 실패도 발췌는 비어 있다.
+  필드 누락·실행 실패·timeout은 0이 아니다.
 - `activity_increase`는 실행 중 사용률이 직전보다 증가한 **시스템 전체 상관 증거**일 뿐,
   해당 프로세스의 GPU 사용 증명이 아니다. 다른 프로세스가 원인일 수 있고, 이미 바쁜 baseline에서는 증가 감지가 약하다. 판정에 사용하지 않는다. 직후의 증가나
   메모리 할당량 증가는 활동 증가로 판정하지 않는다. 짧은 커널 미포착·0·감소·필드 부재는
@@ -476,3 +480,8 @@ cuBLAS/cuFFT/cuRAND와 같은 결론이며, 이 subset이 GPU에서 실행됐다
 실행 전 `Device Utilization`은 다른 앱 부하로 이미 **49%**였다. 바쁜 baseline은
 증가 감지를 약화시키므로 이 관측은 시스템 전체 상관 증거로만 남기며 D51 verdict에는
 사용하지 않는다. 이번 수정 작업에서는 live smoke를 재실행하지 않았다.
+
+동시 sampler 적용 후 두 번째 오케스트레이터 실행(measured-local, 2026-11-12, 사용자 제공):
+3개 workload 모두 통과했고 `gpu_observation`은 1개에서 `activity_increase`, 2개에서
+`inconclusive`였다. live test wall time은 4.5–6.1초였다. 관측은 실행마다 달라지며
+시스템 전체 상관 증거로만 남는다. 이 작업자는 live test를 재실행하지 않았다.

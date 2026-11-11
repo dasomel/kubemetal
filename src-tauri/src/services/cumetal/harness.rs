@@ -260,11 +260,16 @@ pub(crate) trait StepRunner: Clone + Send + Sync + 'static {
                         stdout,
                         stderr,
                         ..
-                    } => Err(format!(
-                        "ioreg failed (exit {exit_code:?}): {stderr}\n{stdout}"
-                    )),
-                    RunOutcome::SpawnFailed(e) => Err(e),
-                    RunOutcome::TimedOut => Err("ioreg timed out after 1s".into()),
+                    } => Err(gpu_observation::ProbeFailure {
+                        stdout,
+                        reason: format!("ioreg failed (exit {exit_code:?}): {stderr}"),
+                    }),
+                    RunOutcome::SpawnFailed(e) => Err(e.into()),
+                    RunOutcome::TimedOut => {
+                        Err("ioreg timed out after 1s; no captured stdout available"
+                            .to_string()
+                            .into())
+                    }
                 }
             })
             .await
