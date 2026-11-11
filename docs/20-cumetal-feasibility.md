@@ -569,3 +569,33 @@ SGEMM 512², warm-up 2 + 측정 5회, 한 프로세스. 두 경로 모두 parity
 읽는 법: AOT는 컴파일 비용을 빌드 때 내고 첫 실행이 빠르다. JIT는 빌드가 빠른 대신 첫 dispatch에 런타임 컴파일이 섞인다.
 정상 구간은 두 경로가 사실상 같다. 표본 5개·단일 실행·다른 앱이 떠 있는 데스크톱이라 **경향만** 보여 주며,
 네이티브 MLX/Metal 대비 비교나 재현성 주장은 아니다. 실패한 실행의 수치는 `timing`이 아니라 `timing_unverified`에만 남는다.
+
+## #84 matrix 원시 증거 보존 및 오프라인 재분류
+
+명시한 `<out.json>` 옆에 `<out.json>.evidence.<attempt>`를 생성한다. JSON의
+`evidence.directory`는 결과 파일 기준 상대 경로이며 `evidence.files`는 각 파일의
+상대 경로와 SHA256이다. 결과와 증거 디렉터리를 함께 전달한다. 전체 doctor 로그와
+종료 코드, AOT/JIT 컴파일 진단·rc, 성공 stdout을 포함한 매 회차 출력·rc·원시
+provenance, manifest, 프로브 및 runner/classifier 소스와 해시를 보존한다.
+실행 바이너리와 object는 별도 임시 디렉터리에만 생성하고 종료 시 삭제한다.
+다운로드·앱 파일 접근·TTL·증거 자동 삭제는 없다. 수신자가 보관 용량을 관리한다.
+
+실패한 컴파일·timeout·실행 실패도 정상적으로 수집되면 해당 실패 판정을 내보낸다.
+반면 보존 실패·중단·중복 probe 등 부분 실행은 성공 메시지 없이 비정상 종료하며,
+남은 증거는 `complete=false`로 표시한다. 기존 JSON/Markdown 목적지는 덮어쓰지 않는다.
+재분류는 저장 목록과 모든 SHA256을 먼저 검사하며 변조·누락·추가 파일, symlink,
+부분 실행, 반복 횟수 불일치를 거부한다. 해시는 무결성 검사이며 서명/진위 보증은 아니다.
+과거 index 없는 fixture 형식은 호환 유지하지만 새 runner 증거의 index 누락은 거부한다.
+
+```bash
+# GPU 유휴 상태에서 오케스트레이터만 실행 (이 구현 레인은 실행하지 않음)
+bash scripts/cumetal/matrix/run_matrix.sh /tmp/matrix-84.json launch_1d
+# 이후 CuMetal/clang/Metal 없이도 실행 가능. 실제 생성된 디렉터리 이름을 지정한다.
+/usr/bin/python3 -I -B scripts/cumetal/matrix/classify.py /tmp/matrix-84.json.evidence.XXXXXX /tmp/reclassified-84.json 3
+```
+
+`tests/cumetal/test_matrix_evidence.py`는 실제 shell/classifier에 CPU fake tool을
+연결해 성공·컴파일 거부/timeout·실행 실패/timeout·보존 실패·목적지 충돌·부분 실행,
+재분류 판정 동일성과 로그 변조 거부를 검사한다. 기존 `make test`의
+`python3 -B -m unittest discover -s tests/cumetal -v`를 통해 `make verify`에도 포함된다.
+이는 GPU 실측 증거가 아니다.

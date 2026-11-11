@@ -5,6 +5,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import evidence
+
 def rd(p, default=""):
     try:
         with open(p, errors="replace") as f: return f.read()
@@ -116,6 +119,12 @@ def classify_path(d, path, kernel_probe, repeats=3):
     return r
 
 def main(work, out_json, repeats):
+    retained = None
+    if os.path.exists(f"{work}/{evidence.INDEX}") or os.path.isdir(f"{work}/manifest/sources"):
+        retained = evidence.verify(work, repeats)
+    md = out_json[:-5] + ".md" if out_json.endswith(".json") else out_json + ".md"
+    if retained and (os.path.exists(out_json) or os.path.exists(md)):
+        raise FileExistsError("destination exists")
     env = dict(l.split("=", 1) for l in rd(f"{work}/manifest/env.txt").splitlines() if "=" in l)
     sha = {}
     for l in rd(f"{work}/manifest/sha256.txt").splitlines():
@@ -151,7 +160,11 @@ def main(work, out_json, repeats):
     doc = {"schema": "cumetal-matrix/1", "issue": 84, "manifest": manifest, "repeats": repeats,
            "vocabulary": ["supported", "partial", "unavailable", "failed", "unverified"], "results": rows,
            "summary": dict(collections.Counter(r["overall"] for r in rows))}
-    with open(out_json, "w") as f: json.dump(doc, f, indent=2, sort_keys=True); f.write("\n")
+    if retained:
+        doc["evidence"] = {"directory": os.path.relpath(work, os.path.dirname(os.path.abspath(out_json))),
+                           "index": evidence.INDEX, "files": {**retained["files"],
+                           evidence.INDEX: evidence.file_sha256(f"{work}/{evidence.INDEX}")}}
+    with open(out_json, "x" if retained else "w") as f: json.dump(doc, f, indent=2, sort_keys=True); f.write("\n")
 
     md = out_json[:-5] + ".md" if out_json.endswith(".json") else out_json + ".md"
     def cell(p):
@@ -164,7 +177,7 @@ def main(work, out_json, repeats):
     for r in rows:
         if "aot" not in r: lines.append(f"| {r['probe']} | - | - | {r['overall']} | {r['note']} |"); continue
         lines.append(f"| {r['probe']} | {cell(r['aot'])} | {cell(r['jit'])} | **{r['overall']}** | {r['note'].replace('|','/')} |")
-    with open(md, "w") as f: f.write("\n".join(lines) + "\n")
+    with open(md, "x" if retained else "w") as f: f.write("\n".join(lines) + "\n")
 
 
 if __name__ == "__main__":
