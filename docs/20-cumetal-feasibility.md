@@ -557,3 +557,15 @@ runner는 fake tools로 compile/link·timeout·parity·provenance·thermal 실�
 python3 -B scripts/cumetal/benchmark/run_benchmark.py --mode aot --warmup 2 --iterations 5 --output /tmp/cumetal-sgemm-aot.json
 python3 -B scripts/cumetal/benchmark/run_benchmark.py --mode jit --warmup 2 --iterations 5 --output /tmp/cumetal-sgemm-jit.json
 ```
+
+**실측 (measured-local, 2026-11-12, M4 Pro, CuMetal 0.7.1, thermal nominal, 오케스트레이터가 위 두 명령 실행):**
+SGEMM 512², warm-up 2 + 측정 5회, 한 프로세스. 두 경로 모두 parity·provenance 통과(`supported`, kernel launch 8회 = 1+2+5).
+
+| 경로 | compile+link wall | 첫 dispatch | steady-state median | p95 |
+|---|---|---|---|---|
+| AOT (`cumetalc`) | 7.25 s | 8.19 ms | 1.708 ms | 1.722 ms |
+| JIT (clang CUDA) | 1.12 s | 55.33 ms | 1.744 ms | 1.800 ms |
+
+읽는 법: AOT는 컴파일 비용을 빌드 때 내고 첫 실행이 빠르다. JIT는 빌드가 빠른 대신 첫 dispatch에 런타임 컴파일이 섞인다.
+정상 구간은 두 경로가 사실상 같다. 표본 5개·단일 실행·다른 앱이 떠 있는 데스크톱이라 **경향만** 보여 주며,
+네이티브 MLX/Metal 대비 비교나 재현성 주장은 아니다. 실패한 실행의 수치는 `timing`이 아니라 `timing_unverified`에만 남는다.
