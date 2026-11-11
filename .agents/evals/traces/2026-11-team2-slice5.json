@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-team2-slice5-2026-11",
+  "task": "#84: bounded independent ioreg smoke observation; D51 self-report verdict unchanged.",
+  "changeContext": {
+    "paths": [
+      "src-tauri/src/services/cumetal/harness.rs",
+      "src-tauri/src/services/cumetal/harness/tests.rs",
+      "src-tauri/src/commands/metrics.rs",
+      "src-tauri/src/services/gpu_observation.rs",
+      "src-tauri/src/services/mod.rs",
+      "src/types/ipc.ts",
+      "docs/20-cumetal-feasibility.md",
+      ".agents/evals/traces/2026-11-team2-slice5.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Read AGENTS.md, Rust/macOS/process mistakes-log, D2/D51, docs/20, Makefile and hybrid-runtime skill. Only approved paths; no new IPC, D-registry rows, installs, cluster commands or GPU-heavy runs. CLAUDE.md additionally points Claude orchestration to .claude/rules/harness.md; not applicable to this lane."
+    },
+    {
+      "id": "e2",
+      "type": "change",
+      "summary": "Shared D2 parser/collector preserves fixture semantics. Add workload before/during/after samples with bounded raw excerpts, timestamps and unavailable reasons. Scoped futures stop observation on workload exit. Only during utilization increase is system-wide correlation, never process proof; missing/zero/decrease is inconclusive. Self-report verdict unchanged. Additive evidence feature, not a pre-existing behavior bug fix."
+    },
+    {
+      "id": "e3",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "D2/D51 synthetic observations, fixtures and lifecycle",
+      "summary": "Seven new tests cover missing/partial/zero counters, increase/decrease, raw truncation, resolver/spawn/nonzero/timeout errors, bounded sampling, failed-smoke observation cleanup and reservation release.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml cumetal -- --skip live_smoke --skip live_matrix: 47 passed, 0 failed; GPU-heavy live smoke explicitly excluded",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml metrics: 31 passed, 0 failed, 1 ignored; existing fixtures and live ioreg tests retained",
+        "test:python3 -B -m unittest discover -s tests/cumetal -v: Ran 10 tests, OK; synthetic matrix evidence only"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Rust lint/format and IPC source consistency",
+      "summary": "Static checks passed; no CuMetal GPU runtime or UI claim.",
+      "evidence": [
+        "ci:cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: Finished dev profile, exit 0",
+        "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0",
+        "ci:python3 scripts/ci/check_ipc_types.py: OK, 102 invoke calls checked",
+        "ci:git diff --check: exit 0"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "pending",
+      "scope": "TypeScript/frontend/completion suite",
+      "summary": "Dependencies absent, installation prohibited. These are dependency failures, not sandbox port/network failures. make verify stopped at frontend and never reached Rust live tests.",
+      "evidence": [
+        "ci:pnpm exec tsc --noEmit: ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL Command tsc not found",
+        "ci:make test-frontend: exit 2, ENOENT mkdtemp node_modules/.frontend-tests-XXXXXX; node_modules missing",
+        "ci:make verify: exit 2 at test-frontend with same missing node_modules ENOENT"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "pending",
+      "scope": "D51 real CuMetal GPU observation",
+      "summary": "Idle-Mac live_smoke delegated to orchestrator as instructed; not executed. Historical evidence remains labeled historical.",
+      "evidence": [
+        "policy:User prohibited GPU-heavy live_smoke/matrix, installation, colima/kubectl, push and PR creation; respected"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "environment_limit",
+      "summary": "Initial trace write and git add/commit were SANDBOX-BLOCKED: Operation not permitted for .agents trace and worktree index.lock. No commit was created by blocked commands. Retrying only explicitly requested trace/commit/report with escalation."
+    },
+    {
+      "id": "e8",
+      "type": "environment_limit",
+      "summary": "Trace evidence checker passed. Comparison gate exits 1: baseline true -> na for bug-fix-verification (additive feature, not bug fix) and evidence-before-claim (state B, no completion claim). No test failure is hidden or completion claim fabricated to satisfy baseline.",
+      "evidence": [
+        "ci:git diff --name-only origin/main...HEAD generated changed file list after commit",
+        "ci:python3 scripts/ci/check-agent-trace-evidence.py --policy .agents/evals/risk-policy.json --changed-files /tmp/t2-5-changed.txt --trace .agents/evals/traces/2026-11-team2-slice5.json: exit 0, passed true, failures empty",
+        "ci:python3 .agents/evals/gate.py --trace .agents/evals/traces/2026-11-team2-slice5.json --baseline .agents/evals/baseline.eval.json: exit 1, two true-to-na baseline regressions"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "B",
+      "summary": "Implementation and Rust/Python verification complete; frontend and orchestrator GPU live observation unverified.",
+      "next": "Orchestrator supplies existing dependencies and reruns tsc/frontend/verify with live-smoke execution controlled; on idle Mac run cargo test --locked --manifest-path src-tauri/Cargo.toml live_smoke -- --nocapture, preserving JSON or explicit SKIPPED."
+    }
+  ]
+}

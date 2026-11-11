@@ -5,6 +5,7 @@ pub mod cumetal;
 pub mod deploy_operation;
 pub mod deploy_target;
 pub(crate) mod gpu_benchmark;
+pub(crate) mod gpu_observation;
 pub(crate) mod home_path;
 pub(crate) mod kagent_agents;
 pub mod lifecycle_guard;

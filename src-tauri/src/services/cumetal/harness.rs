@@ -5,7 +5,7 @@
 //! (실측 2026-11-06, docs/20). 그래서 하네스는 그 경로만 쓴다: compile → link → run, 단계별 별도 상태.
 //! 비용: (1) 첫 실행 JIT 시간이 들어간다(벤치마크 아님). (2) "Apple GPU에서 실행됐다"는 판정은
 //! CuMetal 런타임의 자기 보고(`CUMETAL_TRACE_GPU=1`의 `CUMETAL_PROVENANCE` 줄)에 의존한다 — 독립
-//! 교차 확인(ioreg 활동 diff)은 아직 없다. 줄이 없으면 `unverified`이며 통과로 치지 않는다(D22).
+//! 교차 관측(ioreg)은 별도 시스템 전체 상관 증거이며 프로세스 GPU 사용을 증명하지 않는다. 줄이 없으면 `unverified`이며 통과로 치지 않는다(D22).
 //! (3) CUDA 컴파일러는 Homebrew keg-only llvm의 `/opt/homebrew/opt/llvm/bin/clang++` 고정 경로를
 //! 가정한다(`SEARCH_PATHS`에 없다). 없으면 추측하지 않고 `unavailable`+사유를 돌려준다.
 //! 탈출구: `run_cumetal_smoke` 커맨드와 이 모듈을 지워도 D50 탐지는 영향이 없다. AOT 경로는
@@ -19,6 +19,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 use super::{excerpt, parse_version, RunOutcome};
+use crate::services::gpu_observation::{self, GpuSample};
 use crate::services::process::{external_command_at, resolve_cli_path};
 
 /// Homebrew llvm은 keg-only라 `/opt/homebrew/bin`에 노출되지 않는다.
@@ -152,9 +153,39 @@ pub struct WorkloadResult {
     pub run: StepResult,
     pub parity: Parity,
     pub provenance: Provenance,
+    pub gpu_observation: Option<GpuObservation>,
     pub verdict: Verdict,
     /// `not_passed`일 때 첫 번째 사유.
     pub verdict_reason: Option<String>,
+}
+
+/// D51: independent system-wide correlation, never an input to the self-report verdict.
+#[derive(Debug, Clone, Serialize)]
+pub struct GpuObservation {
+    pub status: String,
+    pub reason: String,
+    pub samples: Vec<GpuSample>,
+}
+
+impl GpuObservation {
+    fn from_samples(samples: Vec<GpuSample>) -> Self {
+        let before = samples.first().and_then(|s| s.utilization_pct);
+        let increased = before.is_some_and(|baseline| {
+            samples
+                .iter()
+                .filter(|s| s.phase == "during")
+                .any(|s| s.utilization_pct.is_some_and(|pct| pct > baseline))
+        });
+        Self {
+            status: if increased { "activity_increase" } else { "inconclusive" }.into(),
+            reason: if increased {
+                "System-wide utilization increased during the run; this does not prove this process used the GPU."
+            } else {
+                "No utilization increase captured; short kernels may be missed. This does not imply CPU execution."
+            }.into(),
+            samples,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -204,6 +235,35 @@ pub(crate) struct StepSpec {
 pub(crate) trait StepRunner {
     fn resolve(&self, bin: &str) -> Result<PathBuf, String>;
     async fn run(&self, spec: &StepSpec) -> RunOutcome;
+
+    async fn observe_gpu(&self, phase: &str, dir: &Path) -> GpuSample {
+        gpu_observation::collect_with(phase, async {
+            let s = spec(
+                self.resolve("ioreg")?,
+                gpu_observation::ARGS.map(String::from).to_vec(),
+                dir,
+                gpu_observation::TIMEOUT,
+            );
+            match self.run(&s).await {
+                RunOutcome::Finished {
+                    success: true,
+                    stdout,
+                    ..
+                } => Ok(stdout),
+                RunOutcome::Finished {
+                    exit_code,
+                    stdout,
+                    stderr,
+                    ..
+                } => Err(format!(
+                    "ioreg failed (exit {exit_code:?}): {stderr}\n{stdout}"
+                )),
+                RunOutcome::SpawnFailed(e) => Err(e),
+                RunOutcome::TimedOut => Err("ioreg timed out after 1s".into()),
+            }
+        })
+        .await
+    }
 }
 
 /// 운영 구현: 모든 스폰은 `external_command_at`(D5 확장)을 거친다.
@@ -521,6 +581,7 @@ async fn run_workload<R: StepRunner>(
         status: ParityStatus::Unknown,
         metric_line: None,
     };
+    let mut gpu_observation = None;
     let mut provenance = Provenance {
         status: ProvenanceStatus::Unverified,
         launches: Vec::new(),
@@ -586,7 +647,27 @@ async fn run_workload<R: StepRunner>(
         let mut r = spec(dir.join(w.name), Vec::new(), dir, RUN_TIMEOUT);
         r.env = vec![("CUMETAL_TRACE_GPU".into(), "1".into())];
         // 종료 코드 0=parity 통과, 1=불일치(실행은 끝났다). 그 외(10/11 = CUDA API 실패 등)는 실패.
-        let outcome = runner.run(&r).await;
+        let mut samples = vec![runner.observe_gpu("before", dir).await];
+        // D51: bounded, scoped futures (no detached sampler). Failure/cancellation drops both
+        // children via kill_on_drop; reservation remains held until this function returns.
+        // Cost: up to 1s per probe, <=18 probes/run. Escape hatch: remove observation only.
+        let observe = async {
+            for _ in 0..16 {
+                samples.push(runner.observe_gpu("during", dir).await);
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            std::future::pending::<()>().await;
+        };
+        let outcome = {
+            tokio::pin!(observe);
+            tokio::select! {
+                biased;
+                outcome = runner.run(&r) => outcome,
+                () = &mut observe => unreachable!("observation remains pending until run completes"),
+            }
+        };
+        samples.push(runner.observe_gpu("after", dir).await);
+        gpu_observation = Some(GpuObservation::from_samples(samples));
         let (result, stdout, stderr) = step_result(outcome, &[0, 1]);
         let metric_line = find_metric_line(w.metric_prefix, &stdout, &stderr);
         if result.status == StepStatus::Ok {
@@ -624,6 +705,7 @@ async fn run_workload<R: StepRunner>(
         run,
         parity,
         provenance,
+        gpu_observation,
         verdict: if verdict_reason.is_none() {
             Verdict::Passed
         } else {

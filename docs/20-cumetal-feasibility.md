@@ -346,6 +346,25 @@ Metal 툴체인 없이는 실패한다.**
 - D50 `state`는 doctor 기준 그대로(`unavailable`)다. 카드가 "AOT 불가 / JIT 검증 가능" 안내를 덧붙인다.
 - 여전히 blocked: `cumetalc` AOT 경로(Xcode Metal 툴체인 필요). 앱 UI 수준 관찰은 별도.
 
+## #84 독립 ioreg 관측 추가 (D51 판정 유지)
+
+- 위 11월 6일 결과는 당시 자기 보고 증거다. 현재 하네스는 D2와 공용인
+  `services/gpu_observation.rs` 수집기·파서로 각 workload **실행 직전/실행 중/직후**를
+  관측하고 기존 JSON의 `workloads[].gpu_observation`에 별도로 기록한다. compile/link 실패로
+  실행하지 않으면 이 필드는 `null`이다. 신규 IPC나 샘플 기반 자동 승인은 없다.
+- 각 ioreg는 1초 timeout, 실행 중에는 100ms 간격·최대 16회(전후 포함 최대 18회)다.
+  실행이 끝나면 진행 중인 관측 future와 자식을 정리하고 직후 샘플을 수집한다.
+  실패/timeout에도 관측이 백그라운드에 남지 않고 기존 예약 guard가 해제된다.
+- 샘플은 phase, 시작 Unix ms(시계 오류 시 null), 소요 ms, 사용률/메모리의 선택값,
+  최대 4 KiB raw 발췌와 관측 불가 사유를 보존한다. 필드 누락·실행 실패·timeout은 0이 아니다.
+- `activity_increase`는 실행 중 사용률이 직전보다 증가한 **시스템 전체 상관 증거**일 뿐,
+  해당 프로세스의 GPU 사용 증명이 아니다. 다른 프로세스가 원인일 수 있다. 직후의 증가나
+  메모리 할당량 증가는 활동 증가로 판정하지 않는다. 짧은 커널 미포착·0·감소·필드 부재는
+  `inconclusive`이며 CPU 실행으로 단정하지 않는다. 기존 CuMetal provenance/verdict는 독립이다.
+- 이 변경의 GPU live 실행은 수행하지 않았다. 오케스트레이터가 idle Mac에서
+  `cargo test --locked --manifest-path src-tauri/Cargo.toml live_smoke -- --nocapture`를 실행해
+  실제 JSON 또는 명시적 `SKIPPED`를 확인해야 한다. 활동 미포착도 유효한 관측 결과다.
+
 ## 2026-11-08 업데이트 — Xcode 설치 후 AOT 경로 검증 (measured-local)
 
 - Xcode 27.2(27B52) 설치. 이 버전은 Metal 툴체인을 별도 구성요소로 배포한다 — Xcode만 깔면 `xcrun --find metal`이
