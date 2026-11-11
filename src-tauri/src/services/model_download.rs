@@ -66,6 +66,17 @@ impl Attempt {
         cleanup: impl FnOnce(&Path) -> io::Result<()>,
     ) -> Result<(), String> {
         let result = transfer.and_then(|()| {
+            // D22: a successful transfer callback alone is not payload evidence.
+            // Cost: one directory read; retry the transfer if staging is empty.
+            if fs::read_dir(&self.staging)
+                .map_err(|e| format!("Cannot inspect staging directory: {e}"))?
+                .next()
+                .transpose()
+                .map_err(|e| format!("Cannot inspect staging entry: {e}"))?
+                .is_none()
+            {
+                return Err("Model promotion refused: empty staging directory".into());
+            }
             // D22: only an exclusive rename publishes success. Cost: EXDEV fails;
             // retry on the same volume instead of copying or replacing existing data.
             rename(&self.staging, &self.destination)

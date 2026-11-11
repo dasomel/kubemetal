@@ -161,6 +161,7 @@ fn cleanup_failure_keeps_original_transfer_or_promotion_error() {
     for transfer in [Err("transfer interrupted".into()), Ok(())] {
         let root = Root::new();
         let attempt = Attempt::begin(&root.models(), "owner__model").unwrap();
+        fs::write(attempt.staging.join("weights"), b"complete").unwrap();
         let original = if transfer.is_err() {
             "transfer interrupted"
         } else {
@@ -250,4 +251,16 @@ async fn aborted_task_leaves_only_private_orphan_then_local_curl_retry_promotes(
     );
     assert_eq!(root.attempts().len(), 1);
     println!("macOS local fixture: interrupted -> catalog empty -> curl file retry promoted; orphan remains outside catalog");
+}
+
+#[tokio::test]
+async fn empty_download_staging_is_not_promoted_or_listed() {
+    let root = Root::new();
+    let error = download(root.models(), "owner__model".into(), |_| async { Ok(()) })
+        .await
+        .unwrap_err();
+    assert!(error.contains("empty staging directory"), "{error}");
+    assert!(!root.models().join("owner__model").exists());
+    assert!(root.catalog().is_empty());
+    assert!(root.attempts().is_empty());
 }
