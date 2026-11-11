@@ -519,3 +519,41 @@ MISMATCH classifier 전파 테스트를 실행한다. 이번 레인은 GPU 실�
 `compile refused: textual include input must be an existing .metal file`로 `unavailable`이 됐다(main에서도 재현,
 코드 변경과 무관). 소스를 `~/.local/src/cuda-metal`(v0.7.1, 548e79a)에 두고 같은 옵션으로 재빌드·재설치해
 해소했다 — 소스 트리는 설치 후에도 지우면 안 된다.
+
+## #84 SGEMM opt-in 시간 분리 (runtime unverified)
+
+인자 없는 `sgemm_handwritten`은 기존 단일 dispatch matrix 프로브다.
+`--benchmark --warmup W --iterations I`로만 성능 측정을 켠다(W=1..20, I=1..100).
+같은 프로세스에서 **첫 dispatch 1회 → warm-up W회 → 측정 I회**를 실행한다.
+매 dispatch는 오류 검사와 `cudaDeviceSynchronize`를 마친다. steady clock의 ns 구간은
+launch·동기화를 포함하며 GPU-event 시간이 아니다. 첫 dispatch에는 JIT가 포함될 수 있다.
+모든 iteration에서 복사·전체 finite 검사·기존 샘플 CPU reference를 타이머 종료 뒤 수행한다.
+초기 입력 복사도 측정 밖이다. 반복 parity가 실행 간격·thermal에 영향을 줄 수 있으므로
+이 수치를 GPU 포화 throughput으로 해석하지 않는다.
+
+`benchmark/run_benchmark.py`는 AOT 1단계 또는 JIT compile/link 2단계의 외부 wall time을
+각각 ns로 보존하고 합계를 별도 기록한다. 독립 프로세스 3회 compatibility 표본과 무관하다.
+첫 dispatch, warm-up 제외 raw steady samples, sample count, median(짝수는 중앙 두 값 평균),
+nearest-rank p95(`ceil(.95*n)`번째 값)를 기록하며 Python이 raw와 요약을 대조한다.
+raw·요약·단위가 없거나 맞지 않으면 실패한다. timeout은 process group을 종료한다.
+API·동기화·parity·GPU provenance·도구 버전 수집 실패도 성능 성공으로 보고하지 않는다.
+매 dispatch의 exact apple_gpu provenance 개수가 예상 횟수와 같아야 한다.
+
+Foundation `thermalState` 전용 Swift 도구는 미리 빌드하며 그 준비 시간은 compile/link 및
+kernel 시간에서 제외한다. 측정 전후 nominal/fair/serious/critical 원문과 도구 결과를 보존한다.
+준비·조회 실패는 `unavailable`과 사유로 기록한다. thermal 미수집만으로 수치 시간을 버리지는
+않지만 thermal 조건을 검증했다고 주장할 수 없다. 도구 버전·소스/helper/classifier SHA256,
+호스트·prefix·명령·실행 출력·종료 코드도 JSON에 남긴다. 새 IPC/D-registry 변경은 없다.
+
+CPU 테스트는 실제 `.cu`의 host timing 루프에 fake clock/dispatch/validation을 주입해
+첫 dispatch 분리, warm-up 제외, ns·분위수, 횟수 제한, 동기화/검증/시계 실패를 검사한다.
+runner는 fake tools로 compile/link·timeout·parity·provenance·thermal 실패를 검사한다.
+기존 `make test`/`make verify`의 `tests/cumetal` discovery가 모두 실행한다.
+이번 레인은 benchmark CLI 또는 GPU workload를 실행하지 않았다. 유휴 Mac에서 오케스트레이터가
+아래 두 명령을 실행하고 raw samples와 median/p95를 대조해야 한다. D40 예약이 없으므로
+학습·서빙과 병행하지 않는다. PyTorch/MLX 비교·범용 accelerator schema는 범위 밖이다.
+
+```bash
+python3 -B scripts/cumetal/benchmark/run_benchmark.py --mode aot --warmup 2 --iterations 5 --output /tmp/cumetal-sgemm-aot.json
+python3 -B scripts/cumetal/benchmark/run_benchmark.py --mode jit --warmup 2 --iterations 5 --output /tmp/cumetal-sgemm-jit.json
+```
