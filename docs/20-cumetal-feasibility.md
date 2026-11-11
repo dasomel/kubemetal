@@ -485,3 +485,25 @@ cuBLAS/cuFFT/cuRAND와 같은 결론이며, 이 subset이 GPU에서 실행됐다
 3개 workload 모두 통과했고 `gpu_observation`은 1개에서 `activity_increase`, 2개에서
 `inconclusive`였다. live test wall time은 4.5–6.1초였다. 관측은 실행마다 달라지며
 시스템 전체 상관 증거로만 남는다. 이 작업자는 live test를 재실행하지 않았다.
+
+## #84 기존 수치 프로브 finite 방어 (runtime unverified)
+
+수기/cuBLAS SGEMM, FP64, cuFFT 순방향·역방향은 `parity.h`로 전체 출력의
+NaN/±Inf를 거부한다. SGEMM CPU reference 샘플 간격, strict tolerance
+(`<1e-5`), FP64 fast48 정책(`<1e-9`), FFT(`<1e-3`)은 유지한다.
+결과의 `finite`, `failed_index`(0-based, FFT는 complex 원소), `max_error`는
+실패 위치와 검사 결과를 기록한다. 0/비유한 분모는 정의되지 않은 비율로 실패한다.
+`nan_inf.cu`와 cuSPARSE는 변경하지 않았다. CPU helper 주입 테스트는 실제
+CuMetal corruption 재현이 아니다. 기존 `fmax(0, NaN)` CPU 재현은
+`legacy_nan max_error=0 verdict=PASS`(회귀 검사 exit 1)였다.
+finite scan을 임시 제거한 음성 대조에서도 실제 helper 테스트가 SIGABRT로 실패했고
+(`Ran 2 tests ... FAILED (errors=1)`), 복원 후 전체 15개가 통과했다.
+
+유휴 Mac에서 오케스트레이터가 실행할 정상 회귀 명령(D40 예약 없음, 학습/서빙과 병행 금지):
+
+```bash
+bash scripts/cumetal/matrix/run_matrix.sh /tmp/cumetal-parity.json sgemm_handwritten cublas_sgemm:cublas fp64 cufft_c2c:cufft
+```
+
+`make test`/`make verify`의 기존 `tests/cumetal` discovery가 host C++ helper와
+MISMATCH classifier 전파 테스트를 실행한다. 이번 레인은 GPU 실행을 하지 않았다.
