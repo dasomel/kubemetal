@@ -23,7 +23,8 @@ class MatrixClassifierTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.work = Path(self.tmp.name)
+        self.work = Path(self.tmp.name) / 'raw'
+        self.work.mkdir()
         self.probe = self.work / 'launch_1d'
         self.probe.mkdir()
         for path in ('aot', 'jit'):
@@ -31,6 +32,13 @@ class MatrixClassifierTests(unittest.TestCase):
             for run in range(1, 4):
                 self.write(f'{path}.run{run}.rc', '0')
                 self.write(f'{path}.run{run}.out', GPU + RESULT)
+
+    def seal_fixture(self, output):
+        (self.work / 'manifest').mkdir(exist_ok=True)
+        (self.work / classifier.evidence.INDEX).unlink(missing_ok=True)
+        output.unlink(missing_ok=True)
+        output.with_suffix('.md').unlink(missing_ok=True)
+        classifier.evidence.seal(self.work, 3, True)
 
     def write(self, name, value):
         (self.probe / name).write_text(value)
@@ -136,7 +144,7 @@ class MatrixClassifierTests(unittest.TestCase):
         manifest.mkdir(exist_ok=True)
         (manifest / 'env.txt').write_text('cumetal_version=fixture\n')
         (manifest / 'sha256.txt').write_text('abc  ./classify.py\n')
-        out_json = self.work / 'matrix_branches.json'
+        out_json = Path(self.tmp.name) / 'matrix_branches.json'
 
         for (aot_class, jit_class), expected_overall in rules:
             with self.subTest(aot=aot_class, jit=jit_class):
@@ -166,8 +174,9 @@ class MatrixClassifierTests(unittest.TestCase):
                     self.write('jit.run1.rc', '0')
                     self.write('jit.run2.out', GPU + RESULT)
 
+                self.seal_fixture(out_json)
                 proc = subprocess.run([sys.executable, '-I', '-B', str(SCRIPT), str(self.work),
-                                       str(out_json), '3'], capture_output=True, text=True)
+                                       str(out_json), '3', '--initial'], capture_output=True, text=True)
                 self.assertEqual(proc.returncode, 0, proc.stderr)
                 doc = json.loads(out_json.read_text())
                 row = next(r for r in doc['results'] if r['probe'] == 'launch_1d')
@@ -182,9 +191,10 @@ class MatrixClassifierTests(unittest.TestCase):
         missing = self.work / 'missing_probe'
         missing.mkdir()
         (missing / 'missing').touch()
-        output = self.work / 'matrix.json'
+        output = Path(self.tmp.name) / 'matrix.json'
+        self.seal_fixture(output)
         proc = subprocess.run([sys.executable, '-I', '-B', str(SCRIPT), str(self.work),
-                               str(output), '3'], capture_output=True, text=True)
+                               str(output), '3', '--initial'], capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         doc = json.loads(output.read_text())
         self.assertEqual(doc['manifest']['probe_sha256']['classify.py'], 'abc')
@@ -224,9 +234,10 @@ class MatrixClassifierTests(unittest.TestCase):
                             self.write(f'{mode}.run{run}.out', GPU + result)
                     self.write(f'{path}.run2.rc', str(rc))
                     self.write(f'{path}.run2.out', output)
-                    target = self.work / 'matrix.json'
+                    target = Path(self.tmp.name) / 'matrix.json'
+                    self.seal_fixture(target)
                     proc = subprocess.run([sys.executable, '-I', '-B', str(SCRIPT), str(self.work),
-                                           str(target), '3'], capture_output=True, text=True)
+                                           str(target), '3', '--initial'], capture_output=True, text=True)
                     self.assertEqual(proc.returncode, 0, proc.stderr)
                     row = json.loads(target.read_text())['results'][0]
                     self.assertEqual(row['lib'], 'cusparse')

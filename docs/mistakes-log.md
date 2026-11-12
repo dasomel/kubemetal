@@ -89,6 +89,7 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-11-12 | #84 matrix 증거 복사가 common.h만 포함해 parity.h 의존 프로브를 unavailable로 오판했고, replay는 index/sources 동시 삭제와 로그·index 독립 재봉인을 원본 결과에 대조하지 않았다 | 모든 *.h를 보존·해시하고 .cu 로컬 include에서 누락 회귀를 도출한다. replay는 원본 JSON과 증거/index 해시를 필수 대조한다. CPU fixture의 수정 전 4건 실패로 재현했으며 서명이나 GPU 실측은 아니다 |
 | 2026-07-20 | Bound MLflow to host port 5000 — macOS AirPlay Receiver (ControlCenter) occupies 5000/7000, forwarding silently breaks | Use 5001 (D1); never claim 5000 on macOS |
 | 2026-07-20 | Spec required "powermetrics C-Binding" for GPU metrics — powermetrics is a CLI (no public C API) and requires **root** | Phase 1 ships sysinfo RAM/CPU only; GPU metrics = Phase 3 privileged helper + CLI parsing (D2) |
 | 2026-07-20 | OOM guard triggered on "available RAM < 10%" — macOS file cache keeps RAM near-full at all times, guaranteeing false triggers | Trigger on memory pressure levels (warn/critical) instead (D11) |
@@ -171,6 +172,7 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-11-12 | #84 GPU 실행 금지 레인에서 make verify의 Rust 기본 테스트에 포함된 live_smoke를 사전 점검하지 않아 실제 smoke 호출이 발생했다 | 상위 게이트를 실행하기 전에 opt-in이 아닌 하위 live 테스트를 확인해야 한다. 이번 실행은 3개 workload가 compile/link 후 run exit 10, provenance 없음으로 실패했으며 재실행하지 않고 원시 로그와 제약 위반을 보고한다 |
 | 2026-11-10 | #13 guardrail history 회귀 테스트가 수동 컴파일에만 의존하여 `make test`/`verify`와 CI에서 실행되지 않았다 | 기존 TypeScript로 임시 컴파일하는 `pnpm test:frontend`와 `make test-frontend`를 `test`에 연결한다. 세 Make 진입점의 연결 회귀 검사와 guarded behavior 임시 훼손 시 실패·복원 후 통과를 검증한다. 테스트 파일의 존재만으로 게이트 커버리지를 주장하지 않는다 |
 | 2026-11-12 | #84 SGEMM/FP64/FFT의 `fmax(0, NaN)`이 비유한 오차를 0으로 숨겼고 SGEMM 샘플 밖 NaN도 PASS할 수 있었다 | 공용 순수 host helper로 전체 출력 finite 검사를 먼저 수행하고 비유한 오차·0 분모도 실패시킨다. 기존 reference 범위·정밀도 정책을 유지하며 실패 위치를 기록한다. 실제 helper CPU 주입과 classifier 실패 전파는 GPU corruption 재현과 구별한다 |
 | 2026-11-09 | #84 matrix가 3회 provenance를 합쳐 한 회차의 GPU 증거만으로도 `supported`를 반환했다. 라이브러리는 CPU·실패 launch 증거도 검사하지 않았다 | 회차별 provenance를 보존하고 모든 회차의 GPU·launch·semantic 증거를 판정한다. 누락·CPU·실패 launch·timeout·수치 불일치 합성 fixture로 회귀를 검증한다. 교훈: 반복 실행의 증거는 합집합으로 성공을 증명할 수 없다 |

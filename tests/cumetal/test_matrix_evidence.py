@@ -2,12 +2,14 @@
 import importlib.util
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 MATRIX = ROOT / 'scripts/cumetal/matrix'
@@ -28,6 +30,8 @@ class EvidenceTests(unittest.TestCase):
         self.tool.write_text('''#!/usr/bin/env python3
 import os, pathlib, sys
 if '--version' in sys.argv or 'doctor' in sys.argv:
+    if 'doctor' in sys.argv and 'EVIDENCE_SECRET' in os.environ:
+        print(os.environ['EVIDENCE_SECRET'])
     print('fake tool full diagnostics'); sys.exit(0)
 if os.environ.get('CASE') == 'compile':
     print('full diagnostic ' * 100); sys.exit(2)
@@ -57,7 +61,7 @@ out.chmod(0o700)
 
     def reclassify(self, evidence, target):
         return subprocess.run([sys.executable, '-I', '-B', str(MATRIX / 'classify.py'),
-                               str(evidence), str(target), '3'], env={'PATH': '/nonexistent'},
+                               str(evidence), str(target), '3', '--result', str(self.output)], env={'PATH': '/nonexistent'},
                               capture_output=True, text=True)
 
     def test_outcomes_and_offline_reclassification(self):
@@ -87,6 +91,70 @@ out.chmod(0o700)
                 proc = self.reclassify(evidence, self.root / f'{case}-tampered.json')
                 self.assertNotEqual(proc.returncode, 0)
                 self.assertIn('hash', proc.stderr.lower())
+
+    def test_all_quoted_probe_headers_are_retained_and_hashed(self):
+        self.assertEqual(self.run_matrix().returncode, 0)
+        doc = json.loads(self.output.read_text())
+        retained = self.output.parent / doc['evidence']['directory']
+        includes = set()
+        for source in MATRIX.glob('*.cu'):
+            includes.update(re.findall(r'^\s*#\s*include\s*"([^"\n]+)"', source.read_text(), re.M))
+        self.assertTrue(includes)
+        for header in includes:
+            with self.subTest(header=header):
+                copied = retained / 'manifest/sources' / header
+                self.assertTrue(copied.is_file(), f'missing included header: {header}')
+                self.assertEqual(doc['evidence']['files'][f'manifest/sources/{header}'],
+                                 evidence_module.file_sha256(copied))
+                self.assertIn(header, (retained / 'manifest/sha256.txt').read_text())
+
+    def test_missing_evidence_components_fail_closed(self):
+        for missing in ('directory', 'index_and_sources', 'index', 'indexed_file'):
+            with self.subTest(missing=missing):
+                self.output = self.root / f'{missing}.json'
+                self.assertEqual(self.run_matrix().returncode, 0)
+                doc = json.loads(self.output.read_text())
+                retained = self.output.parent / doc['evidence']['directory']
+                if missing == 'directory':
+                    shutil.rmtree(retained)
+                elif missing == 'indexed_file':
+                    (retained / 'launch_1d/aot.run1.out').unlink()
+                else:
+                    (retained / evidence_module.INDEX).unlink()
+                    if missing == 'index_and_sources':
+                        shutil.rmtree(retained / 'manifest/sources')
+                target = self.root / f'{missing}-replay.json'
+                proc = self.reclassify(retained, target)
+                self.assertNotEqual(proc.returncode, 0, proc.stderr)
+                self.assertFalse(target.exists())
+
+    def test_resealed_log_and_result_digest_mismatch_are_rejected(self):
+        for case in ('resealed_log', 'result_digest'):
+            with self.subTest(case=case):
+                self.output = self.root / f'{case}.json'
+                self.assertEqual(self.run_matrix().returncode, 0)
+                doc = json.loads(self.output.read_text())
+                retained = self.output.parent / doc['evidence']['directory']
+                if case == 'resealed_log':
+                    (retained / 'launch_1d/aot.run1.out').write_text('changed independently')
+                    (retained / evidence_module.INDEX).unlink()
+                    evidence_module.seal(retained, 3, True)
+                else:
+                    doc['evidence']['files'][evidence_module.INDEX] = '0' * 64
+                    self.output.write_text(json.dumps(doc))
+                target = self.root / f'{case}-replay.json'
+                proc = self.reclassify(retained, target)
+                self.assertNotEqual(proc.returncode, 0, proc.stderr)
+                self.assertIn('mismatch', proc.stderr.lower())
+                self.assertFalse(target.exists())
+
+    def test_diagnostics_do_not_capture_inherited_secrets(self):
+        with patch.dict(os.environ, {'EVIDENCE_SECRET': 'PRIVATE_TOKEN_SENTINEL'}):
+            self.assertEqual(self.run_matrix().returncode, 0)
+        retained = next(self.root.glob('*.evidence.*'))
+        for path in retained.rglob('*'):
+            if path.is_file():
+                self.assertNotIn(b'PRIVATE_TOKEN_SENTINEL', path.read_bytes(), str(path))
 
     def test_destination_collision(self):
         for suffix in ('.json', '.md'):

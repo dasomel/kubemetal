@@ -42,9 +42,22 @@ class HostManifestTests(unittest.TestCase):
         self.assertEqual(result['soc'], 'Apple M4 Pro — 테스트')
         self.assertEqual(result['ram_bytes'], 51539607552)
         self.assertEqual(result['gpu_cores'], 20)
+        self.assertEqual(result['product_version'], '27.0.1')
+        self.assertEqual(result['build'], '26A434')
+        self.assertEqual(result['macos'], raw['macos']['stdout'].strip())
         self.assertEqual(result['xcode_version'], 'Xcode 26.0\nBuild version 17A324')
         self.assertFalse(result['errors'])
         self.assertEqual(result['probes'], raw)
+
+    def test_display_serials_and_uuids_are_excluded(self):
+        raw = fixtures()
+        raw['gpu_cores']['stdout'] = json.dumps({'SPDisplaysDataType': [{
+            'sppci_cores': '20', 'serial_number': 'PRIVATE_SERIAL',
+            'nested': {'display_UUID': 'PRIVATE_UUID'}}]})
+        responses = iter(raw.values())
+        result = host.collect('/tool', '/clang', runner=lambda argv: next(responses))
+        self.assertEqual(result['gpu_cores'], 20)
+        self.assertNotIn('PRIVATE_', json.dumps(result))
 
     def test_clt_is_never_xcode(self):
         for output, rc in (('Apple clang version 17.0.0', 0),
@@ -83,13 +96,15 @@ class HostManifestTests(unittest.TestCase):
             raw['ram_bytes'] = probe(value)
             self.assertIsNone(host.interpret(raw)['ram_bytes'])
         for value in ('{}', 'not json', '{"SPDisplaysDataType": []}',
-                      '{"SPDisplaysDataType": [{}, {}]}', '{"SPDisplaysDataType": [null]}'):
+                      '{"SPDisplaysDataType": [{}, {}]}', '{"SPDisplaysDataType": [null]}', '{"SPDisplaysDataType": [{}]}'):
             raw = fixtures()
             raw['gpu_cores'] = probe(value)
             self.assertIsNone(host.interpret(raw)['gpu_cores'])
 
     def test_macos_requires_version_and_build_and_numeric_gpu_is_valid(self):
-        for output in ('ProductName: macOS', 'ProductVersion: 27.0.1'):
+        for output in ('ProductName: macOS', 'ProductVersion: 27.0.1',
+                       'ProductVersion: \nBuildVersion: 26A434',
+                       'ProductVersion: 27.0.1\nBuildVersion: '):
             raw = fixtures()
             raw['macos'] = probe(output)
             self.assertIsNone(host.interpret(raw)['macos'])
@@ -105,6 +120,9 @@ class HostManifestTests(unittest.TestCase):
             self.assertEqual(result['stderr'], 'diagnostic')
             self.assertTrue(result['error'])
             self.assertEqual(run.call_args.kwargs['timeout'], 0.1)
+            self.assertEqual(run.call_args.kwargs['env'],
+                             {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'LC_ALL': 'C'})
+            self.assertFalse(run.call_args.kwargs.get('shell', False))
         with patch.object(host.subprocess, 'run', side_effect=FileNotFoundError('missing')):
             result = host.run_probe(['missing'])
             self.assertIsNone(result['returncode'])
@@ -136,13 +154,14 @@ class HostManifestTests(unittest.TestCase):
     def test_classifier_links_raw_manifest_and_legacy_brand(self):
         import test_matrix_classifier as classifier_fixture
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / 'manifest').mkdir()
+            root = Path(directory) / 'raw'
+            (root / 'manifest').mkdir(parents=True)
             observed = host.interpret(fixtures())
             (root / 'manifest/host.json').write_text(json.dumps(observed))
             (root / 'manifest/env.txt').write_text('hw_model=old brand\n')
-            target = root / 'result.json'
-            classifier_fixture.classifier.main(str(root), str(target), 3)
+            target = Path(directory) / 'result.json'
+            classifier_fixture.classifier.evidence.seal(root, 3, True)
+            classifier_fixture.classifier.main(str(root), str(target), 3, initial=True)
             result = json.loads(target.read_text())
             self.assertEqual(result['manifest']['host'], observed)
             self.assertEqual(result['manifest']['hw_model'], observed['soc'])

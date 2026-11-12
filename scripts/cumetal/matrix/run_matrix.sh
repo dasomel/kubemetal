@@ -56,11 +56,13 @@ mkdir -p "$WORK/manifest"
 {
   echo "date_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "prefix=$PREFIX"
-  echo "doctor_rc=$(t 120 "$CUMETAL" doctor >"$WORK/manifest/doctor.log" 2>&1 && echo 0 || echo $?)"
+  # doctor captures architecture/OS, component paths and tool availability, not env dumps.
+  # Isolate it from inherited secrets; home paths in diagnostics are acceptable.
+  echo "doctor_rc=$(t 120 /usr/bin/env -i HOME="$HOME" PATH="$PATH" LC_ALL=C "$CUMETAL" doctor >"$WORK/manifest/doctor.log" 2>&1 && echo 0 || echo $?)"
 } >"$WORK/manifest/env.txt"
 "$PY" -I -B "$HERE/host_manifest.py" "$WORK/manifest/host.json" --cumetal "$CUMETAL" --clang "$CLANGXX"
 mkdir "$WORK/manifest/sources"
-cp "$HERE/common.h" "$HERE/run_matrix.sh" "$HERE/classify.py" "$HERE/evidence.py" "$HERE/host_manifest.py" "$HERE/"*.cu "$WORK/manifest/sources/"
+cp "$HERE/"*.h "$HERE/run_matrix.sh" "$HERE/classify.py" "$HERE/evidence.py" "$HERE/host_manifest.py" "$HERE/"*.cu "$WORK/manifest/sources/"
 ( cd "$WORK/manifest/sources" && /usr/bin/shasum -a 256 ./* ) >"$WORK/manifest/sha256.txt"
 
 for spec in "${PROBES[@]}"; do
@@ -91,5 +93,5 @@ for spec in "${PROBES[@]}"; do
 done
 
 "$PY" -I -B "$HERE/evidence.py" "$WORK" "$REPEATS" complete
-"$PY" -I -B "$HERE/classify.py" "$WORK" "$OUT_JSON" "$REPEATS"
+"$PY" -I -B "$HERE/classify.py" "$WORK" "$OUT_JSON" "$REPEATS" --initial
 echo "wrote $OUT_JSON" >&2
