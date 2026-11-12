@@ -576,7 +576,8 @@ SGEMM 512², warm-up 2 + 측정 5회, 한 프로세스. 두 경로 모두 parity
 `evidence.directory`는 결과 파일 기준 상대 경로이며 `evidence.files`는 각 파일의
 상대 경로와 SHA256이다. 결과와 증거 디렉터리를 함께 전달한다. 전체 doctor 로그와
 종료 코드, AOT/JIT 컴파일 진단·rc, 성공 stdout을 포함한 매 회차 출력·rc·원시
-provenance, manifest, 프로브 및 runner/classifier 소스와 해시를 보존한다.
+provenance, manifest, 모든 `*.h` 헤더·프로브 및 runner/classifier 소스와 해시를 보존한다.
+회귀 테스트는 `.cu`의 `#include "..."`를 스캔해 복사·해시 목록의 헤더 누락을 거부한다.
 실행 바이너리와 object는 별도 임시 디렉터리에만 생성하고 종료 시 삭제한다.
 다운로드·앱 파일 접근·TTL·증거 자동 삭제는 없다. 수신자가 보관 용량을 관리한다.
 
@@ -584,14 +585,18 @@ provenance, manifest, 프로브 및 runner/classifier 소스와 해시를 보존
 반면 보존 실패·중단·중복 probe 등 부분 실행은 성공 메시지 없이 비정상 종료하며,
 남은 증거는 `complete=false`로 표시한다. 기존 JSON/Markdown 목적지는 덮어쓰지 않는다.
 재분류는 저장 목록과 모든 SHA256을 먼저 검사하며 변조·누락·추가 파일, symlink,
-부분 실행, 반복 횟수 불일치를 거부한다. 해시는 무결성 검사이며 서명/진위 보증은 아니다.
-과거 index 없는 fixture 형식은 호환 유지하지만 새 runner 증거의 index 누락은 거부한다.
+부분 실행, 반복 횟수 불일치를 거부한다. 재분류에는 `--result <원본.json>`이 필수이며,
+원본 결과의 디렉터리·index 경로·파일별 SHA256·index SHA256과 대조한다. 증거 디렉터리나
+index와 sources가 모두 사라져도 검증을 생략하지 않는다. index 없는 옛 fixture도 CLI에서 거부한다.
+`--initial`은 runner가 새로 봉인한 증거의 최초 분류용이며 원본 결과에 대한 재검증이 아니다.
+D44 범위: 이 결속은 결과 JSON에 대한 증거의 독립적/우발적 변경(로그 수정 후 index 재봉인 포함)을
+탐지한다. 서명이 아니므로 결과 JSON과 증거를 함께 다시 쓰는 공격자는 범위 밖이다.
 
 ```bash
 # GPU 유휴 상태에서 오케스트레이터만 실행 (이 구현 레인은 실행하지 않음)
 bash scripts/cumetal/matrix/run_matrix.sh /tmp/matrix-84.json launch_1d
 # 이후 CuMetal/clang/Metal 없이도 실행 가능. 실제 생성된 디렉터리 이름을 지정한다.
-/usr/bin/python3 -I -B scripts/cumetal/matrix/classify.py /tmp/matrix-84.json.evidence.XXXXXX /tmp/reclassified-84.json 3
+/usr/bin/python3 -I -B scripts/cumetal/matrix/classify.py /tmp/matrix-84.json.evidence.XXXXXX /tmp/reclassified-84.json 3 --result /tmp/matrix-84.json
 ```
 
 `tests/cumetal/test_matrix_evidence.py`는 실제 shell/classifier에 CPU fake tool을
@@ -602,7 +607,10 @@ bash scripts/cumetal/matrix/run_matrix.sh /tmp/matrix-84.json launch_1d
 
 ## #84 matrix 호스트 식별 manifest (smoke 범위 제외)
 
-`host_manifest.py`는 고정된 읽기 전용 명령을 각각 최대 5초, `LC_ALL=C`로 실행한다.
+`host_manifest.py`는 고정된 읽기 전용 명령을 각각 최대 5초, `LC_ALL=C`와 고정 PATH로
+shell 없이 실행한다. 자식 환경은 PATH/LC_ALL만 허용하며 환경 변수 덤프를 저장하지 않는다.
+`doctor.log`는 CuMetal doctor의 OS/아키텍처·설치 구성요소 경로·도구 가용성 진단만 담는다.
+doctor에도 HOME/PATH/LC_ALL만 전달한다. 홈 디렉터리 경로는 포함될 수 있다.
 `manifest/host.json` 원문·종료 코드·argv·수집/파싱 오류를 원시 증거 해시 목록에 포함하고,
 분류 결과의 `manifest.host`에 연결한다. 수집 필드는 다음과 같다.
 
@@ -612,11 +620,12 @@ bash scripts/cumetal/matrix/run_matrix.sh /tmp/matrix-84.json launch_1d
 | `soc` | `sysctl -n machdep.cpu.brand_string` |
 | `ram_bytes` | `sysctl -n hw.memsize` (양의 정수 bytes) |
 | `gpu_cores` | `system_profiler SPDisplaysDataType -detailLevel mini -json`의 단일 GPU `sppci_cores` |
-| `macos` | `sw_vers`의 버전과 build |
+| `macos`, `product_version`, `build` | `sw_vers` 원문과 파싱한 ProductVersion/BuildVersion |
 | `xcode_version` | `xcodebuild -version`의 Xcode 버전과 build |
 | `cumetal_version`, `llvm_clang`, `xcrun_clang`, `metal_version` | 해당 tool의 전체 원시 `--version` 출력과 첫 줄 식별값 |
 
-개인 정보를 제외하는 mini displays 조회만 사용하며 하드웨어 serial/UUID 조회는 하지 않는다.
+mini displays 조회만 사용하며 하드웨어 serial/UUID 조회는 하지 않는다. displays JSON의
+serial/UUID 키는 중첩 위치에서도 제거하며, JSON 파싱 실패 시 원문 대신 명시적 오류를 기록한다.
 누락·비정상 종료·timeout·빈 출력·잘못된 RAM/GPU 정수·복수 GPU는 해당 값을 `null`로 두고
 `errors`에 이유를 기록한다. timeout은 종료 코드를 추정하지 않고 `returncode=null`로 두며
 가능한 부분 stdout/stderr를 보존한다. 수집기가 JSON을 썼다는 것은 장비/toolchain 정상
@@ -641,3 +650,5 @@ Metal 32023.922를 수집했으며 `errors={}`였다. sysctl 3종·system_profil
 `tests/cumetal/test_host_manifest.py`의 형식·CLT-only·누락/timeout·malformed·Unicode·별칭
 회귀는 기존 Python discover를 통해 `make test`/`make verify`에 포함된다.
 이 변경은 **matrix만** 보강한다. D51 smoke manifest와 그 하드웨어 AC는 미완료로 남긴다.
+
+#84 리뷰 수정의 검증은 CPU fixture/오프라인 재분류에 한정한다. 이 변경에서 GPU 실측을 추가하지 않았다.

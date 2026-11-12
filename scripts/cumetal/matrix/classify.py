@@ -1,7 +1,9 @@
 """Classify retained Phase 2 evidence without inferring unobserved GPU execution."""
+import argparse
 import collections
 import json
 import os
+from pathlib import Path
 import re
 import sys
 
@@ -118,10 +120,24 @@ def classify_path(d, path, kernel_probe, repeats=3):
     r["class"] = "supported" if not blocking else "partial"
     return r
 
-def main(work, out_json, repeats):
-    retained = None
-    if os.path.exists(f"{work}/{evidence.INDEX}") or os.path.isdir(f"{work}/manifest/sources"):
-        retained = evidence.verify(work, repeats)
+def main(work, out_json, repeats, original_result=None, initial=False):
+    # D22/D44: replay is bound to the original result, even if all evidence vanished.
+    # Cost: callers must retain/pass that JSON. This detects independent/accidental
+    # changes, not forgery by someone rewriting both; signatures are out of scope.
+    if initial == (original_result is not None):
+        raise ValueError('choose initial classification or replay with original result JSON')
+    retained = evidence.verify(work, repeats)
+    if original_result is not None:
+        original_path = Path(original_result).resolve()
+        original = json.loads(original_path.read_text())
+        declared = original.get('evidence')
+        if not isinstance(declared, dict) or declared.get('index') != evidence.INDEX:
+            raise ValueError('original result must declare evidence index and hashes')
+        if (original_path.parent / declared['directory']).resolve() != Path(work).resolve():
+            raise ValueError('original result evidence directory mismatch')
+        actual = {**retained['files'], evidence.INDEX: evidence.file_sha256(Path(work) / evidence.INDEX)}
+        if original.get('repeats') != repeats or declared.get('files') != actual:
+            raise ValueError('original result evidence digest/inventory mismatch')
     md = out_json[:-5] + ".md" if out_json.endswith(".json") else out_json + ".md"
     if retained and (os.path.exists(out_json) or os.path.exists(md)):
         raise FileExistsError("destination exists")
@@ -192,4 +208,12 @@ def main(work, out_json, repeats):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2], int(sys.argv[3]))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('work')
+    parser.add_argument('output')
+    parser.add_argument('repeats', type=int)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument('--initial', action='store_true', help='first classification of freshly sealed evidence')
+    mode.add_argument('--result', help='original result JSON required for verified replay')
+    args = parser.parse_args()
+    main(args.work, args.output, args.repeats, args.result, args.initial)
