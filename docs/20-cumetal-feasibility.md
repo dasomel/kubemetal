@@ -652,3 +652,14 @@ Metal 32023.922를 수집했으며 `errors={}`였다. sysctl 3종·system_profil
 이 변경은 **matrix만** 보강한다. D51 smoke manifest와 그 하드웨어 AC는 미완료로 남긴다.
 
 #84 리뷰 수정의 검증은 CPU fixture/오프라인 재분류에 한정한다. 이 변경에서 GPU 실측을 추가하지 않았다.
+
+**실측 (measured-local, 2026-11-12, 오케스트레이터 실행):** 증거 보존·호스트 manifest를 넣은 뒤 `run_matrix.sh` 전체 15종을 실행했다.
+- 분류는 이전과 같다(경로별 supported 20 / partial 10). 증거 디렉터리에 파일 281개가 색인됐다.
+- 호스트 manifest: `Mac16,11`, `Apple M4 Pro`, GPU 20코어, RAM 68719476736 bytes, macOS 27.0.1 (26A434), Xcode 27.2 (27B52),
+  CuMetal 0.7.1, Homebrew clang 23.1.5, Apple metal 32023.922. `errors`는 비어 있었다.
+- 저장된 증거로 `classify.py … --result <원본.json>` 재분류: 30개 판정이 원본과 모두 일치.
+- 변조 확인(복사본에서): 로그 한 줄 추가 → `evidence hash/inventory mismatch`로 거부, 색인 삭제 → 거부, 증거 디렉터리 없음 → 거부.
+  세 경우 모두 exit 1이고 출력 JSON을 쓰지 않았다.
+- 수집 내용 확인: 디스플레이 probe에 serial·UUID·MAC 키 없음(`-detailLevel mini`), 증거 전체에 토큰·환경변수 덤프 없음.
+  다른 Mac에서 `system_profiler`가 추가 식별자를 내는지는 미검증이다.
+- 리뷰가 재현한 결함: 이 수정 전에는 증거용 소스 복사에서 `parity.h`가 빠져 SGEMM이 `unavailable`이 됐다(실측). 단위 테스트는 통과하고 있었다.
