@@ -1,7 +1,10 @@
+use super::directory::open_root;
 use super::*;
 use crate::commands::modelhub::list_local_models_at;
 use crate::services::model_download::{download, Attempt};
 use std::collections::HashSet;
+use std::fs;
+use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::PathBuf;
 
@@ -215,3 +218,5 @@ async fn replacing_a_registered_path_is_not_an_active_attempt() {
     assert_eq!(report.entries[0].state, "unknown");
     assert_eq!(report.entries[0].size_bytes, Some(0));
 }
+
+mod review;

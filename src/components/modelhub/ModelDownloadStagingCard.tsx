@@ -25,7 +25,9 @@ export const ModelDownloadStagingCard: React.FC<Props> = ({ inventory, error, on
         {partial && <p role="alert" className="text-caption text-warning">{t('modelhub.staging.partial')}</p>}
         {inventory.truncated && <p role="alert" className="text-caption text-warning">{t('modelhub.staging.truncated')}</p>}
         {inventory.errors.map((detail, index) => <p key={index} className="text-caption text-danger break-all">{detail}</p>)}
-        {inventory.entries.length === 0 && !partial && !inventory.truncated && <p className="text-caption text-inkMuted">{t('modelhub.staging.empty')}</p>}
+        {inventory.state === 'not_created' && <p className="text-caption text-inkMuted">{t('modelhub.staging.notCreated')}</p>}
+        {inventory.state === 'unknown' && <p role="alert" className="text-caption text-warning">{t('modelhub.staging.rootUnknown')}</p>}
+        {inventory.state === 'observed' && inventory.entries.length === 0 && !partial && !inventory.truncated && <p className="text-caption text-inkMuted">{t('modelhub.staging.empty')}</p>}
         {inventory.entries.map(entry => (
           <div key={entry.id} className="rounded-lg bg-surfaceRaised p-3 space-y-1">
             <p className="text-bodyStrong text-ink break-all">{entry.id}</p>
