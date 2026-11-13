@@ -86,11 +86,10 @@ time and peak unified-memory stay `null` unless a trustworthy source exists.
   `host.thermal_unavailable_reason` explicitly documents why CLI tools cannot supply the state.
 - **Diagnostic isolation**: The raw stdout from `pmset -g therm` is decoupled from `thermal_state`
   and preserved under `diagnostics.pmset_therm` (and `host.diagnostics.pmset_therm`) for advisory context.
-- **IPC telemetry extension contract**: When the benchmark is invoked within or receives telemetry from
-  the KubeMetal desktop app IPC (`get_guardrail_status` / `get_system_metrics`), `host.thermal_state`
-  may record the verified stage (`nominal` | `fair` | `serious` | `critical`) with an explicit
-  `host.thermal_source` (e.g. `app_ipc`) and timestamp. Standalone benchmark execution does not
-  fabricate a bridge/helper or invent this value.
+- **No IPC injection path yet**: the standalone benchmark has no way to receive the app's
+  `NSProcessInfo.thermalState`. A pass-through parameter was removed in review because it would have
+  recorded an unvalidated, untimestamped caller value as measured. Wiring real, validated app telemetry is
+  future work; until then `host.thermal_state` is always `null` with a reason.
 - **Distinction between historical and new evidence JSON**:
   - *Historical evidence* (`evidence/local-inference/20260906-ondevice/*.json`): preserved verbatim
     under evidence immutability rules. These files carry the raw multi-line `pmset -g therm` diagnostic

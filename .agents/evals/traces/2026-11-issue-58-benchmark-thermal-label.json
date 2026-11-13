@@ -18,7 +18,7 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Read AGENTS.md, mistakes log, D2/D22, scripts/mlx/benchmark_local_inference.py and docs/12 §4. Approved slice A4 (Issue #58) only: standalone thermal_state is null with source/unavailable_reason, isolate raw pmset text into diagnostics.pmset_therm; document IPC telemetry extension and historical evidence distinction. No new IPC, no bridge helper, no GPU/cluster live run, no edits outside worktree."
+      "summary": "Read AGENTS.md, mistakes log, D2/D22, scripts/mlx/benchmark_local_inference.py and docs/12 §4. Approved slice A4 (Issue #58) only: standalone thermal_state is null with source/unavailable_reason, isolate raw pmset text into diagnostics.pmset_therm; document no injection path (removed in review) and historical evidence distinction. No new IPC, no bridge helper, no GPU/cluster live run, no edits outside worktree."
     },
     {
       "id": "e2",
@@ -32,14 +32,14 @@
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Added collect_thermal_metadata and collect_host_metadata in benchmark_local_inference.py: standalone thermal_state is null, thermal_source is null, thermal_unavailable_reason documents CLI absence (D2/D22); raw pmset output is isolated under diagnostics.pmset_therm (and host.diagnostics.pmset_therm). Documented IPC extension path and historical evidence preservation in docs/12 §4. Added mistakes-log row."
+      "summary": "Added collect_thermal_metadata and collect_host_metadata in benchmark_local_inference.py: standalone thermal_state is null, thermal_source is null, thermal_unavailable_reason documents CLI absence (D2/D22); raw pmset output is isolated under diagnostics.pmset_therm (and host.diagnostics.pmset_therm). Documented the absence of an IPC injection path and historical evidence preservation in docs/12 §4. Added mistakes-log row."
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
       "scope": "tests/mlx test suite including 8 new metadata and consumer compatibility tests",
-      "summary": "All 31 mlx tests passed (8 new tests covering real host null check, missing CLI, timeout, empty string, advisory warning string, JSON consumer unknown mapping, legacy consumer compatibility, and IPC extension contract).",
+      "summary": "All 31 mlx tests passed (8 new tests covering real host null check, missing CLI, timeout, empty string, advisory warning string, JSON consumer unknown mapping, legacy consumer compatibility, andno-injection contract).",
       "evidence": [
         "test:python3 -B -m unittest discover -s tests/mlx -v: exit 0; Ran 31 tests in 0.861s; OK",
         "runtime:python3 -c benchmark_local_inference.collect_host_metadata(): verified on-device Apple M4 Pro emitted thermal_state=null, thermal_source=null, thermal_unavailable_reason populated, and diagnostics.pmset_therm preserved"
