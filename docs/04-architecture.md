@@ -296,6 +296,8 @@ GB 이름의 IPC 메모리 값은 실제 구현의 1024 기반 GiB다. 없는 �
 분류하며 원문의 0은 보존한다. 양수 부분 전송 counter는 유지한다. GPU UUID/전력 값은 생성하지 않는다. storage의 environment,
 status/errors, buffered-I/O/OS cache/fsync 한계는 원문과 limitations에 그대로 남는다.
 검증 성공은 hash/구조 일치만 뜻하며 서명·출처 인증·측정 성공을 보증하지 않는다.
+`--manifest` 없이 verify하면 봉투 안의 hash·구조만 대조하므로 top-level limitations나 호출자 메타데이터가
+바뀌어도 탐지하지 못한다 — 원본 manifest와 함께 검증할 때만 그 차이를 잡는다(서명 없음, D44).
 manifest의 run/workload ID, 장치명·버전·시각은 호출자 제공 정보이며 독립 검증하지 않는다.
 hardware/metrics가 있으면 장치명/backend의 일치도 검사한다. raw JSON에는 로컬 경로 등
 민감 정보가 포함될 수 있으므로 외부 공유 여부는 호출자가 결정한다.
