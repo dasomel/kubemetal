@@ -1,28 +1,36 @@
-# Execution Summary (Helm Chart & CRD Probe)
+# Recorded execution evidence
 
-| Command | Return Code | Stdout (bytes) | Stderr (bytes) |
-|---------|-------------|----------------|----------------|
-| `helm show chart oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds --version 0.9.12` | 0 | 346 | 138 |
-| `helm show values oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds --version 0.9.12` | 0 | 432 | 138 |
-| `helm show crds oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds --version 0.9.12` | 0 | 0 | 138 |
-| `helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds --version 0.9.12 --destination /tmp/kagent-chart-probe` | 0 | 138 | 0 |
-| `helm template km-r4 oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds --version 0.9.12 --namespace kagent --include-crds` | 0 | 2231566 | 138 |
-| `helm template km-r4 oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds --version 0.9.12 --namespace kagent --include-crds -f /Users/m/Documents/IdeaProjects/20.dasomel/kubemetal-t4-v4/scripts/helm/kagent-values.yaml` | 0 | 2231566 | 138 |
-| `helm show chart oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 0.9.12` | 0 | 2061 | 133 |
-| `helm show values oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 0.9.12` | 0 | 27925 | 133 |
-| `helm show crds oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 0.9.12` | 0 | 0 | 133 |
-| `helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 0.9.12 --destination /tmp/kagent-chart-probe` | 0 | 133 | 0 |
-| `helm template km-r4 oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 0.9.12 --namespace kagent --include-crds` | 0 | 158042 | 133 |
-| `helm template km-r4 oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 0.9.12 --namespace kagent --include-crds -f /Users/m/Documents/IdeaProjects/20.dasomel/kubemetal-t4-v4/scripts/helm/kagent-values.yaml` | 0 | 60586 | 133 |
-| `helm show chart oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds --version 1.0.0-alpha17` | 0 | 189 | 145 |
-| `helm show values oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds --version 1.0.0-alpha17` | 0 | 36 | 145 |
-| `helm show crds oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds --version 1.0.0-alpha17` | 0 | 0 | 145 |
-| `helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds --version 1.0.0-alpha17 --destination /tmp/kagent-chart-probe` | 0 | 145 | 0 |
-| `helm template km-r4 oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds --version 1.0.0-alpha17 --namespace kagent --include-crds` | 0 | 146848 | 145 |
-| `helm template km-r4 oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds --version 1.0.0-alpha17 --namespace kagent --include-crds -f /Users/m/Documents/IdeaProjects/20.dasomel/kubemetal-t4-v4/scripts/helm/kagent-values.yaml` | 0 | 146848 | 145 |
-| `helm show chart oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 1.0.0-alpha17` | 0 | 600 | 140 |
-| `helm show values oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 1.0.0-alpha17` | 0 | 38310 | 140 |
-| `helm show crds oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 1.0.0-alpha17` | 0 | 0 | 140 |
-| `helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 1.0.0-alpha17 --destination /tmp/kagent-chart-probe` | 0 | 140 | 0 |
-| `helm template km-r4 oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 1.0.0-alpha17 --namespace kagent --include-crds` | 0 | 42224 | 140 |
-| `helm template km-r4 oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 1.0.0-alpha17 --namespace kagent --include-crds -f /Users/m/Documents/IdeaProjects/20.dasomel/kubemetal-t4-v4/scripts/helm/kagent-values.yaml` | 0 | 38529 | 140 |
+[measured — see the linked files below] This index hashes the current committed outputs; it does not rerun or independently authenticate the historic commands. Historic exact argv is not recoverable from stdout/rc alone. Fresh exact argv capture [pending probe].
+
+[measured — see sha256sums.txt] The saved archive SHA256 list records four tgz hashes. Archives are not committed, so matching those hashes to fresh downloads [pending probe].
+
+| Saved command stem | rc file (value) | stdout (SHA256) | stderr (SHA256) |
+|---|---|---|---|
+| `kagent-crds_0_9_12_pull` | [0](kagent-crds_0_9_12_pull.rc.txt) | [6e1afaddae17d3cce35b4c07695ca107487e93a43e3974762c166f7a3040686c](kagent-crds_0_9_12_pull.stdout.txt) | [e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855](kagent-crds_0_9_12_pull.stderr.txt) |
+| `kagent-crds_0_9_12_show_chart` | [0](kagent-crds_0_9_12_show_chart.rc.txt) | [a56470cfc781e3df5a0613000669840bc158273c3e417900a0546d1061bcf7b9](kagent-crds_0_9_12_show_chart.stdout.txt) | [6e1afaddae17d3cce35b4c07695ca107487e93a43e3974762c166f7a3040686c](kagent-crds_0_9_12_show_chart.stderr.txt) |
+| `kagent-crds_0_9_12_show_crds` | [0](kagent-crds_0_9_12_show_crds.rc.txt) | [e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855](kagent-crds_0_9_12_show_crds.stdout.txt) | [6e1afaddae17d3cce35b4c07695ca107487e93a43e3974762c166f7a3040686c](kagent-crds_0_9_12_show_crds.stderr.txt) |
+| `kagent-crds_0_9_12_show_values` | [0](kagent-crds_0_9_12_show_values.rc.txt) | [eb072c9bdee94b7d156370b68b4c850f7ea5c3c15c5b81fd51e8517ca78abda4](kagent-crds_0_9_12_show_values.stdout.txt) | [6e1afaddae17d3cce35b4c07695ca107487e93a43e3974762c166f7a3040686c](kagent-crds_0_9_12_show_values.stderr.txt) |
+| `kagent-crds_0_9_12_template_custom_values` | [0](kagent-crds_0_9_12_template_custom_values.rc.txt) | [96ba8d52b5b378b4af31340411a3e0bb045aca434eecf4e59e49f81201b04ce5](kagent-crds_0_9_12_template_custom_values.stdout.txt) | [6e1afaddae17d3cce35b4c07695ca107487e93a43e3974762c166f7a3040686c](kagent-crds_0_9_12_template_custom_values.stderr.txt) |
+| `kagent-crds_0_9_12_template_default` | [0](kagent-crds_0_9_12_template_default.rc.txt) | [96ba8d52b5b378b4af31340411a3e0bb045aca434eecf4e59e49f81201b04ce5](kagent-crds_0_9_12_template_default.stdout.txt) | [6e1afaddae17d3cce35b4c07695ca107487e93a43e3974762c166f7a3040686c](kagent-crds_0_9_12_template_default.stderr.txt) |
+| `kagent-crds_1_0_0_alpha17_pull` | [0](kagent-crds_1_0_0_alpha17_pull.rc.txt) | [fb05ee42b964e3de5b583a9701217038a021f6785ca56e92d2ccfc32d9fbde7e](kagent-crds_1_0_0_alpha17_pull.stdout.txt) | [e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855](kagent-crds_1_0_0_alpha17_pull.stderr.txt) |
+| `kagent-crds_1_0_0_alpha17_show_chart` | [0](kagent-crds_1_0_0_alpha17_show_chart.rc.txt) | [f181e21fd3bc5888174d43f58b5609f215a81acfe02ed9bc750184d268f6280b](kagent-crds_1_0_0_alpha17_show_chart.stdout.txt) | [fb05ee42b964e3de5b583a9701217038a021f6785ca56e92d2ccfc32d9fbde7e](kagent-crds_1_0_0_alpha17_show_chart.stderr.txt) |
+| `kagent-crds_1_0_0_alpha17_show_crds` | [0](kagent-crds_1_0_0_alpha17_show_crds.rc.txt) | [e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855](kagent-crds_1_0_0_alpha17_show_crds.stdout.txt) | [fb05ee42b964e3de5b583a9701217038a021f6785ca56e92d2ccfc32d9fbde7e](kagent-crds_1_0_0_alpha17_show_crds.stderr.txt) |
+| `kagent-crds_1_0_0_alpha17_show_values` | [0](kagent-crds_1_0_0_alpha17_show_values.rc.txt) | [dad4571069b667c7512ea49f773f35e01f31b3c9a443a571dca4635575822617](kagent-crds_1_0_0_alpha17_show_values.stdout.txt) | [fb05ee42b964e3de5b583a9701217038a021f6785ca56e92d2ccfc32d9fbde7e](kagent-crds_1_0_0_alpha17_show_values.stderr.txt) |
+| `kagent-crds_1_0_0_alpha17_template_custom_values` | [0](kagent-crds_1_0_0_alpha17_template_custom_values.rc.txt) | [437f4904dbfb5133078975ca0ff1b9cde6448b93b0a56121dab7eb431bf5d0ab](kagent-crds_1_0_0_alpha17_template_custom_values.stdout.txt) | [fb05ee42b964e3de5b583a9701217038a021f6785ca56e92d2ccfc32d9fbde7e](kagent-crds_1_0_0_alpha17_template_custom_values.stderr.txt) |
+| `kagent-crds_1_0_0_alpha17_template_default` | [0](kagent-crds_1_0_0_alpha17_template_default.rc.txt) | [437f4904dbfb5133078975ca0ff1b9cde6448b93b0a56121dab7eb431bf5d0ab](kagent-crds_1_0_0_alpha17_template_default.stdout.txt) | [fb05ee42b964e3de5b583a9701217038a021f6785ca56e92d2ccfc32d9fbde7e](kagent-crds_1_0_0_alpha17_template_default.stderr.txt) |
+| `kagent_0_9_12_pull` | [0](kagent_0_9_12_pull.rc.txt) | [0098929c5a9602970b5d026941adf431ea4c19f862ccb2a038a46ce5e93bc191](kagent_0_9_12_pull.stdout.txt) | [e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855](kagent_0_9_12_pull.stderr.txt) |
+| `kagent_0_9_12_show_chart` | [0](kagent_0_9_12_show_chart.rc.txt) | [650799f231f9a6bdc1be040a915237f5e929a50e474092913c81a6d7f7dbcf9a](kagent_0_9_12_show_chart.stdout.txt) | [0098929c5a9602970b5d026941adf431ea4c19f862ccb2a038a46ce5e93bc191](kagent_0_9_12_show_chart.stderr.txt) |
+| `kagent_0_9_12_show_crds` | [0](kagent_0_9_12_show_crds.rc.txt) | [e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855](kagent_0_9_12_show_crds.stdout.txt) | [0098929c5a9602970b5d026941adf431ea4c19f862ccb2a038a46ce5e93bc191](kagent_0_9_12_show_crds.stderr.txt) |
+| `kagent_0_9_12_show_values` | [0](kagent_0_9_12_show_values.rc.txt) | [fe1e2bef28267ca83a2c38d5f330b9917f0612898f78759409ec2eb2c5143ab7](kagent_0_9_12_show_values.stdout.txt) | [0098929c5a9602970b5d026941adf431ea4c19f862ccb2a038a46ce5e93bc191](kagent_0_9_12_show_values.stderr.txt) |
+| `kagent_0_9_12_template_custom_values` | [0](kagent_0_9_12_template_custom_values.rc.txt) | [6eabe7d7a8e4654dc69d9d3c45e22ff4023d325561e9abb70cca43b5fafbf82d](kagent_0_9_12_template_custom_values.stdout.txt) | [0098929c5a9602970b5d026941adf431ea4c19f862ccb2a038a46ce5e93bc191](kagent_0_9_12_template_custom_values.stderr.txt) |
+| `kagent_0_9_12_template_default` | [0](kagent_0_9_12_template_default.rc.txt) | [4b24a4336e1b605c3f675be9d9d28dc7798b6a9adcd0cfaca6164bb5fbc2f7a4](kagent_0_9_12_template_default.stdout.txt) | [0098929c5a9602970b5d026941adf431ea4c19f862ccb2a038a46ce5e93bc191](kagent_0_9_12_template_default.stderr.txt) |
+| `kagent_1_0_0_alpha17_pull` | [0](kagent_1_0_0_alpha17_pull.rc.txt) | [392c1509efff838203092ebdbad0f66a060e503643b57cbe56220373c8934c72](kagent_1_0_0_alpha17_pull.stdout.txt) | [e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855](kagent_1_0_0_alpha17_pull.stderr.txt) |
+| `kagent_1_0_0_alpha17_show_chart` | [0](kagent_1_0_0_alpha17_show_chart.rc.txt) | [14b241f26b266fe2a97c588024ab7d8ddff9807014467818823c77b37860a441](kagent_1_0_0_alpha17_show_chart.stdout.txt) | [392c1509efff838203092ebdbad0f66a060e503643b57cbe56220373c8934c72](kagent_1_0_0_alpha17_show_chart.stderr.txt) |
+| `kagent_1_0_0_alpha17_show_crds` | [0](kagent_1_0_0_alpha17_show_crds.rc.txt) | [e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855](kagent_1_0_0_alpha17_show_crds.stdout.txt) | [392c1509efff838203092ebdbad0f66a060e503643b57cbe56220373c8934c72](kagent_1_0_0_alpha17_show_crds.stderr.txt) |
+| `kagent_1_0_0_alpha17_show_values` | [0](kagent_1_0_0_alpha17_show_values.rc.txt) | [15645d227d7cf4a4956586da9a354ef1bf92d83c13fa5f7e965aecc2f05208f8](kagent_1_0_0_alpha17_show_values.stdout.txt) | [392c1509efff838203092ebdbad0f66a060e503643b57cbe56220373c8934c72](kagent_1_0_0_alpha17_show_values.stderr.txt) |
+| `kagent_1_0_0_alpha17_template_custom_values` | [0](kagent_1_0_0_alpha17_template_custom_values.rc.txt) | [7600c2e212cd3fc3c3a55378585fffb544bf6236dcb2368dae7e0f631cb56849](kagent_1_0_0_alpha17_template_custom_values.stdout.txt) | [392c1509efff838203092ebdbad0f66a060e503643b57cbe56220373c8934c72](kagent_1_0_0_alpha17_template_custom_values.stderr.txt) |
+| `kagent_1_0_0_alpha17_template_default` | [0](kagent_1_0_0_alpha17_template_default.rc.txt) | [47213992a8eb023ca356d6187cbebd22f3d862673bdcbe06a5b0f1a95d7fc20b](kagent_1_0_0_alpha17_template_default.stdout.txt) | [392c1509efff838203092ebdbad0f66a060e503643b57cbe56220373c8934c72](kagent_1_0_0_alpha17_template_default.stderr.txt) |
+
+[pending probe] Run `bash evidence/kagent/round4-chart/probe.sh evidence/kagent/round4-chart/host-probe 0.9.12 1.0.0-alpha17` with Helm, network access and an existing PyYAML installation. OUTPUT_DIR must be fresh. The probe records bounded stdout/stderr (16 MiB per stream, with truncation flags), exact argv and exit codes in `commands.json`; any command failure or truncation makes the final status nonzero. Downloads use a disposable directory outside the checkout. Missing PyYAML is recorded explicitly and causes a nonzero result; the probe does not install it.
+
+[unverified] No installation, cluster change or runtime test is represented by these files.
