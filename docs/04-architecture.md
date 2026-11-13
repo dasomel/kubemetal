@@ -252,6 +252,11 @@ core API나 Narwhal wire contract가 아니다. AC1/3/5 export 재료만 전진�
 Narwhal AC6·다중 호스트 AC7과 소비자 구현은 오너 결정 영역이다.
 
 manifest 예시(모든 source 경로는 manifest 디렉터리 기준):
+절대 경로·`..` 구성요소와 기준 디렉터리 밖으로 해석되는 symlink는 거부한다.
+기준 디렉터리 내부의 symlink는 허용한다. 각 source는 최대 1 MiB의 일반 파일이어야 하며,
+네 종류별 필수 필드·중첩 타입·허용 필드를 검증한 뒤에만 원문을 포함한다.
+알 수 없는 kind나 추가 필드는 거부한다. 새 collector 형식은 검증기 수정이 필요하다.
+잘못된 UTF-8/JSON/타입은 오류 메시지와 비정상 종료로 처리하며 출력 파일을 생성하지 않는다.
 
 ```json
 {
@@ -295,7 +300,7 @@ manifest의 run/workload ID, 장치명·버전·시각은 호출자 제공 정�
 hardware/metrics가 있으면 장치명/backend의 일치도 검사한다. raw JSON에는 로컬 경로 등
 민감 정보가 포함될 수 있으므로 외부 공유 여부는 호출자가 결정한다.
 
-새 테스트는 기존 `make test`/`make verify`의 `tests/mlx` discovery에 포함된다.
+새 테스트는 `make test`의 `tests/mlx` discovery로 실행된다. `make verify`는 `make test`에 의존한다.
 GPU 실측 재실행은 필요 없다. storage 측정은 기존 `storage_benchmark.py`가 소유하며
 벤치마크 프런트 UI·Narwhal 소비자는 이 조각의 범위 밖이다.
 

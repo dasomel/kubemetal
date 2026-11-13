@@ -4,12 +4,15 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import re
+import stat
 import sys
 from datetime import datetime
 from pathlib import Path
 
 SCHEMA = Path(__file__).resolve().parents[2] / "docs/schemas/local-accelerator-evidence-v1.schema.json"
+MAX_SOURCE_BYTES = 1024 * 1024
 UNITS = {
     "gpu": {"gflops": "GFLOP/s", "elapsed_seconds": "s", "matrix_dim": "count", "iterations": "count"},
     "hardware": {"cpu_cores": "count", "gpu_cores": "count", "total_memory_gb": "GiB"},
@@ -39,7 +42,7 @@ def loads(raw):
 def schema_check(value, schema, path="$"):
     """Validate the small JSON Schema vocabulary used by this local format."""
     types = {"object": dict, "array": list, "string": str, "number": (int, float),
-             "null": type(None)}
+             "null": type(None), "boolean": bool}
     if "type" in schema:
         names = schema["type"] if isinstance(schema["type"], list) else [schema["type"]]
         if not any(isinstance(value, types[name]) and
@@ -71,12 +74,83 @@ def schema_check(value, schema, path="$"):
 
 
 def timestamp(value):
+    if not isinstance(value, str):
+        raise ValueError("timestamp must be a string")
     if value == "unknown":
         return None
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         raise ValueError("timestamp requires timezone")
     return parsed
+
+
+def source_payload(kind, raw):
+    if not isinstance(kind, str) or kind not in UNITS:
+        raise ValueError("unknown result kind")
+    payload = loads(raw)
+    number = {"type": "number"}
+    nullable = {"type": ["number", "null"]}
+    string = {"type": "string", "minLength": 1}
+
+    def obj(properties, required=None):
+        return {"type": "object", "properties": properties,
+                "required": list(properties) if required is None else required,
+                "additionalProperties": False}
+
+    if kind == "gpu":
+        shape = obj({key: number for key in UNITS[kind]})
+    elif kind == "hardware":
+        shape = obj({"brand_name": string, "cpu_cores": number,
+                     "total_memory_gb": number, "gpu_cores": nullable})
+    elif kind == "metrics":
+        fields = {key: nullable for key in UNITS[kind]}
+        fields.update({key: number for key in ("total_memory_gb", "used_memory_gb",
+                      "memory_usage_percentage", "cpu_usage_percentage")})
+        fields.update(thermal_state={"type": ["string", "null"]}, gpu_backend=string)
+        shape = obj(fields, [key for key in fields if key not in
+                            ("gpu_usage_percentage", "gpu_memory_used_gb")])
+    else:
+        phase = obj({"bytes": number, "elapsed_seconds": nullable})
+        shape = obj({
+            "schema_version": {"type": "number", "enum": [1]},
+            "status": {"type": "string", "enum": ["ok", "error"]},
+            "requested_bytes": nullable,
+            "environment": obj({**{key: string for key in
+                                ("system", "release", "machine", "python")},
+                                "directory": {"type": ["string", "null"]}}),
+            "write_fsync": phase, "read": phase,
+            "temporary_file_closed": {"type": ["boolean", "null"]},
+            "limitations": {"type": "array", "items": string},
+            "errors": {"type": "array", "items": obj({
+                "phase": string, "type": string, "message": {"type": "string"},
+                "errno": nullable})},
+        })
+    schema_check(payload, shape, f"source.{kind}")
+    observations(kind, payload)
+    return payload
+
+
+def read_source(base, name):
+    if not isinstance(name, str) or not name or Path(name).is_absolute() or ".." in Path(name).parts:
+        raise ValueError("source path must be relative without '..' components")
+    base = base.resolve(strict=True)
+    path = (base / name).resolve(strict=True)
+    if not path.is_relative_to(base):
+        raise ValueError("source resolves outside base directory")
+    # D22: permit internal aliases, but bound reads to regular files and 1 MiB;
+    # larger/new collector formats require explicit validator/cap changes.
+    if not path.is_file():
+        raise ValueError("source must be a regular file")
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW), "rb") as source:
+        info = os.fstat(source.fileno())
+        if not stat.S_ISREG(info.st_mode):
+            raise ValueError("source must be a regular file")
+        if info.st_size > MAX_SOURCE_BYTES:
+            raise ValueError("source exceeds size limit (1 MiB)")
+        raw = source.read(MAX_SOURCE_BYTES + 1)
+    if len(raw) > MAX_SOURCE_BYTES:
+        raise ValueError("source exceeds size limit (1 MiB)")
+    return raw.decode("utf-8")
 
 
 def observations(kind, payload):
@@ -117,9 +191,7 @@ def validate(envelope):
         raw = source["raw_json"]
         if hashlib.sha256(raw.encode("utf-8")).hexdigest() != source["sha256"]:
             raise ValueError("source hash mismatch")
-        payload = loads(raw)
-        if not isinstance(payload, dict):
-            raise ValueError("source must be an object")
+        payload = source_payload(source["kind"], raw)
         if source["observations"] != observations(source["kind"], payload):
             raise ValueError("observations/units differ from source")
         if source["kind"] == "hardware" and payload.get("brand_name") != envelope["device"]["name"]:
@@ -129,8 +201,6 @@ def validate(envelope):
         limitations = payload.get("limitations", [])
         if source["limitations"] != limitations:
             raise ValueError("source limitations differ")
-        if source["kind"] == "gpu" and any(payload.get(k) is None for k in UNITS["gpu"]):
-            raise ValueError("incomplete GPU result")
     return envelope
 
 
@@ -146,10 +216,10 @@ def export(manifest, base):
         if not isinstance(entry, dict):
             raise ValueError("manifest source must be an object")
         source = {key: value for key, value in entry.items() if key != "path"}
-        raw = (base / entry["path"]).read_bytes().decode("utf-8")
-        payload = loads(raw)
-        if not isinstance(payload, dict):
-            raise ValueError("source must be an object")
+        if not isinstance(source.get("kind"), str) or source["kind"] not in UNITS:
+            raise ValueError("unknown result kind")
+        raw = read_source(base, entry["path"])
+        payload = source_payload(source["kind"], raw)
         source.update(raw_json=raw, sha256=hashlib.sha256(raw.encode("utf-8")).hexdigest(),
                       observations=observations(source["kind"], payload),
                       limitations=payload.get("limitations", []))
@@ -172,9 +242,14 @@ def main(argv=None):
                 raise ValueError("export requires --output")
             # D22: exclusive creation costs an explicit new filename on retry;
             # it preserves existing evidence. Remove the output explicitly to retry.
-            with args.output.open("x") as output:
-                output.write(json.dumps(data, indent=2, allow_nan=False) + "\n")
-            validate(loads(args.output.read_text()))
+            output = args.output.open("x")
+            try:
+                with output:
+                    output.write(json.dumps(data, indent=2, allow_nan=False) + "\n")
+                validate(loads(args.output.read_text()))
+            except (ValueError, OSError, KeyError, TypeError, RuntimeError):
+                args.output.unlink(missing_ok=True)
+                raise
         else:
             validate(data)
             if args.manifest is not None:
@@ -183,7 +258,7 @@ def main(argv=None):
                     raise ValueError("envelope differs from original sources/manifest")
         print("validated local evidence (integrity only; not authenticated provenance)")
         return 0
-    except (ValueError, OSError, KeyError, TypeError) as error:
+    except (ValueError, OSError, KeyError, TypeError, RuntimeError) as error:
         print(f"evidence validation failed: {error}", file=sys.stderr)
         return 1
 
