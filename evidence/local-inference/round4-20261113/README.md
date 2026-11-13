@@ -6,8 +6,9 @@ Measured-local, one Mac, one session. Three values per cell are not a p95 and no
 
 - Host: Apple M4 Pro, 64 GB, macOS 27.2.1; oMLX 0.7.3 (`/opt/homebrew/bin/omlx`); dev build of the app launched from the
   main checkout at `2c45e23` (`pnpm tauri dev`, port 5174). No colima, no cluster.
-- Runtime lifecycle: **only** the app's own Local AI Runtime card buttons (Start oMLX / Stop managed oMLX), driven by
-  background clicks. Every managed process had parent PID 9524 (the app). Nothing was started from a shell.
+- Runtime lifecycle: every start and stop was a background click on the app's own Local AI Runtime card button (Start
+  oMLX / Stop managed oMLX); no signal, `omlx` CLI or HTTP call was used to start or stop. Details: "How the lifecycle was
+  driven" below. Parent PID: see the same block (round 1 recorded in `pids.txt`; rounds 2-3 only in console output).
 - Values set through the UI (typed into the card fields; no settings file route was used or needed): port 8011, model
   dir, SSD cache dir, SSD cache max 1GB, hot RAM cache max 128MB, memory guard balanced (default), max concurrency 4
   (default). The card state is React `useState` only (not persisted), so there is no app settings file to edit.
@@ -15,8 +16,8 @@ Measured-local, one Mac, one session. Three values per cell are not a p95 and no
   `Uvicorn running on http://127.0.0.1:8011`, `SSD cache scan complete: scanned=0 ... existing_files=0` for rounds' first
   start. `ps` shows only the process title `omlx-server`, so the literal argv could not be captured from `ps`.
 - Dirs: the app only accepts paths under `$HOME` (`validate_home_path`), so the scratchpad under `/private/tmp` was
-  rejected by design; dirs were created under `~/.kubemetal-r4-scratch.XXXXXX/` (removed afterwards). One fresh empty cache
-  dir per round (`cache`, `cache2`, `cache3`). oMLX creates 16 empty hex subdirs + `_boundary_snapshots` +
+  rejected by design; dirs were created under `~/.kubemetal-r4-scratch.XXXXXX/` (removed afterwards). One fresh cache
+  dir per round (`cache`, `cache2`, `cache3`); how they were created and selected: "How the lifecycle was driven". oMLX creates 16 empty hex subdirs + `_boundary_snapshots` +
   `response-state` at start; "empty" means 0 files / 0 B (UI "Inspect cache": `0 B · 0 files`, capture 01).
 - Model: `mlx-community__Qwen2.5-0.5B-Instruct-4bit`, symlinked into the dedicated model dir; real path
   `~/.kubemetal/models/mlx-community__Qwen2.5-0.5B-Instruct-4bit`. HF revision **unknown** (not recorded anywhere
@@ -44,9 +45,10 @@ Measured-local, one Mac, one session. Three values per cell are not a p95 and no
 Median (range) over rounds: cold total 676.8 (315.2-1601.9); warm total, all 15: 121.8 (117.9-165.1); ssd-restore total
 217.4 (185.2-265.2). 9 of 9 phases, 21 of 21 requests succeeded; 0 errors.
 
-Reading it: cold total latency is dominated by something other than the cache (1602 -> 677 -> 315 ms across rounds with
-identical empty caches; guess, not measured: round 1 paid one-time first-request warm-up; in round 2 the cold
-request was sent while `/health` still said `loading`, `logs/r2-health-before-cold.json`). Do not read the cold column as
+Reading it: cold total latency is dominated by something other than the cache (1602 -> 677 -> 315 ms across rounds whose
+first start logged `scanned=0` each time; guess, not measured: round 1 paid one-time first-request warm-up). What the files
+show for round 2: `logs/r2-health-before-cold.json` says `status: loading` (`loaded_count: 1`), and the log has
+`BatchedEngine loaded` at 03:49:20.246 before the cold request completed at 03:49:21.080. Do not read the cold column as
 a clean cache-miss cost. The ssd-restore request is faster than cold in all three rounds but slower than warm in all three.
 
 **Script TTFT caveat (oddity, not fixed):** the script stamps TTFT at the first SSE `data:` line of any kind. oMLX's own
@@ -66,9 +68,9 @@ warm 0.06-0.09 s. Use total latency or the server TTFT; the script TTFT understa
 3. New PID: `SSD cache scan complete: scanned=5, indexed=5, errors=0, total_size=15.03 MB`, `existing_files=5,
    incompatible_files=0`, then the first request logs `Prefix cache restore ... source=paged cached=1024 suffix=255
    blocks=4 ... reconstruct=68.2 ms / 10.2 ms / 18.0 ms` (rounds 1/2/3) versus ~3.2 ms for the RAM-hot warm hits.
-   The process was new and its hot RAM cache starts empty, so the only source for those 1024 cached tokens is the 5
-   SSD files. Limit: the log label says `source=paged`, not `ssd`; the SSD attribution is inferred from the empty-RAM
-   new process plus the scan line plus the 3-21x slower reconstruct (68.2/10.2/18.0 ms vs ~3.2 ms), not stated by oMLX in one line.
+   Measured: a prefix-cache restore was logged
+   after each restart (3 of 3). Inferred (not stated by oMLX): that the blocks came from the SSD files, from a fresh PID with
+   no RAM cache of its own, the scan line, and the 3-21x slower reconstruct (68.2/10.2/18.0 ms vs ~3.2 ms), the log label is `source=paged`, not `ssd`.
 4. Only 1024 of 1279 tokens are served from cache (4 of 5 blocks, 256-token blocks); 255 are recomputed.
 
 ## Lifecycle evidence
@@ -79,8 +81,9 @@ managed PID, 03 first start, 04 round 3, 06 after final stop).
 
 ## Limits and oddities
 
-- One machine, 3 rounds, one 1279-token prompt, 0.5B 4-bit model, batch size 1. No p95, no SLO claim.
-- Not covered: OS page-cache cold, air-gap, same-model mlx-lm baseline, TTL ACs, large models.
+- One machine, 3 rounds, one 1279-token prompt, 0.5B 4-bit model, batch size 1. No p95, no SLO claim. The benchmark JSONs
+  carry `latency_ms_p95`/`ttft_ms_p95` fields; for n=1 (cold, restore) and n=5 (warm) they are not meaningful p95s.
+- NOT performed (so #58 stays open): OS page-cache cold, air-gap, same-model mlx-lm baseline, TTL ACs; also large models.
 - The app's status probe (`/v1/models` without a key) logged `401 API key required` every 5 s because oMLX auth is
   enabled in the owner's settings and no key was entered in the card; the card still showed Healthy once `/health` was up
   and "Stopped / unreachable" while the engine was still loading.
@@ -90,3 +93,34 @@ managed PID, 03 first start, 04 round 3, 06 after final stop).
   settings/model_settings/stats were backed up and restored byte-identically; `usage.sqlite3`, the log rotation and the
   `bin/` entry were not backed up and are not restored (usage counters now include these 21 requests).
 - `~/.omlx/cache` (owner's) was never configured as a cache dir for this test; before/after listing identical (20 entries, 12 KB).
+
+## How the lifecycle was driven (literal, from the command history)
+
+Click helper (all rounds): `orca computer click --app pid:9524 --window-id 772 --x X --y Y --no-screenshot --json`
+(window-local coordinates, background; the app was never brought to the front). Start button = `(347,707)`, Stop managed
+oMLX = `(375,708)`.
+
+- Round 1: first Start attempt at (314,686) missed the button (no process appeared; not counted). Then Start =
+  click (347,707) in its own shell call, waited for the 8011 listener. Benchmarks were separate calls. Stop = click
+  (375,708) in its own call; PID gone and port free after ~12 s. Restart = click (347,707) in its own call. The final
+  round-1 stop = click (375,708) (`managed_stop`).
+- Rounds 2 and 3: one shell script chained, in this order, without pauses other than polling loops: `managed_start`
+  (= click (347,707), poll for the 8011 listener) -> cold benchmark -> warm benchmark -> cache listing ->
+  `managed_stop` (= click (375,708), poll until the PID is gone) -> listing -> `managed_start` -> restore benchmark ->
+  listing. The stop click therefore followed the sixth request by under a second, which is why the log shows
+  stop ~0.7-0.9 s after the last request. Round 3 additionally waited for `/health` = `healthy` before the cold request.
+  The last stop of each of rounds 2 and 3 was the same click, issued in a separate call.
+- No start or stop used a signal, the `omlx` CLI, an HTTP/admin call or a shell-started process. Evidence that the clicks
+  (not something else) did it: a new PID with parent = the app appeared only after the Start click and the old PID
+  vanished only after the Stop click; captures 02-06 show the card state for rounds 1 and 3 only. Rounds 2 and 3 were not
+  captured per click. Because the click reports "unverified", this is inference from the process table, not a recording.
+  So no round is labelled "not the app's managed lifecycle".
+- Parent PID [measured, from console output, not committed except round 1]: `ps -o ppid` printed 9524 (the app) for
+  16272 and 23330 (`pids.txt`); `managed_start` printed `ppid=9524` for 27893, 28079, 30118 and 31449 but wrote it only
+  to a scratch file that was overwritten, so those four are in this README rather than in a committed raw file.
+- Cache dirs: `~/.kubemetal-r4-scratch.rxuLnj` was made by `mktemp -d`; `cache` was created by `mkdir -p` with
+  `models`; `cache2` and `cache3` were created by shell `mkdir -p` (empty) before the app ran. The app was pointed at each
+  by typing into the "SSD cache directory" field (click field, Cmd+A via `orca computer hotkey`, `orca computer type-text`
+  of the full path), and a window capture (not committed) showed the field ending `.../cache2` and `.../cache3`
+  before Start. The log lines `SSD cache scan complete: scanned=0` (first start of each round) and `dir=.../cache2` /
+  `cache3` in `PagedSSDCacheManager initialized` are the committed proof of which dir each process used.
