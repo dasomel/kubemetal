@@ -68,17 +68,30 @@ def fixture_snapshot(root):
                              "chunks": digest(chunks)}
 
 
-def invoke(args, model):
+def invoke(args, model=None, loader=None):
     output = io.StringIO()
+    route = {"resolved_mode": args.get("mode"), "rule": "explicit"}
+    classify = rag_host.classify_query
+
+    def observe(query):
+        resolved, rule = classify(query)
+        route.update(resolved_mode=resolved, rule=rule)
+        return resolved, rule
+
+    if args.get("mode") == "auto":
+        route = {}  # Unknown until production actually classifies the query.
     started = time.perf_counter()
-    with patch.object(rag_host, "get_embedding_model", return_value=model), \
+    with patch.object(rag_host, "get_embedding_model", side_effect=loader or (lambda name: model)), \
+            patch.object(rag_host, "classify_query", side_effect=observe), \
             contextlib.redirect_stdout(output):
         try:
             rag_host.cmd_query(argparse.Namespace(**args))
-        except SystemExit as exc:
-            raise RuntimeError(f"Production exit {exc.code}: {output.getvalue()}") from exc
-    return {"response": json.loads(output.getvalue()),
-            "query_ms": (time.perf_counter() - started) * 1000}
+            response = json.loads(output.getvalue())
+        except (Exception, SystemExit) as exc:
+            response = {"status": "error", **route,
+                        "error": f"{type(exc).__name__}: {exc}",
+                        "production_output": output.getvalue()}
+    return {"response": response, "query_ms": (time.perf_counter() - started) * 1000}
 
 
 def score(response, query, chunks):
@@ -128,16 +141,25 @@ def measure(chunks, queries, repeats, args, model, cold_runner):
                 started = time.perf_counter()
                 try:
                     item.update(invoke(request, model))
-                    expected_mode, expected_rule = (rag_host.classify_query(query["text"])
-                                                    if mode == "auto" else (mode, "explicit"))
-                    if (item["response"].get("resolved_mode"), item["response"].get("rule")) != (expected_mode, expected_rule):
-                        raise ValueError("Production routing metadata differs from requested mode")
-                    item["metrics"] = score(item["response"], query, chunks)
                     item["subprocess"] = cold_runner(request)
-                    cold_response = item["subprocess"]["response"]
-                    if (cold_response.get("resolved_mode"), cold_response.get("rule")) != (expected_mode, expected_rule):
-                        raise ValueError("Subprocess routing metadata differs from requested mode")
-                    score(cold_response, query, chunks)
+                    warm, cold = item["response"], item["subprocess"]["response"]
+                    # D-C3: production owns auto routing; preserve both observations.
+                    # Cost: failed pairs have no aggregate score; rerun after fixing the cause.
+                    errors = [f"{name}: {response.get('error', 'production failed')}"
+                              for name, response in (("resident", warm), ("subprocess", cold))
+                              if response.get("status") != "ok"]
+                    if errors:
+                        raise ValueError("; ".join(errors))
+                    if mode != "auto" and any(
+                            (response.get("resolved_mode"), response.get("rule")) != (mode, "explicit")
+                            for response in (warm, cold)):
+                        raise ValueError("Production routing metadata differs from requested mode")
+                    if warm != cold:
+                        raise ValueError(f"Production response divergence: resident route "
+                                         f"{warm.get('resolved_mode')}/{warm.get('rule')}; subprocess route "
+                                         f"{cold.get('resolved_mode')}/{cold.get('rule')}")
+                    item["metrics"] = score(warm, query, chunks)
+                    score(cold, query, chunks)
                     item["status"] = "ok"
                 except (Exception, SystemExit) as exc:
                     item.update(status="error", error=f"{type(exc).__name__}: {exc}")
@@ -161,24 +183,35 @@ def cold_query(request):
     process = subprocess.run([sys.executable, "-B", str(Path(__file__).resolve()),
                               "--worker", json.dumps(request)], capture_output=True, text=True)
     wall_ms = (time.perf_counter() - started) * 1000
-    if process.returncode:
+    try:
+        result = json.loads(process.stdout)
+    except ValueError as exc:
+        raise RuntimeError(f"Subprocess exit {process.returncode}: {process.stderr} {process.stdout}") from exc
+    if process.returncode and result.get("response", {}).get("status") != "error":
         raise RuntimeError(f"Subprocess exit {process.returncode}: {process.stderr} {process.stdout}")
-    result = json.loads(process.stdout)
-    result.update(wall_ms=wall_ms, stderr=process.stderr)
+    result.update(wall_ms=wall_ms, stderr=process.stderr, exit_code=process.returncode)
     return result
 
 
 def worker(request):
-    started = time.perf_counter()
-    resolved = rag_host.classify_query(request["query"])[0] if request["mode"] == "auto" else request["mode"]
-    model = load_model(request["model"]) if resolved in ("dense", "hybrid") else None
-    load_ms = (time.perf_counter() - started) * 1000
-    result = invoke(request, model)
+    load_ms = 0
+
+    def loader(path):
+        nonlocal load_ms
+        started = time.perf_counter()
+        try:
+            return load_model(path)
+        finally:
+            load_ms += (time.perf_counter() - started) * 1000
+
+    result = invoke(request, loader=loader)
     result["model_load_ms"] = load_ms
+    result["query_ms"] -= load_ms
     print(json.dumps(result))
+    return 0 if result["response"].get("status") == "ok" else 1
 
 
-def run(args):
+def evaluate(args):
     config = {"modes": MODES, "repeats": args.repeats, "ks": KS, "top_k": None,
               "chunking": "fixed", "device": "cpu", "rrf_k": rag_host.RRF_K,
               "hybrid_candidate_count": rag_host.HYBRID_CANDIDATE_COUNT}
@@ -230,8 +263,37 @@ def run(args):
                 raise ValueError("Fixture or model changed during measurement")
     except (Exception, SystemExit) as exc:
         evidence.update(status="unavailable", error=f"{type(exc).__name__}: {exc}")
-    args.output.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return 0 if evidence["status"] == "ok" else 1
+    return evidence
+
+
+def run(args):
+    temporary = None
+    try:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        # D-C4: probe the destination before fixture/model work and publish atomically.
+        # Cost: a sibling temporary file; remove it on failure and retain prior evidence.
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=args.output.parent,
+                                         prefix=f".{args.output.name}.", delete=False) as stream:
+            temporary = Path(stream.name)
+            if args.output.exists() and not args.output.is_file():
+                raise ValueError(f"Output is not a file: {args.output}")
+            evidence = evaluate(args)
+            json.dump(evidence, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+        os.replace(temporary, args.output)
+        if evidence["status"] != "ok":
+            print(f"Comparison {evidence['status']}: {evidence.get('error', 'see per-query errors in output')}",
+                  file=sys.stderr)
+        return 0 if evidence["status"] == "ok" else 1
+    except (Exception, SystemExit) as exc:
+        print(f"Cannot write comparison output {args.output}: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError as exc:
+                print(f"Cannot remove temporary output {temporary}: {exc}", file=sys.stderr)
 
 
 def main():
@@ -244,8 +306,11 @@ def main():
     parser.add_argument("--worker", help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.worker:
-        worker(json.loads(args.worker))
-        return 0
+        try:
+            return worker(json.loads(args.worker))
+        except (Exception, SystemExit) as exc:
+            print(f"Comparison worker failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return 1
     if not args.fixture or not args.model_path or not args.output or args.repeats < 1:
         parser.error("--fixture, --model-path, --output and positive --repeats are required")
     return run(args)
