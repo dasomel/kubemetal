@@ -195,7 +195,8 @@ sequenceDiagram
 #### #13 SIGKILL / MLflow convergence (measured-local, 2026-11-13)
 
 - 앱(dev build)에서 UI로 시작한 `mlx_lm` fine-tune의 wrapper 프로세스 그룹에 `kill -KILL -- -<PGID>`를 보내면
-  MLflow run이 **1초 안에 RUNNING → KILLED**로 수렴했고(30초 관측 중 유지), 그룹 잔류 프로세스는 0이었다.
+  MLflow run이 **1초 안에 RUNNING → KILLED**로 수렴했고(kill 후 1·2·3초, 11초, 약 13분 시점 조회에서 KILLED 유지 —
+  1초 간격 30초 연속 관측은 하지 못했다), 그룹 잔류 프로세스는 0이었다.
   앱은 "Training process exited abnormally (signal: 9)"를 표시했다.
 - 한계: 이 kill은 메모리 압력 `warn` 가드레일이 SIGSTOP으로 일시정지한 상태(0 checkpoint)의 그룹에 가해졌다.
   실행 중 kill, checkpoint warm-start, 원본 hash 불변, MLflow 장애 시 재조정(failure arm)은 **관측하지 못했다**.
