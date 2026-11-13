@@ -126,19 +126,14 @@ class LocalInferenceBenchmarkMetadataTests(unittest.TestCase):
 
         self.assertEqual(consumer_display(legacy_host["thermal_state"]), "unknown")
 
-    def test_ipc_extension_contract(self):
-        """When actual NSProcessInfo telemetry is provided via IPC, state and source are preserved."""
-        meta = benchmark_local_inference.collect_thermal_metadata(
-            pmset_raw="Note: No thermal warning level has been recorded",
-            ipc_thermal_state="nominal",
-            ipc_thermal_source="app_ipc",
-        )
-
-        self.assertEqual(meta["thermal_state"], "nominal")
-        self.assertEqual(meta["thermal_source"], "app_ipc")
-        self.assertIsNone(meta["thermal_unavailable_reason"])
-        self.assertEqual(meta["pmset_therm"], "Note: No thermal warning level has been recorded")
-
+    def test_no_parameter_can_inject_a_thermal_state(self):
+        """Review follow-up: a caller must not be able to record an arbitrary state as measured."""
+        with self.assertRaises(TypeError):
+            benchmark_local_inference.collect_thermal_metadata(ipc_thermal_state="normal")
+        meta = benchmark_local_inference.collect_thermal_metadata(pmset_raw="anything")
+        self.assertIsNone(meta["thermal_state"])
+        self.assertIsNone(meta["thermal_source"])
+        self.assertTrue(meta["thermal_unavailable_reason"])
 
 if __name__ == "__main__":
     unittest.main()

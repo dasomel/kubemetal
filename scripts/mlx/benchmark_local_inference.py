@@ -161,11 +161,7 @@ def int_command_output(*args: str) -> int | None:
 _UNSET = object()
 
 
-def collect_thermal_metadata(
-    pmset_raw: Any = _UNSET,
-    ipc_thermal_state: str | None = None,
-    ipc_thermal_source: str | None = None,
-) -> dict[str, Any]:
+def collect_thermal_metadata(pmset_raw: Any = _UNSET) -> dict[str, Any]:
     """Collect thermal metadata for local inference benchmark (Issue #58).
 
     Apple Silicon macOS does not expose thermal pressure level (NSProcessInfo.thermalState)
@@ -179,7 +175,8 @@ def collect_thermal_metadata(
     - In standalone benchmarks without app IPC, `thermal_state` is always None (null).
       It MUST NEVER default to 'nominal', 'normal', 0, or PASS when CLI output is missing,
       empty, timed out, or returning the advisory 'No thermal warning...' text.
-    - `thermal_source` is None (or the verified IPC source when provided).
+    - `thermal_source` is None. There is deliberately no parameter to inject a state: an unvalidated,
+      untimestamped value would be recorded as measured. Wiring real app telemetry is future work.
     - `thermal_unavailable_reason` explicitly explains the CLI absence.
     - The raw `pmset -g therm` text (if any) is preserved separately as `pmset_therm`
       under diagnostics, not as thermal_state.
@@ -188,15 +185,6 @@ def collect_thermal_metadata(
         pmset_val = command_output("pmset", "-g", "therm")
     else:
         pmset_val = pmset_raw
-
-    # Future extension: if real NSProcessInfo telemetry was passed from the desktop app IPC
-    if ipc_thermal_state is not None:
-        return {
-            "thermal_state": ipc_thermal_state,
-            "thermal_source": ipc_thermal_source or "app_ipc",
-            "thermal_unavailable_reason": None,
-            "pmset_therm": pmset_val,
-        }
 
     return {
         "thermal_state": None,
