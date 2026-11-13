@@ -342,9 +342,6 @@ def main() -> int:
             "stream": args.stream,
         },
         "host": host_metadata,
-        "diagnostics": {
-            "pmset_therm": thermal_metadata["pmset_therm"],
-        },
         "process": {
             "rss_bytes_before": rss_before,
             "rss_bytes_after": rss_after,

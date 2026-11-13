@@ -85,7 +85,7 @@ time and peak unified-memory stay `null` unless a trustworthy source exists.
 - **Unavailable reason and source**: When unmeasured, `host.thermal_source` is `null` and
   `host.thermal_unavailable_reason` explicitly documents why CLI tools cannot supply the state.
 - **Diagnostic isolation**: The raw stdout from `pmset -g therm` is decoupled from `thermal_state`
-  and preserved under `diagnostics.pmset_therm` (and `host.diagnostics.pmset_therm`) for advisory context.
+  and preserved under `host.diagnostics.pmset_therm` (one location only) for advisory context.
 - **No IPC injection path yet**: the standalone benchmark has no way to receive the app's
   `NSProcessInfo.thermalState`. A pass-through parameter was removed in review because it would have
   recorded an unvalidated, untimestamped caller value as measured. Wiring real, validated app telemetry is
@@ -95,7 +95,7 @@ time and peak unified-memory stay `null` unless a trustworthy source exists.
     under evidence immutability rules. These files carry the raw multi-line `pmset -g therm` diagnostic
     prose directly in `host.thermal_state`.
   - *New evidence*: outputs emit `host.thermal_state: null`, `host.thermal_source: null`,
-    `host.thermal_unavailable_reason`, and isolate raw command text in `diagnostics.pmset_therm`.
+    `host.thermal_unavailable_reason`, and isolate raw command text in `host.diagnostics.pmset_therm`.
   - Consumers must treat `null` (and legacy raw strings) as `unknown` / `unavailable`, never as
     `nominal` or healthy.
 
