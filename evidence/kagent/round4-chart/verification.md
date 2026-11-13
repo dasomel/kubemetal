@@ -45,3 +45,11 @@ python3 -B -c "import json,pathlib; p=pathlib.Path('evidence/kagent/round4-chart
 [measured — local docs-fill verification] `python3 -B -m unittest discover -s tests/kagent -v`: `Ran 6 tests in 0.242s`, `OK` (exit 0). Synthetic fixture/unit coverage only. `git diff --check`: no output (exit 0).
 
 [measured — repository CLAUDE.md] The Claude adapter additionally references runtime skill loading and Claude-only orchestration rules; this lane changes documentation only. Application code, Helm values, probe tooling, raw host evidence and cluster state were left unchanged.
+
+## Raw evidence boundary
+
+`host-probe/` (written by `probe.sh` on the host) is the only raw evidence in this directory. The first
+lane's own raw command outputs (64 files plus eight rendered-template stdout files and a `sha256sums.txt`
+pointing at a `/tmp` path) were removed: no document cited them and they duplicated `host-probe/`. Rendered
+template output is recorded by sha256 and size only (`host-probe/template-outputs.sha256.txt`) and is
+reproducible with `probe.sh`.
