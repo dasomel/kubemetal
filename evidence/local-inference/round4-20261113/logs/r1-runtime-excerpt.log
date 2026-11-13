@@ -1,0 +1,40 @@
+INFO:     Uvicorn running on http://127.0.0.1:8011 (Press CTRL+C to quit)
+2026-11-14 03:46:40,282 - omlx.engine_pool - INFO - Pinned model: mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:46:40,658 - omlx.server - INFO - Memory guard tier: balanced (guard on)
+INFO:     Started server process [16272]
+2026-11-14 03:46:41,017 - omlx.engine_pool - INFO - Preloading pinned model: mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:46:41,901 - omlx.cache.paged_ssd_cache - INFO - Scanning SSD cache directory: /Users/m/.kubemetal-r4-scratch.rxuLnj/cache
+2026-11-14 03:46:41,903 - omlx.cache.paged_ssd_cache - INFO - SSD cache scan complete: scanned=0, indexed=0, errors=0, total_size=0 B, gdn_sidecars=0
+2026-11-14 03:46:41,903 - omlx.cache.paged_ssd_cache - INFO - PagedSSDCacheManager initialized: dir=/Users/m/.kubemetal-r4-scratch.rxuLnj/cache, max_size=1.00 GB, hot_cache=128.00 MB, auto_size=False, existing_files=0, disk_free=512.76 GB, cache_used=0 B, incompatible_files=0
+2026-11-14 03:46:41,903 - omlx.scheduler - INFO - paged SSD cache enabled: cache_dir=/Users/m/.kubemetal-r4-scratch.rxuLnj/cache, max_size=1.00 GB, block_size=256 tokens
+2026-11-14 03:46:41,904 - omlx.engine.batched - INFO - BatchedEngine loaded: /Users/m/.kubemetal-r4-scratch.rxuLnj/models/mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:47:17,893 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 1.52s (320.6 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=1.46s, stream_visible_ttft=1.46s
+2026-11-14 03:47:31,666 - omlx.scheduler - INFO - Prefix cache restore for 677a3d85-ec0d-4392-b4af-7e35eced83e4: source=paged cached=1024 suffix=255 blocks=4 lookup=0.087ms reconstruct=4.231ms promote=True
+2026-11-14 03:47:31,817 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 0.16s (329.9 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=0.09s, stream_visible_ttft=0.10s
+2026-11-14 03:47:31,824 - omlx.scheduler - INFO - Prefix cache restore for ec9034e1-bd8b-49ef-b512-f315f3331f54: source=paged cached=1024 suffix=255 blocks=4 lookup=0.085ms reconstruct=3.152ms promote=True
+2026-11-14 03:47:31,936 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 0.12s (348.1 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=0.06s, stream_visible_ttft=0.06s
+2026-11-14 03:47:31,943 - omlx.scheduler - INFO - Prefix cache restore for cf6e319f-77cd-46c1-ac45-264cfb428118: source=paged cached=1024 suffix=255 blocks=4 lookup=0.076ms reconstruct=3.280ms promote=True
+2026-11-14 03:47:32,054 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 0.11s (349.1 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=0.06s, stream_visible_ttft=0.06s
+2026-11-14 03:47:32,063 - omlx.scheduler - INFO - Prefix cache restore for 49248e60-a4af-40a5-8416-172539133976: source=paged cached=1024 suffix=255 blocks=4 lookup=0.067ms reconstruct=4.113ms promote=True
+2026-11-14 03:47:32,176 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 0.12s (344.1 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=0.06s, stream_visible_ttft=0.06s
+2026-11-14 03:47:32,183 - omlx.scheduler - INFO - Prefix cache restore for 21674340-5410-45c9-9451-e495e670cbcd: source=paged cached=1024 suffix=255 blocks=4 lookup=0.064ms reconstruct=3.428ms promote=True
+2026-11-14 03:47:32,295 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 0.12s (346.5 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=0.06s, stream_visible_ttft=0.06s
+2026-11-14 03:47:43,670 - omlx.engine_pool - INFO - Unloading model: mlx-community__Qwen2.5-0.5B-Instruct-4bit (immediate abort)
+2026-11-14 03:47:43,672 - omlx.cache.paged_ssd_cache - INFO - Flushed 5 hot cache blocks to SSD
+2026-11-14 03:47:43,928 - omlx.engine_pool - INFO - Engine pool shutdown complete
+INFO:     Finished server process [16272]
+INFO:     Uvicorn running on http://127.0.0.1:8011 (Press CTRL+C to quit)
+2026-11-14 03:48:12,929 - omlx.engine_pool - INFO - Pinned model: mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:48:12,940 - omlx.server - INFO - Memory guard tier: balanced (guard on)
+INFO:     Started server process [23330]
+2026-11-14 03:48:13,033 - omlx.engine_pool - INFO - Preloading pinned model: mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:48:13,956 - omlx.cache.paged_ssd_cache - INFO - Scanning SSD cache directory: /Users/m/.kubemetal-r4-scratch.rxuLnj/cache
+2026-11-14 03:48:13,970 - omlx.cache.paged_ssd_cache - INFO - SSD cache scan complete: scanned=5, indexed=5, errors=0, total_size=15.03 MB, gdn_sidecars=0
+2026-11-14 03:48:13,971 - omlx.cache.paged_ssd_cache - INFO - PagedSSDCacheManager initialized: dir=/Users/m/.kubemetal-r4-scratch.rxuLnj/cache, max_size=1.00 GB, hot_cache=128.00 MB, auto_size=False, existing_files=5, disk_free=512.52 GB, cache_used=15.03 MB, incompatible_files=0
+2026-11-14 03:48:13,971 - omlx.scheduler - INFO - paged SSD cache enabled: cache_dir=/Users/m/.kubemetal-r4-scratch.rxuLnj/cache, max_size=1.00 GB, block_size=256 tokens
+2026-11-14 03:48:13,972 - omlx.engine.batched - INFO - BatchedEngine loaded: /Users/m/.kubemetal-r4-scratch.rxuLnj/models/mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:48:20,341 - omlx.scheduler - INFO - Prefix cache restore for bd21423d-d798-4361-8cca-4b2c00a614ab: source=paged cached=1024 suffix=255 blocks=4 lookup=0.156ms reconstruct=68.248ms promote=True
+2026-11-14 03:48:20,484 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 0.23s (360.7 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=0.17s, stream_visible_ttft=0.17s
+2026-11-14 03:48:47,864 - omlx.engine_pool - INFO - Unloading model: mlx-community__Qwen2.5-0.5B-Instruct-4bit (immediate abort)
+2026-11-14 03:48:48,073 - omlx.engine_pool - INFO - Engine pool shutdown complete
+INFO:     Finished server process [23330]

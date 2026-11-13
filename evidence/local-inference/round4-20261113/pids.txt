@@ -1,0 +1,17 @@
+round1 pre-cold: pid 16272 cache empty
+r1 before stop: PID 16272 (KubeMetal-managed, parent=app 9524)
+r1 after stop: PID 16272 gone, 8011 free
+r1 after restart: new PID 23330 (ppid app 9524)
+r1 final PID 23330 stopped (round1 end)
+r2 start: PID 27893
+r2 before stop: PID 27893
+r2 after stop: PID 27893 gone 8011 free 
+r2 after restart: new PID 28079
+r2 final PID 28079 stopped
+r3 start: PID 30118
+r3 before stop: PID 30118
+r3 after stop: PID 30118 gone 8011 free 
+r3 after restart: new PID 31449
+r3 final PID 31449 stopped
+PID 31449 gone
+8011 free
