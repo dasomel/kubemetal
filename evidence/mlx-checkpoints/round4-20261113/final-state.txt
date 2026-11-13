@@ -1,0 +1,11 @@
+# final MLflow state 2026-11-13T18:38:30Z
+c6c4ba09214147c9a326c218a14ce9c2 FINISHED start 1794594607531 end 1794594646002
+ed634a8590984a4cafffd21946cc7732 FINISHED start 1794594451275 end 1794594532354
+0f06b46f88624c3dbfb2288092db6dab KILLED start 1794594256993 end None
+# attempts
+1794594256729-16874-0 km-r4-v2-a 20 failed manifest None
+1794594451038-16874-4 km-r4-v2-b 100 promoted manifest 90650ed7487ccc63174a1c1b9fe270096eb2cfd7ce92d0a90d83738927f58452
+1794594607305-16874-110 km-r4-v2-c 100 promoted manifest d5e4af6e519d9c4c8ba8d2c72a5877245140dd1de39a204cca4befb9e9c59618
+# promoted adapters (mine)
+drwx------@ 105 m  staff   3360 Nov 14 03:29 km-r4-v2-b
+drwx------@ 105 m  staff   3360 Nov 14 03:31 km-r4-v2-c

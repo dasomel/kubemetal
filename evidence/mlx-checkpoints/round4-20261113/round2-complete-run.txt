@@ -1,0 +1,10 @@
+# round-2 (km-r4-v2-b) outcome 18:29:22
+ed634a8590984a4cafffd21946cc7732 FINISHED 1794594451275 1794594532354
+0f06b46f88624c3dbfb2288092db6dab KILLED 1794594256993 None
+(no wrapper/mlx_lm procs above = none)
+total 0
+drwx------@  5 m  staff  160 Nov 14 03:27 .
+drwxr-xr-x@ 14 m  staff  448 Oct 14 22:43 ..
+drwx------@  4 m  staff  128 Oct 14 22:46 1791985439082-42472-1
+drwx------@  4 m  staff  128 Nov 14 03:25 1794594256729-16874-0
+drwx------@  5 m  staff  160 Nov 14 03:29 1794594451038-16874-4

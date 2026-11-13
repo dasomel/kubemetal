@@ -1,0 +1,6 @@
+# kill -KILL -- -74245 at 2026-11-13T18:25:43Z
+kill rc=0
+t+0s 18:25:44 run=[RUNNING None] group_members=0
+t+1s 18:25:45 run=[KILLED None] group_members=0
+t+2s 18:25:46 run=[KILLED None] group_members=0
+t+3s 18:25:47 run=[KILLED None] group_members=0

@@ -1,0 +1,10 @@
+# pre-kill 2026-11-13T18:25:36Z
+kern.memorystatus_vm_pressure_level: 2
+74245 16874 74245 TN         01:20 python /Users/m/Documents/IdeaProjects/20.dasomel/kubemetal/src-tauri/target/debug/_up_/scripts/mlx/finetune_wrapper.py --model /Users/m/.kubemetal/models/mlx-community__Qwen2.5-0.5B-Instruct-4bit --data /Users/m/.kubemetal/datasets/km-r4-v2-20261113181723 --iters 20 --batch-size 1 --learning-rate 0.00001 --adapter-name km-r4-v2-a --output-dir /Users/m/.kubemetal/adapter-staging/1794594256729-16874-0/out --runtime mlx-lm --mlflow-uri http://127.0.0.1:5001 --save-every 1
+74248 74245 74245 TN         01:19 python -u -m mlx_lm lora --model /Users/m/.kubemetal/models/mlx-community__Qwen2.5-0.5B-Instruct-4bit --train --data /Users/m/.kubemetal/datasets/km-r4-v2-20261113181723 --iters 20 --batch-size 1 --learning-rate 1e-05 --adapter-path /Users/m/.kubemetal/adapter-staging/1794594256729-16874-0/out --steps-per-report 1 --save-every 1
+--- confirm cmdline contains unique adapter
+1
+--- pgid leader?
+74245 74245
+--- run before
+{'run_id': '0f06b46f88624c3dbfb2288092db6dab', 'status': 'RUNNING', 'start_time': 1794594256993, 'end_time': None, 'experiment_id': '1'}

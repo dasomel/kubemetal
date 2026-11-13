@@ -1,0 +1,16 @@
+# cleanup verification 2026-11-13T18:38:58Z
+PROFILE      STATUS     ARCH       CPUS    MEMORY    DISK      RUNTIME       ADDRESS
+beluga       Running    aarch64    10      24GiB     50GiB     containerd    
+kubemetal    Stopped    aarch64    6       12GiB     100GiB    docker+k3s    
+ldapium      Running    aarch64    2       2GiB      100GiB    docker        
+--- pgrep
+(end pgrep)
+--- lsof 5001/5174
+(end lsof)
+5e9ed2ee0beaeff7f375be7dec9d68700b21e9ef089f0cf30eb98a99506e5d10  /Users/m/Library/Application Support/com.dasomel.kubemetal/deploy-target.json
+expected 5e9ed2ee0beaeff7f375be7dec9d68700b21e9ef089f0cf30eb98a99506e5d10
+--- datasets
+e2e_synthetic.jsonl
+smoke
+vlm-smoke
+vlm-vision-smoke
