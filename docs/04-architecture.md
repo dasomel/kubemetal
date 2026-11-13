@@ -192,6 +192,16 @@ sequenceDiagram
   현재 KubeMetal repository에는 krunkit 기반 K3s Pod GPU 사용, Kubernetes allocatable
   accelerator, DRA/Kueue 동작을 실측한 evidence가 없으므로 지원 기능으로 표기하지 않는다.
 
+#### #13 SIGKILL / MLflow convergence (measured-local, 2026-11-13)
+
+- 앱(dev build)에서 UI로 시작한 `mlx_lm` fine-tune의 wrapper 프로세스 그룹에 `kill -KILL -- -<PGID>`를 보내면
+  MLflow run이 **1초 안에 RUNNING → KILLED**로 수렴했고(30초 관측 중 유지), 그룹 잔류 프로세스는 0이었다.
+  앱은 "Training process exited abnormally (signal: 9)"를 표시했다.
+- 한계: 이 kill은 메모리 압력 `warn` 가드레일이 SIGSTOP으로 일시정지한 상태(0 checkpoint)의 그룹에 가해졌다.
+  실행 중 kill, checkpoint warm-start, 원본 hash 불변, MLflow 장애 시 재조정(failure arm)은 **관측하지 못했다**.
+  KILLED run은 `end_time`이 없고 attempt.json의 `mlflow_run_id`는 null로 남았다(원인 미조사).
+- 증거: `evidence/mlx-checkpoints/round4-20261113/README.md`.
+
 세부 내용은 [docs/03-mvp-design.md §5](03-mvp-design.md#5-미검증-전제-실기기-검증-필요) 참고.
 
 ## 6. Phase 3 잔여 범위
