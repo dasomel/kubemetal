@@ -1,0 +1,8 @@
+{
+  "exit_code": 0,
+  "scope": "artifact-only; no install/startup/runtime verification",
+  "versions": [
+    "0.9.12",
+    "1.0.0-alpha17"
+  ]
+}
