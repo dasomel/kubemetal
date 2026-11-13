@@ -242,10 +242,62 @@ NVIDIA 백엔드는 실기기가 없어 보류했다(D41, `docs/03-mvp-design.md
 - 사용률·메모리 수치는 한 번 파싱 불완전 경고가 나간 뒤에는 로그에 더 남지 않는다(`:155-157`).
 - `ioreg` 출력 형식 의존이다. 형식이 바뀌면 파싱이 조용히 비게 된다(`:201-203`의 경고 문구가 이를 인정한다).
 
-### 이 절이 다루지 않는 이슈 #11 잔여 항목
+### 로컬 opt-in evidence envelope (#11 A3)
 
-storage/cache I/O 벤치마크, generic accelerator evidence schema(재현 가능 export), Narwhal 연동 샘플,
-벤치마크 프런트 UI. 모두 별도 설계 결정이 필요한 미구현 항목이다(이슈 #11 오너 코멘트).
+`scripts/mlx/evidence_export.py`는 **이미 저장된** GPU/storage JSON과
+`get_hardware_spec`/`get_system_metrics` IPC snapshot 파일만 결속한다. probe·benchmark를
+실행하지 않으며 IPC/권한/원격 전송을 추가하지 않는다. schema는
+`docs/schemas/local-accelerator-evidence-v1.schema.json`이며 로컬 export 형식이다.
+core API나 Narwhal wire contract가 아니다. AC1/3/5 export 재료만 전진하며
+Narwhal AC6·다중 호스트 AC7과 소비자 구현은 오너 결정 영역이다.
+
+manifest 예시(모든 source 경로는 manifest 디렉터리 기준):
+
+```json
+{
+  "observed_at": "unknown",
+  "run_id": "user-assigned-run-1",
+  "workload_id": "mlx-matmul-2048",
+  "device": {"name": "<hardware brand_name>", "backend": "apple_metal"},
+  "limitations": ["GPU UUID/power unavailable; collector versions unknown."],
+  "sources": [{
+    "kind": "gpu",
+    "path": "gpu.json",
+    "collector": {"name": "gpu_benchmark.py", "version": null},
+    "observed_at": "unknown",
+    "measurement_interval": {"start": "unknown", "end": "unknown"}
+  }]
+}
+```
+
+`kind`는 `gpu`, `storage`, `hardware`, `metrics` 중 하나다. 필요한 기존 결과를
+sources에 추가한다. collector/version은 원본을 만든 도구와 당시 버전이며 미확인은
+`null`이다. exporter의 현재 Python 버전을 과거 collector 버전으로 채우지 않는다.
+`observed_at`은 수집 시각이며 export 시각이 아니다. 시각 없는 기존 snapshot은
+`unknown`으로 남긴다. 확인된 시각만 timezone이 있는 ISO 8601로 입력하고 측정 구간은
+양 끝이 모두 확인되거나 모두 `unknown`이어야 한다. GPU elapsed만으로 벽시계 구간을
+역산하지 않는다. 서로 다른 과거 snapshot을 같은 run에 넣어도 동시 측정 증거가 되지 않는다.
+
+```sh
+python3 -B scripts/mlx/evidence_export.py export manifest.json --output evidence.json
+python3 -B scripts/mlx/evidence_export.py verify evidence.json --manifest manifest.json
+```
+
+출력은 기존 파일을 덮지 않는다. 저장 파일은 schema 검증 후 다시 읽으며, 별도 verify
+프로세스는 원본 manifest/파일과도 대조한다. 원본 UTF-8 JSON 바이트를 `raw_json`에
+보존하고 SHA-256, 단위·measured/unavailable 사유, 측정 구간·limitations를 결속한다.
+GB 이름의 IPC 메모리 값은 실제 구현의 1024 기반 GiB다. 없는 값은 null + unavailable이며
+측정된 0과 구별한다. storage의 timing=null + bytes=0 초기 counter는 unavailable로
+분류하며 원문의 0은 보존한다. 양수 부분 전송 counter는 유지한다. GPU UUID/전력 값은 생성하지 않는다. storage의 environment,
+status/errors, buffered-I/O/OS cache/fsync 한계는 원문과 limitations에 그대로 남는다.
+검증 성공은 hash/구조 일치만 뜻하며 서명·출처 인증·측정 성공을 보증하지 않는다.
+manifest의 run/workload ID, 장치명·버전·시각은 호출자 제공 정보이며 독립 검증하지 않는다.
+hardware/metrics가 있으면 장치명/backend의 일치도 검사한다. raw JSON에는 로컬 경로 등
+민감 정보가 포함될 수 있으므로 외부 공유 여부는 호출자가 결정한다.
+
+새 테스트는 기존 `make test`/`make verify`의 `tests/mlx` discovery에 포함된다.
+GPU 실측 재실행은 필요 없다. storage 측정은 기존 `storage_benchmark.py`가 소유하며
+벤치마크 프런트 UI·Narwhal 소비자는 이 조각의 범위 밖이다.
 
 ## 설계 결정 레지스트리
 
