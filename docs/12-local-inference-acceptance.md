@@ -295,13 +295,15 @@ runtime log excerpts, model SHA256 manifest, window captures). Apple M4 Pro 64 G
 - **Cache-hit evidence**: each restart's log shows `Flushed 5 hot cache blocks to SSD` at stop (5 files, 15.03 MB),
   `SSD cache scan complete: scanned=5, indexed=5` at the new PID, and the first request logs `Prefix cache restore ...
   cached=1024 suffix=255 blocks=4` (reconstruct 68.2 / 10.2 / 18.0 ms vs ~3.2 ms for RAM-hot warm hits). The log label is
-  `source=paged`; SSD attribution is inferred (new process, empty RAM cache). Verdict: restore hit evidenced, 3 of 3.
+  `source=paged`. Prefix-cache restore after restart logged 3 of 3 [measured]; that the blocks came from SSD is inferred
+  (new PID, no RAM cache of its own, scan line, slower reconstruct), not stated by oMLX.
 - Before the restart the SSD dir held **0 files** during cold/warm; blocks reach the SSD only at shutdown flush.
-- Restore is faster than cold and slower than warm in all rounds. Cold varies 315-1602 ms across identical empty caches,
+- Restore is faster than cold and slower than warm in all rounds. Cold varies 315-1602 ms across rounds whose first start logged `scanned=0`,
   so it is not a clean cache-miss cost. "cold" = empty oMLX cache only: OS page cache not cold, and the model was already
   loaded because the owner's `model_settings.json` pins it (precondition "model not loaded" did not hold).
 - The benchmark TTFT is the first SSE `data:` line; oMLX's own `stream_model_ttft` was 1.46 s where the script said
   82 ms (round 1 cold). Prefer total latency / the server TTFT. Engine load time stays `null`.
-- Limits: 3 values per cell (no p95, no SLO), one small model and prompt, one machine. Not covered: OS page-cache cold,
-  air-gap, mlx-lm baseline, TTL ACs. Side effects: oMLX rewrote `~/.omlx/settings.json` (restored byte-identical) and
+- Limits: 3 values per cell (no p95, no SLO; the JSON `*_p95` fields for n=1/n=5 are not meaningful), one small model
+  and prompt, one machine. **NOT performed, so #58 stays open:** OS page-cache cold, air-gap, same-model mlx-lm baseline,
+  TTL criteria. Lifecycle driving details: evidence README "How the lifecycle was driven". Side effects: oMLX rewrote `~/.omlx/settings.json` (restored byte-identical) and
   touched `usage.sqlite3` / log rotation (not restored).
