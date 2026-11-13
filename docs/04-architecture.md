@@ -266,6 +266,24 @@ D43: 관리 프로필은 `scripts/colima-profile.txt`에서 읽고 context는 `c
 기존 stdlib `eval_retrieval.py`는 그대로 유지한다.
 
 ```sh
+
+**실측 (measured-local, 2026-11-14, M4 Pro, 오케스트레이터 실행):** 로컬에 이미 있던
+`sentence-transformers/all-MiniLM-L6-v2` 스냅샷(1110a243)으로 opt-in 비교를 오프라인(`HF_HUB_OFFLINE=1`) 실행했다.
+status `ok`, lancedb 0.34.0, sentence-transformers 5.6.0, 모델 로드 4.4 s, fixture 4문서·5질의 × 5회 반복.
+
+| 모드 | recall@1 | recall@3 | MRR | nDCG@3 | p50 (ms) |
+|---|---|---|---|---|---|
+| exact | 0.20 | 0.20 | 0.20 | 0.20 | 3.9 |
+| lexical | 0.80 | 0.90 | 1.00 | 0.92 | 6.2 |
+| dense | 0.80 | 1.00 | 1.00 | 0.98 | 11.0 |
+| hybrid | 0.80 | 1.00 | 1.00 | 0.98 | 14.3 |
+| auto | 0.80 | 1.00 | 1.00 | 0.98 | 7.4 |
+
+읽는 법과 한계: exact는 파일명 질의 1건만 맞히도록 설계된 모드라 0.20이 정상이다. lexical은 한국어 질의에서
+정답 2개 중 1개만 찾았다(recall@3 0.5). **이 fixture는 4문서·5질의짜리라 "실제 경로로 도구가 돈다"는 증거일 뿐
+검색 품질 평가가 아니다** — 반복 5회는 정확도 표본을 늘리지 않고(결정적) 지연 시간만 다시 잰다. 실제 코퍼스·사람이
+검토한 qrels·rerank 비교는 #38에 남아 있다.
+
 # 이미 보유한 로컬 sentence-transformers snapshot만 사용. 설치/다운로드하지 않는다.
 python3 -B scripts/rag/eval_compare.py \
   --fixture scripts/rag/eval/fixtures --model-path /absolute/path/to/local/snapshot \
