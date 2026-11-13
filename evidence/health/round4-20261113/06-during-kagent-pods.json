@@ -1,0 +1,153 @@
+{
+  "source": "kubectl --context colima-kubemetal get pods -o json (reduced: env and volumes dropped)",
+  "pods": [
+    {
+      "namespace": "kagent",
+      "name": "helm-agent-67989c657-r7wh6",
+      "labels": {},
+      "nodeName": "colima-kubemetal",
+      "phase": "Running",
+      "ready": "True",
+      "containersReady": "True",
+      "conditions": {
+        "PodReadyToStartContainers": "True",
+        "Initialized": "True",
+        "Ready": "True",
+        "ContainersReady": "True",
+        "PodScheduled": "True"
+      },
+      "images": [
+        "cr.kagent.dev/kagent-dev/kagent/app:0.9.12"
+      ]
+    },
+    {
+      "namespace": "kagent",
+      "name": "k8s-agent-67fdc9db76-szr8s",
+      "labels": {},
+      "nodeName": "colima-kubemetal",
+      "phase": "Running",
+      "ready": "True",
+      "containersReady": "True",
+      "conditions": {
+        "PodReadyToStartContainers": "True",
+        "Initialized": "True",
+        "Ready": "True",
+        "ContainersReady": "True",
+        "PodScheduled": "True"
+      },
+      "images": [
+        "cr.kagent.dev/kagent-dev/kagent/app:0.9.12"
+      ]
+    },
+    {
+      "namespace": "kagent",
+      "name": "kagent-controller-f7b659bbb-48z5j",
+      "labels": {},
+      "nodeName": "colima-kubemetal",
+      "phase": "Running",
+      "ready": "True",
+      "containersReady": "True",
+      "conditions": {
+        "PodReadyToStartContainers": "True",
+        "Initialized": "True",
+        "Ready": "True",
+        "ContainersReady": "True",
+        "PodScheduled": "True"
+      },
+      "images": [
+        "cr.kagent.dev/kagent-dev/kagent/controller:0.9.12"
+      ]
+    },
+    {
+      "namespace": "kagent",
+      "name": "kagent-kmcp-controller-manager-877f8dd7c-mgmxq",
+      "labels": {},
+      "nodeName": "colima-kubemetal",
+      "phase": "Running",
+      "ready": "True",
+      "containersReady": "True",
+      "conditions": {
+        "PodReadyToStartContainers": "True",
+        "Initialized": "True",
+        "Ready": "True",
+        "ContainersReady": "True",
+        "PodScheduled": "True"
+      },
+      "images": [
+        "ghcr.io/kagent-dev/kmcp/controller:0.3.0"
+      ]
+    },
+    {
+      "namespace": "kagent",
+      "name": "kagent-postgresql-7665497754-5q7jf",
+      "labels": {},
+      "nodeName": "colima-kubemetal",
+      "phase": "Running",
+      "ready": "True",
+      "containersReady": "True",
+      "conditions": {
+        "PodReadyToStartContainers": "True",
+        "Initialized": "True",
+        "Ready": "True",
+        "ContainersReady": "True",
+        "PodScheduled": "True"
+      },
+      "images": [
+        "docker.io/library/postgres:18.3-alpine"
+      ]
+    },
+    {
+      "namespace": "kagent",
+      "name": "kagent-tools-666cb9dbcf-tnjml",
+      "labels": {},
+      "nodeName": "colima-kubemetal",
+      "phase": "Running",
+      "ready": "True",
+      "containersReady": "True",
+      "conditions": {
+        "PodReadyToStartContainers": "True",
+        "Initialized": "True",
+        "Ready": "True",
+        "ContainersReady": "True",
+        "PodScheduled": "True"
+      },
+      "images": [
+        "ghcr.io/kagent-dev/kagent/tools:0.2.1"
+      ]
+    },
+    {
+      "namespace": "kagent",
+      "name": "kagent-ui-dc6b9999c-vcbqt",
+      "labels": {},
+      "nodeName": "colima-kubemetal",
+      "phase": "Running",
+      "ready": "True",
+      "containersReady": "True",
+      "conditions": {
+        "PodReadyToStartContainers": "True",
+        "Initialized": "True",
+        "Ready": "True",
+        "ContainersReady": "True",
+        "PodScheduled": "True"
+      },
+      "images": [
+        "cr.kagent.dev/kagent-dev/kagent/ui:0.9.12"
+      ]
+    },
+    {
+      "namespace": "kagent",
+      "name": "km-r4-not-ready",
+      "labels": {
+        "kubemetal-triage": "round4"
+      },
+      "nodeName": "km-r4-no-such-node",
+      "phase": "Pending",
+      "ready": null,
+      "containersReady": null,
+      "conditions": {},
+      "images": [
+        "registry.k8s.io/pause:3.10"
+      ]
+    }
+  ]
+}

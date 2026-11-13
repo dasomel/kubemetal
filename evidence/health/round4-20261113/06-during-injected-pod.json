@@ -1,0 +1,20 @@
+{
+  "source": "kubectl --context colima-kubemetal get pods -o json (reduced: env and volumes dropped)",
+  "pods": [
+    {
+      "namespace": "kagent",
+      "name": "km-r4-not-ready",
+      "labels": {
+        "kubemetal-triage": "round4"
+      },
+      "nodeName": "km-r4-no-such-node",
+      "phase": "Pending",
+      "ready": null,
+      "containersReady": null,
+      "conditions": {},
+      "images": [
+        "registry.k8s.io/pause:3.10"
+      ]
+    }
+  ]
+}

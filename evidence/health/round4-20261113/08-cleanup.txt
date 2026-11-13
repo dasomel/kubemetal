@@ -1,0 +1,2 @@
+Error from server (NotFound): pods "km-r4-not-ready" not found
+No resources found in kagent namespace.
