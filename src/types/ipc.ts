@@ -676,6 +676,7 @@ export interface CumetalSmokeReport {
 
 // D53: observed staging metadata is separate from repo download progress/catalog.
 export interface ModelDownloadStaging {
+  state: 'observed' | 'not_created' | 'unknown';
   observed_at_unix_ms: number;
   entries: {
     id: string;

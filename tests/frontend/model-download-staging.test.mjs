@@ -16,7 +16,7 @@ registerHooks({ resolve(specifier, context, next) {
 const { ModelDownloadStagingCard } = await import(new URL('components/modelhub/ModelDownloadStagingCard.js', output));
 const { I18nContext } = await import(new URL('i18n/i18nContext.js', output));
 const { translations } = await import(new URL('i18n/translations.js', output));
-const empty = { observed_at_unix_ms: 1000, entries: [], errors: [], truncated: false };
+const empty = { state: 'observed', observed_at_unix_ms: 1000, entries: [], errors: [], truncated: false };
 function render(inventory, error = null, language = 'en') {
   const t = (key, params = {}) => Object.entries(params).reduce((text, [k, v]) => text.replace(`{${k}}`, String(v)), translations[language][key]);
   return renderToStaticMarkup(React.createElement(I18nContext.Provider, { value: { language, t, setLanguage() {} } }, React.createElement(ModelDownloadStagingCard, { inventory, error, onRefresh() {} })));
@@ -90,3 +90,18 @@ test('reader discards stale successes, stale failures and unmounted results', as
   await unmountedFailure;
   assert.equal(snapshots.length, 2);
 });
+
+for (const language of ['ko', 'en']) {
+  test(`root states have distinct honest labels (${language})`, () => {
+    const labels = language === 'ko'
+      ? ['staging 디렉터리가 아직 생성되지 않았습니다.', 'staging 상태 알 수 없음', '관측된 staging 항목 없음']
+      : ['Staging directory has not been created.', 'Staging state unknown', 'No staging entries observed'];
+    for (const [index, state] of ['not_created', 'unknown', 'observed'].entries()) {
+      const html = render({ ...empty, state }, null, language);
+      assert.ok(html.includes(labels[index]), `${state}: ${labels[index]}`);
+      for (const other of labels.filter((_, n) => n !== index)) assert.ok(!html.includes(other));
+    }
+    const html = render({ ...empty, truncated: true }, null, language);
+    assert.ok(html.includes(language === 'ko' ? '목록이 불완전할 수 있습니다' : 'list may be incomplete'));
+  });
+}

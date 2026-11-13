@@ -1,15 +1,17 @@
 //! D53: read-only, bounded snapshots; absence of a registered attempt proves no liveness.
 use std::collections::HashMap;
-use std::ffi::{CStr, CString, OsStr, OsString};
-use std::fs::{self, File, OpenOptions};
+use std::ffi::{OsStr, OsString};
+use std::fs::File;
 use std::io;
-use std::os::fd::{FromRawFd, IntoRawFd};
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-use std::path::{Component, Path};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt;
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
+
+mod directory;
+use directory::{open_inventory_root, Directory};
 
 const MAX_ENTRIES: usize = 4096;
 const MAX_ATTEMPTS: usize = 128;
@@ -26,101 +28,11 @@ pub struct StagingEntry {
 
 #[derive(Debug, Serialize)]
 pub struct StagingInventory {
+    pub state: &'static str,
     pub observed_at_unix_ms: u64,
     pub entries: Vec<StagingEntry>,
     pub errors: Vec<String>,
     pub truncated: bool,
-}
-
-// fdopendir owns its descriptor. Enumeration and openat stay anchored even if a
-// concurrent actor renames a directory or replaces its former path with a link.
-struct Directory(*mut libc::DIR);
-impl Directory {
-    fn new(file: File) -> io::Result<Self> {
-        let fd = file.into_raw_fd();
-        // SAFETY: ownership of this live descriptor transfers only on success.
-        let dir = unsafe { libc::fdopendir(fd) };
-        if dir.is_null() {
-            let error = io::Error::last_os_error();
-            unsafe { libc::close(fd) };
-            Err(error)
-        } else {
-            Ok(Self(dir))
-        }
-    }
-    fn next(&self) -> io::Result<Option<OsString>> {
-        loop {
-            // SAFETY: self owns a live DIR; errno is thread-local. Copy d_name
-            // before the next readdir invalidates its borrowed storage.
-            let name = unsafe {
-                #[cfg(target_os = "macos")]
-                let errno = libc::__error();
-                #[cfg(not(target_os = "macos"))]
-                let errno = libc::__errno_location();
-                *errno = 0;
-                let entry = libc::readdir(self.0);
-                if entry.is_null() {
-                    return if *errno == 0 {
-                        Ok(None)
-                    } else {
-                        Err(io::Error::last_os_error())
-                    };
-                }
-                CStr::from_ptr((*entry).d_name.as_ptr()).to_bytes().to_vec()
-            };
-            if name != b"." && name != b".." {
-                return Ok(Some(OsString::from_vec(name)));
-            }
-        }
-    }
-    fn open(&self, name: &OsStr) -> io::Result<File> {
-        let name = CString::new(name.as_bytes())?;
-        // SAFETY: dirfd is borrowed from a live DIR; name is NUL terminated.
-        let fd = unsafe {
-            libc::openat(
-                libc::dirfd(self.0),
-                name.as_ptr(),
-                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
-            )
-        };
-        if fd < 0 {
-            Err(io::Error::last_os_error())
-        } else {
-            // SAFETY: openat returned a newly owned descriptor.
-            Ok(unsafe { File::from_raw_fd(fd) })
-        }
-    }
-}
-impl Drop for Directory {
-    fn drop(&mut self) {
-        // SAFETY: self uniquely owns this DIR and its descriptor.
-        unsafe { libc::closedir(self.0) };
-    }
-}
-
-fn open_root(root: &Path) -> io::Result<File> {
-    // Canonicalize the server-owned parent (macOS HOME/tmp may have aliases),
-    // then refuse symlinks on every component while acquiring directory handles.
-    let parent = root
-        .parent()
-        .ok_or_else(|| io::Error::other("Missing staging parent"))?;
-    let canonical = fs::canonicalize(parent)?.join(
-        root.file_name()
-            .ok_or_else(|| io::Error::other("Missing staging name"))?,
-    );
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
-        .open("/")?;
-    for component in canonical.components() {
-        if let Component::Normal(name) = component {
-            file = Directory::new(file)?.open(name)?;
-            if !file.metadata()?.is_dir() {
-                return Err(io::Error::other("Staging path must be a real directory"));
-            }
-        }
-    }
-    Ok(file)
 }
 
 fn measure(
@@ -142,7 +54,10 @@ fn measure(
     }
     let dir = Directory::new(file).map_err(|e| e.to_string())?;
     let mut total = 0u64;
-    while let Some(name) = dir.next().map_err(|e| e.to_string())? {
+    while let Some(name) = dir.next().map_err(|e| {
+        *truncated = true;
+        e.to_string()
+    })? {
         if *remaining == 0 {
             *truncated = true;
             return Err("Staging entry limit reached".into());
@@ -175,7 +90,17 @@ pub(super) fn scan(
     models: &Path,
     active: &HashMap<std::path::PathBuf, (u64, u64)>,
 ) -> Result<StagingInventory, String> {
+    scan_with(models, active, || {}, |dir| dir.next())
+}
+
+fn scan_with(
+    models: &Path,
+    active: &HashMap<std::path::PathBuf, (u64, u64)>,
+    before_open: impl FnOnce(),
+    mut next: impl FnMut(&Directory) -> io::Result<Option<OsString>>,
+) -> Result<StagingInventory, String> {
     let mut report = StagingInventory {
+        state: "unknown",
         observed_at_unix_ms: SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| e.to_string())?
@@ -187,9 +112,12 @@ pub(super) fn scan(
         truncated: false,
     };
     let root = super::staging_root(models);
-    let file = match open_root(&root) {
-        Ok(file) => file,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(report),
+    let file = match open_inventory_root(&root, before_open) {
+        Ok(Some(file)) => file,
+        Ok(None) => {
+            report.state = "not_created";
+            return Ok(report);
+        }
         Err(e) => {
             report.errors.push(format!("Cannot read staging root: {e}"));
             return Ok(report);
@@ -198,18 +126,21 @@ pub(super) fn scan(
     let dir = match Directory::new(file) {
         Ok(dir) => dir,
         Err(e) => {
+            report.truncated = true;
             report
                 .errors
                 .push(format!("Cannot enumerate staging root: {e}"));
             return Ok(report);
         }
     };
+    report.state = "observed";
     let mut remaining = MAX_ENTRIES;
     loop {
-        let name = match dir.next() {
+        let name = match next(&dir) {
             Ok(Some(name)) => name,
             Ok(None) => break,
             Err(e) => {
+                report.truncated = true;
                 report
                     .errors
                     .push(format!("Cannot enumerate staging entry: {e}"));

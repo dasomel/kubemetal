@@ -1,0 +1,219 @@
+Measured review-fix evidence, #221, 2026-11-13. Filesystem/unit and SSR scope only.
+
+
+FAIL BEFORE: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib model_download -- --skip live_smoke --skip live_matrix
+failures:
+
+---- services::model_download::inventory::tests::review_missing_parent_is_unknown_with_error stdout ----
+
+thread 'services::model_download::inventory::tests::review_missing_parent_is_unknown_with_error' (2813697) panicked at src/services/model_download/inventory/tests.rs:232:5:
+missing parent is not empty staging
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- services::model_download::inventory::tests::review_never_created_root_is_explicit stdout ----
+
+thread 'services::model_download::inventory::tests::review_never_created_root_is_explicit' (2813698) panicked at src/services/model_download/inventory/tests.rs:223:5:
+assertion `left == right` failed
+  left: Null
+ right: "not_created"
+
+---- services::model_download::inventory::tests::review_root_removed_during_scan_is_unknown_with_error stdout ----
+
+thread 'services::model_download::inventory::tests::review_root_removed_during_scan_is_unknown_with_error' (2813699) panicked at src/services/model_download/inventory/tests.rs:244:5:
+observed root vanished before open
+
+---- services::model_download::inventory::tests::review_enumeration_failure_preserves_entries_and_marks_incomplete stdout ----
+
+thread 'services::model_download::inventory::tests::review_enumeration_failure_preserves_entries_and_marks_incomplete' (2813696) panicked at src/services/model_download/inventory/tests.rs:262:5:
+enumeration stopped before EOF
+
+
+failures:
+    services::model_download::inventory::tests::review_enumeration_failure_preserves_entries_and_marks_incomplete
+    services::model_download::inventory::tests::review_missing_parent_is_unknown_with_error
+    services::model_download::inventory::tests::review_never_created_root_is_explicit
+    services::model_download::inventory::tests::review_root_removed_during_scan_is_unknown_with_error
+
+test result: FAILED. 18 passed; 4 failed; 0 ignored; 0 measured; 517 filtered out; finished in 0.88s
+
+error: test failed, to rerun pass `--lib`
+
+
+FAIL BEFORE: make test-frontend
+ℹ tests 31
+ℹ suites 0
+ℹ pass 29
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 532.271709
+
+✖ failing tests:
+
+test at tests/frontend/model-download-staging.test.mjs:95:3
+✖ root states have distinct honest labels (ko) (0.940458ms)
+  AssertionError [ERR_ASSERTION]: not_created: staging 디렉터리가 아직 생성되지 않았습니다.
+      at TestContext.<anonymous> (file:///Users/m/Documents/IdeaProjects/20.dasomel/kubemetal-t4-a1/tests/frontend/model-download-staging.test.mjs:101:14)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at tests/frontend/model-download-staging.test.mjs:95:3
+✖ root states have distinct honest labels (en) (0.205542ms)
+  AssertionError [ERR_ASSERTION]: not_created: Staging directory has not been created.
+      at TestContext.<anonymous> (file:///Users/m/Documents/IdeaProjects/20.dasomel/kubemetal-t4-a1/tests/frontend/model-download-staging.test.mjs:101:14)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1402:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:974:18)
+      at Test.postRun (node:internal/test_runner/test:1542:19)
+      at Test.run (node:internal/test_runner/test:1467:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+ ELIFECYCLE  Command failed with exit code 1.
+make: *** [test-frontend] Error 1
+
+
+PASS AFTER: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib model_download -- --skip live_smoke --skip live_matrix (exit 0)
+running 22 tests
+test services::model_download::inventory::tests::review::review_missing_parent_is_unknown_with_error ... ok
+test services::model_download::inventory::tests::non_utf8_names_have_distinct_ids_and_special_files_have_unknown_size ... ok
+test services::model_download::inventory::tests::review::review_root_removed_during_scan_is_unknown_with_error ... ok
+test services::model_download::inventory::tests::review::review_never_created_root_is_explicit ... ok
+test services::model_download::inventory::tests::review::review_enumeration_failure_preserves_entries_and_marks_incomplete ... ok
+test services::model_download::inventory::tests::symlink_root_and_file_root_are_errors ... ok
+test services::model_download::inventory::tests::missing_and_empty_root_are_empty_without_writes ... ok
+test services::model_download::tests::empty_download_staging_is_not_promoted_or_listed ... ok
+test services::model_download::tests::exdev_fails_without_copying_and_cleans_attempt ... ok
+test services::model_download::inventory::tests::replacing_a_registered_path_is_not_an_active_attempt ... ok
+test services::model_download::inventory::tests::disappearing_child_and_path_replacement_cannot_escape_open_directory ... ok
+test services::model_download::tests::cleanup_failure_keeps_original_transfer_or_promotion_error ... ok
+test services::model_download::inventory::tests::nested_symlink_and_permission_failure_are_partial_unknown_sizes ... ok
+test services::model_download::tests::destination_created_during_transfer_is_preserved ... ok
+test services::model_download::tests::staging_root_file_or_external_symlink_is_refused ... ok
+test services::model_download::inventory::tests::local_transfer_abort_then_restart_is_unknown_and_never_catalogued ... ok
+test services::model_download::tests::existing_directory_file_and_symlinks_refuse_before_transfer ... ok
+test services::model_download::tests::second_file_failure_is_invisible_and_retry_promotes ... ok
+test services::model_download::tests::aborted_task_leaves_only_private_orphan_then_local_curl_retry_promotes ... ok
+test services::model_download::inventory::tests::review::review_attempt_cap_marks_incomplete ... ok
+test services::model_download::inventory::tests::attempts_entries_and_depth_are_bounded ... ok
+test services::model_download::inventory::tests::large_payload_directory_has_null_size_and_limit_evidence ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 517 filtered out; finished in 0.78s
+
+
+PASS AFTER: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings (exit 0)
+    Checking kubemetal v0.2.0 (/Users/m/Documents/IdeaProjects/20.dasomel/kubemetal-t4-a1/src-tauri)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.41s
+
+PASS AFTER: make test-frontend (exit 0)
+
+✔ make test-frontend includes frontend behavioral tests (43.968041ms)
+✔ make test includes frontend behavioral tests (44.757292ms)
+✔ make verify includes frontend behavioral tests (31.276458ms)
+✔ subscribes before snapshot, preserves in-flight events, deduplicates and sorts same-second IDs (7.116542ms)
+✔ retains only newest 50 for both snapshot and live events (0.787084ms)
+✔ late listener registration after disposal is immediately unregistered without fetching (2.096333ms)
+✔ late snapshot success/failure and live callbacks cannot overwrite a refreshed session (1.721875ms)
+✔ subscription failure surfaces while snapshot can still succeed; disposal fences late rejection (0.618875ms)
+✔ snapshot failure keeps received events and exposes failure rather than empty success (0.239375ms)
+✔ renders loading, empty, individual and combined errors honestly in both languages (5.472416ms)
+✔ renders newest first, all fields, optional details, absent PID and unknown code fallbacks (1.891958ms)
+✔ initial fetch failure surfaces error, leaves summary empty, and avoids false healthy/stale notices (5.472125ms)
+✔ lifecycle: success -> failure -> retrying -> resuccess with timestamp retention and honest states (14.339541ms)
+✔ last successful fetchedAt is retained across multiple consecutive failures (0.513625ms)
+✔ superseded slow response cannot overwrite a newer refresh result (0.361459ms)
+✔ disposal fences late resolution or rejection after unmount (0.530416ms)
+✔ component-level error in summary renders probeFailed correctly (0.758375ms)
+✔ staging distinguishes loading, failure, empty and partial scans (en) (5.619583ms)
+✔ staging preserves unknown liveness, null size, errors and real zero (en) (3.6325ms)
+✔ staging distinguishes loading, failure, empty and partial scans (ko) (0.715917ms)
+✔ staging preserves unknown liveness, null size, errors and real zero (ko) (0.270917ms)
+✔ reader clears previous active data on failure and can recover (0.455167ms)
+✔ reader discards stale successes, stale failures and unmounted results (0.144583ms)
+✔ root states have distinct honest labels (ko) (3.612917ms)
+✔ root states have distinct honest labels (en) (0.418708ms)
+✔ renders null, empty, whitespace-only and valid source/text with proper fallbacks in ko and en (8.318917ms)
+✔ exact mode renders metadata match badge and NEVER includes similarity percentage (0.508417ms)
+✔ lexical, hybrid, and dense scores and provenance are correctly formatted (1.583292ms)
+✔ shows routing info and empty notice when zero results return after search (0.191458ms)
+✔ never displays empty results notice or routing before search is executed (0.134292ms)
+✔ handles null id gracefully and renders header with result count (0.388167ms)
+ℹ tests 31
+ℹ suites 0
+ℹ pass 31
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 287.905875
+
+PASS AFTER: python3 scripts/ci/check_ipc_types.py (exit 0)
+invoke 호출 103건 — 대조 30 · 구조체 반환 63 · 타입 인자 없음 10
+OK: Rust 반환 타입과 invoke<T> 주석이 일치한다.
+
+PASS AFTER: cargo fmt --manifest-path src-tauri/Cargo.toml --check (exit 0, no output)
+PASS AFTER: pnpm exec tsc --noEmit (exit 0, no output)
+PASS AFTER: git diff --check (exit 0, no output)
+
+PENDING / SANDBOX-BLOCKED: make verify (exit 2)
+Frontend: 31 passed, 0 failed.
+---- services::ports::tests::find_free_port_errors_when_range_exhausted stdout ----
+
+thread 'services::ports::tests::find_free_port_errors_when_range_exhausted' (2866502) panicked at src/services/ports.rs:187:64:
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- services::ports::tests::find_free_port_skips_occupied_preferred stdout ----
+
+thread 'services::ports::tests::find_free_port_skips_occupied_preferred' (2866503) panicked at src/services/ports.rs:178:64:
+bind: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- services::ports::tests::is_port_free_detects_loopback_holder stdout ----
+
+thread 'services::ports::tests::is_port_free_detects_loopback_holder' (2866505) panicked at src/services/ports.rs:171:66:
+bind loopback: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- services::ports::tests::is_port_free_detects_wildcard_holder stdout ----
+
+thread 'services::ports::tests::is_port_free_detects_wildcard_holder' (2866506) panicked at src/services/ports.rs:158:68:
+bind wildcard: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+---- services::support_bundle::verification_tests::verifier_rejects_unlisted_socket stdout ----
+
+thread 'services::support_bundle::verification_tests::verifier_rejects_unlisted_socket' (2866598) panicked at src/services/support_bundle/verification_tests.rs:34:68:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+
+
+Existing live smoke: verdict NotPassed; verdict_reason "run failed". Not proven to be caused by sandbox.
+
+failures:
+    services::cumetal::harness::tests::live_smoke_against_real_install
+    services::ports::tests::find_free_port_errors_when_range_exhausted
+    services::ports::tests::find_free_port_skips_occupied_preferred
+    services::ports::tests::is_port_free_detects_loopback_holder
+    services::ports::tests::is_port_free_detects_wildcard_holder
+    services::support_bundle::verification_tests::verifier_rejects_unlisted_socket
+
+test result: FAILED. 531 passed; 6 failed; 2 ignored; 0 measured; 0 filtered out; finished in 10.30s
+
+error: test failed, to rerun pass `--lib`
+make: *** [test] Error 101
+
+
+Not observed: actual Tauri UI / IPC. No cluster commands, installs, push or PR. No new IPC or cleanup behavior. CLAUDE.md additionally carries runtime skill loading and Claude harness references. Manual ignored-file browser fixture removed; committed SSR tests are run by make test-frontend.
