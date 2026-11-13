@@ -38,6 +38,114 @@ class CompareTests(unittest.TestCase):
         return {"status": "ok", "resolved_mode": "dense", "rule": "explicit",
                 "results": [dict(self.chunks[i]) for i in indices]}
 
+    def test_missing_output_parent_and_fixture_failure_before_model_check(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = argparse.Namespace(fixture=root / "bad-fixture", model_path=root / "missing",
+                                      output=root / "nested/evidence.json", repeats=1)
+            with patch.object(compare, "load_model") as load:
+                self.assertEqual(compare.run(args), 1)
+            result = json.loads(args.output.read_text())
+            self.assertIn("bad-fixture", result["error"])
+            load.assert_not_called()
+            self.assertEqual(list(args.output.parent.iterdir()), [args.output])
+
+    def test_unwritable_output_checked_before_fixture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = argparse.Namespace(fixture=FIXTURE, model_path=root,
+                                      output=root / "evidence.json", repeats=1)
+            with patch.object(compare.tempfile, "NamedTemporaryFile", side_effect=PermissionError("read only")), \
+                    patch.object(compare, "fixture_snapshot") as fixture, \
+                    contextlib.redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(compare.run(args), 1)
+            fixture.assert_not_called()
+            self.assertIn("read only", error.getvalue())
+            self.assertFalse(args.output.exists())
+
+    def test_failed_publish_preserves_existing_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = argparse.Namespace(fixture=root, model_path=root,
+                                      output=root / "evidence.json", repeats=1)
+            args.output.write_text("previous evidence")
+            with patch.object(compare.os, "replace", side_effect=OSError("publish failed")), \
+                    contextlib.redirect_stderr(io.StringIO()) as error:
+                self.assertEqual(compare.run(args), 1)
+            self.assertEqual(args.output.read_text(), "previous evidence")
+            self.assertIn("publish failed", error.getvalue())
+            self.assertEqual(list(root.iterdir()), [args.output])
+
+    def test_auto_divergence_records_both_routes_and_reason(self):
+        def invoke(request, model):
+            response = self.response(())
+            response.update(resolved_mode="lexical", rule="production-rule")
+            return dict(response=response, query_ms=1)
+        def cold(request):
+            response = self.response(())
+            response.update(resolved_mode="hybrid", rule="other-rule")
+            return dict(response=response, query_ms=1)
+        with patch.object(compare, "invoke", side_effect=invoke):
+            result = compare.measure(self.chunks, self.queries[:1], 1, {}, None, cold)
+        item = next(r for r in result["raw"] if r["mode"] == "auto")
+        self.assertEqual(item["status"], "error")
+        self.assertIn("diverg", item["error"])
+        self.assertEqual(item["response"]["rule"], "production-rule")
+        self.assertEqual(item["subprocess"]["response"]["rule"], "other-rule")
+
+    def test_worker_auto_uses_production_route_and_records_dense_failure(self):
+        sdk, _ = self.sdk()
+        with tempfile.TemporaryDirectory() as db_path, patch.dict(sys.modules, {"lancedb": sdk}), \
+                patch.object(rag_host, "classify_query", return_value=("hybrid", "observed")) as classifier, \
+                patch.object(compare, "load_model", side_effect=RuntimeError("dense unavailable")), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            compare.worker(dict(query="x", mode="auto", model="stub", db_path=db_path,
+                                collection="fixture", top_k=5))
+        classifier.assert_called_once_with("x")
+        response = json.loads(output.getvalue())["response"]
+        self.assertEqual(response["status"], "error")
+        self.assertEqual(response["resolved_mode"], "hybrid")
+        self.assertEqual(response["rule"], "observed")
+        self.assertIn("dense unavailable", response["error"])
+
+    def test_dense_failures_remain_in_raw_output(self):
+        sdk, _ = self.sdk()
+        model = Mock()
+        model.encode.side_effect = RuntimeError("dense encode failed")
+        with tempfile.TemporaryDirectory() as db_path, patch.dict(sys.modules, {"lancedb": sdk}):
+            args = dict(db_path=db_path, collection="fixture", model="stub", top_k=5)
+            cold = lambda request: compare.invoke(request, model)
+            result = compare.measure(self.chunks, self.queries[:1], 1, args, model, cold)
+        self.assertEqual(result["status"], "error")
+        item = next(r for r in result["raw"] if r["mode"] == "dense")
+        for response in (item["response"], item["subprocess"]["response"]):
+            self.assertEqual(response["resolved_mode"], "dense")
+            self.assertIn("dense encode failed", response["error"])
+        self.assertEqual(result["report"]["dense"]["ALL"]["n"], 0)
+
+    def test_cold_nonzero_preserves_structured_production_failure(self):
+        response = dict(status="error", resolved_mode="hybrid", rule="observed", error="dense failed")
+        process = Mock(returncode=1, stderr="", stdout=json.dumps(dict(response=response)))
+        with patch.object(compare.subprocess, "run", return_value=process):
+            result = compare.cold_query({})
+        self.assertEqual(result["response"], response)
+        self.assertEqual(result["exit_code"], 1)
+
+    def test_cli_output_failure_is_controlled_without_traceback(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            blocker = root / "file"
+            blocker.write_text("not a directory")
+            process = subprocess.run([sys.executable, "-B", compare.__file__,
+                                      "--fixture", str(FIXTURE), "--model-path", str(root),
+                                      "--output", str(blocker / "evidence.json")],
+                                     capture_output=True, text=True)
+            self.assertEqual(process.returncode, 1)
+            self.assertIn("Cannot write comparison output", process.stderr)
+            self.assertNotIn("Traceback", process.stderr)
+            self.assertEqual(blocker.read_text(), "not a directory")
+
     def test_hand_ranked_metrics_and_duplicate_collapse(self):
         query = dict(id="hand", type="manual", relevant=[self.chunks[1]["filename"],
                                                        self.chunks[2]["filename"]])
@@ -244,8 +352,9 @@ class CompareTests(unittest.TestCase):
             print('{"status":"error","error":"missing collection"}')
             raise SystemExit(1)
         with patch.object(rag_host, "cmd_query", side_effect=fail):
-            with self.assertRaisesRegex(RuntimeError, "missing collection"):
-                compare.invoke({}, None)
+            response = compare.invoke({}, None)["response"]
+            self.assertEqual(response["status"], "error")
+            self.assertIn("missing collection", response["production_output"])
 
     def test_local_cpu_model_only_and_worker_load_separation(self):
         sdk = Mock()
@@ -254,10 +363,12 @@ class CompareTests(unittest.TestCase):
         sdk.SentenceTransformer.assert_called_once_with("snapshot", device="cpu",
                                                        local_files_only=True, trust_remote_code=False)
         for mode, should_load in (("exact", False), ("dense", True), ("auto", True)):
-            with patch.object(compare, "load_model") as load, \
-                    patch.object(compare, "invoke", return_value={"response": self.response(), "query_ms": 2}), \
+            sdk, _ = self.sdk()
+            with tempfile.TemporaryDirectory() as db_path, patch.dict(sys.modules, {"lancedb": sdk}), \
+                    patch.object(compare, "load_model", return_value=Embedding()) as load, \
                     contextlib.redirect_stdout(io.StringIO()) as output:
-                compare.worker(dict(query="why is host compute separate", mode=mode, model="stub"))
+                compare.worker(dict(query="why is host compute separate", mode=mode, model="stub",
+                                    db_path=db_path, collection="fixture", top_k=5))
             self.assertEqual(load.called, should_load)
             self.assertGreaterEqual(json.loads(output.getvalue())["model_load_ms"], 0)
 

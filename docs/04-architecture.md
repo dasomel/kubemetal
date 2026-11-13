@@ -333,8 +333,11 @@ python3 -B scripts/rag/eval_compare.py \
 
 동일 production fixed chunker로 fixture를 한 번 나누고, CPU 모델을 한 번 적재한 뒤
 embedding·임시 LanceDB table을 한 번 준비한다. fixture-relative source로 tie 순서를
-고정하며 실제 table의 전체 records를 입력과 대조한다. 모든 질의는 동일 index와
-model snapshot에서 production `rag_host.cmd_query`를 호출한다. exact/lexical(BM25)/
+고정하며 실제 table의 전체 records를 입력과 대조한다. 모든 모드는 production
+`rag_host.cmd_query`를 호출하며 같은 table의 corpus/chunk metadata를 사용한다.
+exact/lexical은 모델이나 vector 검색 없이 table의 원문 records를 검색한다.
+dense/hybrid는 동일 vector records와 로컬 model snapshot을 사용하고, auto는
+production 분류·검색 경로에 따라 해당 조건을 따른다. exact/lexical(BM25)/
 dense/hybrid/auto의 순서를 query·반복마다 회전시킨다. hybrid는 production의 전역
 lexical+dense RRF이며 별도 lexical 구현이나 candidate rerank가 아니다.
 
@@ -350,7 +353,9 @@ JSON은 corpus/query/chunk/model/config/production/harness/index-record 해시�
 전체 5회 결과의 n은 모드별 `질의 수 × 5`이며 독립 질의 수와 다르다.
 
 빈 검색 결과는 유효한 0점이다. 누락/변조 metadata, production 오류, subprocess 실패는
-요청 오류로 남고 전체 exit는 nonzero다. 실패 요청은 평균에 포함하지 않으므로 부분
+요청 오류로 남고 전체 exit는 nonzero다. auto의 상주·subprocess route/rule과
+양쪽 응답 또는 dense 실패 원인을 보존하며, 응답 차이도 비교 오류로 기록한다.
+출력 디렉터리는 준비 단계 전에 생성·검사하고 완성된 JSON만 원자적으로 교체한다. 실패 요청은 평균에 포함하지 않으므로 부분
 report는 성공 비교로 해석하면 안 된다. dependency/model 부재는 `unavailable`·nonzero다.
 온라인 접근과 remote model code는 비활성화하며 snapshot/fixture 변경도 거부한다.
 
