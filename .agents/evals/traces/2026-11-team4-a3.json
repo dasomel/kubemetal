@@ -62,16 +62,16 @@
       "type": "verification",
       "status": "passed",
       "scope": "make verify completion suite, re-run by the orchestrator outside the lane sandbox on the macOS host",
-      "summary": "The lane sandbox blocked socket-binding tests (PermissionDenied), so the orchestrator re-ran make verify on the host: exit 0, 523 Rust tests passed, 0 failed, 2 ignored; frontend suite, lint, licence check and web build passed.",
+      "summary": "The lane sandbox blocked socket-binding tests (PermissionDenied), so the orchestrator re-ran make verify on the host: exit 0, 537 Rust tests passed, 0 failed, 2 ignored; frontend suite, lint, licence check and web build passed.",
       "evidence": [
-        "test:make-verify-exit-0-523-rust-passed-0-failed-2-ignored",
+        "test:make-verify-exit-0-537-rust-passed-0-failed-2-ignored",
         "ci:make-verify-lint-license-build-ok"
       ]
     },
     {
       "id": "e8",
       "type": "completion_claim",
-      "summary": "Local accelerator evidence envelope/export with path confinement and input validation (#11 slice) is implemented and passes its regression tests and make verify (523 Rust tests) on the host.",
+      "summary": "Local accelerator evidence envelope/export with path confinement and input validation (#11 slice) is implemented and passes its regression tests and make verify (537 Rust tests) on the host.",
       "evidence": [
         "e4",
         "e5",
@@ -82,7 +82,7 @@
       "id": "e7",
       "type": "task_outcome",
       "state": "A",
-      "summary": "Complete and verified for the approved slice: regression tests and make verify (exit 0, 523 Rust tests) on the host. Follow-ups named in the slice remain out of scope.",
+      "summary": "Complete and verified for the approved slice: regression tests and make verify (exit 0, 537 Rust tests) on the host. Follow-ups named in the slice remain out of scope.",
       "next": "Run make verify in an authorized host environment; investigate CuMetal live-smoke exit 10 if it persists. No unrelated runtime edits in this lane."
     }
   ]
