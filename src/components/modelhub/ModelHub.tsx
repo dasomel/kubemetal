@@ -3,11 +3,15 @@ import { useModelHub } from '../../hooks/useModelHub';
 import { ModelSearchCard } from './ModelSearchCard';
 import { ModelHubGuideCard } from './ModelHubGuideCard';
 import { DownloadStatusCard } from './DownloadStatusCard';
+import { ModelDownloadStagingCard } from './ModelDownloadStagingCard';
 import { LocalModelsCard } from './LocalModelsCard';
 import type { ModelCategory, RamSizeProfile } from '../../lib/modelCategories';
 
 export const ModelHub: React.FC = () => {
   const {
+    staging,
+    stagingError,
+    refreshStaging,
     searchResults,
     searching,
     search,
@@ -74,6 +78,8 @@ export const ModelHub: React.FC = () => {
       />
 
       <DownloadStatusCard downloads={downloads} />
+
+      <ModelDownloadStagingCard inventory={staging} error={stagingError} onRefresh={refreshStaging} />
 
       <LocalModelsCard
         models={localModels}

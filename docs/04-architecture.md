@@ -122,6 +122,7 @@ DRA/Kueue는 위 조건을 만족하는 **실제 Kubernetes 관리 가능 resour
 | | `provision_mlops_stack` | `scripts/k8s/`의 Secret + MLflow + SeaweedFS + mac-gpu-bridge 매니페스트 4종을 `kubectl apply` (D18: `resolve_bundled_resource`로 번들 `_up_/` 평탄화 경로 해석) |
 | | `start_port_forward` / `stop_port_forward` | MLflow/SeaweedFS S3/Filer 3개 포트포워딩 자식 프로세스 spawn/종료 |
 | 모델 허브 (Phase 2b) | `search_hf_models`, `download_hf_model`, `get_model_downloads`, `list_local_models` | Hugging Face 검색·다운로드(`~/.kubemetal/models/`)·진행 상태·로컬 목록 조회 |
+| 모델 다운로드 staging (D53) | `list_model_download_staging` → `useModelHub` → `ModelDownloadStagingCard` | 별도 읽기 전용 snapshot. 서버의 공유 root 계산 → blocking worker → canonical parent/no-follow directory handles → bounded metadata scan. ID·nullable 크기·관측 시각·상태 근거·부분 오류/상한 표시. 현재 프로세스 등록과 device/inode가 일치하는 시도만 active, 재시작·PID 재사용·나이는 unknown. catalog/`Vec<DownloadStatus>` 계약 유지, 삭제 없음(#221 cleanup AC UNMET). IPC owner 승인 후 merge. |
 | | `upload_model_to_storage`, `register_model_mlflow` | SeaweedFS S3(`models` 버킷) 업로드 → MLflow Model Registry 등록 |
 | MLX 스튜디오 (Phase 2c) | `check_mlx_env`, `setup_mlx_env` | `~/.kubemetal/venv`의 python3/mlx-lm 상태 조회·설치 |
 | | `run_mlx_finetune` | venv python으로 `scripts/mlx/finetune_wrapper.py`(D18 경로 해석) 실행, `process_group(0)`으로 기동(D17). D47: 유일한 파인튜닝 경로(Prefect 플로우 제거). D49: mlx-lm save-completed 로그에서 immutable 검증 snapshot을 기록하고 checkpoint 이벤트를 emit; Failed/Killed source만 새 attempt로 weights warm-start한다. mlx-vlm resume은 지원하지 않는다. D45: staging `out/`에만 출력; exit 0·기대 done 경로·manifest 검증 후 삭제와 같은 admission mutex 아래 최종 이름으로 배타적 승격해야 done |

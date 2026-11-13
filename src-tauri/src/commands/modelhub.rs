@@ -427,6 +427,12 @@ pub async fn get_model_downloads(
 }
 
 #[tauri::command]
+pub async fn list_model_download_staging(
+) -> Result<model_download::inventory::StagingInventory, String> {
+    model_download::inventory::list(models_root()?).await
+}
+
+#[tauri::command]
 pub fn list_local_models() -> Result<Vec<LocalModel>, String> {
     list_local_models_at(&models_root()?)
 }
