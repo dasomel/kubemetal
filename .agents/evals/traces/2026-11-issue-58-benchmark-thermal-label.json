@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-issue-58-benchmark-thermal-label",
+  "task": "Issue #58: Correct benchmark thermal unmeasured representation (standalone null + reason, decouple raw pmset text into diagnostics).",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "scripts/mlx/**",
+      "scripts/mlx/benchmark_local_inference.py",
+      "tests/mlx/test_local_inference_benchmark_metadata.py",
+      "docs/12-local-inference-acceptance.md",
+      "docs/mistakes-log.md",
+      ".agents/evals/traces/2026-11-issue-58-benchmark-thermal-label.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Read AGENTS.md, mistakes log, D2/D22, scripts/mlx/benchmark_local_inference.py and docs/12 §4. Approved slice A4 (Issue #58) only: standalone thermal_state is null with source/unavailable_reason, isolate raw pmset text into diagnostics.pmset_therm; document IPC telemetry extension and historical evidence distinction. No new IPC, no bridge helper, no GPU/cluster live run, no edits outside worktree."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Verified pre-fix benchmark_local_inference.py:286 directly placed multi-line pmset -g therm output into host.thermal_state. Added tests in tests/mlx/test_local_inference_benchmark_metadata.py and ran against pre-fix code: 7 tests failed with AttributeError (collect_thermal_metadata and collect_host_metadata missing, thermal_state non-null).",
+      "evidence": [
+        "test:python3 -B -m unittest discover -s tests/mlx -v: exit 1; 24 passed, 7 errors, Ran 31 tests in 0.773s; AttributeError on missing metadata collection and non-null thermal_state",
+        "runtime:python3 -c import benchmark_local_inference; command_output('pmset', '-g', 'therm'): produced multi-line advisory string instead of null"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Added collect_thermal_metadata and collect_host_metadata in benchmark_local_inference.py: standalone thermal_state is null, thermal_source is null, thermal_unavailable_reason documents CLI absence (D2/D22); raw pmset output is isolated under diagnostics.pmset_therm (and host.diagnostics.pmset_therm). Documented IPC extension path and historical evidence preservation in docs/12 §4. Added mistakes-log row."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "tests/mlx test suite including 8 new metadata and consumer compatibility tests",
+      "summary": "All 31 mlx tests passed (8 new tests covering real host null check, missing CLI, timeout, empty string, advisory warning string, JSON consumer unknown mapping, legacy consumer compatibility, and IPC extension contract).",
+      "evidence": [
+        "test:python3 -B -m unittest discover -s tests/mlx -v: exit 0; Ran 31 tests in 0.861s; OK",
+        "runtime:python3 -c benchmark_local_inference.collect_host_metadata(): verified on-device Apple M4 Pro emitted thermal_state=null, thermal_source=null, thermal_unavailable_reason populated, and diagnostics.pmset_therm preserved"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Rust formatting, clippy, tsc, frontend unit suite, and full make verify completion suite",
+      "summary": "make verify passed cleanly: 525 Rust tests passed (0 failed, 2 ignored), 23 frontend tests passed, cargo clippy -D warnings passed, cargo fmt passed, tsc passed, license checks passed, and production web build passed.",
+      "evidence": [
+        "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0",
+        "ci:cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: exit 0",
+        "ci:pnpm exec tsc --noEmit: exit 0",
+        "test:make test-frontend: exit 0; 23 passed, 0 failed in 235ms",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml --lib: exit 0; 525 passed, 0 failed, 2 ignored",
+        "ci:make verify: exit 0; completion suite (test, lint, license-check, web build) all passed"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Benchmark thermal unmeasured state representation is corrected: standalone thermal_state is null with explicit unavailable reason, raw pmset text is decoupled into diagnostics.pmset_therm, verified by regression tests and make verify.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "state": "A",
+      "summary": "Complete and verified for approved slice A4 (#58): metadata collection functions added, regression test suite created and passing, acceptance documentation §4 updated, mistakes log updated, and make verify passed exit 0.",
+      "next": "Orchestrator may run optional live on-device benchmark when needed; no unverified code remains in this slice."
+    }
+  ]
+}

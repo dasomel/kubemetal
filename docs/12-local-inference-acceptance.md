@@ -74,6 +74,32 @@ The benchmark schema records model identity, runtime, host, traffic, TTFT, API-b
 estimate, generation tok/s, process RSS and cache-directory size. Queue wait, engine-only model-load
 time and peak unified-memory stay `null` unless a trustworthy source exists.
 
+### Thermal state metadata and provenance (Issue #58)
+
+- **Standalone benchmark thermal status**: In standalone benchmark runs (`benchmark_local_inference.py`),
+  `host.thermal_state` is `null` (`None`). On Apple Silicon macOS, CLI utilities do not expose
+  macOS thermal pressure stages (`NSProcessInfo.thermalState` is the sole sudo-free source, D2).
+  In accordance with D22 (never fabricate state), CLI failure, timeout, empty output, or the
+  advisory message `"Note: No thermal warning level has been recorded"` must **never** be translated
+  into `0`, `"nominal"`, `"normal"`, or healthy PASS.
+- **Unavailable reason and source**: When unmeasured, `host.thermal_source` is `null` and
+  `host.thermal_unavailable_reason` explicitly documents why CLI tools cannot supply the state.
+- **Diagnostic isolation**: The raw stdout from `pmset -g therm` is decoupled from `thermal_state`
+  and preserved under `diagnostics.pmset_therm` (and `host.diagnostics.pmset_therm`) for advisory context.
+- **IPC telemetry extension contract**: When the benchmark is invoked within or receives telemetry from
+  the KubeMetal desktop app IPC (`get_guardrail_status` / `get_system_metrics`), `host.thermal_state`
+  may record the verified stage (`nominal` | `fair` | `serious` | `critical`) with an explicit
+  `host.thermal_source` (e.g. `app_ipc`) and timestamp. Standalone benchmark execution does not
+  fabricate a bridge/helper or invent this value.
+- **Distinction between historical and new evidence JSON**:
+  - *Historical evidence* (`evidence/local-inference/20260906-ondevice/*.json`): preserved verbatim
+    under evidence immutability rules. These files carry the raw multi-line `pmset -g therm` diagnostic
+    prose directly in `host.thermal_state`.
+  - *New evidence*: outputs emit `host.thermal_state: null`, `host.thermal_source: null`,
+    `host.thermal_unavailable_reason`, and isolate raw command text in `diagnostics.pmset_therm`.
+  - Consumers must treat `null` (and legacy raw strings) as `unknown` / `unavailable`, never as
+    `nominal` or healthy.
+
 ## 5. Regression gate
 
 Compare two evidence files with explicit independent SLO thresholds:

@@ -89,6 +89,7 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-11-13 | #58 standalone benchmark(`benchmark_local_inference.py`)가 `pmset -g therm` 출력을 `host.thermal_state`에 넣어 발열 상태를 측정한 것처럼 오인시켰다 (D2 실측: CLI 경로는 thermal state 미제공) | standalone benchmark는 `thermal_state`를 `null`로 두고 `thermal_source: null`, `thermal_unavailable_reason`과 `diagnostics.pmset_therm`(원시 출력 보존)으로 분리. CLI 누락/timeout/빈 출력/No thermal warning... 모두 정상/0으로 둔갑하지 않도록 fail-first 테스트(`test_local_inference_benchmark_metadata.py`)로 고정 |
 | 2026-11-12 | #84 matrix 증거 복사가 common.h만 포함해 parity.h 의존 프로브를 unavailable로 오판했고, replay는 index/sources 동시 삭제와 로그·index 독립 재봉인을 원본 결과에 대조하지 않았다 | 모든 *.h를 보존·해시하고 .cu 로컬 include에서 누락 회귀를 도출한다. replay는 원본 JSON과 증거/index 해시를 필수 대조한다. CPU fixture의 수정 전 4건 실패로 재현했으며 서명이나 GPU 실측은 아니다 |
 | 2026-07-20 | Bound MLflow to host port 5000 — macOS AirPlay Receiver (ControlCenter) occupies 5000/7000, forwarding silently breaks | Use 5001 (D1); never claim 5000 on macOS |
 | 2026-07-20 | Spec required "powermetrics C-Binding" for GPU metrics — powermetrics is a CLI (no public C API) and requires **root** | Phase 1 ships sysinfo RAM/CPU only; GPU metrics = Phase 3 privileged helper + CLI parsing (D2) |
