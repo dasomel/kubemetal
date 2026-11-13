@@ -266,7 +266,6 @@ D43: 관리 프로필은 `scripts/colima-profile.txt`에서 읽고 context는 `c
 기존 stdlib `eval_retrieval.py`는 그대로 유지한다.
 
 ```sh
-
 # 이미 보유한 로컬 sentence-transformers snapshot만 사용. 설치/다운로드하지 않는다.
 python3 -B scripts/rag/eval_compare.py \
   --fixture scripts/rag/eval/fixtures --model-path /absolute/path/to/local/snapshot \
