@@ -1,0 +1,10 @@
+{
+  "judgment": "Implementation-authored provisional binary document qrels; human review pending. Identifiers match docs basenames. Frozen synthetic evaluation corpus, not product documentation.",
+  "queries": [
+    {"id": "ko", "type": "korean", "text": "D10 브릿지가 뭔가요?", "relevant": ["bridge.md", "service.yaml"]},
+    {"id": "en", "type": "english", "text": "Where are experiment tracking and object storage hosted?", "relevant": ["storage.md"]},
+    {"id": "code", "type": "code", "text": "resolve_cli_path", "relevant": ["loader.py"]},
+    {"id": "config", "type": "config", "text": "externalName host.lima.internal", "relevant": ["service.yaml", "bridge.md"]},
+    {"id": "exact", "type": "filename", "text": "service.yaml", "relevant": ["service.yaml"]}
+  ]
+}
