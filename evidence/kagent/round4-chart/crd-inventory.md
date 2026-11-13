@@ -1,7 +1,27 @@
-# CRD inventory evidence boundary
+# CRD inventory
 
-[measured — see kagent-crds_1_0_0_alpha17_template_default.stdout.txt] The rendered Agent CRD has group `api.kagent.dev`, kind `Agent`, and version name `v1alpha3`.
+[measured — host-probe/0-kagent-crds-0.9.12-inventory.json; host-probe/1-kagent-crds-1.0.0-alpha17-inventory.json] 모든 old 항목은 `kagent.dev`, 모든 new 항목은 `api.kagent.dev` 그룹이다.
 
-[pending probe] The complete group/kind/served/storage inventory for both versions will be captured in `*-inventory.json`. The previous manually transcribed comparison and inferred rename/removal verdicts are withdrawn pending that extraction.
+| Chart version | group | kind | served versions | storage version |
+|---|---|---|---|---|
+| 0.9.12 | kagent.dev | Agent | v1alpha1, v1alpha2 | v1alpha2 |
+| 0.9.12 | kagent.dev | AgentHarness | v1alpha2 | v1alpha2 |
+| 0.9.12 | kagent.dev | MCPServer | v1alpha1 | v1alpha1 |
+| 0.9.12 | kagent.dev | Memory | v1alpha1 | v1alpha1 |
+| 0.9.12 | kagent.dev | ModelConfig | v1alpha1, v1alpha2 | v1alpha2 |
+| 0.9.12 | kagent.dev | ModelProviderConfig | v1alpha2 | v1alpha2 |
+| 0.9.12 | kagent.dev | RemoteMCPServer | v1alpha2 | v1alpha2 |
+| 0.9.12 | kagent.dev | SandboxAgent | v1alpha2 | v1alpha2 |
+| 0.9.12 | kagent.dev | ToolServer | v1alpha1 | v1alpha1 |
+| 1.0.0-alpha17 | api.kagent.dev | Agent | v1alpha3 | v1alpha3 |
+| 1.0.0-alpha17 | api.kagent.dev | AgentTemplate | v1alpha3 | v1alpha3 |
+| 1.0.0-alpha17 | api.kagent.dev | EgressPolicy | v1alpha3 | v1alpha3 |
+| 1.0.0-alpha17 | api.kagent.dev | Harness | v1alpha3 | v1alpha3 |
+| 1.0.0-alpha17 | api.kagent.dev | ModelConfig | v1alpha3 | v1alpha3 |
+| 1.0.0-alpha17 | api.kagent.dev | ModelProviderConfig | v1alpha3 | v1alpha3 |
+| 1.0.0-alpha17 | api.kagent.dev | RemoteMCPServer | v1alpha3 | v1alpha3 |
+| 1.0.0-alpha17 | api.kagent.dev | SandboxTemplate | v1alpha3 | v1alpha3 |
 
-[unverified] An artifact inventory does not establish which CRDs are already installed in a cluster or which requests its API server accepts.
+[measured — host-probe/0-kagent-crds-0.9.12-inventory.json; host-probe/1-kagent-crds-1.0.0-alpha17-inventory.json] kind 이름 기준 old-only: AgentHarness, MCPServer, Memory, SandboxAgent, ToolServer. New-only: AgentTemplate, EgressPolicy, Harness, SandboxTemplate. 공통: Agent, ModelConfig, ModelProviderConfig, RemoteMCPServer. 이름 집합 차이이며 rename 또는 대체 관계를 뜻하지 않는다.
+
+[unverified] 실제 설치된 CRD, API admission, conversion webhooks, migration 및 controller/runtime 호환성.

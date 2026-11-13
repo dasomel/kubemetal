@@ -71,7 +71,7 @@ Sources: [CNCF blog](https://www.cncf.io/blog/2025/04/15/kagent-bringing-agentic
 
 ## 0.x → 1.x 전환 영향도 맵 및 검증 체크리스트 (#193)
 
-> 현재 리포지토리는 차트 버전 `0.9.12`(`scripts/helm/kagent-version.txt:1`)와 CRD `kagent.dev/v1alpha2` Declarative 스키마(`src-tauri/src/services/kagent_agents.rs:110`)에 고정되어 있다. 외부 조사 덤프에 언급된 `alpha17`(`1.0.0-alpha17`)은 조사 당시 기준의 프리릴리스 관찰값일 뿐이며, 1.x 정식 차트·CRD 스키마·하위 호환성은 본 리포지토리에서 실측되지 않았다(`[unverified]`).
+> 현재 리포지토리는 차트 버전 `0.9.12`(`scripts/helm/kagent-version.txt:1`)와 CRD `kagent.dev/v1alpha2` Declarative 스키마(`src-tauri/src/services/kagent_agents.rs:110`)에 고정되어 있다. 외부 조사 덤프에 언급된 `alpha17`(`1.0.0-alpha17`)은 조사 당시 기준의 프리릴리스 관찰값이다. 정식 1.x 및 runtime 하위 호환성은 [unverified]이며, 아래 §3은 커밋된 alpha17 host-probe 아티팩트만 비교한다.
 
 ### 1. 현재 리포지토리 결합 지점 (`0.9.12` / `v1alpha2` 기준)
 
@@ -83,16 +83,11 @@ Sources: [CNCF blog](https://www.cncf.io/blog/2025/04/15/kagent-bringing-agentic
 | **RemoteMCPServer (MCP 도구 서버)** | `src-tauri/src/services/kagent_agents.rs:50`<br>`src-tauri/src/services/kagent_agents.rs:128`<br>`scripts/k8s/security-agent.yaml:28`<br>`scripts/k8s/remote-reader/remote-reader-agent.yaml:6`<br>`scripts/k8s/remote-reader/remote-reader-agent.yaml:53`<br>`scripts/k8s/remote-reader/remote-reader-tools.yaml:38`<br>`scripts/k8s/remote-reader/setup-remote-reader.sh:45`<br>`scripts/k8s/remote-reader/setup-remote-reader.sh:162` | • Agent의 `spec.declarative.tools[]`가 `type: McpServer` 및 `mcpServer: { apiGroup: kagent.dev, kind: RemoteMCPServer, name: kagent-tool-server, toolNames: [...] }` 구조로 도구 바인딩(`src-tauri/src/services/kagent_agents.rs:50`, `128`)<br>• 원격 클러스터 리더가 `apiVersion: kagent.dev/v1alpha2`, `kind: RemoteMCPServer`와 `spec.{protocol: STREAMABLE_HTTP, url, sseReadTimeout, terminateOnClose, timeout}` 선언(`scripts/k8s/remote-reader/remote-reader-agent.yaml:6`)<br>• 도구 서버 배포가 `ghcr.io/kagent-dev/kagent/tools:0.2.1` 이미지를 사용하며(`scripts/k8s/remote-reader/remote-reader-tools.yaml:38`), `scripts/k8s/remote-reader/setup-remote-reader.sh:45`가 클러스터의 `deploy/kagent-tools -n kagent` 이미지와 일치 여부를 검사하고 `status.discoveredTools[*].name` 경로를 안내(`scripts/k8s/remote-reader/setup-remote-reader.sh:162`) |
 | **Air-Gap (오프라인 번들·버전 추적)** | `scripts/airgap/images-helm.txt:9`<br>`src-tauri/src/commands/colima.rs:265`<br>`src-tauri/src/commands/colima.rs:572`<br>`src-tauri/src/commands/colima.rs:579`<br>`src-tauri/src/commands/colima.rs:701`<br>`scripts/airgap/download_airgap_bundle.sh:127`<br>`scripts/airgap/install_from_airgap.sh:178`<br>`scripts/airgap/test_sbom.sh:42`<br>`scripts/airgap/test_digest_lock.sh:150`<br>`scripts/airgap/test_digest_lock.sh:224`<br>`scripts/airgap/test_digest_lock.sh:357` | • `scripts/airgap/images-helm.txt:9`~`17`에 `cr.kagent.dev/kagent-dev/kagent/{controller,app,ui}:0.9.12`, `ghcr.io/kagent-dev/kagent/tools:0.2.1`, `ghcr.io/kagent-dev/kmcp/controller:0.3.0`, `postgres:18.3-alpine` 고정<br>• `STATIC_AIRGAP_TARGETS`(`src-tauri/src/commands/colima.rs:265`~`311`)가 차트 파일명(`charts/kagent-crds-0.9.12.tgz`, `charts/kagent-0.9.12.tgz`)과 이미지 아카이브 경로를 보유하며 `static_airgap_targets_match_images_helm_txt`(`src-tauri/src/commands/colima.rs:701`)가 드리프트를 차단<br>• `get_airgap_latest_versions`가 `"0.9.12"` 리터럴로 릴리스 비교(`src-tauri/src/commands/colima.rs:572`, `579`)<br>• 에어갭 수집(`scripts/airgap/download_airgap_bundle.sh:127`), 오프라인 설치(`scripts/airgap/install_from_airgap.sh:178`), SBOM·다이제스트 락 테스트 픽스처(`scripts/airgap/test_sbom.sh:42`, `scripts/airgap/test_digest_lock.sh:150`, `224`, `357`)가 `0.9.12` 차트 파일명에 결합 |
 
-### 2. 1.x 전환 시 미검증 사항 및 검증 체크리스트 (`[unverified]`)
+### 2. 전환 전 남은 검증
 
-외부 조사 덤프의 `alpha17`(`1.0.0-alpha17`) 기준 관찰 내용은 조사 시점의 스냅샷일 뿐이므로, 실제 1.x 업그레이드 착수 시 아래 항목을 모두 클러스터에서 실측해야 한다.
+아래 §3은 0.9.12와 1.0.0-alpha17의 커밋된 아티팩트 비교다. 실제 업그레이드·설치·기동·conversion webhooks·migration·API admission/CEL·기본 리소스명·values 적용·Secret 생성·D10 추론/tool calling·UI 포워드·Air-Gap 이미지 및 번들 호환성은 모두 [unverified]이다. 정식 1.x에도 이 결과를 일반화하지 않는다.
 
-- [ ] **Helm 차트 구조 및 values 호환성 `[unverified]`**: `oci://ghcr.io/kagent-dev/kagent/helm/{kagent-crds,kagent}` 두 차트 분리 구조 유지 여부 `[unverified]`, `providers.openAI.{apiKey, apiKeySecretKey, apiKeySecretRef, config.baseUrl, model, provider}` values 경로 및 `kagent-openai` Secret 생성 가드 동작 유지 여부 `[unverified]`, `scripts/helm/kagent-values.yaml:23`~`42`의 기본 에이전트 비활성화 키 이름 유지 여부 `[unverified]`, `svc/kagent-ui:8080` 서비스 이름·포트 및 파드 `app.kubernetes.io/name` 라벨 규약 유지 여부 `[unverified]`.
-- [ ] **CRD API 버전(`v1alpha2` → `v1alpha3`/`v1beta1`/`v1`) 및 전환 웹훅 `[unverified]`**: 1.x(조사 당시 `alpha17` 포함)에서 `Agent`, `ModelConfig`, `RemoteMCPServer`의 `apiVersion` 승격 여부 및 `v1alpha2` served/storage 유지 여부 `[unverified]`. 변경 시 `src-tauri/src/services/kagent_agents.rs:21`·`62`·`83`·`110`·`211`, `scripts/k8s/security-agent.yaml:1`, `scripts/k8s/remote-reader/remote-reader-agent.yaml:6`·`23` 일괄 갱신 필요.
-- [ ] **ModelConfig 스키마 및 로컬 MLX 브리지 연동 `[unverified]`**: 차트가 생성하는 기본 리소스명(`default-model-config`) 유지 여부 `[unverified]`, `spec.openAI.baseUrl` 및 `spec.model` JSON 경로(`src-tauri/src/commands/kagent.rs:601`) 유지 여부 `[unverified]`, D10 브리지(`http://mac-gpu-service.<ns>.svc.cluster.local:<port>/v1`) 경유 OpenAI 호환 추론 및 tool calling 정상 동작 여부 `[unverified]`.
-- [ ] **Declarative Agent 스키마 및 런타임 동작 `[unverified]`**: `spec.type: Declarative` 및 `spec.declarative.{runtime, modelConfig, systemMessage, deployment.resources, tools}` 필드 구조 유지 여부 `[unverified]`, `rca-agent`의 리소스 미지정 시 컨트롤러 기본 메모리 한도 및 OOM 회피 동작 유지 여부 `[unverified]`.
-- [ ] **RemoteMCPServer 및 `kagent-tools` 호환성 `[unverified]`**: 내장 도구 서버 리소스명(`kagent-tool-server`)과 도구 이름(`k8s_get_resources`, `k8s_describe_resource`, `k8s_get_events` 등) 유지 여부 `[unverified]`, `RemoteMCPServer`의 `spec.{protocol: STREAMABLE_HTTP, url, sseReadTimeout, terminateOnClose, timeout}` 및 `status.discoveredTools[*].name` 스키마 유지 여부 `[unverified]`, `deploy/kagent-tools` 배포 이름·컨테이너 이미지(`ghcr.io/kagent-dev/kagent/tools`)·플래그(`--port`, `--metrics-port`) 유지 여부 `[unverified]`.
-- [ ] **Air-Gap 번들 및 이미지 레지스트리 동기화 `[unverified]`**: 1.x 차트가 참조하는 컨테이너 이미지 목록(`controller`, `app`, `ui`, `tools`, `kmcp`, `postgres` 태그 및 레지스트리 경로) 실측 추출 `[unverified]`, `scripts/helm/kagent-version.txt:1` 갱신 시 `scripts/airgap/images-helm.txt:9`, `src-tauri/src/commands/colima.rs:265`·`572`·`579`, `scripts/airgap/download_airgap_bundle.sh:127`, `scripts/airgap/install_from_airgap.sh:178`, `scripts/airgap/test_sbom.sh:42`, `scripts/airgap/test_digest_lock.sh:150`·`224`·`357` 동시 갱신 및 `make verify` 통과 확인.
+### 3. Artifact-only probe / no install (#193)
 
 ## Round 4 / #17 installed-not-ready — 실클러스터 관측 (measured-local, 2026-11-13)
 
@@ -109,26 +104,31 @@ PR #238(kagent가 설치됐지만 준비되지 않으면 degraded)의 집계를 
   갱신되지 않은 것으로 보이며[추정], 별도 확인이 필요하다.
 ### 3. Artifact-only probe / no install (#193 실측 대조, 2026-11-13)
 ### 3. Artifact-only probe / no install (#193, 2026-11-13)
+[measured — host-probe/0-kagent-crds-0.9.12-paths.json; host-probe/1-kagent-crds-1.0.0-alpha17-paths.json] 아래 표의 축약 경로는 [개별 필드·file:line 표](../evidence/kagent/round4-chart/code-compatibility-matrix.md)에서 풀어 썼다. Agent 근거: `src-tauri/src/services/kagent_agents.rs:120`, `scripts/k8s/security-agent.yaml:11`; RemoteMCPServer: `scripts/k8s/remote-reader/remote-reader-agent.yaml:15`. ModelConfig 행은 `scripts/helm/kagent-values.yaml:19`, `src-tauri/src/commands/kagent.rs:670`의 설정과 관련된 스키마 경로 비교이며 실제 Helm CR 출력 매핑은 [unverified]이다.
 
-[measured — see `evidence/kagent/round4-chart/kagent_0_9_12_show_chart.stdout.txt` and `evidence/kagent/round4-chart/kagent_1_0_0_alpha17_show_chart.stdout.txt`] 저장된 main Chart.yaml 메타데이터의 버전은 각각 `0.9.12`, `1.0.0-alpha17`이다.
+| Kind / 앱 출력·설정 경로 | v1alpha2 존재/타입 | 같은 v1alpha3 경로/타입 | 가장 가까운 literal 후보 (동등성 미검증) |
+|---|---|---|---|
+| Agent `spec.type`; `spec.declarative.runtime`; `spec.declarative.tools[].type` | string 각각 | 없음 | no equivalent path found in schema |
+| Agent `spec.description` | string | 없음 | `spec.template.inline.description` (string) |
+| Agent `spec.declarative.modelConfig` | string | 없음 | `spec.template.inline.modelConfig.name` (string; 부모 modelConfig는 object) |
+| Agent `spec.declarative.systemMessage` | string | 없음 | `spec.template.inline.systemPrompt` (string) |
+| Agent `spec.declarative` 및 그 하위 `deployment`, `deployment.resources`, `deployment.resources.{limits,requests}` 컨테이너 | object 각각 | 없음 | no equivalent path found in schema |
+| Agent `spec.declarative.deployment.resources.{limits,requests}.*` (cpu/memory) | `<unspecified>`; anyOf integer/string | 없음 | no equivalent path found in schema |
+| Agent `spec.declarative.tools` / `tools[]` / `tools[].mcpServer` | array / object / object | 없음 | `spec.template.inline.tools` / `tools[]` / `tools[].mcp` (같은 타입) |
+| Agent `spec.declarative.tools[].mcpServer.{apiGroup,kind,name}` | string 각각 | 없음 | `spec.template.inline.tools[].mcp.server.{apiGroup,kind,name}` (string 각각) |
+| Agent `spec.declarative.tools[].mcpServer.toolNames` / `toolNames[]` | array / string | 없음 | `spec.template.inline.tools[].mcp.tools` / `tools[]` (array / string) |
+| ModelConfig `spec.{model,provider,apiKeySecret,apiKeySecretKey}`; `spec.openAI.baseUrl` / `spec.openAI` | string 각각 / object | 모두 있음·동일 타입 | — |
+| RemoteMCPServer `spec.{description,protocol,url,sseReadTimeout,timeout}` / `spec.terminateOnClose` | string 각각 / boolean | 모두 있음·동일 타입 | — |
 
-[measured — see `evidence/kagent/round4-chart/sha256sums.txt`] 기존 tgz SHA256 기록은 다음과 같다. 현재 tarball은 저장소에 없으므로 재다운로드와 일치 여부는 [pending probe]이다.
+- [measured — host-probe/0-kagent-0.9.12-show-chart.stdout.txt; host-probe/1-kagent-1.0.0-alpha17-show-chart.stdout.txt; host-probe/0-kagent-crds-0.9.12-show-chart.stdout.txt; host-probe/1-kagent-crds-1.0.0-alpha17-show-chart.stdout.txt] 두 차트의 version은 각각 0.9.12 / 1.0.0-alpha17이며 네 Chart.yaml 모두 appVersion 필드가 없다.
+- [measured — host-probe/0-kagent-0.9.12-sha256.stdout.txt; host-probe/1-kagent-1.0.0-alpha17-sha256.stdout.txt; host-probe/0-kagent-crds-0.9.12-sha256.stdout.txt; host-probe/1-kagent-crds-1.0.0-alpha17-sha256.stdout.txt] 네 tgz의 전체 SHA256은 [아카이브 표](../evidence/kagent/round4-chart/execution_summary.md)에 기록했다. 현재 checkout에 tgz는 없다.
+- [measured — host-probe/0-kagent-crds-0.9.12-inventory.json; host-probe/1-kagent-crds-1.0.0-alpha17-inventory.json] 그룹은 kagent.dev → api.kagent.dev. old Agent/ModelConfig는 v1alpha1(served, non-storage)과 v1alpha2(served, storage), RemoteMCPServer는 v1alpha2(served, storage); new 모든 kind는 v1alpha3(served, storage). [전체 kind 목록](../evidence/kagent/round4-chart/crd-inventory.md).
+- [measured — host-probe/0-kagent-crds-0.9.12-inventory.json; host-probe/1-kagent-crds-1.0.0-alpha17-inventory.json] old-only kind: AgentHarness, MCPServer, Memory, SandboxAgent, ToolServer. new-only: AgentTemplate, EgressPolicy, Harness, SandboxTemplate. rename 관계는 [unverified].
+- [measured — host-probe/schema-diff.json] v1alpha2 → v1alpha3 전체 경로 added/removed/type_changed: Agent 78/1798/0, ModelConfig 29/8/1, RemoteMCPServer 1/4/0. 앱 필드만의 수치가 아니다.
+- [measured — host-probe/commands.json] 네 default template 명령 모두 rc=0, stderr 비어 있음, truncation 없음. 필수값을 증명하는 template 오류는 기록되지 않았다. 앱 custom values는 이 명령에 전달되지 않았다.
+- [measured — host-probe/1-kagent-1.0.0-alpha17-show-values.stdout.txt] postgres Secret 참조와 `Required.` 주석은 values에 있지만 template 필수값·DB 기동 증거는 아니다.
+- [measured — host-probe/result.json; host-probe/template-outputs.sha256.txt] probe exit_code=0, artifact-only 범위. 삭제된 template stdout 내용은 인용하지 않는다. [오프라인 재현 명령](../evidence/kagent/round4-chart/verification.md).
 
-| Archive | Recorded SHA256 |
-|---|---|
-| kagent-0.9.12.tgz | a6aede4fd39aab4ea0292b68a59ed2b0e41afc50f1e8de8a9a2ead2a89bd5075 |
-| kagent-1.0.0-alpha17.tgz | 9260dad01ef544c684ca7d749e31b46443100192c318281c4fdffe8e79d86543 |
-| kagent-crds-0.9.12.tgz | 977e59c4ad7f751f2badea53d5f698220f37a1af28fb282fd7917103a084e7f3 |
-| kagent-crds-1.0.0-alpha17.tgz | 8c236ee9cd3730a2275814d048fccf51a35d197ff5e8f624623bdf4cc415c431 |
+[unverified] 설치, DB 연결, controller/Harness 기동, API admission/CEL·unknown-field pruning, conversion webhooks, migration, 기본값·필수값·enum, D10 추론, MCP 호출, UI 및 runtime 호환성. 후보 경로의 의미 동등성과 ModelConfig values→CR 매핑도 미검증이다. metadata 하위 필드는 flattened paths에 없어 판정하지 않는다.
 
-[measured — see `evidence/kagent/round4-chart/kagent-crds_1_0_0_alpha17_template_default.stdout.txt`] 렌더된 Agent CRD는 `api.kagent.dev` 그룹, `Agent` kind, `v1alpha3` 버전 이름을 가진다.
-
-[pending probe] 두 버전의 전체 group/kind/served/storage 목록과 Agent·ModelConfig·RemoteMCPServer의 flattened property/type 차이는 `probe.sh`의 `*-inventory.json`, `*-paths.json`, `schema-diff.json`으로 확인해야 한다. 이전의 0.9.12 도식에 근거한 필드 제거·이동·이름 변경 및 호환 판정은 철회한다. 앱 출력의 근거와 1.x 대조 상태는 `evidence/kagent/round4-chart/code-compatibility-matrix.md`에 기록한다.
-
-[measured — see `src-tauri/src/services/kagent_agents.rs:110`] 앱의 rca-agent는 `kagent.dev/v1alpha2`를 출력한다. [measured — see `src-tauri/src/services/kagent_agents.rs:120`] `spec.type: Declarative`와 `spec.declarative`를 출력한다. 이 구조와 1.x의 필드별 비교는 [pending probe]이다.
-
-[measured — see `evidence/kagent/round4-chart/kagent_1_0_0_alpha17_show_values.stdout.txt`] PostgreSQL values 기본값은 `kagent-postgres-owner`, `kagent-postgres-readwrite` Secret을 참조하며 read/write 주석에 `Required.`가 있다. [measured — see `evidence/kagent/round4-chart/kagent_1_0_0_alpha17_template_default.rc.txt` and `evidence/kagent/round4-chart/kagent_1_0_0_alpha17_template_default.stderr.txt`] 저장된 기본 템플릿 rc는 0이고 DB 관련 템플릿 오류는 기록되어 있지 않다.
-
-[unverified] 설치 성공 여부, DB 연결, 컨트롤러·Harness 기동, API admission/CEL, D10 추론, MCP 도구 호출 및 UI 동작은 이 아티팩트로 검증되지 않았다.
-
-[pending probe] 호스트 실행 명령: `bash evidence/kagent/round4-chart/probe.sh evidence/kagent/round4-chart/host-probe 0.9.12 1.0.0-alpha17`. 새 출력 디렉터리가 필요하며 Helm·네트워크·PyYAML은 호스트에 준비되어 있어야 한다. 명령별 argv/rc/stdout/stderr 및 기존 출력의 해시 인덱스는 `evidence/kagent/round4-chart/execution_summary.md`를 참조한다.
+[measured — host-probe/0-kagent-crds-0.9.12-paths.json; host-probe/1-kagent-crds-1.0.0-alpha17-paths.json] 결론(표에 한정): 앱의 기존 `kagent.dev/v1alpha2` CR 식별자는 new inventory의 `api.kagent.dev/v1alpha3`와 다르며, Agent의 `spec.type`, `spec.description`, `spec.declarative` 및 그 출력 하위 필드는 1.x 스키마 경로에 없어 그대로는 해당 스키마의 필드 구조와 맞지 않는다. ModelConfig 관련 선택 경로와 RemoteMCPServer 출력 spec 경로는 동일 타입으로 존재한다. 실제 API 서버의 거절·가지치기·변환 결과는 [unverified]이다.
