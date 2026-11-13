@@ -177,6 +177,7 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
+| 2026-11-13 | #193 아티팩트 조사에서 0.9.12 스키마 도식을 실제 CRD처럼 비교하고 Helm 렌더만으로 DB 미설정 시 기동 불가를 단정했다 | 필드 비교는 양쪽 원본 스키마 추출까지 pending probe, 설치·기동은 unverified로 강등한다. 명령 argv/rc/출력·해시를 함께 보존하고 실패를 nonzero로 전파한다(D22). |
 | 2026-11-12 | #84 GPU 실행 금지 레인에서 make verify의 Rust 기본 테스트에 포함된 live_smoke를 사전 점검하지 않아 실제 smoke 호출이 발생했다 | 상위 게이트를 실행하기 전에 opt-in이 아닌 하위 live 테스트를 확인해야 한다. 이번 실행은 3개 workload가 compile/link 후 run exit 10, provenance 없음으로 실패했으며 재실행하지 않고 원시 로그와 제약 위반을 보고한다 |
 | 2026-11-10 | #13 guardrail history 회귀 테스트가 수동 컴파일에만 의존하여 `make test`/`verify`와 CI에서 실행되지 않았다 | 기존 TypeScript로 임시 컴파일하는 `pnpm test:frontend`와 `make test-frontend`를 `test`에 연결한다. 세 Make 진입점의 연결 회귀 검사와 guarded behavior 임시 훼손 시 실패·복원 후 통과를 검증한다. 테스트 파일의 존재만으로 게이트 커버리지를 주장하지 않는다 |
 | 2026-11-12 | #84 SGEMM/FP64/FFT의 `fmax(0, NaN)`이 비유한 오차를 0으로 숨겼고 SGEMM 샘플 밖 NaN도 PASS할 수 있었다 | 공용 순수 host helper로 전체 출력 finite 검사를 먼저 수행하고 비유한 오차·0 분모도 실패시킨다. 기존 reference 범위·정밀도 정책을 유지하며 실패 위치를 기록한다. 실제 helper CPU 주입과 classifier 실패 전파는 GPU corruption 재현과 구별한다 |

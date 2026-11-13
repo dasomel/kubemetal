@@ -110,6 +110,7 @@ test: test-frontend ## 프론트엔드·Rust·Python·Air-gap·시뮬레이션 G
 	python3 -m unittest discover -s tests/mlx -v
 	python3 -m unittest discover -s scripts/support -v
 	python3 -B -m unittest discover -s tests/cumetal -v
+	python3 -B -m unittest discover -s tests/kagent -v
 	bash scripts/airgap/test_sbom.sh
 	bash scripts/airgap/test_digest_lock.sh
 	bash scripts/k8s/test_simulated_gpu.sh
