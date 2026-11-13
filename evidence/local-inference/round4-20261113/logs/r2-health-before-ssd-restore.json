@@ -1,0 +1,1 @@
+{"status":"healthy","default_model":"mlx-community__Qwen2.5-0.5B-Instruct-4bit","engine_pool":{"model_count":5,"loaded_count":1,"final_ceiling":17095028688,"current_model_memory":291968166},"mcp":null}

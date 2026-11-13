@@ -99,6 +99,14 @@ time and peak unified-memory stay `null` unless a trustworthy source exists.
   - Consumers must treat `null` (and legacy raw strings) as `unknown` / `unavailable`, never as
     `nominal` or healthy.
 
+### Round 4 controlled cache sequence (Issue #58)
+
+Procedure used on 2026-11-13: empty dedicated SSD cache dir under `$HOME` (the app rejects paths outside it), port 8011,
+SSD cap 1GB, hot cache 128MB, memory guard balanced, all set in the Local AI Runtime card; benchmark `cold` x1 -> `warm`
+x5 -> app "Stop managed oMLX" (PID gone, port free) -> same cache dir -> app "Start oMLX" (new PID) -> `ssd-restore` x1;
+repeated with a fresh empty dir three times. `ssd-restore` is claimed only because the runtime log shows the SSD scan
+(`scanned=5, indexed=5`) and a `Prefix cache restore` in the new process. Results and limits: §14.
+
 ## 5. Regression gate
 
 Compare two evidence files with explicit independent SLO thresholds:
@@ -270,3 +278,30 @@ on this Mac, for issue #58. Evidence: `evidence/local-inference/20260928-anthrop
 - **Not verified**: concurrent/streaming-under-load `/v1/messages` behavior, larger models than the
   0.5B smoke model, MCP/tool-use content blocks over `/v1/messages`, and behavior with a non-empty
   but *invalid* bearer token (only the fully-missing-header negative case was run).
+
+## 14. Controlled cache sequence, round 4 — 2026-11-13 (measured-local)
+
+Evidence: `evidence/local-inference/round4-20261113/` (README with raw values, benchmark JSON, PID log, cache listings,
+runtime log excerpts, model SHA256 manifest, window captures). Apple M4 Pro 64 GB, macOS 27.2.1, oMLX 0.7.3, model
+`mlx-community__Qwen2.5-0.5B-Instruct-4bit` (HF revision unknown; identity = file SHA256 manifest), one 8064-char prompt
+(1279 tokens), `max_tokens=32`, streaming, concurrency 1. Runtime started/stopped only through the app's own buttons.
+
+| Round | cold total ms | warm x5 total ms (median) | ssd-restore total ms |
+|---|---|---|---|
+| 1 | 1601.9 | 119.0-165.1 (119.7) | 265.2 |
+| 2 | 676.8 | 117.9-130.5 (121.6) | 185.2 |
+| 3 | 315.2 | 121.8-135.3 (127.3) | 217.4 |
+
+- **Cache-hit evidence**: each restart's log shows `Flushed 5 hot cache blocks to SSD` at stop (5 files, 15.03 MB),
+  `SSD cache scan complete: scanned=5, indexed=5` at the new PID, and the first request logs `Prefix cache restore ...
+  cached=1024 suffix=255 blocks=4` (reconstruct 68.2 / 10.2 / 18.0 ms vs ~3.2 ms for RAM-hot warm hits). The log label is
+  `source=paged`; SSD attribution is inferred (new process, empty RAM cache). Verdict: restore hit evidenced, 3 of 3.
+- Before the restart the SSD dir held **0 files** during cold/warm; blocks reach the SSD only at shutdown flush.
+- Restore is faster than cold and slower than warm in all rounds. Cold varies 315-1602 ms across identical empty caches,
+  so it is not a clean cache-miss cost. "cold" = empty oMLX cache only: OS page cache not cold, and the model was already
+  loaded because the owner's `model_settings.json` pins it (precondition "model not loaded" did not hold).
+- The benchmark TTFT is the first SSE `data:` line; oMLX's own `stream_model_ttft` was 1.46 s where the script said
+  82 ms (round 1 cold). Prefer total latency / the server TTFT. Engine load time stays `null`.
+- Limits: 3 values per cell (no p95, no SLO), one small model and prompt, one machine. Not covered: OS page-cache cold,
+  air-gap, mlx-lm baseline, TTL ACs. Side effects: oMLX rewrote `~/.omlx/settings.json` (restored byte-identical) and
+  touched `usage.sqlite3` / log rotation (not restored).

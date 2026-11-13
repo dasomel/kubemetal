@@ -1,0 +1,2 @@
+# r1-before-stop 2026-11-13T18:47:42Z dir=cache (relative names; bytes)
+files: 0  du_kb: 0

@@ -1,0 +1,2 @@
+# r3-before-start 2026-11-13T18:50:07Z dir=cache3 (relative names; bytes)
+files: 0  du_kb: 0

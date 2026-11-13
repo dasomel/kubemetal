@@ -1,0 +1,84 @@
+{
+  "schema_version": 2,
+  "captured_at": "2026-11-13T18:49:21.126930+00:00",
+  "runtime": "omlx",
+  "runtime_version": "0.7.3",
+  "runtime_pid": 27893,
+  "endpoint": "http://127.0.0.1:8011",
+  "model": {
+    "id": "mlx-community__Qwen2.5-0.5B-Instruct-4bit",
+    "repo": "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+    "revision": null,
+    "digest": "sha256-manifest:15d52bc3438851c28814c56bff30855be1a63e9f511e0511ff8cff7849a59967",
+    "quantization": "4bit"
+  },
+  "cache": {
+    "state": "cold",
+    "directory": "/Users/m/.kubemetal-r4-scratch.rxuLnj/cache2",
+    "bytes_before": 0,
+    "bytes_after": 0
+  },
+  "traffic": {
+    "requests": 1,
+    "concurrency": 1,
+    "max_tokens": 32,
+    "prompt_chars": 8064,
+    "stream": true
+  },
+  "host": {
+    "platform": "macOS-27.2.1-arm64-arm-64bit",
+    "machine": "arm64",
+    "macos": "27.2.1",
+    "chip": "Apple M4 Pro",
+    "memory_bytes": 68719476736,
+    "memory_pressure_level": "1",
+    "thermal_state": null,
+    "thermal_source": null,
+    "thermal_unavailable_reason": "macOS CLI does not expose NSProcessInfo.thermalState; pmset -g therm provides advisory diagnostics only, not thermal pressure level (D2).",
+    "metal_wired_limit_mb": 0,
+    "diagnostics": {
+      "pmset_therm": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+    }
+  },
+  "process": {
+    "rss_bytes_before": 724467712,
+    "rss_bytes_after": 735838208,
+    "peak_unified_memory_bytes": null,
+    "note": "RSS is measured at the process boundary; peak unified/Metal allocation requires runtime or host telemetry and remains null here."
+  },
+  "summary": {
+    "success": 1,
+    "failed": 0,
+    "wall_seconds": 0.6837974999943981,
+    "requests_per_second": 1.4624212577673834,
+    "completion_tokens_per_second": 29.248425155347668,
+    "latency_ms_p50": 676.8047090008622,
+    "latency_ms_p95": 676.8047090008622,
+    "latency_ms_max": 676.8047090008622,
+    "ttft_ms_p50": 30.368334002560005,
+    "ttft_ms_p95": 30.368334002560005,
+    "prefill_tokens_per_second_p50_api_boundary": 42116.23857575402,
+    "generation_tokens_per_second_p50": 30.938853031054336,
+    "queue_wait_ms": null,
+    "model_load_ms": null
+  },
+  "measurement_notes": [
+    "API-boundary prefill tok/s is prompt_tokens / TTFT and includes scheduling/network/model-load overhead.",
+    "queue wait and engine-only model load time remain null unless the upstream runtime exposes trustworthy values.",
+    "host.thermal_state remains null in standalone benchmarks because macOS CLI provides no thermal pressure levels (D2); raw pmset output is isolated under diagnostics.pmset_therm.",
+    "unsupported values are null, never zero-filled."
+  ],
+  "samples": [
+    {
+      "ok": true,
+      "latency_ms": 676.8047090008622,
+      "ttft_ms": 30.368334002560005,
+      "prompt_tokens": 1279,
+      "completion_tokens": 20,
+      "total_tokens": 1299,
+      "prefill_tokens_per_second": 42116.23857575402,
+      "generation_tokens_per_second": 30.938853031054336,
+      "error": null
+    }
+  ]
+}

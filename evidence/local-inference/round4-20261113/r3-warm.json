@@ -1,0 +1,128 @@
+{
+  "schema_version": 2,
+  "captured_at": "2026-11-13T18:50:19.759967+00:00",
+  "runtime": "omlx",
+  "runtime_version": "0.7.3",
+  "runtime_pid": 30118,
+  "endpoint": "http://127.0.0.1:8011",
+  "model": {
+    "id": "mlx-community__Qwen2.5-0.5B-Instruct-4bit",
+    "repo": "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+    "revision": null,
+    "digest": "sha256-manifest:15d52bc3438851c28814c56bff30855be1a63e9f511e0511ff8cff7849a59967",
+    "quantization": "4bit"
+  },
+  "cache": {
+    "state": "warm",
+    "directory": "/Users/m/.kubemetal-r4-scratch.rxuLnj/cache3",
+    "bytes_before": 0,
+    "bytes_after": 0
+  },
+  "traffic": {
+    "requests": 5,
+    "concurrency": 1,
+    "max_tokens": 32,
+    "prompt_chars": 8064,
+    "stream": true
+  },
+  "host": {
+    "platform": "macOS-27.2.1-arm64-arm-64bit",
+    "machine": "arm64",
+    "macos": "27.2.1",
+    "chip": "Apple M4 Pro",
+    "memory_bytes": 68719476736,
+    "memory_pressure_level": "1",
+    "thermal_state": null,
+    "thermal_source": null,
+    "thermal_unavailable_reason": "macOS CLI does not expose NSProcessInfo.thermalState; pmset -g therm provides advisory diagnostics only, not thermal pressure level (D2).",
+    "metal_wired_limit_mb": 0,
+    "diagnostics": {
+      "pmset_therm": "Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNote: No CPU power status has been recorded"
+    }
+  },
+  "process": {
+    "rss_bytes_before": 678608896,
+    "rss_bytes_after": 675266560,
+    "peak_unified_memory_bytes": null,
+    "note": "RSS is measured at the process boundary; peak unified/Metal allocation requires runtime or host telemetry and remains null here."
+  },
+  "summary": {
+    "success": 5,
+    "failed": 0,
+    "wall_seconds": 0.6384112920059124,
+    "requests_per_second": 7.83194166928002,
+    "completion_tokens_per_second": 156.6388333856004,
+    "latency_ms_p50": 127.30083300266415,
+    "latency_ms_p95": 135.3452500043204,
+    "latency_ms_max": 135.3452500043204,
+    "ttft_ms_p50": 3.495541008305736,
+    "ttft_ms_p95": 8.945167006459087,
+    "prefill_tokens_per_second_p50_api_boundary": 365894.72043411166,
+    "generation_tokens_per_second_p50": 161.54398311916557,
+    "queue_wait_ms": null,
+    "model_load_ms": null
+  },
+  "measurement_notes": [
+    "API-boundary prefill tok/s is prompt_tokens / TTFT and includes scheduling/network/model-load overhead.",
+    "queue wait and engine-only model load time remain null unless the upstream runtime exposes trustworthy values.",
+    "host.thermal_state remains null in standalone benchmarks because macOS CLI provides no thermal pressure levels (D2); raw pmset output is isolated under diagnostics.pmset_therm.",
+    "unsupported values are null, never zero-filled."
+  ],
+  "samples": [
+    {
+      "ok": true,
+      "latency_ms": 135.3452500043204,
+      "ttft_ms": 8.945167006459087,
+      "prompt_tokens": 1279,
+      "completion_tokens": 20,
+      "total_tokens": 1299,
+      "prefill_tokens_per_second": 142982.2382384214,
+      "generation_tokens_per_second": 158.2277442043958,
+      "error": null
+    },
+    {
+      "ok": true,
+      "latency_ms": 123.27804199594539,
+      "ttft_ms": 3.5679579887073487,
+      "prompt_tokens": 1279,
+      "completion_tokens": 20,
+      "total_tokens": 1299,
+      "prefill_tokens_per_second": 358468.34633368946,
+      "generation_tokens_per_second": 167.07030293948117,
+      "error": null
+    },
+    {
+      "ok": true,
+      "latency_ms": 127.63287499547005,
+      "ttft_ms": 3.494832999422215,
+      "prompt_tokens": 1279,
+      "completion_tokens": 20,
+      "total_tokens": 1299,
+      "prefill_tokens_per_second": 365968.8460683104,
+      "generation_tokens_per_second": 161.11096710093702,
+      "error": null
+    },
+    {
+      "ok": true,
+      "latency_ms": 121.8342080101138,
+      "ttft_ms": 3.2958750089164823,
+      "prompt_tokens": 1279,
+      "completion_tokens": 20,
+      "total_tokens": 1299,
+      "prefill_tokens_per_second": 388060.832567941,
+      "generation_tokens_per_second": 168.7217922981757,
+      "error": null
+    },
+    {
+      "ok": true,
+      "latency_ms": 127.30083300266415,
+      "ttft_ms": 3.495541008305736,
+      "prompt_tokens": 1279,
+      "completion_tokens": 20,
+      "total_tokens": 1299,
+      "prefill_tokens_per_second": 365894.72043411166,
+      "generation_tokens_per_second": 161.54398311916557,
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+# r2-before-start 2026-11-13T18:49:16Z dir=cache2 (relative names; bytes)
+files: 0  du_kb: 0

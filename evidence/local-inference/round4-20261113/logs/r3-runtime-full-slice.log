@@ -1,0 +1,169 @@
+2026-11-14 03:50:10,175 - omlx.settings - INFO - Saved settings to /Users/m/.omlx/settings.json
+INFO:     Uvicorn running on http://127.0.0.1:8011 (Press CTRL+C to quit)
+2026-11-14 03:50:14,691 - omlx.scheduler - INFO - ChunkedKVCache patch: methods already present upstream, skipped: size
+2026-11-14 03:50:15,254 - omlx.server - INFO - CORS origins: ['*']
+2026-11-14 03:50:15,254 - omlx.model_settings - INFO - Loaded settings for 2 models
+2026-11-14 03:50:15,293 - omlx.model_discovery - INFO - Discovered model: mlx-community__Qwen2.5-0.5B-Instruct-4bit (type: llm, engine: batched, size: 0.27GB)
+2026-11-14 03:50:15,301 - omlx.model_discovery - INFO - Treating HF cache model as MLX-compatible speculative-decoding helper: incoai/Qwen3.8-27B-DFlash2
+2026-11-14 03:50:15,302 - omlx.model_discovery - INFO - Model type 'qwen3' has both embedding and LLM variants, but architecture ['DFlash2DraftModel'] is not an embedding architecture — treating as LLM
+2026-11-14 03:50:15,302 - omlx.model_discovery - INFO - Discovered model: incoai--Qwen3.8-27B-DFlash2 (type: llm, engine: batched, size: 3.76GB)
+2026-11-14 03:50:15,308 - omlx.model_discovery - INFO - Discovered model: mlx-community--Qwen2-VL-2B-Instruct-4bit (type: vlm, engine: vlm, size: 1.22GB, text-only: 0.85GB)
+2026-11-14 03:50:15,314 - omlx.model_discovery - INFO - Discovered model: mlx-community--Qwen2-VL-2B-Instruct-bf16 (type: vlm, engine: vlm, size: 4.32GB, text-only: 3.02GB)
+2026-11-14 03:50:15,329 - omlx.model_discovery - INFO - Discovered model: mlx-community--Qwen3.8-27B-4bit (type: vlm, engine: vlm, size: 15.70GB, text-only: 14.80GB)
+2026-11-14 03:50:15,341 - omlx.engine_pool - INFO - Pinned model: mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:50:15,341 - omlx.engine_pool - INFO - Discovered 5 models
+2026-11-14 03:50:15,342 - omlx.server_metrics - INFO - Loaded all-time stats from /Users/m/.omlx/stats.json
+2026-11-14 03:50:15,350 - omlx.server - INFO - Server initialized with 5 models
+2026-11-14 03:50:15,350 - omlx.server - INFO - Default model: mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:50:15,350 - omlx.server - INFO - Memory guard tier: balanced (guard on)
+2026-11-14 03:50:15,350 - omlx.server - INFO - Default max tokens: 32768
+2026-11-14 03:50:15,350 - omlx.server - INFO - API key authentication: enabled
+2026-11-14 03:50:15,350 - omlx.server - INFO - HF Downloader initialized
+2026-11-14 03:50:15,351 - omlx.server - INFO - ModelScope SDK not installed, MS downloader disabled
+2026-11-14 03:50:15,353 - omlx.server - INFO - oQ Quantizer initialized
+2026-11-14 03:50:15,360 - omlx.server - INFO - HF Uploader initialized
+INFO:     Started server process [30118]
+INFO:     Waiting for application startup.
+2026-11-14 03:50:15,414 - omlx.process_memory_enforcer - WARNING - Metal cap (51.8GB, Apple max_recommended_working_set_size) is below the oMLX static ceiling (58.9GB); leaving Apple's default Metal cap active because iogpu.wired_limit_mb is unset. Raise it with: sudo sysctl iogpu.wired_limit_mb=60293
+2026-11-14 03:50:15,414 - omlx.process_memory_enforcer - INFO - Process memory enforcer started (tier=balanced, ceiling=15.1GB, interval=1.0s)
+2026-11-14 03:50:15,420 - omlx.engine_pool - INFO - Preloading pinned model: mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:50:15,421 - omlx.engine_pool - INFO - Loading model: mlx-community__Qwen2.5-0.5B-Instruct-4bit
+INFO:     Application startup complete.
+2026-11-14 03:50:15,426 - omlx.utils.model_loading - INFO - M5 sorted gather_qmm reroute installed (issue #2267)
+2026-11-14 03:50:15,490 - omlx.server - WARNING - GET /v1/models → 401: API key required
+2026-11-14 03:50:16,010 - omlx.patches.qwen35_moe_router - INFO - Qwen MoE fused router top-k patch applied
+2026-11-14 03:50:16,011 - omlx.patches.sdpa256_attention - INFO - sdpa256 attention patch applied (head_dim=256 prefill, kv_len>=8192, always force bounded for qualifying calls (#2025))
+2026-11-14 03:50:16,020 - omlx.patches.qwen35_ragged_decode - INFO - qwen3_5 ragged decode threadgroup fallback patch applied
+2026-11-14 03:50:16,364 - omlx.memory_monitor - INFO - MemoryMonitor initialized (estimator-only, eviction disabled)
+2026-11-14 03:50:16,378 - omlx.memory_monitor - INFO - Model info set: 24 layers (24 KVCache), 2 KV heads, 14 Q heads, 64 head_dim. Estimated memory per 64-token block: 768.00 KB
+2026-11-14 03:50:16,378 - omlx.scheduler - INFO - paged SSD-only mode: max_blocks=100000, block_size=256 tokens
+2026-11-14 03:50:16,378 - omlx.cache.paged_cache - INFO - PagedCacheManager initialized: block_size=256, initial_blocks=256, max_blocks=100000, max_tokens=25600000
+2026-11-14 03:50:16,379 - omlx.cache.paged_ssd_cache - INFO - Scanning SSD cache directory: /Users/m/.kubemetal-r4-scratch.rxuLnj/cache3
+2026-11-14 03:50:16,380 - omlx.cache.paged_ssd_cache - INFO - SSD cache scan complete: scanned=0, indexed=0, errors=0, total_size=0 B, gdn_sidecars=0
+2026-11-14 03:50:16,381 - omlx.cache.paged_ssd_cache - INFO - PagedSSDCacheManager initialized: dir=/Users/m/.kubemetal-r4-scratch.rxuLnj/cache3, max_size=1.00 GB, hot_cache=128.00 MB, auto_size=False, existing_files=0, disk_free=512.34 GB, cache_used=0 B, incompatible_files=0
+2026-11-14 03:50:16,381 - omlx.cache.paged_cache - INFO - paged SSD cache manager connected to PagedCacheManager
+2026-11-14 03:50:16,382 - omlx.scheduler - INFO - paged SSD cache enabled: cache_dir=/Users/m/.kubemetal-r4-scratch.rxuLnj/cache3, max_size=1.00 GB, block_size=256 tokens
+2026-11-14 03:50:16,382 - omlx.scheduler - INFO - paged SSD cache enabled: /Users/m/.kubemetal-r4-scratch.rxuLnj/cache3, block_size=256, max_blocks=100000
+2026-11-14 03:50:16,382 - omlx.engine_core - INFO - Engine started
+2026-11-14 03:50:16,383 - omlx.cache.paged_ssd_cache - INFO - PagedSSDCacheManager updated layer cache signature (24 layers, 1 unique types, turboquant_kv_bits=None, cachelist_subtypes=no, numerics=None)
+2026-11-14 03:50:16,383 - omlx.engine.batched - INFO - BatchedEngine loaded: /Users/m/.kubemetal-r4-scratch.rxuLnj/models/mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:50:16,384 - omlx.engine_pool - INFO - Loaded model: mlx-community__Qwen2.5-0.5B-Instruct-4bit (actual: 465.75MB, local estimate: 278.44MB, full model: 278.44MB, total: 278.44MB)
+2026-11-14 03:50:18,587 - omlx.engine.batched - INFO - Structured output requires xgrammar. Reinstall with: brew reinstall omlx --with-grammar
+2026-11-14 03:50:18,885 - omlx.scheduler - INFO - Cache phase timings: cleanup_finished_sync=2.1ms/1, prefix_cache_lookup=0.2ms/1, store_cache_main_boundary=0.0ms/1, store_cache_main_collect=0.0ms/1, store_cache_main_dispatch=0.1ms/1
+2026-11-14 03:50:18,887 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 0.27s (351.8 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=0.21s, stream_visible_ttft=0.21s
+2026-11-14 03:50:19,098 - omlx.scheduler - INFO - Prefix cache restore for a23b5123-459d-4eb6-a494-1ac929adcbe6: source=paged cached=1024 suffix=255 blocks=4 lookup=0.081ms reconstruct=3.537ms promote=True
+2026-11-14 03:50:19,116 - omlx.scheduler - INFO - Reserved prefill capacity for 1279 tokens across 24 caches (+0.00GB)
+2026-11-14 03:50:19,219 - omlx.scheduler - INFO - Cache phase timings: cleanup_finished_sync=4.5ms/2, prefix_cache_lookup=0.2ms/2, prefix_cache_reconstruct=3.5ms/1, store_cache_main_boundary=0.0ms/2, store_cache_main_collect=0.0ms/2, store_cache_main_dispatch=0.2ms/2, store_cache_worker_sync=0.2ms/1
+2026-11-14 03:50:19,220 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 0.13s (341.8 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=0.07s, stream_visible_ttft=0.07s
+2026-11-14 03:50:19,228 - omlx.scheduler - INFO - Prefix cache restore for 9fcbe9b8-efaf-4c55-8979-819f91833450: source=paged cached=1024 suffix=255 blocks=4 lookup=0.084ms reconstruct=3.236ms promote=True
+2026-11-14 03:50:19,239 - omlx.scheduler - INFO - Reserved prefill capacity for 1279 tokens across 24 caches (+0.00GB)
+2026-11-14 03:50:19,342 - omlx.scheduler - INFO - Cache phase timings: cleanup_finished_sync=6.4ms/3, prefix_cache_lookup=0.3ms/3, prefix_cache_reconstruct=6.8ms/2, store_cache_main_boundary=0.1ms/3, store_cache_main_collect=0.0ms/3, store_cache_main_dispatch=0.3ms/3, store_cache_worker_sync=0.2ms/2
+2026-11-14 03:50:19,343 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 0.12s (341.6 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=0.06s, stream_visible_ttft=0.06s
+2026-11-14 03:50:19,352 - omlx.scheduler - INFO - Prefix cache restore for 225bc110-614a-4218-ac1a-e439f26b7f06: source=paged cached=1024 suffix=255 blocks=4 lookup=0.075ms reconstruct=4.271ms promote=True
+2026-11-14 03:50:19,363 - omlx.scheduler - INFO - Reserved prefill capacity for 1279 tokens across 24 caches (+0.00GB)
+2026-11-14 03:50:19,389 - omlx.server - WARNING - GET /v1/models → 401: API key required
+2026-11-14 03:50:19,470 - omlx.scheduler - INFO - Cache phase timings: cleanup_finished_sync=8.7ms/4, prefix_cache_lookup=0.4ms/4, prefix_cache_reconstruct=11.0ms/3, store_cache_main_boundary=0.1ms/4, store_cache_main_collect=0.0ms/4, store_cache_main_dispatch=0.4ms/4, store_cache_worker_sync=0.3ms/3
+2026-11-14 03:50:19,471 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 0.12s (340.6 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=0.07s, stream_visible_ttft=0.07s
+2026-11-14 03:50:19,479 - omlx.scheduler - INFO - Prefix cache restore for 8a045210-1c7d-4e62-b449-9903f70d57cc: source=paged cached=1024 suffix=255 blocks=4 lookup=0.071ms reconstruct=3.336ms promote=True
+2026-11-14 03:50:19,489 - omlx.scheduler - INFO - Reserved prefill capacity for 1279 tokens across 24 caches (+0.00GB)
+2026-11-14 03:50:19,592 - omlx.scheduler - INFO - Cache phase timings: cleanup_finished_sync=11.0ms/5, prefix_cache_lookup=0.5ms/5, prefix_cache_reconstruct=14.4ms/4, store_cache_main_boundary=0.1ms/5, store_cache_main_collect=0.0ms/5, store_cache_main_dispatch=0.5ms/5, store_cache_worker_sync=0.4ms/4
+2026-11-14 03:50:19,593 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 0.12s (341.5 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=0.06s, stream_visible_ttft=0.06s
+2026-11-14 03:50:19,601 - omlx.scheduler - INFO - Prefix cache restore for 18004951-faa5-4e5a-86ff-04ce59c352b7: source=paged cached=1024 suffix=255 blocks=4 lookup=0.066ms reconstruct=3.246ms promote=True
+2026-11-14 03:50:19,611 - omlx.scheduler - INFO - Reserved prefill capacity for 1279 tokens across 24 caches (+0.00GB)
+2026-11-14 03:50:19,719 - omlx.scheduler - INFO - Cache phase timings: cleanup_finished_sync=12.3ms/6, prefix_cache_lookup=0.5ms/6, prefix_cache_reconstruct=17.6ms/5, store_cache_main_boundary=0.1ms/6, store_cache_main_collect=0.1ms/6, store_cache_main_dispatch=0.6ms/6, store_cache_worker_sync=0.4ms/5
+2026-11-14 03:50:19,720 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 0.12s (318.5 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=0.06s, stream_visible_ttft=0.06s
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-11-14 03:50:20,633 - omlx.process_memory_enforcer - INFO - Process memory enforcer stopped
+2026-11-14 03:50:20,633 - omlx.server - INFO - Process memory enforcer stopped
+2026-11-14 03:50:20,633 - omlx.admin.hf_downloader - INFO - HF Downloader shut down
+2026-11-14 03:50:20,633 - omlx.server - INFO - HF Downloader stopped
+2026-11-14 03:50:20,633 - omlx.engine_pool - INFO - Unloading model: mlx-community__Qwen2.5-0.5B-Instruct-4bit (immediate abort)
+2026-11-14 03:50:20,633 - omlx.engine_core - INFO - Engine stopped
+2026-11-14 03:50:20,634 - omlx.scheduler - INFO - Scheduler shutdown initiated...
+2026-11-14 03:50:20,635 - omlx.cache.paged_ssd_cache - INFO - Shutting down PagedSSDCacheManager...
+2026-11-14 03:50:20,635 - omlx.cache.paged_ssd_cache - INFO - Flushed 5 hot cache blocks to SSD
+2026-11-14 03:50:20,647 - omlx.scheduler - INFO - Scheduler shutdown completed
+2026-11-14 03:50:20,647 - omlx.cache.paged_cache - INFO - PagedCacheManager cleared (reset to 256 initial blocks)
+2026-11-14 03:50:20,692 - omlx.scheduler - INFO - Deep reset completed - all caches cleared
+2026-11-14 03:50:20,771 - omlx.engine.batched - INFO - BatchedEngine stopped
+2026-11-14 03:50:20,807 - omlx.engine_pool - INFO - Unloaded model: mlx-community__Qwen2.5-0.5B-Instruct-4bit, freed=268.43MB (expected>=0.00B), active_memory: 1.02KB (settled)
+2026-11-14 03:50:20,867 - omlx.engine_pool - INFO - Engine pool shutdown complete
+2026-11-14 03:50:20,867 - omlx.server - INFO - Engine pool shutdown
+INFO:     Application shutdown complete.
+INFO:     Finished server process [30118]
+2026-11-14 03:50:23,729 - omlx.settings - INFO - Saved settings to /Users/m/.omlx/settings.json
+INFO:     Uvicorn running on http://127.0.0.1:8011 (Press CTRL+C to quit)
+2026-11-14 03:50:25,356 - omlx.scheduler - INFO - ChunkedKVCache patch: methods already present upstream, skipped: size
+2026-11-14 03:50:25,554 - omlx.server - INFO - CORS origins: ['*']
+2026-11-14 03:50:25,554 - omlx.model_settings - INFO - Loaded settings for 2 models
+2026-11-14 03:50:25,565 - omlx.model_discovery - INFO - Discovered model: mlx-community__Qwen2.5-0.5B-Instruct-4bit (type: llm, engine: batched, size: 0.27GB)
+2026-11-14 03:50:25,570 - omlx.model_discovery - INFO - Treating HF cache model as MLX-compatible speculative-decoding helper: incoai/Qwen3.8-27B-DFlash2
+2026-11-14 03:50:25,571 - omlx.model_discovery - INFO - Model type 'qwen3' has both embedding and LLM variants, but architecture ['DFlash2DraftModel'] is not an embedding architecture — treating as LLM
+2026-11-14 03:50:25,571 - omlx.model_discovery - INFO - Discovered model: incoai--Qwen3.8-27B-DFlash2 (type: llm, engine: batched, size: 3.76GB)
+2026-11-14 03:50:25,575 - omlx.model_discovery - INFO - Discovered model: mlx-community--Qwen2-VL-2B-Instruct-4bit (type: vlm, engine: vlm, size: 1.22GB, text-only: 0.85GB)
+2026-11-14 03:50:25,577 - omlx.model_discovery - INFO - Discovered model: mlx-community--Qwen2-VL-2B-Instruct-bf16 (type: vlm, engine: vlm, size: 4.32GB, text-only: 3.02GB)
+2026-11-14 03:50:25,581 - omlx.model_discovery - INFO - Discovered model: mlx-community--Qwen3.8-27B-4bit (type: vlm, engine: vlm, size: 15.70GB, text-only: 14.80GB)
+2026-11-14 03:50:25,583 - omlx.engine_pool - INFO - Pinned model: mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:50:25,583 - omlx.engine_pool - INFO - Discovered 5 models
+2026-11-14 03:50:25,584 - omlx.server_metrics - INFO - Loaded all-time stats from /Users/m/.omlx/stats.json
+2026-11-14 03:50:25,589 - omlx.server - INFO - Server initialized with 5 models
+2026-11-14 03:50:25,589 - omlx.server - INFO - Default model: mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:50:25,589 - omlx.server - INFO - Memory guard tier: balanced (guard on)
+2026-11-14 03:50:25,589 - omlx.server - INFO - Default max tokens: 32768
+2026-11-14 03:50:25,589 - omlx.server - INFO - API key authentication: enabled
+2026-11-14 03:50:25,589 - omlx.server - INFO - HF Downloader initialized
+2026-11-14 03:50:25,589 - omlx.server - INFO - ModelScope SDK not installed, MS downloader disabled
+2026-11-14 03:50:25,590 - omlx.server - INFO - oQ Quantizer initialized
+2026-11-14 03:50:25,594 - omlx.server - INFO - HF Uploader initialized
+INFO:     Started server process [31449]
+INFO:     Waiting for application startup.
+2026-11-14 03:50:25,621 - omlx.process_memory_enforcer - WARNING - Metal cap (51.8GB, Apple max_recommended_working_set_size) is below the oMLX static ceiling (58.9GB); leaving Apple's default Metal cap active because iogpu.wired_limit_mb is unset. Raise it with: sudo sysctl iogpu.wired_limit_mb=60293
+2026-11-14 03:50:25,621 - omlx.process_memory_enforcer - INFO - Process memory enforcer started (tier=balanced, ceiling=14.5GB, interval=1.0s)
+2026-11-14 03:50:25,626 - omlx.engine_pool - INFO - Preloading pinned model: mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:50:25,627 - omlx.engine_pool - INFO - Loading model: mlx-community__Qwen2.5-0.5B-Instruct-4bit
+INFO:     Application startup complete.
+2026-11-14 03:50:25,629 - omlx.utils.model_loading - INFO - M5 sorted gather_qmm reroute installed (issue #2267)
+2026-11-14 03:50:25,974 - omlx.patches.qwen35_moe_router - INFO - Qwen MoE fused router top-k patch applied
+2026-11-14 03:50:25,975 - omlx.patches.sdpa256_attention - INFO - sdpa256 attention patch applied (head_dim=256 prefill, kv_len>=8192, always force bounded for qualifying calls (#2025))
+2026-11-14 03:50:25,978 - omlx.patches.qwen35_ragged_decode - INFO - qwen3_5 ragged decode threadgroup fallback patch applied
+2026-11-14 03:50:26,330 - omlx.memory_monitor - INFO - MemoryMonitor initialized (estimator-only, eviction disabled)
+2026-11-14 03:50:26,338 - omlx.memory_monitor - INFO - Model info set: 24 layers (24 KVCache), 2 KV heads, 14 Q heads, 64 head_dim. Estimated memory per 64-token block: 768.00 KB
+2026-11-14 03:50:26,338 - omlx.scheduler - INFO - paged SSD-only mode: max_blocks=100000, block_size=256 tokens
+2026-11-14 03:50:26,338 - omlx.cache.paged_cache - INFO - PagedCacheManager initialized: block_size=256, initial_blocks=256, max_blocks=100000, max_tokens=25600000
+2026-11-14 03:50:26,338 - omlx.cache.paged_ssd_cache - INFO - Scanning SSD cache directory: /Users/m/.kubemetal-r4-scratch.rxuLnj/cache3
+2026-11-14 03:50:26,367 - omlx.cache.paged_ssd_cache - INFO - SSD cache scan complete: scanned=5, indexed=5, errors=0, total_size=15.03 MB, gdn_sidecars=0
+2026-11-14 03:50:26,368 - omlx.cache.paged_ssd_cache - INFO - PagedSSDCacheManager initialized: dir=/Users/m/.kubemetal-r4-scratch.rxuLnj/cache3, max_size=1.00 GB, hot_cache=128.00 MB, auto_size=False, existing_files=5, disk_free=512.32 GB, cache_used=15.03 MB, incompatible_files=0
+2026-11-14 03:50:26,368 - omlx.cache.paged_cache - INFO - paged SSD cache manager connected to PagedCacheManager
+2026-11-14 03:50:26,368 - omlx.scheduler - INFO - paged SSD cache enabled: cache_dir=/Users/m/.kubemetal-r4-scratch.rxuLnj/cache3, max_size=1.00 GB, block_size=256 tokens
+2026-11-14 03:50:26,368 - omlx.scheduler - INFO - paged SSD cache enabled: /Users/m/.kubemetal-r4-scratch.rxuLnj/cache3, block_size=256, max_blocks=100000
+2026-11-14 03:50:26,368 - omlx.engine_core - INFO - Engine started
+2026-11-14 03:50:26,369 - omlx.cache.paged_ssd_cache - INFO - PagedSSDCacheManager updated layer cache signature (24 layers, 1 unique types, turboquant_kv_bits=None, cachelist_subtypes=no, numerics=None)
+2026-11-14 03:50:26,369 - omlx.engine.batched - INFO - BatchedEngine loaded: /Users/m/.kubemetal-r4-scratch.rxuLnj/models/mlx-community__Qwen2.5-0.5B-Instruct-4bit
+2026-11-14 03:50:26,370 - omlx.engine_pool - INFO - Loaded model: mlx-community__Qwen2.5-0.5B-Instruct-4bit (actual: 462.48MB, local estimate: 278.44MB, full model: 278.44MB, total: 278.44MB)
+2026-11-14 03:50:26,708 - omlx.engine.batched - INFO - Structured output requires xgrammar. Reinstall with: brew reinstall omlx --with-grammar
+2026-11-14 03:50:26,741 - omlx.scheduler - INFO - Prefix cache restore for 7a42c81c-3bfd-4144-842d-576f514d8c31: source=paged cached=1024 suffix=255 blocks=4 lookup=0.156ms reconstruct=18.017ms promote=True
+2026-11-14 03:50:26,778 - omlx.scheduler - INFO - Reserved prefill capacity for 1279 tokens across 24 caches (+0.00GB)
+2026-11-14 03:50:26,914 - omlx.scheduler - INFO - Cache phase timings: cleanup_finished_sync=2.2ms/1, prefix_cache_lookup=0.2ms/1, prefix_cache_reconstruct=18.0ms/1, store_cache_main_boundary=0.0ms/1, store_cache_main_collect=0.0ms/1, store_cache_main_dispatch=0.1ms/1
+2026-11-14 03:50:26,915 - omlx.server - INFO - Chat completion: model=mlx-community__Qwen2.5-0.5B-Instruct-4bit, 20 tokens in 0.19s (358.9 tok/s), prompt: 1279, finish_reason=stop, max_tokens=32, request_max_tokens=32, stream_model_ttft=0.14s, stream_visible_ttft=0.14s
+2026-11-14 03:50:29,389 - omlx.server - WARNING - GET /v1/models → 401: API key required
+2026-11-14 03:50:34,387 - omlx.server - WARNING - GET /v1/models → 401: API key required
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-11-14 03:50:35,128 - omlx.process_memory_enforcer - INFO - Process memory enforcer stopped
+2026-11-14 03:50:35,128 - omlx.server - INFO - Process memory enforcer stopped
+2026-11-14 03:50:35,129 - omlx.admin.hf_downloader - INFO - HF Downloader shut down
+2026-11-14 03:50:35,129 - omlx.server - INFO - HF Downloader stopped
+2026-11-14 03:50:35,129 - omlx.engine_pool - INFO - Unloading model: mlx-community__Qwen2.5-0.5B-Instruct-4bit (immediate abort)
+2026-11-14 03:50:35,129 - omlx.engine_core - INFO - Engine stopped
+2026-11-14 03:50:35,129 - omlx.scheduler - INFO - Scheduler shutdown initiated...
+2026-11-14 03:50:35,130 - omlx.cache.paged_ssd_cache - INFO - Shutting down PagedSSDCacheManager...
+2026-11-14 03:50:35,131 - omlx.scheduler - INFO - Scheduler shutdown completed
+2026-11-14 03:50:35,131 - omlx.cache.paged_cache - INFO - PagedCacheManager cleared (reset to 256 initial blocks)
+2026-11-14 03:50:35,174 - omlx.scheduler - INFO - Deep reset completed - all caches cleared
+2026-11-14 03:50:35,245 - omlx.engine.batched - INFO - BatchedEngine stopped
+2026-11-14 03:50:35,279 - omlx.engine_pool - INFO - Unloaded model: mlx-community__Qwen2.5-0.5B-Instruct-4bit, freed=268.43MB (expected>=0.00B), active_memory: 1.02KB (settled)
+2026-11-14 03:50:35,340 - omlx.engine_pool - INFO - Engine pool shutdown complete
+2026-11-14 03:50:35,341 - omlx.server - INFO - Engine pool shutdown
+INFO:     Application shutdown complete.
+INFO:     Finished server process [31449]
