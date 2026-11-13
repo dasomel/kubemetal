@@ -316,3 +316,52 @@ issue/evidence gate로 관리한다. 주요 추적 이슈는 #24(Model/Compute R
 #84(CuMetal), #94(krunkit/K3s GPU feasibility)다.
 
 D43: 관리 프로필은 `scripts/colima-profile.txt`에서 읽고 context는 `colima-<profile>`로 파생한다. 기본 프로필의 이전 측정은 전용 프로필 D10 브리지 검증을 대신하지 않는다.
+
+## #38 retrieval comparison
+
+`scripts/rag/eval_compare.py`는 opt-in CPU 비교 도구다. 커밋된
+`scripts/rag/eval/fixtures/`의 작은 한/영/code/config 문서와 수동 지정한 binary
+문서 qrels를 사용한다. qrels는 구현 단계의 임시 기대값이며 사람의 검토는 대기 중이다. 제품 모델 선택·routing·RRF 정책을 변경하지 않는다.
+기존 stdlib `eval_retrieval.py`는 그대로 유지한다.
+
+```sh
+# 이미 보유한 로컬 sentence-transformers snapshot만 사용. 설치/다운로드하지 않는다.
+python3 -B scripts/rag/eval_compare.py \
+  --fixture scripts/rag/eval/fixtures --model-path /absolute/path/to/local/snapshot \
+  --repeats 5 --output /tmp/retrieval-comparison.json
+```
+
+동일 production fixed chunker로 fixture를 한 번 나누고, CPU 모델을 한 번 적재한 뒤
+embedding·임시 LanceDB table을 한 번 준비한다. fixture-relative source로 tie 순서를
+고정하며 실제 table의 전체 records를 입력과 대조한다. 모든 질의는 동일 index와
+model snapshot에서 production `rag_host.cmd_query`를 호출한다. exact/lexical(BM25)/
+dense/hybrid/auto의 순서를 query·반복마다 회전시킨다. hybrid는 production의 전역
+lexical+dense RRF이며 별도 lexical 구현이나 candidate rerank가 아니다.
+
+JSON은 corpus/query/chunk/model/config/production/harness/index-record 해시와 index
+버전, dependency 버전, 설정, 원문 chunks/qrels, 요청별 원시 chunk ranks·점수·routing,
+문서 collapse 후 recall@1/3/5·binary nDCG@1/3/5·MRR 및 표본 수 n을 보존한다.
+`fixture_prepare_ms`, `model_load_ms`, `index_prepare_ms`는 측정 query 구간에서 분리된다. `query_ms`는
+상주 모델을 사용한 cmd_query 전체(DB open/FTS 생성/encode/search/JSON 포함) 시간이다.
+별도 subprocess 요청도 같은 index에서 production cmd_query를 실행하고 원시 응답,
+내부 query/model-load 시간, 부모가 잰 전체 `wall_ms`를 남긴다. 이 worker는 CPU·로컬
+전용 로더를 주입하므로 제품 CLI와 로더 설정은 다르지만, Python 기동·import·모델
+재적재를 포함하는 단발 CLI 비용을 드러낸다. subprocess와 상주 query는 각각 실행된다.
+전체 5회 결과의 n은 모드별 `질의 수 × 5`이며 독립 질의 수와 다르다.
+
+빈 검색 결과는 유효한 0점이다. 누락/변조 metadata, production 오류, subprocess 실패는
+요청 오류로 남고 전체 exit는 nonzero다. 실패 요청은 평균에 포함하지 않으므로 부분
+report는 성공 비교로 해석하면 안 된다. dependency/model 부재는 `unavailable`·nonzero다.
+온라인 접근과 remote model code는 비활성화하며 snapshot/fixture 변경도 거부한다.
+
+원시 JSON의 `raw`, `queries`, `chunks`를 `eval_compare.summarize`에 넘기면 기존
+평가기 metric 함수로 report를 재계산한다. `tests/rag/test_eval_compare.py`는 결정적
+stub embedding/SDK로 실제 cmd_query 분기를 검사하며 기존 `make test`/`make verify`의
+`unittest discover -s tests/rag`에 포함된다. **이 테스트는 실제 LanceDB/embedding
+모델 성능 측정이 아니다.** 실제 모델 비교와 raw→report 일치는 오케스트레이터가 위
+opt-in 명령 후 확인해야 한다. 작은 fixture 점수는 제품 전체 품질로 일반화하지 않는다.
+
+```sh
+# 위 opt-in 실행 후 저장된 raw만으로 report 재계산 대조 (모델 재실행 없음)
+python3 -B -c 'import json,sys; sys.path.insert(0,"scripts/rag"); from eval_compare import summarize; e=json.load(open(sys.argv[1])); assert e["status"] == "ok"; assert summarize(e["raw"],e["queries"],e["chunks"]) == e["report"]; print("raw/report match")' /tmp/retrieval-comparison.json
+```
