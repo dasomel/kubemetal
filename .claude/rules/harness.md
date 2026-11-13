@@ -9,7 +9,7 @@ Model tiering, agy rotation, and the failure ladder are owned by the global
 
 | Lane | Scope (disjoint — do not cross) | Worker | Model |
 |------|--------------------------------|--------|-------|
-| `rust-backend` | `src-tauri/**`, `scripts/**` (k8s manifests, mlx/prefect/ingest/airgap/e2e host scripts), `Cargo.toml`, `tauri.conf.json`, `capabilities/` | agy (primary) | agy rotation per global `<agy_cli>`; native fallback `sonnet` |
+| `rust-backend` | `src-tauri/**` (incl. `Cargo.toml`, `tauri.conf.json`, `capabilities/`), `scripts/**` (k8s manifests, mlx/prefect/ingest/airgap/e2e host scripts) | agy (primary) | agy rotation per global `<agy_cli>`; native fallback `sonnet` |
 | `frontend` | `src/**`, `package.json`, `tsconfig.json`, `vite.config.ts`, `index.html` | agy (primary) | same rotation; native fallback `sonnet` |
 | `ui-design` | `DESIGN.md`, `src/index.css` (`@theme`), component styling | `designer` subagent | `sonnet` |
 | `qa/verify` | `cargo check`/`clippy`, `tsc --noEmit`, DESIGN.md lint, doc↔code sync (D-registry, IPC names) | `verifier` / `code-reviewer` subagent | `sonnet` (1st pass) |
@@ -18,8 +18,8 @@ Model tiering, agy rotation, and the failure ladder are owned by the global
 
 ## Rules
 
-- **`agyp` injection reaches `CLAUDE.md` (which now expands one level to `AGENTS.md`) + this
-  file, and nothing else.** `AGENTS.md` carries the D-registry decisions as summary bullets, but
+- **`agyp` injection reaches the shared worker contract, `CLAUDE.md` (which expands one level
+  to `AGENTS.md`) and `.claude/rules/**/*.md` (this file), and nothing else.** `AGENTS.md` carries the D-registry decisions as summary bullets, but
   the full `docs/02` §4.1 (IPC names) and `docs/03` §4 (D-registry) source docs are *not*
   injected, so a prompt saying "follow the registry" still gives the worker only the summary.
   Quote the specific decision text the lane must honor when it matters.

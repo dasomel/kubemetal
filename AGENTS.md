@@ -105,7 +105,6 @@ forwards die with their parent.
 
 - Make the smallest coherent change that solves the requested problem.
 - Do not auto-fix unrelated findings; report them separately.
-- Preserve desktop/native, ML runtime, Kubernetes, evidence, and security boundaries.
 - Treat Tauri command exposure, filesystem/process/network access, model/tool authorization, credential scope, public API changes, and destructive cluster operations as design changes.
 - Keep low-level host/ML/runtime details behind the appropriate service or adapter boundary.
 - Let formatter/linter rules own deterministic style. Comments explain why, invariants, hazards, or compatibility constraints.
