@@ -1,17 +1,38 @@
 //! Per-attempt downloads stay outside the catalog until exclusive, same-volume promotion.
+use std::collections::HashMap;
 use std::fs;
 use std::future::Future;
 use std::io;
-use std::os::unix::fs::DirBuilderExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+pub(crate) mod inventory;
+
+static ACTIVE_ATTEMPTS: LazyLock<Mutex<HashMap<PathBuf, (u64, u64)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn staging_root(models: &Path) -> PathBuf {
+    models.with_file_name("model-downloads")
+}
+
+struct Registration(PathBuf);
+impl Drop for Registration {
+    fn drop(&mut self) {
+        if let Ok(mut active) = ACTIVE_ATTEMPTS.lock() {
+            active.remove(&self.0);
+        }
+    }
+}
 
 static NEXT_ATTEMPT: AtomicU64 = AtomicU64::new(0);
 
 struct Attempt {
     staging: PathBuf,
     destination: PathBuf,
+    _registration: Registration,
 }
 
 impl Attempt {
@@ -28,7 +49,7 @@ impl Attempt {
             Err(e) => return Err(format!("Cannot inspect model destination: {e}")),
         }
         fs::create_dir_all(models).map_err(|e| format!("Cannot create models root: {e}"))?;
-        let staging_root = models.with_file_name("model-downloads");
+        let staging_root = staging_root(models);
         match fs::DirBuilder::new().mode(0o700).create(&staging_root) {
             Ok(()) => {}
             Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
@@ -53,7 +74,16 @@ impl Attempt {
             .mode(0o700)
             .create(&staging)
             .map_err(|e| format!("Cannot create download attempt: {e}"))?;
+        // D53: registration lives only as long as this attempt, including abort.
+        // Cost: process-local evidence only; restart returns unknown, never orphan.
+        let metadata = fs::symlink_metadata(&staging)
+            .map_err(|e| format!("Cannot identify staging attempt: {e}"))?;
+        ACTIVE_ATTEMPTS
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(staging.clone(), (metadata.dev(), metadata.ino()));
         Ok(Self {
+            _registration: Registration(staging.clone()),
             staging,
             destination,
         })

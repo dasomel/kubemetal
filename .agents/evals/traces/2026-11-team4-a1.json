@@ -1,0 +1,124 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-team4-a1-221-2026-11-13",
+  "task": "#221 A1: app-owned model-download staging read-only inventory, honest unknown states, separate Model Hub card; D53 owner review before merge.",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      ".agents/evals/traces/2026-11-team4-a1.json",
+      "src/hooks/useModelHub.ts",
+      "src/lib/modelDownloadStaging.ts",
+      "src/components/modelhub/ModelHub.tsx",
+      "src/components/modelhub/ModelDownloadStagingCard.tsx",
+      "src/types/ipc.ts",
+      "src/i18n/translations.ts",
+      "tests/frontend/model-download-staging.test.mjs",
+      "tests/frontend/fixtures/*",
+      "docs/02-requirements.md",
+      "docs/03-mvp-design.md",
+      "docs/04-architecture.md",
+      "docs/mistakes-log.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Plan: inspect guidance/mistakes/runtime skill, implement shared-root bounded no-follow inventory and live registration, separate card/types/i18n, test, update D53/contracts, trace and commit. No deletion, catalog semantics changes, legacy/evaluation cleanup, installs, cluster operations, push or PR. Explicit A1 overrides authorize one new read-only IPC and D53."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Baseline has only memory-local repo progress and private abort remnants; no staging inventory IPC. A local transfer writes 21 bytes, remains absent from catalog, and leaves staging after task abort. New regression negative controls reproduce lossy filename IDs and path-only active ownership failures; these controls test the new implementation, not an existing baseline IPC.",
+      "evidence": [
+        "policy:git grep -n list_model_download_staging HEAD -- src-tauri/src src: exit 1, no existing IPC",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml --lib non_utf8_names -- --skip live_smoke --skip live_matrix: lossy-ID negative control exit 101, 0 passed/1 failed; ID set collision",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml --lib replacing_a_registered_path -- --skip live_smoke --skip live_matrix: path-only registration negative control exit 101, active != unknown"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "D53 adds no-argument read-only IPC. Blocking worker canonicalizes server-owned parent and acquires no-follow directory handles from /; openat/fdopendir avoid descendant path-replacement races. Shared staging-root calculation, device/inode-bound RAII current-process registrations, opaque byte-preserving IDs, observation time, optional sizes, per-entry/root errors and scan truncation. Budgets: 128 attempts, 4096 total entries, 32 levels. Only matching current registrations are active; restart/reused PID/age give unknown. UI clears failed/stale snapshots and separates staging from catalog. No cleanup action or IPC."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Real macOS temporary filesystem/local async transfer plus React static rendering and asynchronous reader unit tests; not Tauri IPC or browser observation",
+      "summary": "9 new Rust inventory tests and 6 new frontend tests are discovered by existing make test/make verify runners. Covers missing/empty root, active/abort/restart/PID, catalog separation, symlinks, root and entry permissions, disappearing children/path replacement, inode registration, depth/entry/attempt bounds, byte IDs, unsupported types, bilingual loading/failure/empty/partial/null-size/zero states, stale requests and unmounts.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml --lib model_download -- --skip live_smoke --skip live_matrix --nocapture: exit 0, 17 passed/0 failed; A1_ACTIVE/A1_UNKNOWN/A1_PARTIAL/A1_ERROR emitted from actual filesystem fixture",
+        "test:pnpm test:frontend: exit 0, 29 passed/0 failed",
+        "test:make test-frontend: exit 0, 29 passed/0 failed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Requested Rust/frontend static checks, web build and Python regression suites",
+      "evidence": [
+        "ci:cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: exit 0",
+        "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0",
+        "ci:pnpm exec tsc --noEmit: exit 0",
+        "ci:pnpm build: exit 0, web assets built; bundle-size warning",
+        "ci:python3 scripts/ci/check_ipc_types.py: exit 0, 103 invokes checked",
+        "test:python3 -B -m unittest discover: exit 0, 0 tests; root discovery does not cover repository test directories",
+        "test:python3 -B -m unittest discover -s tests/rag -v: exit 0, 57 tests",
+        "test:python3 -B -m unittest discover -s tests/mlx -v: exit 0, 23 tests",
+        "test:python3 -B -m unittest discover -s scripts/support -v: exit 0, 26 tests, 1 skipped",
+        "test:python3 -B -m unittest discover -s tests/cumetal -v: exit 0, 42 tests; unit evidence, no matrix live run"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "pending",
+      "scope": "Full make verify in lane sandbox; host rerun required",
+      "summary": "Raw make verify initially unexpectedly invoked existing non-ignored live_smoke; it failed with run failed and is not GPU evidence. Follow-up uses Cargo target runner to append --skip live_smoke --skip live_matrix to every test binary. Final safe run is SANDBOX-BLOCKED by socket bindings. No GPU/cluster runtime completion claimed.",
+      "evidence": [
+        "ci:make verify: exit 2; initial run 524 Rust passed/6 failed/2 ignored including existing live_smoke and five EPERM socket tests",
+        "ci:CARGO_TARGET_AARCH64_APPLE_DARWIN_RUNNER=\"$PWD/.omc/logs/a1-test-runner\" make verify: exit 2; 526 Rust passed/5 failed/2 ignored/1 filtered; socket bind PermissionDenied Operation not permitted",
+        "ci:npm_config_offline=true npm_config_yes=false make -o test verify: exit 2; fmt/clippy/tsc passed, DESIGN.md CLI unavailable ENOTCACHED; no install attempted",
+        "ci:make -o test -o lint verify: exit 2; license self-test 14 passed, existing license collector TypeError string indices must be integers; final printed OK did not override nonzero exit"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "verification",
+      "status": "pending",
+      "scope": "Actual browser/Tauri rendering of dedicated local-transfer fixture",
+      "summary": "Fixture page renders actual card components from Rust-emitted filesystem snapshots. Browser inventory empty; IAB unavailable; Safari access not approved. Therefore live card/error visibility and real Tauri IPC are unobserved. Vite server was stopped after the observation attempt.",
+      "evidence": [
+        "runtime:node tests/frontend/fixtures/collect-staging.mjs /tmp/a1-model-download.log: exit 0, four actual filesystem snapshots collected",
+        "runtime:pnpm dev --host 127.0.0.1: sandbox listen EPERM; approved escalation started Vite for /tests/frontend/fixtures/staging.html, then stopped with exit 130",
+        "runtime:cua.createBrowserTab iab: Browser is not available; cua.listBrowsers: []; cua.getApp com.apple.Safari: Computer Use was not approved to use Safari"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "external_input",
+      "provenance": ".agents/skills/kubemetal-hybrid-runtime-change/SKILL.md",
+      "reviewed": true,
+      "summary": "Applied runtime skill. CLAUDE.md adds runtime skill loading and Claude-specific harness references beyond AGENTS.md. New IPC owner approval is required before merge. D53 added under explicit lane authorization."
+    },
+    {
+      "id": "e9",
+      "type": "completion_claim",
+      "summary": "Implementation and scoped tests verified; full verification and live UI remain pending. Cleanup AC remains UNMET. Only A1 changes are committed; no publication requested.",
+      "evidence": [
+        "test:17 model_download tests and 29 frontend tests passed",
+        "policy:No deletion/cleanup IPC; no D-registry additions besides explicitly authorized D53"
+      ]
+    },
+    {
+      "id": "e10",
+      "type": "task_outcome",
+      "state": "B",
+      "summary": "Meaningful verified implementation; host socket tests, unavailable DESIGN.md lint dependency, existing license-check failure, live browser/Tauri observation and IPC owner approval remain pending. No cleanup/evaluation scratch/legacy partial work.",
+      "next": "Orchestrator: run make verify on host; fix/resolve unrelated license-check and provision existing DESIGN.md lint tooling separately; generate snapshots using commands in tests/frontend/fixtures/collect-staging.mjs and observe /tests/frontend/fixtures/staging.html via pnpm dev --host 127.0.0.1; verify real app with pnpm tauri dev and obtain IPC owner approval before merge. No GPU run needed for A1."
+    }
+  ]
+}

@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
-import type { HfModel, DownloadStatus, LocalModel } from '../types/ipc';
+import type { HfModel, DownloadStatus, LocalModel, ModelDownloadStaging } from '../types/ipc';
+import { createStagingReader } from '../lib/modelDownloadStaging';
+import type { StagingSnapshot } from '../lib/modelDownloadStaging';
 import { useTranslation } from '../i18n/i18nContext';
 
 export function useModelHub() {
@@ -17,6 +19,19 @@ export function useModelHub() {
   const [uploadedIds, setUploadedIds] = useState<Set<string>>(new Set());
   const [registeringIds, setRegisteringIds] = useState<Set<string>>(new Set());
   const [registeredIds, setRegisteredIds] = useState<Set<string>>(new Set());
+
+  const [stagingSnapshot, setStagingSnapshot] = useState<StagingSnapshot>({ inventory: null, error: null });
+  const stagingReader = useRef<ReturnType<typeof createStagingReader> | null>(null);
+  const refreshStaging = useCallback(() => { void stagingReader.current?.refresh(); }, []);
+  useEffect(() => {
+    const reader = createStagingReader(
+      () => invoke<ModelDownloadStaging>('list_model_download_staging'), setStagingSnapshot,
+    );
+    stagingReader.current = reader;
+    void reader.refresh();
+    const timer = setInterval(() => { void reader.refresh(); }, 3000);
+    return () => { clearInterval(timer); reader.dispose(); stagingReader.current = null; };
+  }, []);
 
   const prevDownloadsRef = useRef<DownloadStatus[]>([]);
 
@@ -147,6 +162,9 @@ export function useModelHub() {
   }, [downloads, fetchLocalModels]);
 
   return {
+    staging: stagingSnapshot.inventory,
+    stagingError: stagingSnapshot.error,
+    refreshStaging,
     searchResults,
     searching,
     search,

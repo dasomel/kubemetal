@@ -673,3 +673,17 @@ export interface CumetalSmokeReport {
   } | null;
   workloads: CumetalWorkloadResult[];
 }
+
+// D53: observed staging metadata is separate from repo download progress/catalog.
+export interface ModelDownloadStaging {
+  observed_at_unix_ms: number;
+  entries: {
+    id: string;
+    size_bytes: number | null;
+    state: 'active' | 'unknown';
+    reason: 'registered_attempt' | 'no_durable_liveness_evidence';
+    errors: string[];
+  }[];
+  errors: string[];
+  truncated: boolean;
+}

@@ -52,8 +52,9 @@ use commands::mlx::{
     MlxState,
 };
 use commands::modelhub::{
-    download_hf_model, get_model_downloads, list_local_models, list_registered_models,
-    register_model_mlflow, search_hf_models, upload_model_to_storage, ModelHubState,
+    download_hf_model, get_model_downloads, list_local_models, list_model_download_staging,
+    list_registered_models, register_model_mlflow, search_hf_models, upload_model_to_storage,
+    ModelHubState,
 };
 use commands::omlx_settings::set_omlx_model_settings_sparse;
 use commands::port_forward::{
@@ -119,6 +120,7 @@ pub fn run() {
             search_hf_models,
             download_hf_model,
             get_model_downloads,
+            list_model_download_staging,
             list_local_models,
             upload_model_to_storage,
             register_model_mlflow,
