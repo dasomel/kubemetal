@@ -10,14 +10,17 @@ Measured 2026-11-13 (UTC timestamps in `00-start.txt`) on the app's own colima p
 | removed (`08`, `09`, `10-ui-after.png`) | kagent: the same 7 pods Ready | **정상** — 준비됨 예 |
 
 What this shows: with the default namespace healthy and `pod_issues_count = 0`, a not-ready pod in the
-`kagent` namespace alone moves the overall verdict to degraded and back. Before PR #238 this state
-aggregated as healthy.
+`kagent` namespace alone moves the overall verdict to degraded and back. The pre-fix behavior was not
+re-run here; PR #238's regression test recorded it on the old code (`healthy != degraded`).
 
 Limits, stated plainly:
 - The probe is a pod-readiness aggregation observation, **not** a real controller failure.
 - The diagnostic pod was already gone when `kubectl delete` ran (`08-cleanup.txt`: NotFound) — a pod bound
   to a non-existent node is removed by Kubernetes pod GC. Recovery was observed, but not caused by the delete.
-- The UI was read from window captures after a background click on 새로고침; the raw IPC JSON was not captured.
+- The card verdicts and `파드 문제 0` rest **only on the three PNG captures** (taken after a background click on
+  새로고침); the raw IPC JSON was not captured. The JSON files prove the cluster side only.
+- `00-start.txt`: the `baseline-shot` line (13:17:33Z) is an earlier capture taken with the stale deploy target
+  (verdict 저하 for that unrelated reason); it was discarded. `ui-baseline` (13:19:53Z) is `04-ui-baseline.png`.
 - Pod JSON files are reduced (env and volumes dropped — the raw kagent pod specs carry credentials-like env).
 - Setup needed for a healthy baseline: three operator-owned `kubectl port-forward` processes
   (`03-port-forwards.txt`) and the app's deploy target pointing at `colima-kubemetal` / `default`.
