@@ -48,7 +48,7 @@ class EvidenceTests(unittest.TestCase):
 
     def cli(self, *args):
         return subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/mlx/evidence_export.py'),
-                               *map(str, args)], capture_output=True, text=True)
+                               *map(str, args)], capture_output=True, text=True, timeout=5)
 
     def test_saved_schema_validated_roundtrip_in_separate_process(self):
         output = self.base / 'envelope.json'
@@ -161,6 +161,99 @@ class EvidenceTests(unittest.TestCase):
         for manifest in ([], {}, {'sources': None}, {'sources': [None]}):
             with self.subTest(manifest=manifest), self.assertRaises(ValueError):
                 evidence.export(manifest, self.base)
+
+    def assert_export_rejected(self, message):
+        self.manifest_path.write_text(json.dumps(self.manifest))
+        output = self.base / 'rejected.json'
+        run = self.cli('export', self.manifest_path, '--output', output)
+        self.assertEqual(run.returncode, 1, run.stdout)
+        self.assertIn('evidence validation failed:', run.stderr)
+        self.assertIn(message, run.stderr)
+        self.assertNotIn('Traceback', run.stderr)
+        self.assertFalse(output.exists(), 'failed export left an output file')
+
+    def test_absolute_source_path_rejected(self):
+        self.manifest['sources'][0]['path'] = str(self.base / 'gpu.json')
+        self.assert_export_rejected('relative')
+
+    def test_parent_traversal_rejected(self):
+        self.manifest['sources'][0]['path'] = '../' + self.base.name + '/gpu.json'
+        self.assert_export_rejected('relative')
+
+    def test_symlink_escaping_base_rejected(self):
+        with tempfile.TemporaryDirectory() as outside:
+            target = Path(outside) / 'gpu.json'
+            target.write_text(json.dumps(self.payloads['gpu']))
+            (self.base / 'escape.json').symlink_to(target)
+            self.manifest['sources'][0]['path'] = 'escape.json'
+            self.assert_export_rejected('outside base')
+
+    def test_symlink_inside_base_allowed(self):
+        (self.base / 'alias.json').symlink_to(self.base / 'gpu.json')
+        self.manifest['sources'][0]['path'] = 'alias.json'
+        self.assertEqual(evidence.export(self.manifest, self.base), self.envelope)
+
+    def test_directory_rejected(self):
+        self.manifest['sources'][0]['path'] = '.'
+        self.assert_export_rejected('regular file')
+
+    def test_fifo_rejected_without_blocking(self):
+        import os
+        os.mkfifo(self.base / 'pipe')
+        self.manifest['sources'][0]['path'] = 'pipe'
+        self.assert_export_rejected('regular file')
+
+    def test_oversized_source_rejected(self):
+        (self.base / 'gpu.json').write_bytes(b' ' * (1024 * 1024 + 1))
+        self.assert_export_rejected('size limit')
+
+    def test_invalid_utf8_controlled(self):
+        (self.base / 'gpu.json').write_bytes(b'\xff')
+        self.assert_export_rejected('utf-8')
+
+    def test_invalid_json_controlled(self):
+        (self.base / 'gpu.json').write_text('{broken')
+        self.assert_export_rejected('Expecting')
+
+    def test_non_string_timestamp_rejected(self):
+        for value in (None, 12, [], {}):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'timestamp'):
+                evidence.timestamp(value)
+        self.manifest['observed_at'] = 12
+        self.assert_export_rejected('invalid type')
+
+    def test_unknown_result_kind_rejected(self):
+        self.manifest['sources'][0]['kind'] = 'secret'
+        self.assert_export_rejected('unknown result kind')
+
+    def test_wrong_source_shapes_rejected_before_embedding(self):
+        for kind in self.payloads:
+            original = (self.base / f'{kind}.json').read_text()
+            for payload in ({'secret': 'do not share'}, [], None):
+                with self.subTest(kind=kind, payload=payload):
+                    (self.base / f'{kind}.json').write_text(json.dumps(payload))
+                    self.assert_export_rejected('source')
+            (self.base / f'{kind}.json').write_text(original)
+
+    def test_unexpected_source_fields_rejected(self):
+        for kind, payload in self.payloads.items():
+            with self.subTest(kind=kind):
+                path = self.base / f'{kind}.json'
+                path.write_text(json.dumps({**payload, 'secret': 'do not share'}))
+                self.assert_export_rejected('unexpected fields')
+                path.write_text(json.dumps(payload))
+
+    def test_wrong_nested_source_types_rejected(self):
+        for kind, field, value in [('gpu', 'matrix_dim', '2048'),
+                                   ('storage', 'read', []),
+                                   ('storage', 'errors', ['broken']),
+                                   ('hardware', 'brand_name', []),
+                                   ('metrics', 'gpu_backend', {})]:
+            with self.subTest(kind=kind, field=field):
+                path = self.base / f'{kind}.json'
+                path.write_text(json.dumps({**self.payloads[kind], field: value}))
+                self.assert_export_rejected('source')
+                path.write_text(json.dumps(self.payloads[kind]))
 
     def test_cli_errors_and_help(self):
         self.assertEqual(self.cli('--help').returncode, 0)

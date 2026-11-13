@@ -2,12 +2,11 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "kubemetal-team4-a3-11-2026-11-13",
-  "task": "#11 A3 local opt-in evidence envelope/validation/export",
+  "task": "#11 A3 local evidence export review fixes: bounded source paths and validated collector formats",
   "changeContext": {
     "paths": [
       "scripts/mlx/evidence_export.py",
       "tests/mlx/test_evidence_export.py",
-      "docs/schemas/local-accelerator-evidence-v1.schema.json",
       "docs/04-architecture.md",
       ".agents/evals/traces/2026-11-team4-a3.json",
       "docs/mistakes-log.md"
@@ -17,71 +16,65 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Read AGENTS.md, matching macOS/metrics/process mistakes, runtime skill, Makefile and IPC structs. CLAUDE.md additionally references runtime skill loading and Claude-only harness. No new IPC, D-registry rows, GPU/probe/cluster execution, installs, push or PR."
+      "summary": "Read AGENTS.md, macOS mistakes-log, collector emitters, IPC structs and Makefile. CLAUDE.md additionally names the runtime skill and Claude-only harness; file-only exporter fixes do not change runtime integration. No installs, colima/kubectl, D-registry rows, push or PR."
     },
     {
       "id": "e2",
       "type": "reproduction",
-      "summary": "Feature gap inspected from original emitters. During review of new code, added regression for storage initialized bytes=0 with null timing; before fix it incorrectly reported measured.",
+      "summary": "Measured before fix: absolute paths, parent traversal and external symlinks were accepted; arbitrary extra fields and malformed nested shapes escaped validation. FIFO read timed out; timestamp(non-string) raised AttributeError. UTF-8 and invalid JSON already produced controlled errors (UnicodeDecodeError subclasses ValueError). Failures include subtests, not 30 distinct test methods.",
       "evidence": [
-        "test:python3 -B -m unittest discover -s tests/mlx -p test_evidence_export.py -v: before fix exit 1; 7 tests, 1 failure; measured != unavailable"
+        "test:python3 -B -m unittest discover -s tests/mlx -p test_evidence_export.py -v: exit 1; Ran 21 tests in 8.020s; FAILED (failures=25, errors=5)",
+        "test:before-fix FIFO subprocess exceeded 5-second timeout; non-string timestamp cases raised AttributeError; failed export left an output file for unvalidated extra fields"
       ]
     },
     {
       "id": "e3",
       "type": "bug_fix",
-      "summary": "Not applicable as a bug fix: implemented approved missing feature. Preserve raw UTF-8 JSON/hash, unknown times/null versions, measured/unavailable units/reasons and storage errors/limitations. Explicit caller IDs/device/backend/collector/time; exclusive output and original-file comparison. No generated UUID/power or Narwhal/core API adoption. Review fix: storage zero initialized counters with null timing become unavailable; raw zero, positive partial transfer counters and confirmed measured zero preserved. Added matching mistakes-log row."
+      "summary": "Resolve every source relative to manifest directory; reject absolute paths, parent components, external resolved symlinks, non-regular files and sources above 1 MiB. Internal symlinks allowed. Bound reads and validate four known collector shapes, required/allowed fields and nested types before embedding and during verify. Validate timestamp type first; malformed input failures are controlled. Exclusive output creation retained with cleanup on write/readback failure. Document limits and make test dependency; no D-registry additions.",
+      "evidence": [
+        "policy:scripts/mlx/evidence_export.py: read_source and source_payload enforce source boundary and known formats before raw_json embedding",
+        "policy:docs/04-architecture.md: internal symlinks allowed; tests run through make test, which make verify depends on"
+      ]
     },
     {
       "id": "e4",
       "type": "regression_verification",
       "status": "passed",
-      "scope": "CPU/file-only collector-format fixtures; not GPU measurements",
-      "summary": "7 new tests cover four formats, separate-process roundtrip, null/unknown/zero, storage limitations/errors, identifiers/units/hash, nonfinite/duplicate JSON, timestamps, device/backend consistency, source mutation, CLI and schema failures.",
+      "scope": "CPU/file-only fixture and CLI tests; no accelerator measurement claimed",
+      "summary": "Measured 44 total tests: 21 exporter methods (7 existing + 14 new) and 23 other MLX tests. Added path, symlink, directory/FIFO, cap, UTF-8, JSON, timestamp, kind, shape/extra-field/nested-type and no-output regressions. Internal symlink roundtrip remains allowed.",
       "evidence": [
-        "test:python3 -B -m unittest discover -s tests/mlx -v: exit 0; Ran 30 tests; OK (7 new, 23 existing)",
-        "test:python3 -B inline fixture export, jsonschema.Draft202012Validator, separate-process verify --manifest and four original byte comparisons: exit 0; PASS; no collectors executed"
+        "test:python3 -B -m unittest discover -s tests/mlx -v: exit 0; Ran 44 tests in 2.766s; OK"
       ]
     },
     {
       "id": "e5",
       "type": "verification",
       "status": "passed",
-      "scope": "Requested filtered Rust, static and frontend checks",
-      "summary": "Individual applicable gates passed. No live GPU/cluster behavior claimed.",
+      "scope": "Requested Rust formatting check",
+      "summary": "Measured rustfmt success; no source Rust changes.",
       "evidence": [
-        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml gpu_benchmark -- --skip live_smoke --skip live_matrix: exit 0; 4 passed, 0 failed, 1 ignored, 520 filtered out",
-        "ci:cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: exit 0",
-        "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0",
-        "ci:pnpm exec tsc --noEmit: exit 0",
-        "test:make test-frontend: exit 0; 23 passed, 0 failed"
+        "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0; no output"
       ]
     },
     {
       "id": "e6",
       "type": "verification",
       "status": "pending",
-      "scope": "make verify in sandbox; temporary PATH Cargo wrapper skips live_smoke/live_matrix",
-      "summary": "SANDBOX-BLOCKED: four services::ports tests and support_bundle::verification_tests::verifier_rejects_unlisted_socket fail socket bind with PermissionDenied: Operation not permitted. Rust 517 passed, 5 failed, 2 ignored, 1 filtered. Subsequent Python/lint/license/build stages not reached.",
+      "scope": "make verify completion suite in sandbox, unmodified command without wrapper",
+      "summary": "SANDBOX-BLOCKED: five Rust socket tests report PermissionDenied (Operation not permitted). A separate CuMetal live_smoke_against_real_install test also failed: smoke run exit_code 10, provenance unverified; root cause not established. Rust 517 passed, 6 failed, 2 ignored. Frontend 23 passed. Python/lint/license/build stages were not reached. No passing full-suite claim.",
       "evidence": [
-        "test:PATH=\"/tmp/a3-bin:$PATH\" make verify: exit 2; wrapper appends -- --skip live_smoke --skip live_matrix to cargo test; 517 passed, 5 failed; socket PermissionDenied Operation not permitted"
+        "test:make verify: exit 2; Rust test result FAILED. 517 passed; 6 failed; 2 ignored; 0 measured; 0 filtered out",
+        "test:make verify: four services::ports tests and support_bundle::verification_tests::verifier_rejects_unlisted_socket fail with PermissionDenied: Operation not permitted",
+        "test:make verify: services::cumetal::harness::tests::live_smoke_against_real_install FAILED; run exit_code 10; independent runtime failure, not attributed to sandbox without evidence",
+        "test:make verify frontend stage: 23 passed, 0 failed"
       ]
     },
     {
       "id": "e7",
-      "type": "completion_claim",
-      "summary": "Local export implementation and targeted/static checks verified; full make verify pending host socket permissions. Narwhal AC6 and multihost AC7 remain out of scope.",
-      "evidence": [
-        "test:python3 -B -m unittest discover -s tests/mlx -v: exit 0, 30 tests OK",
-        "policy:make verify pending; no GPU rerun required for file-only slice"
-      ]
-    },
-    {
-      "id": "e8",
       "type": "task_outcome",
       "state": "B",
-      "summary": "Meaningful verified progress; host completion suite is the isolated blocker.",
-      "next": "Host: make verify with cargo test wrapper appending -- --skip live_smoke --skip live_matrix. No live GPU command required."
+      "summary": "Verified file-only review fixes; make verify remains pending because of observed socket restrictions and separate live-smoke failure. No runtime support or provenance authentication claimed.",
+      "next": "Run make verify in an authorized host environment; investigate CuMetal live-smoke exit 10 if it persists. No unrelated runtime edits in this lane."
     }
   ]
 }
