@@ -1,0 +1,6 @@
+svc/mlflow 5001:5000 kubectl_pid=40775
+svc/seaweedfs 8333:8333 kubectl_pid=40776
+svc/seaweedfs 8888:8888 kubectl_pid=40777
+127.0.0.1:5001 -> HTTP 200
+127.0.0.1:8333 -> HTTP 200
+127.0.0.1:8888 -> HTTP 200

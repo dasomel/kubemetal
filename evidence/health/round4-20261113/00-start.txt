@@ -1,0 +1,7 @@
+2026-11-13T13:15:00Z
+2026-11-13T13:17:33Z baseline-shot
+2026-11-13T13:19:53Z ui-baseline
+2026-11-13T13:20:06Z injected
+2026-11-13T13:20:23Z ui-during
+2026-11-13T13:21:55Z deleted
+2026-11-13T13:22:13Z ui-after

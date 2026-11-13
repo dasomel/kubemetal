@@ -1,0 +1,62 @@
+{
+  "source": "kubectl --context colima-kubemetal get pods -o json (reduced: env and volumes dropped)",
+  "pods": [
+    {
+      "namespace": "default",
+      "name": "mlflow-7688b77dcc-7rcld",
+      "labels": {},
+      "nodeName": "colima-kubemetal",
+      "phase": "Running",
+      "ready": "True",
+      "containersReady": "True",
+      "conditions": {
+        "PodReadyToStartContainers": "True",
+        "Initialized": "True",
+        "Ready": "True",
+        "ContainersReady": "True",
+        "PodScheduled": "True"
+      },
+      "images": [
+        "ghcr.io/mlflow/mlflow:v3.14.0"
+      ]
+    },
+    {
+      "namespace": "default",
+      "name": "prefect-79844466dc-x6qcl",
+      "labels": {},
+      "nodeName": "colima-kubemetal",
+      "phase": "Running",
+      "ready": "True",
+      "containersReady": "True",
+      "conditions": {
+        "PodReadyToStartContainers": "True",
+        "Initialized": "True",
+        "Ready": "True",
+        "ContainersReady": "True",
+        "PodScheduled": "True"
+      },
+      "images": [
+        "docker.io/prefecthq/prefect:3.7.8-python3.12"
+      ]
+    },
+    {
+      "namespace": "default",
+      "name": "seaweedfs-57476c586-dfxxl",
+      "labels": {},
+      "nodeName": "colima-kubemetal",
+      "phase": "Running",
+      "ready": "True",
+      "containersReady": "True",
+      "conditions": {
+        "PodReadyToStartContainers": "True",
+        "Initialized": "True",
+        "Ready": "True",
+        "ContainersReady": "True",
+        "PodScheduled": "True"
+      },
+      "images": [
+        "docker.io/chrislusf/seaweedfs:4.40"
+      ]
+    }
+  ]
+}

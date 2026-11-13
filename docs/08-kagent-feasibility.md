@@ -93,3 +93,17 @@ Sources: [CNCF blog](https://www.cncf.io/blog/2025/04/15/kagent-bringing-agentic
 - [ ] **Declarative Agent 스키마 및 런타임 동작 `[unverified]`**: `spec.type: Declarative` 및 `spec.declarative.{runtime, modelConfig, systemMessage, deployment.resources, tools}` 필드 구조 유지 여부 `[unverified]`, `rca-agent`의 리소스 미지정 시 컨트롤러 기본 메모리 한도 및 OOM 회피 동작 유지 여부 `[unverified]`.
 - [ ] **RemoteMCPServer 및 `kagent-tools` 호환성 `[unverified]`**: 내장 도구 서버 리소스명(`kagent-tool-server`)과 도구 이름(`k8s_get_resources`, `k8s_describe_resource`, `k8s_get_events` 등) 유지 여부 `[unverified]`, `RemoteMCPServer`의 `spec.{protocol: STREAMABLE_HTTP, url, sseReadTimeout, terminateOnClose, timeout}` 및 `status.discoveredTools[*].name` 스키마 유지 여부 `[unverified]`, `deploy/kagent-tools` 배포 이름·컨테이너 이미지(`ghcr.io/kagent-dev/kagent/tools`)·플래그(`--port`, `--metrics-port`) 유지 여부 `[unverified]`.
 - [ ] **Air-Gap 번들 및 이미지 레지스트리 동기화 `[unverified]`**: 1.x 차트가 참조하는 컨테이너 이미지 목록(`controller`, `app`, `ui`, `tools`, `kmcp`, `postgres` 태그 및 레지스트리 경로) 실측 추출 `[unverified]`, `scripts/helm/kagent-version.txt:1` 갱신 시 `scripts/airgap/images-helm.txt:9`, `src-tauri/src/commands/colima.rs:265`·`572`·`579`, `scripts/airgap/download_airgap_bundle.sh:127`, `scripts/airgap/install_from_airgap.sh:178`, `scripts/airgap/test_sbom.sh:42`, `scripts/airgap/test_digest_lock.sh:150`·`224`·`357` 동시 갱신 및 `make verify` 통과 확인.
+
+## Round 4 / #17 installed-not-ready — 실클러스터 관측 (measured-local, 2026-11-13)
+
+PR #238(kagent가 설치됐지만 준비되지 않으면 degraded)의 집계를 앱 전용 colima(`colima-kubemetal`)에서 관측했다.
+증거와 한계는 `evidence/health/round4-20261113/README.md`.
+
+- 기준: default·kagent 네임스페이스 모두 Ready, 카드 **정상**(설치됨 예 / 준비됨 예 / 파드 문제 0).
+- kagent 네임스페이스에 스케줄되지 않는 진단 Pod 1개 추가 → 카드 **저하**(준비됨 아니요, 파드 문제 0, 다른 항목 불변).
+- Pod가 사라진 뒤 → 카드 **정상** 복귀.
+- 한계: 실제 컨트롤러 고장이 아니라 readiness 집계 관측이다. 진단 Pod는 삭제 명령 전에 Kubernetes pod GC로 먼저 사라졌다.
+  IPC 원문 JSON은 수집하지 않았고 화면 캡처로 읽었다.
+- 부수 발견: 이 Mac의 저장된 배포 대상이 `colima-default`/`kubemetal`로 남아 있었다(그 컨텍스트는 더 이상 없다).
+  이 상태에서는 스택이 떠 있어도 MLflow/SeaweedFS가 "준비: 아니요"로 보인다 — D43(전용 프로필) 이후 저장값이
+  갱신되지 않은 것으로 보이며[추정], 별도 확인이 필요하다.
