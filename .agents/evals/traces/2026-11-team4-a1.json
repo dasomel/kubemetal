@@ -2,7 +2,7 @@
   "schemaVersion": "openforge-agent-trace/v1",
   "consistencyMode": "strict",
   "traceId": "kubemetal-team4-a1-221-2026-11-13",
-  "task": "#221 A1 review-fix: D53 snapshot not_created/observed/unknown, early-stop completeness, reproducible committed frontend tests; no new IPC or cleanup behavior.",
+  "task": "#221 A1 review-fix: D53 snapshot not_created/observed/unknown, early-stop completeness, reproducible committed frontend tests. This branch as a whole ADDS one new read-only Tauri IPC, list_model_download_staging (decision D53, owner approval required before merge); the review-fix round added no further IPC and no cleanup behavior.",
   "changeContext": {
     "paths": [
       "src-tauri/**",
@@ -18,14 +18,15 @@
       "docs/02-requirements.md",
       "docs/03-mvp-design.md",
       "docs/04-architecture.md",
-      "docs/mistakes-log.md"
+      "docs/mistakes-log.md",
+      ".agents/evals/**"
     ]
   },
   "events": [
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Review-fix current worktree/branch only: reproduce missing-root and enumeration findings, minimally fix inventory/card/types, remove ignored-file manual fixture, sync D53/contracts, verify, record and commit. No installs, cluster operations, push/PR, new IPC or cleanup behavior."
+      "summary": "Review-fix current worktree/branch only: reproduce missing-root and enumeration findings, minimally fix inventory/card/types, remove ignored-file manual fixture, sync D53/contracts, verify, record and commit. No installs, cluster operations, push/PR, or cleanup behavior; the review-fix round added no IPC beyond the branch's one new read-only IPC list_model_download_staging (D53)."
     },
     {
       "id": "e2",
@@ -50,7 +51,7 @@
       "type": "regression_verification",
       "status": "passed",
       "scope": "Real macOS temporary filesystem/local transfer unit tests, deterministic root-removal/iterator-error injection, bilingual React SSR and reader tests; no real Tauri IPC or UI observation",
-      "summary": "5 added Rust tests plus 2 added bilingual SSR tests. Full model_download subset: 22 passed; full frontend suite: 31 passed. Root never created vs missing parent vs removed before open; enumeration failure after one entry; attempt cap incomplete; ko/en three state labels and early-stop warning. Existing byte IDs, inode liveness, permissions, symlinks, nested budgets and catalog/abort tests remain passing.",
+      "summary": "5 Rust tests added in the review-fix round (14 #[test] functions added on this branch in total, counted from the diff) plus 2 added bilingual SSR tests. Full model_download subset: 22 passed; full frontend suite: 31 passed. Root never created vs missing parent vs removed before open; enumeration failure after one entry; attempt cap incomplete; ko/en three state labels and early-stop warning. Existing byte IDs, inode liveness, permissions, symlinks, nested budgets and catalog/abort tests remain passing.",
       "evidence": [
         "test:cargo test --locked --manifest-path src-tauri/Cargo.toml --lib model_download -- --skip live_smoke --skip live_matrix: exit 0; 22 passed, 0 failed, 517 filtered out",
         "test:make test-frontend: exit 0; 31 passed, 0 failed; every retained committed frontend test discovered by existing runner",
