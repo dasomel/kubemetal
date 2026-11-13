@@ -1,0 +1,526 @@
+[
+  {
+    "argv": [
+      "python3",
+      "-B",
+      "-c",
+      "import sys\ntry:\n import yaml\nexcept ImportError:\n sys.exit('PyYAML unavailable: CRD parsing requires import yaml; no install attempted')\nprint('PyYAML available:', yaml.__version__)"
+    ],
+    "exit_code": 0,
+    "name": "yaml-availability",
+    "stderr": {
+      "bytes": 0,
+      "file": "yaml-availability.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 24,
+      "file": "yaml-availability.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "pull",
+      "oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds",
+      "--version",
+      "0.9.12",
+      "--destination",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/0-kagent-crds-0.9.12"
+    ],
+    "exit_code": 0,
+    "name": "0-kagent-crds-0.9.12-pull",
+    "stderr": {
+      "bytes": 0,
+      "file": "0-kagent-crds-0.9.12-pull.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 138,
+      "file": "0-kagent-crds-0.9.12-pull.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "shasum",
+      "-a",
+      "256",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/0-kagent-crds-0.9.12/kagent-crds-0.9.12.tgz"
+    ],
+    "exit_code": 0,
+    "name": "0-kagent-crds-0.9.12-sha256",
+    "stderr": {
+      "bytes": 0,
+      "file": "0-kagent-crds-0.9.12-sha256.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 151,
+      "file": "0-kagent-crds-0.9.12-sha256.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "show",
+      "chart",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/0-kagent-crds-0.9.12/kagent-crds-0.9.12.tgz"
+    ],
+    "exit_code": 0,
+    "name": "0-kagent-crds-0.9.12-show-chart",
+    "stderr": {
+      "bytes": 0,
+      "file": "0-kagent-crds-0.9.12-show-chart.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 346,
+      "file": "0-kagent-crds-0.9.12-show-chart.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "show",
+      "values",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/0-kagent-crds-0.9.12/kagent-crds-0.9.12.tgz"
+    ],
+    "exit_code": 0,
+    "name": "0-kagent-crds-0.9.12-show-values",
+    "stderr": {
+      "bytes": 0,
+      "file": "0-kagent-crds-0.9.12-show-values.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 432,
+      "file": "0-kagent-crds-0.9.12-show-values.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "show",
+      "crds",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/0-kagent-crds-0.9.12/kagent-crds-0.9.12.tgz"
+    ],
+    "exit_code": 0,
+    "name": "0-kagent-crds-0.9.12-show-crds",
+    "stderr": {
+      "bytes": 0,
+      "file": "0-kagent-crds-0.9.12-show-crds.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 0,
+      "file": "0-kagent-crds-0.9.12-show-crds.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "template",
+      "km-r4",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/0-kagent-crds-0.9.12/kagent-crds-0.9.12.tgz",
+      "--namespace",
+      "kagent",
+      "--include-crds"
+    ],
+    "exit_code": 0,
+    "name": "0-kagent-crds-0.9.12-template",
+    "stderr": {
+      "bytes": 0,
+      "file": "0-kagent-crds-0.9.12-template.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 2231574,
+      "file": "0-kagent-crds-0.9.12-template.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "pull",
+      "oci://ghcr.io/kagent-dev/kagent/helm/kagent",
+      "--version",
+      "0.9.12",
+      "--destination",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/0-kagent-0.9.12"
+    ],
+    "exit_code": 0,
+    "name": "0-kagent-0.9.12-pull",
+    "stderr": {
+      "bytes": 0,
+      "file": "0-kagent-0.9.12-pull.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 133,
+      "file": "0-kagent-0.9.12-pull.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "shasum",
+      "-a",
+      "256",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/0-kagent-0.9.12/kagent-0.9.12.tgz"
+    ],
+    "exit_code": 0,
+    "name": "0-kagent-0.9.12-sha256",
+    "stderr": {
+      "bytes": 0,
+      "file": "0-kagent-0.9.12-sha256.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 141,
+      "file": "0-kagent-0.9.12-sha256.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "show",
+      "chart",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/0-kagent-0.9.12/kagent-0.9.12.tgz"
+    ],
+    "exit_code": 0,
+    "name": "0-kagent-0.9.12-show-chart",
+    "stderr": {
+      "bytes": 0,
+      "file": "0-kagent-0.9.12-show-chart.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 2061,
+      "file": "0-kagent-0.9.12-show-chart.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "show",
+      "values",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/0-kagent-0.9.12/kagent-0.9.12.tgz"
+    ],
+    "exit_code": 0,
+    "name": "0-kagent-0.9.12-show-values",
+    "stderr": {
+      "bytes": 0,
+      "file": "0-kagent-0.9.12-show-values.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 27937,
+      "file": "0-kagent-0.9.12-show-values.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "show",
+      "crds",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/0-kagent-0.9.12/kagent-0.9.12.tgz"
+    ],
+    "exit_code": 0,
+    "name": "0-kagent-0.9.12-show-crds",
+    "stderr": {
+      "bytes": 0,
+      "file": "0-kagent-0.9.12-show-crds.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 0,
+      "file": "0-kagent-0.9.12-show-crds.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "template",
+      "km-r4",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/0-kagent-0.9.12/kagent-0.9.12.tgz",
+      "--namespace",
+      "kagent",
+      "--include-crds"
+    ],
+    "exit_code": 0,
+    "name": "0-kagent-0.9.12-template",
+    "stderr": {
+      "bytes": 0,
+      "file": "0-kagent-0.9.12-template.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 158046,
+      "file": "0-kagent-0.9.12-template.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "pull",
+      "oci://ghcr.io/kagent-dev/kagent/helm/kagent-crds",
+      "--version",
+      "1.0.0-alpha17",
+      "--destination",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/1-kagent-crds-1.0.0-alpha17"
+    ],
+    "exit_code": 0,
+    "name": "1-kagent-crds-1.0.0-alpha17-pull",
+    "stderr": {
+      "bytes": 0,
+      "file": "1-kagent-crds-1.0.0-alpha17-pull.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 145,
+      "file": "1-kagent-crds-1.0.0-alpha17-pull.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "shasum",
+      "-a",
+      "256",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/1-kagent-crds-1.0.0-alpha17/kagent-crds-1.0.0-alpha17.tgz"
+    ],
+    "exit_code": 0,
+    "name": "1-kagent-crds-1.0.0-alpha17-sha256",
+    "stderr": {
+      "bytes": 0,
+      "file": "1-kagent-crds-1.0.0-alpha17-sha256.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 165,
+      "file": "1-kagent-crds-1.0.0-alpha17-sha256.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "show",
+      "chart",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/1-kagent-crds-1.0.0-alpha17/kagent-crds-1.0.0-alpha17.tgz"
+    ],
+    "exit_code": 0,
+    "name": "1-kagent-crds-1.0.0-alpha17-show-chart",
+    "stderr": {
+      "bytes": 0,
+      "file": "1-kagent-crds-1.0.0-alpha17-show-chart.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 189,
+      "file": "1-kagent-crds-1.0.0-alpha17-show-chart.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "show",
+      "values",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/1-kagent-crds-1.0.0-alpha17/kagent-crds-1.0.0-alpha17.tgz"
+    ],
+    "exit_code": 0,
+    "name": "1-kagent-crds-1.0.0-alpha17-show-values",
+    "stderr": {
+      "bytes": 0,
+      "file": "1-kagent-crds-1.0.0-alpha17-show-values.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 36,
+      "file": "1-kagent-crds-1.0.0-alpha17-show-values.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "show",
+      "crds",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/1-kagent-crds-1.0.0-alpha17/kagent-crds-1.0.0-alpha17.tgz"
+    ],
+    "exit_code": 0,
+    "name": "1-kagent-crds-1.0.0-alpha17-show-crds",
+    "stderr": {
+      "bytes": 0,
+      "file": "1-kagent-crds-1.0.0-alpha17-show-crds.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 0,
+      "file": "1-kagent-crds-1.0.0-alpha17-show-crds.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "template",
+      "km-r4",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/1-kagent-crds-1.0.0-alpha17/kagent-crds-1.0.0-alpha17.tgz",
+      "--namespace",
+      "kagent",
+      "--include-crds"
+    ],
+    "exit_code": 0,
+    "name": "1-kagent-crds-1.0.0-alpha17-template",
+    "stderr": {
+      "bytes": 0,
+      "file": "1-kagent-crds-1.0.0-alpha17-template.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 146854,
+      "file": "1-kagent-crds-1.0.0-alpha17-template.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "pull",
+      "oci://ghcr.io/kagent-dev/kagent/helm/kagent",
+      "--version",
+      "1.0.0-alpha17",
+      "--destination",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/1-kagent-1.0.0-alpha17"
+    ],
+    "exit_code": 0,
+    "name": "1-kagent-1.0.0-alpha17-pull",
+    "stderr": {
+      "bytes": 0,
+      "file": "1-kagent-1.0.0-alpha17-pull.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 140,
+      "file": "1-kagent-1.0.0-alpha17-pull.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "shasum",
+      "-a",
+      "256",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/1-kagent-1.0.0-alpha17/kagent-1.0.0-alpha17.tgz"
+    ],
+    "exit_code": 0,
+    "name": "1-kagent-1.0.0-alpha17-sha256",
+    "stderr": {
+      "bytes": 0,
+      "file": "1-kagent-1.0.0-alpha17-sha256.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 155,
+      "file": "1-kagent-1.0.0-alpha17-sha256.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "show",
+      "chart",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/1-kagent-1.0.0-alpha17/kagent-1.0.0-alpha17.tgz"
+    ],
+    "exit_code": 0,
+    "name": "1-kagent-1.0.0-alpha17-show-chart",
+    "stderr": {
+      "bytes": 0,
+      "file": "1-kagent-1.0.0-alpha17-show-chart.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 600,
+      "file": "1-kagent-1.0.0-alpha17-show-chart.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "show",
+      "values",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/1-kagent-1.0.0-alpha17/kagent-1.0.0-alpha17.tgz"
+    ],
+    "exit_code": 0,
+    "name": "1-kagent-1.0.0-alpha17-show-values",
+    "stderr": {
+      "bytes": 0,
+      "file": "1-kagent-1.0.0-alpha17-show-values.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 38316,
+      "file": "1-kagent-1.0.0-alpha17-show-values.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "show",
+      "crds",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/1-kagent-1.0.0-alpha17/kagent-1.0.0-alpha17.tgz"
+    ],
+    "exit_code": 0,
+    "name": "1-kagent-1.0.0-alpha17-show-crds",
+    "stderr": {
+      "bytes": 0,
+      "file": "1-kagent-1.0.0-alpha17-show-crds.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 0,
+      "file": "1-kagent-1.0.0-alpha17-show-crds.stdout.txt",
+      "truncated": false
+    }
+  },
+  {
+    "argv": [
+      "helm",
+      "template",
+      "km-r4",
+      "/private/tmp/kagent-chart-probe.AP3nqysH/1-kagent-1.0.0-alpha17/kagent-1.0.0-alpha17.tgz",
+      "--namespace",
+      "kagent",
+      "--include-crds"
+    ],
+    "exit_code": 0,
+    "name": "1-kagent-1.0.0-alpha17-template",
+    "stderr": {
+      "bytes": 0,
+      "file": "1-kagent-1.0.0-alpha17-template.stderr.txt",
+      "truncated": false
+    },
+    "stdout": {
+      "bytes": 42228,
+      "file": "1-kagent-1.0.0-alpha17-template.stdout.txt",
+      "truncated": false
+    }
+  }
+]

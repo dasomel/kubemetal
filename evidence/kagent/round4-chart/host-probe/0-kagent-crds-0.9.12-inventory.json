@@ -1,0 +1,111 @@
+[
+  {
+    "group": "kagent.dev",
+    "kind": "Agent",
+    "versions": [
+      {
+        "name": "v1alpha1",
+        "served": true,
+        "storage": false
+      },
+      {
+        "name": "v1alpha2",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "kagent.dev",
+    "kind": "AgentHarness",
+    "versions": [
+      {
+        "name": "v1alpha2",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "kagent.dev",
+    "kind": "MCPServer",
+    "versions": [
+      {
+        "name": "v1alpha1",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "kagent.dev",
+    "kind": "Memory",
+    "versions": [
+      {
+        "name": "v1alpha1",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "kagent.dev",
+    "kind": "ModelConfig",
+    "versions": [
+      {
+        "name": "v1alpha1",
+        "served": true,
+        "storage": false
+      },
+      {
+        "name": "v1alpha2",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "kagent.dev",
+    "kind": "ModelProviderConfig",
+    "versions": [
+      {
+        "name": "v1alpha2",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "kagent.dev",
+    "kind": "RemoteMCPServer",
+    "versions": [
+      {
+        "name": "v1alpha2",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "kagent.dev",
+    "kind": "SandboxAgent",
+    "versions": [
+      {
+        "name": "v1alpha2",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "kagent.dev",
+    "kind": "ToolServer",
+    "versions": [
+      {
+        "name": "v1alpha1",
+        "served": true,
+        "storage": true
+      }
+    ]
+  }
+]

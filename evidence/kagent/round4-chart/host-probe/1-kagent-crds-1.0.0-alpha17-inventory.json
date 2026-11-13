@@ -1,0 +1,90 @@
+[
+  {
+    "group": "api.kagent.dev",
+    "kind": "Agent",
+    "versions": [
+      {
+        "name": "v1alpha3",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "api.kagent.dev",
+    "kind": "AgentTemplate",
+    "versions": [
+      {
+        "name": "v1alpha3",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "api.kagent.dev",
+    "kind": "EgressPolicy",
+    "versions": [
+      {
+        "name": "v1alpha3",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "api.kagent.dev",
+    "kind": "Harness",
+    "versions": [
+      {
+        "name": "v1alpha3",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "api.kagent.dev",
+    "kind": "ModelConfig",
+    "versions": [
+      {
+        "name": "v1alpha3",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "api.kagent.dev",
+    "kind": "ModelProviderConfig",
+    "versions": [
+      {
+        "name": "v1alpha3",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "api.kagent.dev",
+    "kind": "RemoteMCPServer",
+    "versions": [
+      {
+        "name": "v1alpha3",
+        "served": true,
+        "storage": true
+      }
+    ]
+  },
+  {
+    "group": "api.kagent.dev",
+    "kind": "SandboxTemplate",
+    "versions": [
+      {
+        "name": "v1alpha3",
+        "served": true,
+        "storage": true
+      }
+    ]
+  }
+]

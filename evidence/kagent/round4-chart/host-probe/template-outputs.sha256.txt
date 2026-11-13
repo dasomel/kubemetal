@@ -1,0 +1,4 @@
+4b24a4336e1b605c3f675be9d9d28dc7798b6a9adcd0cfaca6164bb5fbc2f7a4  158046 bytes  0-kagent-0.9.12-template.stdout.txt
+96ba8d52b5b378b4af31340411a3e0bb045aca434eecf4e59e49f81201b04ce5  2231574 bytes  0-kagent-crds-0.9.12-template.stdout.txt
+47213992a8eb023ca356d6187cbebd22f3d862673bdcbe06a5b0f1a95d7fc20b  42228 bytes  1-kagent-1.0.0-alpha17-template.stdout.txt
+437f4904dbfb5133078975ca0ff1b9cde6448b93b0a56121dab7eb431bf5d0ab  146854 bytes  1-kagent-crds-1.0.0-alpha17-template.stdout.txt
