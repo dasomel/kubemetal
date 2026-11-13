@@ -1,2 +1,0 @@
-Pulled: ghcr.io/kagent-dev/kagent/helm/kagent:1.0.0-alpha17
-Digest: sha256:aa04bc3c52d31d1860f3229ae5bf208f2c2050a933faf1f506e49fe65e3fbae5

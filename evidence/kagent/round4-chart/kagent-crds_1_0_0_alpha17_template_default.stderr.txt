@@ -1,2 +1,0 @@
-Pulled: ghcr.io/kagent-dev/kagent/helm/kagent-crds:1.0.0-alpha17
-Digest: sha256:c0881dac83bc2a850e70c79d0b0f58f4ac438f8e0c7d8252ce39b5129505619e
