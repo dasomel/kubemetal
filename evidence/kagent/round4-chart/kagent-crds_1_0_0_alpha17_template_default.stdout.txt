@@ -1,0 +1,3069 @@
+---
+# Source: kagent-crds/templates/api.kagent.dev_agents.yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: agents.api.kagent.dev
+spec:
+  group: api.kagent.dev
+  names:
+    categories:
+    - kagent
+    kind: Agent
+    listKind: AgentList
+    plural: agents
+    singular: agent
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha3
+    schema:
+      openAPIV3Schema:
+        description: Agent is a runnable definition with an explicit template and
+          harness.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              AgentSpec pairs portable behavior with a platform-managed runtime. References
+              are local to the Agent's namespace, including references nested in inline
+              template specs.
+            properties:
+              egressPolicyRefs:
+                description: |-
+                  EgressPolicyRefs grants additional access to the whole runtime, including
+                  shared subagents. Policies resolve in this Agent's namespace. Integration
+                  access inferred from models and tools is always included. Changes update
+                  existing Sessions without a new invocation or runtime restart.
+                items:
+                  description: |-
+                    LocalObjectReference contains enough information to let you locate the
+                    referenced object inside the same namespace.
+                  properties:
+                    name:
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                maxItems: 16
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+                x-kubernetes-validations:
+                - message: egressPolicyRefs requires non-empty names
+                  rule: self.all(ref, has(ref.name) && ref.name != '')
+              harnessRef:
+                description: |-
+                  HarnessRef selects the platform-managed runtime configuration that executes
+                  the behavior.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+                x-kubernetes-validations:
+                - message: harnessRef.name must not be empty
+                  rule: has(self.name) && self.name != ''
+              template:
+                description: Template selects the portable behavior this Agent exposes.
+                properties:
+                  inline:
+                    description: |-
+                      Inline defines the Agent's portable behavior directly. It cannot be set
+                      together with Ref.
+                    properties:
+                      description:
+                        type: string
+                      modelConfig:
+                        description: ModelConfig is required by managed harnesses
+                          and optional for BYO harnesses.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                        x-kubernetes-validations:
+                        - message: name must not be empty
+                          rule: has(self.name) && self.name != ''
+                      outputSchema:
+                        description: |-
+                          OutputSchema constrains successful terminal output when this template is
+                          compiled as the root agent.
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      outputSchemaFrom:
+                        description: |-
+                          OutputSchemaFrom references a JSON Schema stored as JSON in a
+                          same-namespace ConfigMap key.
+                        properties:
+                          key:
+                            minLength: 1
+                            type: string
+                          name:
+                            minLength: 1
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      plugins:
+                        items:
+                          description: PluginBundle selects Agent Skills from one
+                            immutable Agent Plugins package.
+                          properties:
+                            skills:
+                              description: An empty selection enables nothing.
+                              items:
+                                minLength: 1
+                                type: string
+                              maxItems: 50
+                              type: array
+                              x-kubernetes-list-type: set
+                            source:
+                              description: ArtifactSource selects exactly one immutable
+                                artifact.
+                              properties:
+                                bucket:
+                                  description: BucketArtifact selects the supported
+                                    object-store provider.
+                                  properties:
+                                    s3:
+                                      description: S3Object identifies one immutable
+                                        S3 object version.
+                                      properties:
+                                        bucket:
+                                          minLength: 1
+                                          type: string
+                                        endpoint:
+                                          description: Endpoint is the HTTP(S) endpoint
+                                            of an AWS or S3-compatible service.
+                                          pattern: ^https?://[^[:space:]]+$
+                                          type: string
+                                        key:
+                                          minLength: 1
+                                          type: string
+                                        region:
+                                          description: Region is used for request
+                                            signing when required by the service.
+                                          type: string
+                                        versionId:
+                                          minLength: 1
+                                          type: string
+                                      required:
+                                      - bucket
+                                      - endpoint
+                                      - key
+                                      - versionId
+                                      type: object
+                                  required:
+                                  - s3
+                                  type: object
+                                git:
+                                  description: GitArtifact identifies immutable content
+                                    at a full Git commit ID.
+                                  properties:
+                                    commit:
+                                      pattern: ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$
+                                      type: string
+                                    url:
+                                      minLength: 1
+                                      pattern: ^https?://[^[:space:]]+$
+                                      type: string
+                                  required:
+                                  - commit
+                                  - url
+                                  type: object
+                                oci:
+                                  description: OCI is a digest-pinned image reference.
+                                  pattern: ^[^[:space:]@]+@sha256:[0-9a-f]{64}$
+                                  type: string
+                                path:
+                                  description: Path selects a directory within the
+                                    immutable artifact.
+                                  maxLength: 1024
+                                  type: string
+                              type: object
+                              x-kubernetes-validations:
+                              - message: path must be relative and must not contain
+                                  '..' segments
+                                rule: '!has(self.path) || (!self.path.startsWith(''/'')
+                                  && !self.path.split(''/'').exists(p, p == ''..''))'
+                              - message: exactly one of the fields in [oci git bucket]
+                                  must be set
+                                rule: (has(self.oci)?1:0)+(has(self.git)?1:0)+(has(self.bucket)?1:0)
+                                  == 1
+                          required:
+                          - source
+                          type: object
+                        maxItems: 20
+                        type: array
+                      promptTemplate:
+                        description: AgentTemplatePromptTemplateSpec enables Go template
+                          rendering and ConfigMap includes.
+                        properties:
+                          dataSources:
+                            description: DataSources are same-namespace ConfigMaps
+                              available to include("source/key").
+                            items:
+                              description: AgentTemplatePromptSource makes a same-namespace
+                                ConfigMap available to a prompt template.
+                              properties:
+                                alias:
+                                  description: Alias is the name used by include.
+                                    The ConfigMap name is used when omitted.
+                                  minLength: 1
+                                  type: string
+                                name:
+                                  minLength: 1
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            maxItems: 20
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
+                        type: object
+                      skills:
+                        items:
+                          description: AgentTemplateSkill identifies one standalone
+                            skill and its immutable source.
+                          properties:
+                            name:
+                              minLength: 1
+                              type: string
+                            source:
+                              description: ArtifactSource selects exactly one immutable
+                                artifact.
+                              properties:
+                                bucket:
+                                  description: BucketArtifact selects the supported
+                                    object-store provider.
+                                  properties:
+                                    s3:
+                                      description: S3Object identifies one immutable
+                                        S3 object version.
+                                      properties:
+                                        bucket:
+                                          minLength: 1
+                                          type: string
+                                        endpoint:
+                                          description: Endpoint is the HTTP(S) endpoint
+                                            of an AWS or S3-compatible service.
+                                          pattern: ^https?://[^[:space:]]+$
+                                          type: string
+                                        key:
+                                          minLength: 1
+                                          type: string
+                                        region:
+                                          description: Region is used for request
+                                            signing when required by the service.
+                                          type: string
+                                        versionId:
+                                          minLength: 1
+                                          type: string
+                                      required:
+                                      - bucket
+                                      - endpoint
+                                      - key
+                                      - versionId
+                                      type: object
+                                  required:
+                                  - s3
+                                  type: object
+                                git:
+                                  description: GitArtifact identifies immutable content
+                                    at a full Git commit ID.
+                                  properties:
+                                    commit:
+                                      pattern: ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$
+                                      type: string
+                                    url:
+                                      minLength: 1
+                                      pattern: ^https?://[^[:space:]]+$
+                                      type: string
+                                  required:
+                                  - commit
+                                  - url
+                                  type: object
+                                oci:
+                                  description: OCI is a digest-pinned image reference.
+                                  pattern: ^[^[:space:]@]+@sha256:[0-9a-f]{64}$
+                                  type: string
+                                path:
+                                  description: Path selects a directory within the
+                                    immutable artifact.
+                                  maxLength: 1024
+                                  type: string
+                              type: object
+                              x-kubernetes-validations:
+                              - message: path must be relative and must not contain
+                                  '..' segments
+                                rule: '!has(self.path) || (!self.path.startsWith(''/'')
+                                  && !self.path.split(''/'').exists(p, p == ''..''))'
+                              - message: exactly one of the fields in [oci git bucket]
+                                  must be set
+                                rule: (has(self.oci)?1:0)+(has(self.git)?1:0)+(has(self.bucket)?1:0)
+                                  == 1
+                          required:
+                          - name
+                          - source
+                          type: object
+                        maxItems: 50
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      systemPrompt:
+                        type: string
+                      systemPromptFrom:
+                        description: SystemPromptFrom references prompt text in a
+                          same-namespace ConfigMap.
+                        properties:
+                          key:
+                            minLength: 1
+                            type: string
+                          name:
+                            minLength: 1
+                            type: string
+                        required:
+                        - key
+                        - name
+                        type: object
+                      tools:
+                        items:
+                          description: ToolBinding selects exactly one MCP or subagent
+                            tool source.
+                          properties:
+                            mcp:
+                              description: MCPToolBinding binds tools from a same-namespace
+                                MCP server.
+                              properties:
+                                requireApproval:
+                                  description: |-
+                                    RequireApproval pauses before each invocation of a tool exposed by this
+                                    binding. It applies to the selected tools, or to every server tool when
+                                    Tools is omitted or empty.
+                                  type: boolean
+                                server:
+                                  description: |-
+                                    TypedLocalObjectReference contains enough information to let you locate the
+                                    typed referenced object inside the same namespace.
+                                  properties:
+                                    apiGroup:
+                                      description: |-
+                                        APIGroup is the group for the resource being referenced.
+                                        If APIGroup is not specified, the specified Kind must be in the core API group.
+                                        For any other third-party types, APIGroup is required.
+                                      type: string
+                                    kind:
+                                      description: Kind is the type of resource being
+                                        referenced
+                                      type: string
+                                    name:
+                                      description: Name is the name of resource being
+                                        referenced
+                                      type: string
+                                  required:
+                                  - kind
+                                  - name
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                  x-kubernetes-validations:
+                                  - message: kind must be RemoteMCPServer
+                                    rule: self.kind == 'RemoteMCPServer'
+                                  - message: apiGroup must be omitted
+                                    rule: '!has(self.apiGroup)'
+                                tools:
+                                  description: |-
+                                    Tools optionally limits which server tools are exposed. An omitted or empty
+                                    list exposes every tool. Harnesses that cannot enforce a partial selection
+                                    may expose the whole server and report a warning.
+                                  items:
+                                    minLength: 1
+                                    type: string
+                                  maxItems: 50
+                                  type: array
+                                  x-kubernetes-list-type: set
+                              required:
+                              - server
+                              type: object
+                            subAgent:
+                              description: SubAgentToolBinding exposes a same-namespace
+                                AgentTemplate as a logical tool.
+                              properties:
+                                description:
+                                  description: Description tells the parent when to
+                                    route work to this binding.
+                                  minLength: 1
+                                  type: string
+                                name:
+                                  minLength: 1
+                                  type: string
+                                templateRef:
+                                  description: TemplateRef selects a Shared subagent
+                                    compiled into the parent's runtime using its Harness.
+                                  properties:
+                                    name:
+                                      default: ""
+                                      description: |-
+                                        Name of the referent.
+                                        This field is effectively required, but due to backwards compatibility is
+                                        allowed to be empty. Instances of this type with an empty value here are
+                                        almost certainly wrong.
+                                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                      type: string
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                  x-kubernetes-validations:
+                                  - message: templateRef.name must not be empty
+                                    rule: has(self.name) && self.name != ''
+                              required:
+                              - description
+                              - name
+                              - templateRef
+                              type: object
+                          type: object
+                          x-kubernetes-validations:
+                          - message: exactly one of the fields in [mcp subAgent] must
+                              be set
+                            rule: (has(self.mcp)?1:0)+(has(self.subAgent)?1:0) ==
+                              1
+                        maxItems: 50
+                        type: array
+                    type: object
+                    x-kubernetes-validations:
+                    - message: at most one of the fields in [systemPrompt systemPromptFrom]
+                        may be set
+                      rule: (has(self.systemPrompt)?1:0)+(has(self.systemPromptFrom)?1:0)
+                        <= 1
+                    - message: at most one of the fields in [outputSchema outputSchemaFrom]
+                        may be set
+                      rule: (has(self.outputSchema)?1:0)+(has(self.outputSchemaFrom)?1:0)
+                        <= 1
+                  ref:
+                    description: |-
+                      Ref names an AgentTemplate in the Agent's namespace. It cannot be set
+                      together with Inline.
+                    properties:
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                    x-kubernetes-validations:
+                    - message: ref.name must not be empty
+                      rule: has(self.name) && self.name != ''
+                type: object
+                x-kubernetes-validations:
+                - message: exactly one of the fields in [inline ref] must be set
+                  rule: (has(self.inline)?1:0)+(has(self.ref)?1:0) == 1
+            required:
+            - harnessRef
+            - template
+            type: object
+          status:
+            description: AgentStatus reports compilation and preparation of an Agent.
+            properties:
+              conditions:
+                description: |-
+                  Conditions report runtime readiness and independent egress grant admission.
+                  EgressPoliciesApplied is False for EgressPolicyNotFound, InvalidEgressPolicy,
+                  or EgressGrantConflict; Applied means all grants are admitted. Grant issues
+                  do not affect Ready.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 5
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              desiredRevision:
+                minLength: 1
+                type: string
+              latestSuccessfulRevision:
+                minLength: 1
+                type: string
+              observedGeneration:
+                format: int64
+                type: integer
+              warnings:
+                description: |-
+                  Warnings reports non-blocking compatibility decisions made while compiling
+                  this Agent.
+                items:
+                  type: string
+                maxItems: 100
+                type: array
+                x-kubernetes-list-type: set
+              workloadImage:
+                description: |-
+                  WorkloadImage is the digest-pinned image selected for the desired revision.
+                  Existing Sessions may still use an older revision and image.
+                pattern: ^[^[:space:]@]+@sha256:[a-f0-9]{64}$
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+
+---
+# Source: kagent-crds/templates/api.kagent.dev_agenttemplates.yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: agenttemplates.api.kagent.dev
+spec:
+  group: api.kagent.dev
+  names:
+    categories:
+    - kagent
+    kind: AgentTemplate
+    listKind: AgentTemplateList
+    plural: agenttemplates
+    singular: agenttemplate
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha3
+    schema:
+      openAPIV3Schema:
+        description: AgentTemplate defines portable agent behavior.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: AgentTemplateSpec defines portable agent behavior.
+            properties:
+              description:
+                type: string
+              modelConfig:
+                description: ModelConfig is required by managed harnesses and optional
+                  for BYO harnesses.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+                x-kubernetes-validations:
+                - message: name must not be empty
+                  rule: has(self.name) && self.name != ''
+              outputSchema:
+                description: |-
+                  OutputSchema constrains successful terminal output when this template is
+                  compiled as the root agent.
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+              outputSchemaFrom:
+                description: |-
+                  OutputSchemaFrom references a JSON Schema stored as JSON in a
+                  same-namespace ConfigMap key.
+                properties:
+                  key:
+                    minLength: 1
+                    type: string
+                  name:
+                    minLength: 1
+                    type: string
+                required:
+                - key
+                - name
+                type: object
+              plugins:
+                items:
+                  description: PluginBundle selects Agent Skills from one immutable
+                    Agent Plugins package.
+                  properties:
+                    skills:
+                      description: An empty selection enables nothing.
+                      items:
+                        minLength: 1
+                        type: string
+                      maxItems: 50
+                      type: array
+                      x-kubernetes-list-type: set
+                    source:
+                      description: ArtifactSource selects exactly one immutable artifact.
+                      properties:
+                        bucket:
+                          description: BucketArtifact selects the supported object-store
+                            provider.
+                          properties:
+                            s3:
+                              description: S3Object identifies one immutable S3 object
+                                version.
+                              properties:
+                                bucket:
+                                  minLength: 1
+                                  type: string
+                                endpoint:
+                                  description: Endpoint is the HTTP(S) endpoint of
+                                    an AWS or S3-compatible service.
+                                  pattern: ^https?://[^[:space:]]+$
+                                  type: string
+                                key:
+                                  minLength: 1
+                                  type: string
+                                region:
+                                  description: Region is used for request signing
+                                    when required by the service.
+                                  type: string
+                                versionId:
+                                  minLength: 1
+                                  type: string
+                              required:
+                              - bucket
+                              - endpoint
+                              - key
+                              - versionId
+                              type: object
+                          required:
+                          - s3
+                          type: object
+                        git:
+                          description: GitArtifact identifies immutable content at
+                            a full Git commit ID.
+                          properties:
+                            commit:
+                              pattern: ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$
+                              type: string
+                            url:
+                              minLength: 1
+                              pattern: ^https?://[^[:space:]]+$
+                              type: string
+                          required:
+                          - commit
+                          - url
+                          type: object
+                        oci:
+                          description: OCI is a digest-pinned image reference.
+                          pattern: ^[^[:space:]@]+@sha256:[0-9a-f]{64}$
+                          type: string
+                        path:
+                          description: Path selects a directory within the immutable
+                            artifact.
+                          maxLength: 1024
+                          type: string
+                      type: object
+                      x-kubernetes-validations:
+                      - message: path must be relative and must not contain '..' segments
+                        rule: '!has(self.path) || (!self.path.startsWith(''/'') &&
+                          !self.path.split(''/'').exists(p, p == ''..''))'
+                      - message: exactly one of the fields in [oci git bucket] must
+                          be set
+                        rule: (has(self.oci)?1:0)+(has(self.git)?1:0)+(has(self.bucket)?1:0)
+                          == 1
+                  required:
+                  - source
+                  type: object
+                maxItems: 20
+                type: array
+              promptTemplate:
+                description: AgentTemplatePromptTemplateSpec enables Go template rendering
+                  and ConfigMap includes.
+                properties:
+                  dataSources:
+                    description: DataSources are same-namespace ConfigMaps available
+                      to include("source/key").
+                    items:
+                      description: AgentTemplatePromptSource makes a same-namespace
+                        ConfigMap available to a prompt template.
+                      properties:
+                        alias:
+                          description: Alias is the name used by include. The ConfigMap
+                            name is used when omitted.
+                          minLength: 1
+                          type: string
+                        name:
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    maxItems: 20
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                type: object
+              skills:
+                items:
+                  description: AgentTemplateSkill identifies one standalone skill
+                    and its immutable source.
+                  properties:
+                    name:
+                      minLength: 1
+                      type: string
+                    source:
+                      description: ArtifactSource selects exactly one immutable artifact.
+                      properties:
+                        bucket:
+                          description: BucketArtifact selects the supported object-store
+                            provider.
+                          properties:
+                            s3:
+                              description: S3Object identifies one immutable S3 object
+                                version.
+                              properties:
+                                bucket:
+                                  minLength: 1
+                                  type: string
+                                endpoint:
+                                  description: Endpoint is the HTTP(S) endpoint of
+                                    an AWS or S3-compatible service.
+                                  pattern: ^https?://[^[:space:]]+$
+                                  type: string
+                                key:
+                                  minLength: 1
+                                  type: string
+                                region:
+                                  description: Region is used for request signing
+                                    when required by the service.
+                                  type: string
+                                versionId:
+                                  minLength: 1
+                                  type: string
+                              required:
+                              - bucket
+                              - endpoint
+                              - key
+                              - versionId
+                              type: object
+                          required:
+                          - s3
+                          type: object
+                        git:
+                          description: GitArtifact identifies immutable content at
+                            a full Git commit ID.
+                          properties:
+                            commit:
+                              pattern: ^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$
+                              type: string
+                            url:
+                              minLength: 1
+                              pattern: ^https?://[^[:space:]]+$
+                              type: string
+                          required:
+                          - commit
+                          - url
+                          type: object
+                        oci:
+                          description: OCI is a digest-pinned image reference.
+                          pattern: ^[^[:space:]@]+@sha256:[0-9a-f]{64}$
+                          type: string
+                        path:
+                          description: Path selects a directory within the immutable
+                            artifact.
+                          maxLength: 1024
+                          type: string
+                      type: object
+                      x-kubernetes-validations:
+                      - message: path must be relative and must not contain '..' segments
+                        rule: '!has(self.path) || (!self.path.startsWith(''/'') &&
+                          !self.path.split(''/'').exists(p, p == ''..''))'
+                      - message: exactly one of the fields in [oci git bucket] must
+                          be set
+                        rule: (has(self.oci)?1:0)+(has(self.git)?1:0)+(has(self.bucket)?1:0)
+                          == 1
+                  required:
+                  - name
+                  - source
+                  type: object
+                maxItems: 50
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              systemPrompt:
+                type: string
+              systemPromptFrom:
+                description: SystemPromptFrom references prompt text in a same-namespace
+                  ConfigMap.
+                properties:
+                  key:
+                    minLength: 1
+                    type: string
+                  name:
+                    minLength: 1
+                    type: string
+                required:
+                - key
+                - name
+                type: object
+              tools:
+                items:
+                  description: ToolBinding selects exactly one MCP or subagent tool
+                    source.
+                  properties:
+                    mcp:
+                      description: MCPToolBinding binds tools from a same-namespace
+                        MCP server.
+                      properties:
+                        requireApproval:
+                          description: |-
+                            RequireApproval pauses before each invocation of a tool exposed by this
+                            binding. It applies to the selected tools, or to every server tool when
+                            Tools is omitted or empty.
+                          type: boolean
+                        server:
+                          description: |-
+                            TypedLocalObjectReference contains enough information to let you locate the
+                            typed referenced object inside the same namespace.
+                          properties:
+                            apiGroup:
+                              description: |-
+                                APIGroup is the group for the resource being referenced.
+                                If APIGroup is not specified, the specified Kind must be in the core API group.
+                                For any other third-party types, APIGroup is required.
+                              type: string
+                            kind:
+                              description: Kind is the type of resource being referenced
+                              type: string
+                            name:
+                              description: Name is the name of resource being referenced
+                              type: string
+                          required:
+                          - kind
+                          - name
+                          type: object
+                          x-kubernetes-map-type: atomic
+                          x-kubernetes-validations:
+                          - message: kind must be RemoteMCPServer
+                            rule: self.kind == 'RemoteMCPServer'
+                          - message: apiGroup must be omitted
+                            rule: '!has(self.apiGroup)'
+                        tools:
+                          description: |-
+                            Tools optionally limits which server tools are exposed. An omitted or empty
+                            list exposes every tool. Harnesses that cannot enforce a partial selection
+                            may expose the whole server and report a warning.
+                          items:
+                            minLength: 1
+                            type: string
+                          maxItems: 50
+                          type: array
+                          x-kubernetes-list-type: set
+                      required:
+                      - server
+                      type: object
+                    subAgent:
+                      description: SubAgentToolBinding exposes a same-namespace AgentTemplate
+                        as a logical tool.
+                      properties:
+                        description:
+                          description: Description tells the parent when to route
+                            work to this binding.
+                          minLength: 1
+                          type: string
+                        name:
+                          minLength: 1
+                          type: string
+                        templateRef:
+                          description: TemplateRef selects a Shared subagent compiled
+                            into the parent's runtime using its Harness.
+                          properties:
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                          x-kubernetes-validations:
+                          - message: templateRef.name must not be empty
+                            rule: has(self.name) && self.name != ''
+                      required:
+                      - description
+                      - name
+                      - templateRef
+                      type: object
+                  type: object
+                  x-kubernetes-validations:
+                  - message: exactly one of the fields in [mcp subAgent] must be set
+                    rule: (has(self.mcp)?1:0)+(has(self.subAgent)?1:0) == 1
+                maxItems: 50
+                type: array
+            type: object
+            x-kubernetes-validations:
+            - message: at most one of the fields in [systemPrompt systemPromptFrom]
+                may be set
+              rule: (has(self.systemPrompt)?1:0)+(has(self.systemPromptFrom)?1:0)
+                <= 1
+            - message: at most one of the fields in [outputSchema outputSchemaFrom]
+                may be set
+              rule: (has(self.outputSchema)?1:0)+(has(self.outputSchemaFrom)?1:0)
+                <= 1
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources: {}
+
+---
+# Source: kagent-crds/templates/api.kagent.dev_egresspolicies.yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: egresspolicies.api.kagent.dev
+spec:
+  group: api.kagent.dev
+  names:
+    categories:
+    - kagent
+    kind: EgressPolicy
+    listKind: EgressPolicyList
+    plural: egresspolicies
+    singular: egresspolicy
+  scope: Namespaced
+  versions:
+  - name: v1alpha3
+    schema:
+      openAPIV3Schema:
+        description: |-
+          EgressPolicy is a reusable grant of additional network access. Workloads in its
+          namespace select it explicitly; changes update their existing runtime Actors.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: EgressPolicySpec grants additional HTTP(S) access to workloads
+              in its namespace.
+            properties:
+              destinations:
+                description: Destinations are additional origins the workload may
+                  reach.
+                items:
+                  description: EgressDestination grants access to one HTTP(S) origin,
+                    including all its paths.
+                  properties:
+                    authentication:
+                      description: |-
+                        Authentication replaces a placeholder header at the gateway. Requests
+                        must send the header; its credential value is never supplied to the runtime.
+                      properties:
+                        header:
+                          description: |-
+                            Header is the request header carrying the credential, for example
+                            Authorization or X-API-Key.
+                          maxLength: 256
+                          pattern: ^[!#$%&'*+.^_|~0-9A-Za-z-]+$
+                          type: string
+                          x-kubernetes-validations:
+                          - message: this header cannot carry an egress credential
+                            rule: '!(self.lowerAscii() in [''host'', ''connection'',
+                              ''content-length'', ''transfer-encoding'', ''te'', ''trailer'',
+                              ''upgrade'', ''keep-alive'', ''proxy-authorization'',
+                              ''proxy-authenticate'', ''cookie''])'
+                        prefix:
+                          description: |-
+                            Prefix is prepended verbatim to the Secret value, for example "Bearer ".
+                            Include any separating space. Omitted or empty means no prefix.
+                          maxLength: 256
+                          pattern: ^[^\x00-\x08\x0a-\x1f\x7f]*$
+                          type: string
+                        secretKeyRef:
+                          description: SecretKeyRef selects a required key in the
+                            EgressPolicy's namespace.
+                          properties:
+                            key:
+                              description: The key of the secret to select from.  Must
+                                be a valid secret key.
+                              type: string
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                            optional:
+                              description: Specify whether the Secret or its key must
+                                be defined
+                              type: boolean
+                          required:
+                          - key
+                          type: object
+                          x-kubernetes-map-type: atomic
+                          x-kubernetes-validations:
+                          - message: secretKeyRef requires a name and key
+                            rule: has(self.name) && self.name != '' && self.key !=
+                              ''
+                          - message: egress credentials cannot be optional
+                            rule: '!has(self.optional) || !self.optional'
+                      required:
+                      - header
+                      - secretKeyRef
+                      type: object
+                    origin:
+                      description: |-
+                        Origin is a scheme, DNS hostname, and optional port. A wildcard replaces
+                        exactly one leftmost DNS label, for example https://*.example.com.
+                      maxLength: 270
+                      pattern: ^https?://(\*\.([a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?\.)+|([a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?\.)*)[a-z]([-a-z0-9]{0,61}[a-z0-9])?(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$
+                      type: string
+                  required:
+                  - origin
+                  type: object
+                  x-kubernetes-validations:
+                  - message: authentication requires an exact HTTP(S) origin
+                    rule: '!has(self.authentication) || !self.origin.contains(''*'')'
+                maxItems: 64
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - origin
+                x-kubernetes-list-type: map
+            required:
+            - destinations
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+
+---
+# Source: kagent-crds/templates/api.kagent.dev_harnesses.yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: harnesses.api.kagent.dev
+spec:
+  group: api.kagent.dev
+  names:
+    categories:
+    - kagent
+    kind: Harness
+    listKind: HarnessList
+    plural: harnesses
+    singular: harness
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha3
+    schema:
+      openAPIV3Schema:
+        description: Harness defines a reusable agent runtime and infrastructure policy.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: HarnessSpec defines a reusable runtime and its infrastructure
+              policy.
+            properties:
+              byo:
+                description: BYOHarness selects an image that implements kagent's
+                  private A2A contract.
+                type: object
+              claude:
+                description: ClaudeHarness selects the Claude runtime adapter.
+                type: object
+              codex:
+                description: CodexHarness selects the Codex runtime adapter.
+                type: object
+              env:
+                items:
+                  description: RuntimeEnvVar configures one literal runtime environment
+                    variable.
+                  properties:
+                    name:
+                      minLength: 1
+                      type: string
+                    value:
+                      description: Value is a literal value, including an empty string.
+                      type: string
+                  required:
+                  - name
+                  - value
+                  type: object
+                maxItems: 100
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              kagent:
+                description: KagentHarness configures the kagent runtime adapter.
+                properties:
+                  compaction:
+                    description: |-
+                      Compaction summarizes older session events so the prompt stays small as
+                      a conversation grows. Omitted leaves the history uncompacted.
+                    properties:
+                      compactionInterval:
+                        description: |-
+                          CompactionInterval is the number of new user-initiated invocations that,
+                          once fully represented in the session, triggers a sliding-window
+                          compaction of those invocations.
+                        minimum: 1
+                        type: integer
+                      eventRetentionSize:
+                        description: |-
+                          EventRetentionSize is the number of most recent events that tail
+                          retention keeps uncompacted.
+                        minimum: 1
+                        type: integer
+                      overlapSize:
+                        description: |-
+                          OverlapSize is the number of already-compacted invocations pulled back
+                          into the next sliding window so consecutive summaries overlap.
+                        minimum: 0
+                        type: integer
+                      summarizer:
+                        description: |-
+                          Summarizer selects the model and prompt that write the summaries.
+                          Omitted summarizes with the agent's own model and the runtime's default
+                          prompt.
+                        properties:
+                          modelConfigRef:
+                            description: |-
+                              ModelConfigRef references the ModelConfig in the Harness namespace that
+                              writes the summaries. Omitted uses the agent's own model.
+                            properties:
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                            type: object
+                            x-kubernetes-map-type: atomic
+                            x-kubernetes-validations:
+                            - message: name must not be empty
+                              rule: has(self.name) && self.name != ''
+                          promptTemplate:
+                            description: |-
+                              PromptTemplate replaces the runtime's default summarization prompt. It
+                              must contain {conversation_history}, which the runtime replaces with the
+                              rendered events.
+                            minLength: 1
+                            type: string
+                        type: object
+                        x-kubernetes-validations:
+                        - message: promptTemplate must contain {conversation_history}
+                          rule: '!has(self.promptTemplate) || self.promptTemplate.contains(''{conversation_history}'')'
+                      tokenThreshold:
+                        description: |-
+                          TokenThreshold is the prompt token count at which tail-retention
+                          compaction summarizes the history before the next model call.
+                        minimum: 1
+                        type: integer
+                    type: object
+                    x-kubernetes-validations:
+                    - message: tokenThreshold and eventRetentionSize must be specified
+                        together
+                      rule: has(self.tokenThreshold) == has(self.eventRetentionSize)
+                    - message: overlapSize requires compactionInterval
+                      rule: '!has(self.overlapSize) || has(self.compactionInterval)'
+                    - message: at least one of the fields in [compactionInterval tokenThreshold]
+                        must be set
+                      rule: has(self.compactionInterval)||has(self.tokenThreshold)
+                  memory:
+                    description: Memory enables long-term memory for agents using
+                      this Harness.
+                    properties:
+                      modelConfigRef:
+                        description: ModelConfigRef references the embedding ModelConfig
+                          in the Harness namespace.
+                        properties:
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      ttlDays:
+                        description: TTLDays controls how many days a stored memory
+                          entry remains valid.
+                        minimum: 1
+                        type: integer
+                    required:
+                    - modelConfigRef
+                    type: object
+                    x-kubernetes-validations:
+                    - message: modelConfigRef name must not be empty
+                      rule: self.modelConfigRef.name.size() > 0
+                type: object
+              substrate:
+                description: RuntimeSubstratePolicy contains the Substrate policy
+                  shared by all runtime variants.
+                properties:
+                  snapshotPolicy:
+                    description: SnapshotPolicy configures runtime snapshot storage.
+                    properties:
+                      location:
+                        description: Location is the snapshot storage location used
+                          by Substrate.
+                        pattern: ^[^[:space:]]+$
+                        type: string
+                    required:
+                    - location
+                    type: object
+                  workerPoolRef:
+                    description: WorkerPoolRef references a WorkerPool in the resource's
+                      namespace.
+                    properties:
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                required:
+                - snapshotPolicy
+                - workerPoolRef
+                type: object
+                x-kubernetes-validations:
+                - message: workerPoolRef name must not be empty
+                  rule: self.workerPoolRef.name.size() > 0
+              workload:
+                description: Workload overrides the built-in runtime image and its
+                  command. BYO requires it.
+                properties:
+                  args:
+                    description: Args overrides the image command arguments when set.
+                    items:
+                      type: string
+                    maxItems: 64
+                    type: array
+                  command:
+                    description: Command overrides the image entrypoint when set.
+                    items:
+                      type: string
+                    maxItems: 32
+                    type: array
+                  image:
+                    description: |-
+                      Image overrides the release's built-in runtime image. BYO requires an image.
+                      When set, it must be an OCI image reference pinned by sha256 digest.
+                    pattern: ^[^[:space:]@]+@sha256:[a-f0-9]{64}$
+                    type: string
+                type: object
+            required:
+            - substrate
+            type: object
+            x-kubernetes-validations:
+            - message: BYO harnesses must specify workload.command
+              rule: '!has(self.byo) || (has(self.workload) && has(self.workload.command)
+                && size(self.workload.command) > 0)'
+            - message: BYO harnesses must specify workload.image
+              rule: '!has(self.byo) || (has(self.workload) && has(self.workload.image))'
+            - message: exactly one of the fields in [kagent codex claude byo] must
+                be set
+              rule: (has(self.kagent)?1:0)+(has(self.codex)?1:0)+(has(self.claude)?1:0)+(has(self.byo)?1:0)
+                == 1
+          status:
+            description: HarnessStatus reports controller-derived capabilities and
+              current health.
+            properties:
+              capabilities:
+                description: Capabilities is the single capability record for the
+                  selected runtime.
+                properties:
+                  approvals:
+                    type: boolean
+                  checkpoint:
+                    type: boolean
+                  dedicatedAgentTools:
+                    type: boolean
+                  inputModalities:
+                    items:
+                      type: string
+                    maxItems: 16
+                    type: array
+                    x-kubernetes-list-type: set
+                  inputRequired:
+                    type: boolean
+                  interruption:
+                    type: boolean
+                  maxNativeAgentDepth:
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  mcpInjection:
+                    type: boolean
+                  nativeAgentTools:
+                    type: boolean
+                  outputModalities:
+                    items:
+                      type: string
+                    maxItems: 16
+                    type: array
+                    x-kubernetes-list-type: set
+                  resume:
+                    type: boolean
+                  streaming:
+                    type: boolean
+                  structuredOutput:
+                    description: |-
+                      StructuredOutput reports whether the pinned adapter can enforce a root
+                      JSON output contract and emit it as an A2A DataPart.
+                    type: boolean
+                  version:
+                    description: Version identifies the controller capability catalog
+                      entry.
+                    minLength: 1
+                    type: string
+                required:
+                - approvals
+                - checkpoint
+                - dedicatedAgentTools
+                - inputRequired
+                - interruption
+                - maxNativeAgentDepth
+                - mcpInjection
+                - nativeAgentTools
+                - resume
+                - streaming
+                - structuredOutput
+                - version
+                type: object
+              conditions:
+                description: Conditions report adapter and dependency health.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 8
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the latest Harness generation observed
+                  by the controller.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+
+---
+# Source: kagent-crds/templates/api.kagent.dev_modelconfigs.yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: modelconfigs.api.kagent.dev
+spec:
+  group: api.kagent.dev
+  names:
+    categories:
+    - kagent
+    kind: ModelConfig
+    listKind: ModelConfigList
+    plural: modelconfigs
+    shortNames:
+    - mc
+    singular: modelconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.provider
+      name: Provider
+      type: string
+    - jsonPath: .spec.model
+      name: Model
+      type: string
+    name: v1alpha3
+    schema:
+      openAPIV3Schema:
+        description: ModelConfig is the Schema for the modelconfigs API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ModelConfigSpec defines the desired state of ModelConfig.
+            properties:
+              anthropic:
+                description: Anthropic-specific configuration
+                properties:
+                  baseUrl:
+                    description: Base URL for the Anthropic API (overrides default)
+                    type: string
+                  cacheTTL:
+                    default: 5m
+                    description: |-
+                      CacheTTL controls how long Anthropic retains a cached prefix when
+                      PromptCaching is enabled. Only meaningful when PromptCaching is true.
+
+                        - "5m" (default): the standard 5-minute cache. Each cache hit refreshes
+                          the window, so an agent loop whose calls are less than 5 minutes
+                          apart keeps its prefix cached for the whole task.
+                        - "1h": the extended 1-hour cache, useful for tasks whose model calls
+                          are spaced more than 5 minutes apart.
+
+                      NOTE: "1h" is NOT strictly better than "5m". 1-hour cache writes are
+                      billed at a higher per-token rate than 5-minute writes. Only choose
+                      "1h" when calls are spaced far enough apart that a 5-minute cache would
+                      expire between them; otherwise the higher write cost is wasted. See the
+                      Anthropic prompt-caching docs above.
+                    enum:
+                    - 5m
+                    - 1h
+                    type: string
+                  maxTokens:
+                    description: Maximum tokens to generate
+                    type: integer
+                  promptCaching:
+                    default: false
+                    description: |-
+                      PromptCaching enables Anthropic prompt caching by marking the reusable
+                      prefix of every Messages API request with `cache_control` breakpoints:
+                      the last tool definition, the last system prompt block and the last
+                      content block of the most recent conversation turn. Anthropic caches the
+                      prefix up to each breakpoint and bills a cache hit at a fraction of the
+                      normal input price on later requests within the TTL. Because the
+                      conversation breakpoint moves with every turn, each call of an agent
+                      loop reads the whole previous history from the cache and writes only
+                      the new turn.
+
+                      Recommended for tool-using agents that make many model calls per task
+                      with a stable system prompt and tool set — without it the full history
+                      is billed as fresh input on every call. Cache writes are billed at a
+                      premium over normal input, so a prefix has to be read at least once to
+                      pay off, and each model has a minimum cacheable prefix (1024–4096
+                      tokens depending on the model) below which the markers are silently
+                      ignored.
+
+                      See https://platform.claude.com/docs/en/build-with-claude/prompt-caching
+                      for the current list of supported models, minimum prefix sizes and
+                      pricing.
+                    type: boolean
+                  temperature:
+                    description: Temperature for sampling
+                    type: string
+                  topK:
+                    description: Top-k sampling parameter
+                    type: integer
+                  topP:
+                    description: Top-p sampling parameter
+                    type: string
+                type: object
+              anthropicVertexAI:
+                description: Anthropic-specific configuration
+                properties:
+                  location:
+                    description: The project location
+                    type: string
+                  maxTokens:
+                    description: Maximum tokens to generate
+                    type: integer
+                  projectID:
+                    description: The project ID
+                    type: string
+                  stopSequences:
+                    description: Stop sequences
+                    items:
+                      type: string
+                    type: array
+                  temperature:
+                    description: Temperature
+                    type: string
+                  topK:
+                    description: Top-k sampling parameter
+                    type: string
+                  topP:
+                    description: Top-p sampling parameter
+                    type: string
+                required:
+                - location
+                - projectID
+                type: object
+              apiKeySecret:
+                description: |-
+                  The name of the secret that contains the API key. Must be a reference to the name of a secret in the same namespace as the referencing ModelConfig.
+                  For the SAPAICore provider, the secret must contain two keys: "client_id" and "client_secret"
+                  (the OAuth2 client credentials for SAP AI Core). The apiKeySecretKey field is not used for SAPAICore.
+                type: string
+              apiKeySecretKey:
+                description: |-
+                  The key in the secret that contains the API key.
+                  Not used for the SAPAICore provider (which always reads "client_id" and "client_secret" from the secret).
+                type: string
+              azureOpenAI:
+                description: Azure OpenAI-specific configuration
+                properties:
+                  apiFormat:
+                    default: chatCompletions
+                    description: |-
+                      APIFormat selects chatCompletions (default, the dated deployments path) or
+                      responses (the /openai/v1 surface, which needs no apiVersion and reads files by link).
+                    enum:
+                    - chatCompletions
+                    - responses
+                    type: string
+                  apiVersion:
+                    description: API version for the Azure OpenAI API. Required unless
+                      apiFormat is responses.
+                    type: string
+                  azureAdToken:
+                    description: Azure AD token for authentication
+                    type: string
+                  azureDeployment:
+                    description: Deployment name for the Azure OpenAI API
+                    type: string
+                  azureEndpoint:
+                    description: Endpoint for the Azure OpenAI API
+                    type: string
+                  maxTokens:
+                    description: Maximum tokens to generate
+                    minimum: 1
+                    type: integer
+                  temperature:
+                    description: Temperature for sampling
+                    type: string
+                  topP:
+                    description: Top-p sampling parameter
+                    type: string
+                required:
+                - azureEndpoint
+                type: object
+                x-kubernetes-validations:
+                - message: apiVersion is required unless apiFormat is responses
+                  rule: has(self.apiVersion) || (has(self.apiFormat) && self.apiFormat
+                    == 'responses')
+              bedrock:
+                description: AWS Bedrock-specific configuration
+                properties:
+                  additionalModelRequestFields:
+                    description: |-
+                      AdditionalModelRequestFields passes model-specific parameters to Bedrock's
+                      additionalModelRequestFields in the Converse API. Use this for provider-specific
+                      options that are not part of the standard InferenceConfiguration block, such as
+                      Claude extended thinking or top_k. Values are forwarded as-is to the API.
+                      Example: {"top_k": 5, "thinking": {"type": "enabled", "budget_tokens": 16000}}
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  cacheTTL:
+                    default: 5m
+                    description: |-
+                      CacheTTL controls how long Bedrock retains a cached prefix when
+                      PromptCaching is enabled. Only meaningful when PromptCaching is true.
+
+                        - "5m" (default): Bedrock's standard 5-minute sliding cache. Each cache
+                          hit refreshes the window. Supported by all prompt-caching models.
+                        - "1h": extended-TTL caching, useful for tasks whose Converse calls are
+                          spaced more than 5 minutes apart.
+
+                      NOTE: "1h" is NOT strictly better than "5m". Extended-TTL cache writes are
+                      billed at a higher per-token rate than 5-minute writes, and 1h is supported
+                      on a narrower set of models. Only choose "1h" when calls are spaced far
+                      enough apart that a 5-minute cache would expire between them; otherwise the
+                      higher write cost is wasted. See the AWS prompt-caching docs above.
+                    enum:
+                    - 5m
+                    - 1h
+                    type: string
+                  connectTimeout:
+                    description: |-
+                      ConnectTimeout is the Bedrock HTTP client connection-establishment timeout
+                      in seconds, applied by both the Python and Go ADK runtimes. It bounds
+                      connection setup only, not the response read. When unset, each runtime's
+                      default is used (Python ADK: botocore; Go ADK: net dialer).
+                    minimum: 1
+                    type: integer
+                  guardrail:
+                    properties:
+                      identifier:
+                        description: |-
+                          Identifier is the guardrail ID or full ARN. AWS accepts either a bare
+                          guardrail ID or an arn:aws:bedrock:...:guardrail/... ARN, so the value is
+                          only length-bounded here (AWS caps guardrailIdentifier at 2048 chars).
+                        maxLength: 2048
+                        minLength: 1
+                        type: string
+                      trace:
+                        default: disabled
+                        enum:
+                        - disabled
+                        - enabled
+                        - enabled_full
+                        type: string
+                      version:
+                        description: 'Version is the guardrail version: a numeric
+                          version (e.g. "1") or "DRAFT".'
+                        maxLength: 8
+                        minLength: 1
+                        type: string
+                    required:
+                    - identifier
+                    - version
+                    type: object
+                  promptCaching:
+                    default: false
+                    description: |-
+                      PromptCaching enables Bedrock prompt caching by appending a CachePoint
+                      block at the end of the Converse request's `system` content array and
+                      the end of the `toolConfig.tools` array. Bedrock will cache the prefix up to and
+                      including those cache points across requests in the same region for
+                      roughly 5 minutes after first use, billing the cached portion at a
+                      reduced rate on cache hits.
+
+                      Recommended for tool-using agents that make many Converse calls per
+                      task with a stable system prompt and tool set — the per-call input
+                      token count can drop by 70-90% on hit. Has no effect on models that
+                      don't support caching; the marker is ignored by Bedrock for those.
+
+                      See https://docs.aws.amazon.com/bedrock/latest/userguide/prompt-caching.html
+                      for the current list of supported models and minimum prefix sizes.
+                    type: boolean
+                  readTimeout:
+                    description: |-
+                      ReadTimeout is the Bedrock HTTP client read timeout in seconds, applied by
+                      both the Python and Go ADK runtimes. Raise this for agents that make long
+                      Converse calls (large tool-augmented turns, extended reasoning). On the
+                      Python ADK it overrides botocore's ~60s read timeout, which otherwise
+                      aborts long completions with a ReadTimeoutError; on the Go ADK it bounds
+                      the whole Converse request (default 30m). When unset, each runtime's
+                      default is used.
+                    minimum: 1
+                    type: integer
+                  region:
+                    description: AWS region where the Bedrock model is available (e.g.,
+                      us-east-1, us-west-2)
+                    type: string
+                required:
+                - region
+                type: object
+              defaultHeaders:
+                additionalProperties:
+                  type: string
+                type: object
+              foundry:
+                description: Azure AI Foundry-specific configuration
+                properties:
+                  apiFormat:
+                    default: OpenAI
+                    description: |-
+                      APIFormat selects the Foundry API format: "OpenAI" (default, chat
+                      completions) or "Anthropic" (Claude models served over the Anthropic
+                      Messages API).
+                    enum:
+                    - OpenAI
+                    - Anthropic
+                    type: string
+                  apiVersion:
+                    default: "2024-10-21"
+                    description: |-
+                      APIVersion is the Foundry OpenAI-compatible data-plane API version.
+                      Ignored when APIFormat is Anthropic (the Messages surface is versioned via
+                      the anthropic-version header instead).
+                    type: string
+                  deployment:
+                    description: Deployment is the Foundry model deployment name.
+                    type: string
+                  endpoint:
+                    description: |-
+                      Endpoint is the Foundry or Azure AI Services account endpoint
+                      (e.g., https://my-account.cognitiveservices.azure.com/).
+                      Mutually exclusive with EndpointFrom.
+                    type: string
+                  endpointFrom:
+                    description: |-
+                      EndpointFrom resolves the Foundry endpoint from a ConfigMap key, such as
+                      one written by Azure Service Operator. Mutually exclusive with Endpoint.
+
+                      The selector's optional flag only controls how a missing key is handled: when
+                      set to true, the missing key is ignored while reading the ConfigMap, but a
+                      Foundry endpoint must always be supplied, so an unresolved endpointFrom still
+                      leaves the model unusable and the agent fails to start.
+                    properties:
+                      key:
+                        description: |-
+                          The key to select from the ConfigMap's Data field.
+                          Keys in the BinaryData field are not currently propagated to container env vars.
+                        type: string
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                      optional:
+                        description: Specify whether the ConfigMap or its key must
+                          be defined
+                        type: boolean
+                    required:
+                    - key
+                    type: object
+                    x-kubernetes-map-type: atomic
+                required:
+                - deployment
+                type: object
+                x-kubernetes-validations:
+                - message: foundry.endpoint and foundry.endpointFrom are mutually
+                    exclusive
+                  rule: '!(has(self.endpoint) && size(self.endpoint) > 0 && has(self.endpointFrom))'
+                - message: foundry.endpoint or foundry.endpointFrom is required
+                  rule: (has(self.endpoint) && size(self.endpoint) > 0) || has(self.endpointFrom)
+              gemini:
+                description: Gemini-specific configuration
+                properties:
+                  maxOutputTokens:
+                    description: Maximum output tokens to generate for a single response
+                    minimum: 1
+                    type: integer
+                type: object
+              geminiVertexAI:
+                description: Gemini Vertex AI-specific configuration
+                properties:
+                  candidateCount:
+                    description: Candidate count
+                    type: integer
+                  location:
+                    description: The project location
+                    type: string
+                  maxOutputTokens:
+                    description: Maximum output tokens
+                    minimum: 1
+                    type: integer
+                  projectID:
+                    description: The project ID
+                    type: string
+                  responseMimeType:
+                    description: Response mime type
+                    type: string
+                  stopSequences:
+                    description: Stop sequences
+                    items:
+                      type: string
+                    type: array
+                  temperature:
+                    description: Temperature
+                    type: string
+                  topK:
+                    description: Top-k sampling parameter
+                    type: string
+                  topP:
+                    description: Top-p sampling parameter
+                    type: string
+                required:
+                - location
+                - projectID
+                type: object
+              mistral:
+                description: Mistral-specific configuration
+                properties:
+                  baseUrl:
+                    description: Base URL for the Mistral API (overrides default https://api.mistral.ai/v1)
+                    type: string
+                  maxTokens:
+                    description: Maximum tokens to generate
+                    minimum: 1
+                    type: integer
+                  temperature:
+                    description: Temperature for sampling
+                    type: string
+                  timeout:
+                    description: Timeout in seconds for the underlying HTTP client
+                    minimum: 1
+                    type: integer
+                  topP:
+                    description: Top-p sampling parameter
+                    type: string
+                type: object
+              model:
+                type: string
+              ollama:
+                description: Ollama-specific configuration
+                properties:
+                  host:
+                    description: Host for the Ollama API
+                    type: string
+                  options:
+                    additionalProperties:
+                      type: string
+                    description: Options for the Ollama API
+                    type: object
+                type: object
+              openAI:
+                description: OpenAI-specific configuration
+                properties:
+                  apiFormat:
+                    default: chatCompletions
+                    description: |-
+                      APIFormat selects which OpenAI HTTP API the runtime uses for this model.
+                      chatCompletions (default) posts to /v1/chat/completions.
+                      responses posts to /v1/responses. Use responses for OpenAI-compatible
+                      gateways or models that require the Responses API.
+                    enum:
+                    - chatCompletions
+                    - responses
+                    type: string
+                  baseUrl:
+                    description: Base URL for the OpenAI API (overrides default)
+                    type: string
+                  frequencyPenalty:
+                    description: Frequency penalty
+                    type: string
+                  maxCompletionTokens:
+                    description: |-
+                      Maximum completion tokens to generate. Sent as the OpenAI
+                      `max_completion_tokens` request parameter (an upper bound on visible
+                      output plus reasoning tokens). This is the parameter reasoning models
+                      (GPT-5 / o-series) require in place of the deprecated maxTokens.
+                      Mutually exclusive with maxTokens.
+                    minimum: 1
+                    type: integer
+                  maxTokens:
+                    description: |-
+                      Maximum tokens to generate. Sent as the OpenAI `max_tokens` request
+                      parameter, which is deprecated and rejected by reasoning models
+                      (GPT-5 / o-series). For those models set maxCompletionTokens instead.
+                      Mutually exclusive with maxCompletionTokens.
+                    minimum: 1
+                    type: integer
+                  "n":
+                    description: N value
+                    minimum: 1
+                    type: integer
+                  organization:
+                    description: Organization ID for the OpenAI API
+                    type: string
+                  presencePenalty:
+                    description: Presence penalty
+                    type: string
+                  reasoningEffort:
+                    description: Reasoning effort
+                    enum:
+                    - none
+                    - minimal
+                    - low
+                    - medium
+                    - high
+                    - xhigh
+                    type: string
+                  seed:
+                    description: Seed value
+                    type: integer
+                  temperature:
+                    description: Temperature for sampling
+                    type: string
+                  timeout:
+                    description: Timeout
+                    maximum: 9223372036
+                    minimum: 1
+                    type: integer
+                  topP:
+                    description: Top-p sampling parameter
+                    type: string
+                type: object
+                x-kubernetes-validations:
+                - message: at most one of the fields in [maxTokens maxCompletionTokens]
+                    may be set
+                  rule: (has(self.maxTokens)?1:0)+(has(self.maxCompletionTokens)?1:0)
+                    <= 1
+              provider:
+                default: OpenAI
+                description: The provider of the model
+                enum:
+                - Anthropic
+                - OpenAI
+                - AzureOpenAI
+                - Ollama
+                - Gemini
+                - GeminiVertexAI
+                - AnthropicVertexAI
+                - Bedrock
+                - SAPAICore
+                - Foundry
+                - Mistral
+                type: string
+              sapAICore:
+                description: SAP AI Core-specific configuration
+                properties:
+                  authUrl:
+                    description: OAuth2 token endpoint URL (e.g., https://tenant.authentication.eu10.hana.ondemand.com)
+                    type: string
+                  baseUrl:
+                    description: Base URL for the SAP AI Core API (e.g., https://api.ai.prod.eu-central-1.aws.ml.hana.ondemand.com)
+                    type: string
+                  resourceGroup:
+                    default: default
+                    description: Resource group in SAP AI Core
+                    type: string
+                required:
+                - baseUrl
+                type: object
+              stream:
+                default: true
+                description: |-
+                  Stream controls LLM response streaming for the kagent harness. Set to false
+                  for model endpoints that do not support streaming. Defaults to true.
+                type: boolean
+              tls:
+                description: |-
+                  TLS configuration for provider connections.
+                  Enables agents to connect to internal LiteLLM gateways or other providers
+                  that use self-signed certificates or custom certificate authorities.
+                properties:
+                  disableVerify:
+                    default: false
+                    description: |-
+                      DisableVerify disables SSL certificate verification entirely.
+                      When false (default), SSL certificates are verified.
+                      When true, SSL certificate verification is disabled.
+                      WARNING: This should ONLY be used in development/testing environments.
+                      Production deployments MUST use proper certificates.
+                    type: boolean
+                type: object
+              tokenPassthrough:
+                description: |-
+                  TokenPassthrough enables forwarding the bearer token from incoming A2A requests
+                  directly to the LLM provider as the API key. This is useful for organizations
+                  with federated identity that want to avoid separate secret management.
+                  Mutually exclusive with apiKeySecret.
+                type: boolean
+            required:
+            - model
+            type: object
+            x-kubernetes-validations:
+            - message: provider.openAI must be nil if the provider is not OpenAI
+              rule: '!(has(self.openAI) && self.provider != ''OpenAI'')'
+            - message: provider.anthropic must be nil if the provider is not Anthropic
+              rule: '!(has(self.anthropic) && self.provider != ''Anthropic'')'
+            - message: provider.azureOpenAI must be nil if the provider is not AzureOpenAI
+              rule: '!(has(self.azureOpenAI) && self.provider != ''AzureOpenAI'')'
+            - message: provider.ollama must be nil if the provider is not Ollama
+              rule: '!(has(self.ollama) && self.provider != ''Ollama'')'
+            - message: provider.gemini must be nil if the provider is not Gemini
+              rule: '!(has(self.gemini) && self.provider != ''Gemini'')'
+            - message: provider.geminiVertexAI must be nil if the provider is not
+                GeminiVertexAI
+              rule: '!(has(self.geminiVertexAI) && self.provider != ''GeminiVertexAI'')'
+            - message: provider.anthropicVertexAI must be nil if the provider is not
+                AnthropicVertexAI
+              rule: '!(has(self.anthropicVertexAI) && self.provider != ''AnthropicVertexAI'')'
+            - message: provider.bedrock must be nil if the provider is not Bedrock
+              rule: '!(has(self.bedrock) && self.provider != ''Bedrock'')'
+            - message: provider.sapAICore must be nil if the provider is not SAPAICore
+              rule: '!(has(self.sapAICore) && self.provider != ''SAPAICore'')'
+            - message: provider.foundry must be nil if the provider is not Foundry
+              rule: '!(has(self.foundry) && self.provider != ''Foundry'')'
+            - message: provider.mistral must be nil if the provider is not Mistral
+              rule: '!(has(self.mistral) && self.provider != ''Mistral'')'
+            - message: apiKeySecret must be set if apiKeySecretKey is set
+              rule: '!(has(self.apiKeySecretKey) && !has(self.apiKeySecret))'
+            - message: apiKeySecretKey must be set if apiKeySecret is set (except
+                for Bedrock and SAPAICore providers)
+              rule: '!(has(self.apiKeySecret) && !has(self.apiKeySecretKey) && self.provider
+                != ''Bedrock'' && self.provider != ''SAPAICore'')'
+            - message: tokenPassthrough and apiKeySecret are mutually exclusive
+              rule: '!(has(self.tokenPassthrough) && self.tokenPassthrough && has(self.apiKeySecret)
+                && size(self.apiKeySecret) > 0)'
+            - message: tokenPassthrough must be false if provider is Gemini;GeminiVertexAI;AnthropicVertexAI
+              rule: '!(has(self.tokenPassthrough) && self.tokenPassthrough && (self.provider
+                == ''Gemini'' || self.provider == ''GeminiVertexAI'' || self.provider
+                == ''AnthropicVertexAI''))'
+          status:
+            description: ModelConfigStatus defines the observed state of ModelConfig.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              observedGeneration:
+                format: int64
+                type: integer
+              secretHash:
+                description: The secret hash stores a hash of any secrets required
+                  by the model config (i.e. api key, tls cert) to ensure agents referencing
+                  this model config detect changes to these secrets and restart if
+                  necessary.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+
+---
+# Source: kagent-crds/templates/api.kagent.dev_modelproviderconfigs.yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: modelproviderconfigs.api.kagent.dev
+spec:
+  group: api.kagent.dev
+  names:
+    categories:
+    - kagent
+    kind: ModelProviderConfig
+    listKind: ModelProviderConfigList
+    plural: modelproviderconfigs
+    shortNames:
+    - mprov
+    singular: modelproviderconfig
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.type
+      name: Type
+      type: string
+    - jsonPath: .spec.endpoint
+      name: Endpoint
+      type: string
+    - jsonPath: .status.modelCount
+      name: Models
+      type: integer
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha3
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ModelProviderConfig is the Schema for the modelproviderconfigs API.
+          It represents a model provider configuration with automatic model discovery.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ModelProviderConfigSpec defines the desired state of ModelProviderConfig.
+            properties:
+              endpoint:
+                description: |-
+                  Endpoint is the API endpoint URL for the provider.
+                  If not specified, the default endpoint for the provider type will be used.
+                pattern: ^https?://.*
+                type: string
+              secretRef:
+                description: |-
+                  SecretRef references the Kubernetes Secret containing the API key.
+                  Optional for providers that don't require authentication (e.g., local Ollama).
+                properties:
+                  name:
+                    description: Name is the name of the secret in the same namespace
+                      as the ModelProviderConfig.
+                    type: string
+                required:
+                - name
+                type: object
+              type:
+                description: Type is the model provider type (OpenAI, Anthropic, etc.)
+                enum:
+                - Anthropic
+                - OpenAI
+                - AzureOpenAI
+                - Ollama
+                - Gemini
+                - GeminiVertexAI
+                - AnthropicVertexAI
+                - Bedrock
+                - SAPAICore
+                - Foundry
+                - Mistral
+                type: string
+            required:
+            - type
+            type: object
+            x-kubernetes-validations:
+            - message: endpoint must be a valid URL starting with http:// or https://
+              rule: '!has(self.endpoint) || size(self.endpoint) == 0 || self.endpoint.startsWith(''http://'')
+                || self.endpoint.startsWith(''https://'')'
+            - message: secretRef is required for providers that need authentication
+                (not Ollama)
+              rule: self.type == 'Ollama' || (has(self.secretRef) && has(self.secretRef.name)
+                && size(self.secretRef.name) > 0)
+          status:
+            description: ModelProviderConfigStatus defines the observed state of ModelProviderConfig.
+            properties:
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the ModelProviderConfig's state
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              discoveredModels:
+                description: DiscoveredModels is the cached list of model IDs available
+                  from this model provider
+                items:
+                  type: string
+                type: array
+              lastDiscoveryTime:
+                description: LastDiscoveryTime is the timestamp of the last successful
+                  model discovery
+                format: date-time
+                type: string
+              modelCount:
+                description: ModelCount is the number of discovered models (for kubectl
+                  display)
+                type: integer
+              observedGeneration:
+                description: ObservedGeneration reflects the generation of the most
+                  recently observed ModelProviderConfig spec
+                format: int64
+                type: integer
+              secretHash:
+                description: SecretHash is a hash of the referenced secret data, used
+                  to detect secret changes
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+
+---
+# Source: kagent-crds/templates/api.kagent.dev_remotemcpservers.yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: remotemcpservers.api.kagent.dev
+spec:
+  group: api.kagent.dev
+  names:
+    categories:
+    - kagent
+    kind: RemoteMCPServer
+    listKind: RemoteMCPServerList
+    plural: remotemcpservers
+    shortNames:
+    - rmcps
+    singular: remotemcpserver
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.protocol
+      name: Protocol
+      type: string
+    - jsonPath: .spec.url
+      name: URL
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Accepted')].status
+      name: Accepted
+      type: string
+    name: v1alpha3
+    schema:
+      openAPIV3Schema:
+        description: RemoteMCPServer is the Schema for the RemoteMCPServers API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: RemoteMCPServerSpec defines the desired state of RemoteMCPServer.
+            properties:
+              allowedNamespaces:
+                description: |-
+                  AllowedNamespaces defines which namespaces are allowed to reference this RemoteMCPServer.
+                  This follows the Gateway API pattern for cross-namespace route attachments.
+                  If not specified, only Agents in the same namespace can reference this RemoteMCPServer.
+                  See: https://gateway-api.sigs.k8s.io/guides/multiple-ns/#cross-namespace-route-attachment
+                properties:
+                  from:
+                    default: Same
+                    description: |-
+                      From indicates where references to this resource can originate.
+                      Possible values are:
+                      * All: References from all namespaces are allowed.
+                      * Same: Only references from the same namespace are allowed (default).
+                      * Selector: References from namespaces matching the selector are allowed.
+                    enum:
+                    - All
+                    - Same
+                    - Selector
+                    type: string
+                  selector:
+                    description: |-
+                      Selector is a label selector for namespaces that are allowed to reference this resource.
+                      Only used when From is set to "Selector".
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: |-
+                            A label selector requirement is a selector that contains values, a key, and an operator that
+                            relates the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: |-
+                                operator represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: |-
+                                values is an array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced during a strategic
+                                merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      matchLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                          map is equivalent to an element of matchExpressions, whose key field is "key", the
+                          operator is "In", and the values array contains only "value". The requirements are ANDed.
+                        type: object
+                    type: object
+                    x-kubernetes-map-type: atomic
+                type: object
+                x-kubernetes-validations:
+                - message: selector must be specified when from is Selector
+                  rule: '!(self.from == ''Selector'' && !has(self.selector))'
+              description:
+                type: string
+              headersFrom:
+                description: |-
+                  HeadersFrom supplies request headers. Secret-backed headers are injected by
+                  the egress gateway and cannot use routing, framing, hop-by-hop,
+                  proxy-authentication, or Cookie headers. At most 64 headers may be supplied.
+                items:
+                  description: ValueRef represents a configuration value
+                  properties:
+                    name:
+                      maxLength: 256
+                      type: string
+                    value:
+                      type: string
+                    valueFrom:
+                      description: ValueSource defines a source for configuration
+                        values from a Secret or ConfigMap
+                      properties:
+                        key:
+                          description: The key of the ConfigMap or Secret.
+                          maxLength: 253
+                          type: string
+                        name:
+                          description: The name of the ConfigMap or Secret.
+                          maxLength: 253
+                          type: string
+                        type:
+                          enum:
+                          - ConfigMap
+                          - Secret
+                          type: string
+                      required:
+                      - key
+                      - name
+                      - type
+                      type: object
+                  required:
+                  - name
+                  type: object
+                  x-kubernetes-validations:
+                  - fieldPath: .name
+                    message: Secret-backed headers require a valid HTTP header name
+                    rule: '!has(self.valueFrom) || self.valueFrom.type != ''Secret''
+                      || self.name.matches(''^[!#$%&\\x27*+.^_`|~0-9A-Za-z-]+$'')'
+                  - fieldPath: .name
+                    message: this header cannot carry an egress credential
+                    rule: '!has(self.valueFrom) || self.valueFrom.type != ''Secret''
+                      || !(self.name.lowerAscii() in [''host'', ''connection'', ''content-length'',
+                      ''transfer-encoding'', ''te'', ''trailer'', ''upgrade'', ''keep-alive'',
+                      ''proxy-authorization'', ''proxy-authenticate'', ''cookie''])'
+                  - message: exactly one of the fields in [value valueFrom] must be
+                      set
+                    rule: (has(self.value)?1:0)+(has(self.valueFrom)?1:0) == 1
+                maxItems: 64
+                type: array
+              protocol:
+                default: STREAMABLE_HTTP
+                enum:
+                - SSE
+                - STREAMABLE_HTTP
+                type: string
+              sseReadTimeout:
+                type: string
+                x-kubernetes-validations:
+                - message: sseReadTimeout must be positive and at most 9223372036s
+                  rule: duration(self) > duration('0s') && duration(self) <= duration('9223372036s')
+              terminateOnClose:
+                default: true
+                type: boolean
+              timeout:
+                default: 30s
+                type: string
+                x-kubernetes-validations:
+                - message: timeout must be positive and at most 9223372036s
+                  rule: duration(self) > duration('0s') && duration(self) <= duration('9223372036s')
+              tls:
+                description: |-
+                  TLS configuration for the upstream MCP server connection.
+                  DisableVerify turns off certificate validation for development or testing.
+                  Custom CA bundles are not supported. TLS must be unset for HTTP URLs.
+                properties:
+                  disableVerify:
+                    default: false
+                    description: |-
+                      DisableVerify disables SSL certificate verification entirely.
+                      When false (default), SSL certificates are verified.
+                      When true, SSL certificate verification is disabled.
+                      WARNING: This should ONLY be used in development/testing environments.
+                      Production deployments MUST use proper certificates.
+                    type: boolean
+                type: object
+              tokenPassthrough:
+                description: |-
+                  TokenPassthrough forwards the bearer token from the incoming A2A request
+                  to this server as its Authorization header. Requests without a caller
+                  token fail. Controller tool discovery has no caller token, so servers that
+                  require one should disable discovery with the kagent.dev/discovery label.
+                type: boolean
+              url:
+                minLength: 1
+                type: string
+            required:
+            - description
+            - url
+            type: object
+            x-kubernetes-validations:
+            - message: 'spec.tls must be unset when spec.url has http:// scheme: a
+                TLS opinion contradicts a plaintext URL. Either drop spec.tls, or
+                use https:// / a scheme-less URL.'
+              rule: '!self.url.startsWith(''http://'') || !has(self.tls)'
+            - message: headersFrom cannot set Authorization when tokenPassthrough
+                is enabled
+              rule: '!(has(self.tokenPassthrough) && self.tokenPassthrough) || !has(self.headersFrom)
+                || !self.headersFrom.exists(h, h.name.lowerAscii() == ''authorization'')'
+          status:
+            description: RemoteMCPServerStatus defines the observed state of RemoteMCPServer.
+            properties:
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              discoveredTools:
+                items:
+                  properties:
+                    description:
+                      type: string
+                    name:
+                      type: string
+                  required:
+                  - description
+                  - name
+                  type: object
+                type: array
+              observedGeneration:
+                description: |-
+                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+                  Important: Run "make" to regenerate code after modifying this file
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+
+---
+# Source: kagent-crds/templates/api.kagent.dev_sandboxtemplates.yaml
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.22.0
+  name: sandboxtemplates.api.kagent.dev
+spec:
+  group: api.kagent.dev
+  names:
+    categories:
+    - kagent
+    kind: SandboxTemplate
+    listKind: SandboxTemplateList
+    plural: sandboxtemplates
+    singular: sandboxtemplate
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.workload.image
+      name: Image
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha3
+    schema:
+      openAPIV3Schema:
+        description: |-
+          SandboxTemplate defines standalone sandbox configuration. Creating one does not
+          allocate a user sandbox. The controller prepares its reusable runtime.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: SandboxTemplateSpec defines standalone sandbox environment
+              configuration.
+            properties:
+              egressPolicyRefs:
+                description: |-
+                  EgressPolicyRefs grants additional access in this template's namespace.
+                  Changes update the access of existing sandboxes without restarting them.
+                items:
+                  description: |-
+                    LocalObjectReference contains enough information to let you locate the
+                    referenced object inside the same namespace.
+                  properties:
+                    name:
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                maxItems: 16
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+                x-kubernetes-validations:
+                - message: egressPolicyRefs requires non-empty names
+                  rule: self.all(ref, has(ref.name) && ref.name != '')
+              env:
+                description: |-
+                  Env supplies runtime environment defaults.
+                  Credential references do not grant permission to read the referenced Secret.
+                items:
+                  description: RuntimeEnvVar configures one literal runtime environment
+                    variable.
+                  properties:
+                    name:
+                      minLength: 1
+                      type: string
+                    value:
+                      description: Value is a literal value, including an empty string.
+                      type: string
+                  required:
+                  - name
+                  - value
+                  type: object
+                maxItems: 100
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
+              substrate:
+                description: |-
+                  Substrate configures compute placement and snapshot storage. References are
+                  resolved in this template's namespace.
+                properties:
+                  snapshotPolicy:
+                    description: SnapshotPolicy configures runtime snapshot storage.
+                    properties:
+                      location:
+                        description: Location is the snapshot storage location used
+                          by Substrate.
+                        pattern: ^[^[:space:]]+$
+                        type: string
+                    required:
+                    - location
+                    type: object
+                  workerPoolRef:
+                    description: WorkerPoolRef references a WorkerPool in the resource's
+                      namespace.
+                    properties:
+                      name:
+                        default: ""
+                        description: |-
+                          Name of the referent.
+                          This field is effectively required, but due to backwards compatibility is
+                          allowed to be empty. Instances of this type with an empty value here are
+                          almost certainly wrong.
+                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        type: string
+                    type: object
+                    x-kubernetes-map-type: atomic
+                required:
+                - snapshotPolicy
+                - workerPoolRef
+                type: object
+                x-kubernetes-validations:
+                - message: workerPoolRef name must not be empty
+                  rule: self.workerPoolRef.name.size() > 0
+              workload:
+                description: Workload selects the immutable runtime image.
+                properties:
+                  image:
+                    description: Image is an OCI image reference pinned by sha256
+                      digest.
+                    pattern: ^[^[:space:]@]+@sha256:[a-f0-9]{64}$
+                    type: string
+                required:
+                - image
+                type: object
+            required:
+            - substrate
+            - workload
+            type: object
+          status:
+            description: SandboxTemplateStatus reports preparation of the current
+              template inputs.
+            properties:
+              conditions:
+                description: |-
+                  Conditions report runtime readiness and independent egress grant admission.
+                  EgressPoliciesApplied is False for EgressPolicyNotFound, InvalidEgressPolicy,
+                  or EgressGrantConflict; Applied means all grants are admitted. Grant issues
+                  do not affect Ready.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                description: ObservedGeneration is the generation considered by preparation.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

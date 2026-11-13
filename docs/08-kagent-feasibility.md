@@ -107,3 +107,57 @@ PR #238(kagent가 설치됐지만 준비되지 않으면 degraded)의 집계를 
 - 부수 발견: 이 Mac의 저장된 배포 대상이 `colima-default`/`kubemetal`로 남아 있었다(그 컨텍스트는 더 이상 없다).
   이 상태에서는 스택이 떠 있어도 MLflow/SeaweedFS가 "준비: 아니요"로 보인다 — D43(전용 프로필) 이후 저장값이
   갱신되지 않은 것으로 보이며[추정], 별도 확인이 필요하다.
+### 3. Artifact-only probe / no install (#193 실측 대조, 2026-11-13)
+
+> `evidence/kagent/round4-chart/`에 원본 stdout/stderr/rc, SHA256 해시, 렌더 결과, CRD OpenAPI diff 보존 `[measured]`. 설치(`helm install`/`upgrade`)·클러스터(`kubectl apply`) 변경 없이 순수 OCI 아티팩트(`0.9.12` vs `1.0.0-alpha17`)만 비교 검증함.
+
+#### A. 다운로드 아티팩트 해시 및 검증 커맨드 `[measured]`
+
+- `oci://ghcr.io/kagent-dev/kagent/helm` 레지스트리에서 `helm pull` 수행 (임시 디렉터리 `/tmp/kagent-chart-probe`) `[measured]`.
+- 아티팩트 SHA256 `[measured]`:
+  - `kagent-0.9.12.tgz`: `a6aede4fd39aab4ea0292b68a59ed2b0e41afc50f1e8de8a9a2ead2a89bd5075`
+  - `kagent-1.0.0-alpha17.tgz`: `9260dad01ef544c684ca7d749e31b46443100192c318281c4fdffe8e79d86543`
+  - `kagent-crds-0.9.12.tgz`: `977e59c4ad7f751f2badea53d5f698220f37a1af28fb282fd7917103a084e7f3`
+  - `kagent-crds-1.0.0-alpha17.tgz`: `8c236ee9cd3730a2275814d048fccf51a35d197ff5e8f624623bdf4cc415c431`
+- `helm show crds`는 두 버전 모두 0 bytes 반환 (차트의 CRD YAML이 `crds/`가 아닌 `templates/`에 패키징됨) `[measured]`.
+
+#### B. CRD 그룹·버전·종류 전수 대조 `[measured]`
+
+| Kind | 0.9.12 (`kagent-crds:0.9.12`) | 1.0.0-alpha17 (`kagent-crds:1.0.0-alpha17`) | 판정 및 호환성 |
+|------|--------------------------------|---------------------------------------------|----------------|
+| **`Agent`** | `kagent.dev` (`v1alpha1`, `v1alpha2`) | `api.kagent.dev` (`v1alpha3` 단독) | **비호환 (Breaking)**: 그룹 변경, `v1alpha2` 미제공(served=false/storage=false조차 없음). `src-tauri/src/services/kagent_agents.rs:110` 거부 |
+| **`AgentHarness` / `Harness`** | `kagent.dev/v1alpha2` (`AgentHarness`) | `api.kagent.dev/v1alpha3` (`Harness`) | **비호환 (Breaking)**: Kind 이름 `AgentHarness` → `Harness` 변경 |
+| **`AgentTemplate`** | 없음 | `api.kagent.dev/v1alpha3` (`AgentTemplate`) | **신규 도입**: 공용 에이전트 템플릿 선언 리소스 |
+| **`EgressPolicy`** | 없음 | `api.kagent.dev/v1alpha3` (`EgressPolicy`) | **신규 도입**: 에이전트 외부 통신 제어 정책 |
+| **`ModelConfig`** | `kagent.dev` (`v1alpha1`, `v1alpha2`) | `api.kagent.dev` (`v1alpha3` 단독) | **그룹/버전 변경**: `api.kagent.dev/v1alpha3` 승격. 스키마 필드는 호환 |
+| **`ModelProviderConfig`** | `kagent.dev/v1alpha2` | `api.kagent.dev/v1alpha3` | **그룹/버전 변경** |
+| **`RemoteMCPServer`** | `kagent.dev/v1alpha2` | `api.kagent.dev/v1alpha3` | **그룹/버전 변경**: `api.kagent.dev/v1alpha3` 승격. 스키마 필드는 호환 |
+| **`SandboxAgent` / `SandboxTemplate`** | `kagent.dev/v1alpha2` (`SandboxAgent`) | `api.kagent.dev/v1alpha3` (`SandboxTemplate`) | **비호환 (Breaking)**: Kind 이름 변경 |
+| **`Memory`, `ToolServer`** | `kagent.dev/v1alpha1` | 없음 | **제거됨** |
+| **`kmcp-crds`, `substrate-crds`** | subchart로 내장 (2.2MB) | chart 의존성에서 완전 제거 (146KB) | **제거됨** |
+
+#### C. 코드베이스 필드별 호환성 및 Breaking Change 분석 `[measured]`
+
+1. **`Agent` 매니페스트 (`src-tauri/src/services/kagent_agents.rs:110`, `scripts/k8s/security-agent.yaml:1`)**:
+   - `apiVersion: kagent.dev/v1alpha2`는 CRD 부재로 즉시 거부됨 `[measured]`.
+   - `spec.harnessRef`가 **필수 필드 (`required: [harnessRef, template]`)** 로 추가됨 `[measured]`.
+   - `spec.type: Declarative` 및 `spec.declarative` 블록 전체가 제거됨 `[measured]`.
+   - 모델 설정은 `spec.template.inline.modelConfig: {name: "default-model-config"}` 객체 형태로 변경 (문자열 리터럴 불가) `[measured]`.
+   - `systemMessage`는 `systemPrompt`로 이름 변경 `[measured]`.
+   - 도구 바인딩: `tools[].mcpServer` → `tools[].mcp`로 변경, `toolNames` → `tools`로 변경, CEL 유효성 검사 `!has(self.apiGroup)`에 의해 `apiGroup: kagent.dev` 명시 시 거부됨 `[measured]`.
+2. **`ModelConfig` 및 로컬 MLX 브리지 (`src-tauri/src/commands/kagent.rs:601,670`)**:
+   - `default-model-config` 이름 및 `spec.openAI.baseUrl`, `spec.model` JSON 경로는 1.0.0-alpha17에서도 **완전히 동일하게 유지됨** `[measured]`.
+   - `configure_kagent_model`의 values 주입 구조(`providers.openAI.config.baseUrl`, `providers.openAI.model`)가 1.0.0-alpha17 템플릿에서도 동일하게 파싱되어 `spec.openAI.baseUrl`로 렌더링됨 `[measured]`.
+3. **UI 서비스 포트 및 진단 파드 라벨 (`src-tauri/src/commands/port_forward.rs:37`, `kagent.rs:168`)**:
+   - UI 서비스 이름 `kagent-ui` (템플릿 기준 `<release>-ui`) 및 포트 `8080` 동일 유지 `[measured]`.
+   - 컨트롤러 및 UI 파드의 `app.kubernetes.io/name: kagent` 라벨 동일 유지 `[measured]`.
+4. **`kagent-values.yaml` 키 소비 분석 `[measured]`**:
+   - `providers.openAI.apiKey: dummy-local-key-not-used`: 1.0.0-alpha17의 `modelconfig-secret.yaml`에서도 `{{- if and $model.apiKeySecretRef $model.apiKey }}` 가드가 유지되어 **정상 소비**되며 `Secret/kagent-openai`가 생성됨 `[measured]`.
+   - `grafana-mcp.enabled: false`: **정상 소비**되어 grafana-mcp 관련 모든 워크로드가 비활성화됨 `[measured]`.
+   - 기본 에이전트 비활성화 키(`kgateway-agent`, `promql-agent`, `observability-agent` 등): 1.0.0-alpha17 차트에는 기본 에이전트 서브차트가 전혀 포함되어 있지 않으므로(기본 렌더 시 에이전트 0개), 이 키들은 에러 없이 무시됨(inert) `[measured]`.
+5. **설치 차단 요인 (Architectural Install Blocker) `[measured]`**:
+   - 0.9.12에 내장되어 있던 `postgresql` 파드 배포가 1.0.0-alpha17 차트에서 **완전 제거됨** `[measured]`.
+   - 1.0.0-alpha17은 외부 PostgreSQL 시크릿(`kagent-postgres-owner`, `kagent-postgres-readwrite`) 연결 정보를 필수로 요구함 (`values.yaml:108`~`124`) `[measured]`. 별도 DB 프로비저닝 없이 1.0.0-alpha17 단독 설치 시 파드가 기동하지 않음.
+6. **잔여 미검증 영역 (`[unverified]`)**:
+   - 본 프로브는 OCI 아티팩트 및 Helm 템플릿 정적 대조로 한정되었으므로, 실제 K3s 클러스터 내 컨트롤러 기동, Harness 파드 스케줄링, D10 브리지 경유 런타임 추론 및 MCP 도구 호출 성공 여부는 여전히 클러스터 설치 전까지 **`[unverified]`** 로 유지됨.
+
