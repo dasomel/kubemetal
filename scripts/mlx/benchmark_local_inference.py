@@ -158,6 +158,81 @@ def int_command_output(*args: str) -> int | None:
         return None
 
 
+_UNSET = object()
+
+
+def collect_thermal_metadata(
+    pmset_raw: Any = _UNSET,
+    ipc_thermal_state: str | None = None,
+    ipc_thermal_source: str | None = None,
+) -> dict[str, Any]:
+    """Collect thermal metadata for local inference benchmark (Issue #58).
+
+    Apple Silicon macOS does not expose thermal pressure level (NSProcessInfo.thermalState)
+    via standard CLI utilities:
+    - `pmset -g therm` only produces diagnostic notes ("Note: No thermal warning level..."),
+      not actual thermal pressure stages.
+    - `sysctl -a` has no thermal keys.
+    - `ioreg -c AppleSMC` has 0 temperature sensors.
+
+    Per D2 and D22 (never fabricate state):
+    - In standalone benchmarks without app IPC, `thermal_state` is always None (null).
+      It MUST NEVER default to 'nominal', 'normal', 0, or PASS when CLI output is missing,
+      empty, timed out, or returning the advisory 'No thermal warning...' text.
+    - `thermal_source` is None (or the verified IPC source when provided).
+    - `thermal_unavailable_reason` explicitly explains the CLI absence.
+    - The raw `pmset -g therm` text (if any) is preserved separately as `pmset_therm`
+      under diagnostics, not as thermal_state.
+    """
+    if pmset_raw is _UNSET:
+        pmset_val = command_output("pmset", "-g", "therm")
+    else:
+        pmset_val = pmset_raw
+
+    # Future extension: if real NSProcessInfo telemetry was passed from the desktop app IPC
+    if ipc_thermal_state is not None:
+        return {
+            "thermal_state": ipc_thermal_state,
+            "thermal_source": ipc_thermal_source or "app_ipc",
+            "thermal_unavailable_reason": None,
+            "pmset_therm": pmset_val,
+        }
+
+    return {
+        "thermal_state": None,
+        "thermal_source": None,
+        "thermal_unavailable_reason": (
+            "macOS CLI does not expose NSProcessInfo.thermalState; "
+            "pmset -g therm provides advisory diagnostics only, not thermal pressure level (D2)."
+        ),
+        "pmset_therm": pmset_val,
+    }
+
+
+def collect_host_metadata(
+    thermal_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Assemble host metadata for benchmark report."""
+    if thermal_metadata is None:
+        thermal_metadata = collect_thermal_metadata()
+
+    return {
+        "platform": platform.platform(),
+        "machine": platform.machine(),
+        "macos": platform.mac_ver()[0],
+        "chip": command_output("sysctl", "-n", "machdep.cpu.brand_string"),
+        "memory_bytes": int_command_output("sysctl", "-n", "hw.memsize"),
+        "memory_pressure_level": command_output("sysctl", "-n", "kern.memorystatus_vm_pressure_level"),
+        "thermal_state": thermal_metadata["thermal_state"],
+        "thermal_source": thermal_metadata["thermal_source"],
+        "thermal_unavailable_reason": thermal_metadata["thermal_unavailable_reason"],
+        "metal_wired_limit_mb": int_command_output("sysctl", "-n", "iogpu.wired_limit_mb"),
+        "diagnostics": {
+            "pmset_therm": thermal_metadata["pmset_therm"],
+        },
+    }
+
+
 def process_rss_bytes(pid: int | None) -> int | None:
     if not pid:
         return None
@@ -249,6 +324,8 @@ def main() -> int:
     latencies = [sample.latency_ms for sample in successful]
     ttfts = [sample.ttft_ms for sample in successful if sample.ttft_ms is not None]
     completion_tokens = sum(sample.completion_tokens or 0 for sample in successful)
+    thermal_metadata = collect_thermal_metadata()
+    host_metadata = collect_host_metadata(thermal_metadata=thermal_metadata)
     report: dict[str, Any] = {
         "schema_version": 2,
         "captured_at": datetime.now(timezone.utc).isoformat(),
@@ -276,15 +353,9 @@ def main() -> int:
             "prompt_chars": len(args.prompt),
             "stream": args.stream,
         },
-        "host": {
-            "platform": platform.platform(),
-            "machine": platform.machine(),
-            "macos": platform.mac_ver()[0],
-            "chip": command_output("sysctl", "-n", "machdep.cpu.brand_string"),
-            "memory_bytes": int_command_output("sysctl", "-n", "hw.memsize"),
-            "memory_pressure_level": command_output("sysctl", "-n", "kern.memorystatus_vm_pressure_level"),
-            "thermal_state": command_output("pmset", "-g", "therm"),
-            "metal_wired_limit_mb": int_command_output("sysctl", "-n", "iogpu.wired_limit_mb"),
+        "host": host_metadata,
+        "diagnostics": {
+            "pmset_therm": thermal_metadata["pmset_therm"],
         },
         "process": {
             "rss_bytes_before": rss_before,
@@ -315,6 +386,7 @@ def main() -> int:
         "measurement_notes": [
             "API-boundary prefill tok/s is prompt_tokens / TTFT and includes scheduling/network/model-load overhead.",
             "queue wait and engine-only model load time remain null unless the upstream runtime exposes trustworthy values.",
+            "host.thermal_state remains null in standalone benchmarks because macOS CLI provides no thermal pressure levels (D2); raw pmset output is isolated under diagnostics.pmset_therm.",
             "unsupported values are null, never zero-filled.",
         ],
         "samples": [asdict(sample) for sample in samples],
