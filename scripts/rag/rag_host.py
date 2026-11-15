@@ -7,17 +7,35 @@ and DVC dataset versioning with SeaweedFS S3 remote.
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
+import socket
 import sys
 import subprocess
 import sqlite3
 import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 RRF_K = 60
 HYBRID_CANDIDATE_COUNT = 50
+DEFAULT_REWRITE_URL = "http://127.0.0.1:8080/v1/chat/completions"
+DEFAULT_REWRITE_MODEL = "default"
+DEFAULT_REWRITE_TIMEOUT_S = 2.0
+DEFAULT_REWRITE_MAX_CHARS = 256
+REWRITE_PROMPT_VERSION = "v1"
+REWRITE_OUTCOMES = ("disabled", "applied", "timeout", "error", "rejected")
+REWRITE_SYSTEM_PROMPT = (
+    "Rewrite the user search query into concise retrieval keywords for KubeMetal technical "
+    "documentation and code search. Preserve exact identifiers, model names, ports, decision "
+    "IDs (e.g. D1, D10, D26), and filenames verbatim. Output only the rewritten query text "
+    "on a single line with no quotes or explanation."
+)
 
 K8S_RESOURCE_NAMES = {
     "pod", "pods", "service", "services", "svc", "deployment", "deployments",
@@ -109,6 +127,338 @@ def classify_query(query: str) -> tuple[str, str]:
 
     # 9. Otherwise: 1-3 token semantic query without symbols/identifiers
     return ("hybrid", "natural_language")
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """D-R1: refuse redirects on the local rewrite path so a loopback endpoint cannot
+    bounce a request to a non-loopback host. Cost: no redirect support; pass the final
+    127.0.0.1 URL directly."""
+
+    def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+        raise urllib.error.URLError(f"Redirect blocked ({code}) for local rewrite endpoint")
+
+
+_REWRITE_OPENER = urllib.request.build_opener(_NoRedirectHandler)
+
+
+def validate_rewrite_url(url: str) -> str:
+    """Allow only http://127.0.0.1[:port] OpenAI-compatible endpoints (D1/D21).
+
+    Rejects localhost (resolves to ::1 on macOS), IPv6 loopback, 0.0.0.0, other
+    127.x addresses, LAN/remote hosts, non-http schemes, credentials, and query/fragment.
+    """
+    if not isinstance(url, str) or not url.strip():
+        raise ValueError("Rewrite URL must be a non-empty string.")
+    trimmed = url.strip()
+    if any(ch.isspace() for ch in trimmed):
+        raise ValueError("Rewrite URL must not contain whitespace.")
+    parsed = urllib.parse.urlparse(trimmed)
+    if parsed.scheme != "http":
+        raise ValueError(f"Rewrite URL must use http://127.0.0.1 (got scheme {parsed.scheme!r}).")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("Rewrite URL must not include credentials.")
+    if parsed.hostname != "127.0.0.1":
+        raise ValueError(
+            f"Rewrite URL must target 127.0.0.1 only (never localhost or non-loopback; got {parsed.hostname!r})."
+        )
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"Invalid port in rewrite URL: {trimmed!r}") from exc
+    if port is None:
+        port = 8080
+        expected_netloc = "127.0.0.1"
+    else:
+        if not (1 <= port <= 65535):
+            raise ValueError(f"Rewrite URL port out of range: {port}")
+        expected_netloc = f"127.0.0.1:{port}"
+    if parsed.netloc != expected_netloc:
+        raise ValueError(f"Rewrite URL netloc must be {expected_netloc!r}, got {parsed.netloc!r}.")
+    if parsed.params or parsed.query or parsed.fragment:
+        raise ValueError("Rewrite URL must not contain params, query string, or fragment.")
+    path = parsed.path or "/v1/chat/completions"
+    if path == "/":
+        path = "/v1/chat/completions"
+    elif path.rstrip("/") == "/v1":
+        path = "/v1/chat/completions"
+    return f"http://127.0.0.1:{port}{path}"
+
+
+def default_rewrite_http_client(endpoint: str, payload: dict, timeout_s: float) -> dict:
+    """POST an OpenAI chat-completions request to a validated 127.0.0.1 endpoint."""
+    validated_url = validate_rewrite_url(endpoint)
+    if timeout_s is None or isinstance(timeout_s, bool) or timeout_s <= 0 or not math.isfinite(timeout_s):
+        raise ValueError("rewrite timeout_s must be a positive finite number.")
+    body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        validated_url,
+        data=body,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    with _REWRITE_OPENER.open(request, timeout=float(timeout_s)) as response:
+        raw_bytes = response.read(65536 + 1)
+    if len(raw_bytes) > 65536:
+        raise ValueError("Rewrite response body exceeds 64 KiB limit.")
+    return json.loads(raw_bytes.decode("utf-8"))
+
+
+def _is_timeout_error(exc: BaseException) -> bool:
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return True
+    if isinstance(exc, urllib.error.URLError) and isinstance(exc.reason, (TimeoutError, socket.timeout)):
+        return True
+    return False
+
+
+def _extract_rewrite_content(raw_response) -> str:
+    if isinstance(raw_response, str):
+        return raw_response
+    if not isinstance(raw_response, dict):
+        raise ValueError(f"Expected dict or str from rewrite client, got {type(raw_response).__name__}.")
+    choices = raw_response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ValueError("Rewrite response missing non-empty 'choices' list.")
+    first = choices[0]
+    if not isinstance(first, dict):
+        raise ValueError("Rewrite response choice is not an object.")
+    message = first.get("message")
+    if not isinstance(message, dict):
+        raise ValueError("Rewrite response choice missing 'message' object.")
+    content = message.get("content")
+    if not isinstance(content, str):
+        raise ValueError("Rewrite response message 'content' must be a string.")
+    return content
+
+
+def rewrite_query(
+    query: str,
+    *,
+    enabled: bool = False,
+    url: str = DEFAULT_REWRITE_URL,
+    model: str = DEFAULT_REWRITE_MODEL,
+    timeout_s: float = DEFAULT_REWRITE_TIMEOUT_S,
+    max_chars: int = DEFAULT_REWRITE_MAX_CHARS,
+    mode: str = "auto",
+    preclassified: tuple[str, str] | None = None,
+    http_client=None,
+    clock=time.perf_counter,
+) -> dict:
+    """Opt-in local query rewrite with bounded timeout and honest fallback (#38 B2).
+
+    D-R2: outcomes are a closed set ('disabled', 'applied', 'timeout', 'error', 'rejected').
+    Every non-applied outcome preserves and returns `original_query` as `effective_query`
+    without inventing a rewrite (D22). Exact/identifier queries classified by `classify_query`
+    as 'lexical' (or explicit `--mode exact`) skip the model call completely.
+    """
+    if url != DEFAULT_REWRITE_URL or enabled:
+        endpoint = validate_rewrite_url(url)
+    else:
+        endpoint = None
+
+    if not enabled:
+        return {
+            "enabled": False,
+            "outcome": "disabled",
+            "reason": "disabled",
+            "skipped": True,
+            "original_query": query,
+            "effective_query": query,
+            "rewritten_query": None,
+            "endpoint": None,
+            "model": None,
+            "prompt_version": REWRITE_PROMPT_VERSION,
+            "timeout_s": None,
+            "latency_ms": None,
+            "error": None,
+        }
+
+    if timeout_s is None or isinstance(timeout_s, bool) or timeout_s <= 0 or not math.isfinite(timeout_s):
+        raise ValueError("rewrite timeout_s must be a positive finite number.")
+    if max_chars is None or isinstance(max_chars, bool) or max_chars < 1:
+        raise ValueError("rewrite max_chars must be a positive integer.")
+
+    if mode == "exact":
+        return {
+            "enabled": True,
+            "outcome": "disabled",
+            "reason": "exact_mode",
+            "skipped": True,
+            "original_query": query,
+            "effective_query": query,
+            "rewritten_query": None,
+            "endpoint": endpoint,
+            "model": model,
+            "prompt_version": REWRITE_PROMPT_VERSION,
+            "timeout_s": float(timeout_s),
+            "latency_ms": None,
+            "error": None,
+        }
+
+    classified_mode, classified_rule = (
+        preclassified if preclassified is not None else classify_query(query)
+    )
+    if classified_mode == "lexical":
+        return {
+            "enabled": True,
+            "outcome": "disabled",
+            "reason": f"exact_query:{classified_rule}",
+            "skipped": True,
+            "original_query": query,
+            "effective_query": query,
+            "rewritten_query": None,
+            "endpoint": endpoint,
+            "model": model,
+            "prompt_version": REWRITE_PROMPT_VERSION,
+            "timeout_s": float(timeout_s),
+            "latency_ms": None,
+            "error": None,
+        }
+
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": REWRITE_SYSTEM_PROMPT},
+            {"role": "user", "content": query},
+        ],
+        "temperature": 0.0,
+        "max_tokens": 64,
+        "stream": False,
+    }
+    client = http_client if http_client is not None else default_rewrite_http_client
+    started = clock()
+    try:
+        raw_response = client(endpoint, payload, float(timeout_s))
+        elapsed_s = max(0.0, clock() - started)
+    except Exception as exc:
+        elapsed_s = max(0.0, clock() - started)
+        is_timeout = _is_timeout_error(exc) or elapsed_s > timeout_s
+        return {
+            "enabled": True,
+            "outcome": "timeout" if is_timeout else "error",
+            "reason": "timeout" if is_timeout else "request_error",
+            "skipped": False,
+            "original_query": query,
+            "effective_query": query,
+            "rewritten_query": None,
+            "endpoint": endpoint,
+            "model": model,
+            "prompt_version": REWRITE_PROMPT_VERSION,
+            "timeout_s": float(timeout_s),
+            "latency_ms": elapsed_s * 1000.0,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    latency_ms = elapsed_s * 1000.0
+    if elapsed_s > timeout_s:
+        return {
+            "enabled": True,
+            "outcome": "timeout",
+            "reason": "deadline_exceeded",
+            "skipped": False,
+            "original_query": query,
+            "effective_query": query,
+            "rewritten_query": None,
+            "endpoint": endpoint,
+            "model": model,
+            "prompt_version": REWRITE_PROMPT_VERSION,
+            "timeout_s": float(timeout_s),
+            "latency_ms": latency_ms,
+            "error": f"Rewrite exceeded timeout of {timeout_s}s ({elapsed_s:.3f}s)",
+        }
+
+    try:
+        content = _extract_rewrite_content(raw_response)
+    except (ValueError, KeyError, TypeError) as exc:
+        return {
+            "enabled": True,
+            "outcome": "error",
+            "reason": "invalid_response",
+            "skipped": False,
+            "original_query": query,
+            "effective_query": query,
+            "rewritten_query": None,
+            "endpoint": endpoint,
+            "model": model,
+            "prompt_version": REWRITE_PROMPT_VERSION,
+            "timeout_s": float(timeout_s),
+            "latency_ms": latency_ms,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    stripped = content.strip()
+    if not stripped:
+        return {
+            "enabled": True,
+            "outcome": "rejected",
+            "reason": "empty",
+            "skipped": False,
+            "original_query": query,
+            "effective_query": query,
+            "rewritten_query": None,
+            "endpoint": endpoint,
+            "model": model,
+            "prompt_version": REWRITE_PROMPT_VERSION,
+            "timeout_s": float(timeout_s),
+            "latency_ms": latency_ms,
+            "error": None,
+        }
+
+    normalized = " ".join(stripped.split())
+    if len(stripped) > max_chars or len(normalized) > max_chars:
+        return {
+            "enabled": True,
+            "outcome": "rejected",
+            "reason": "too_long",
+            "skipped": False,
+            "original_query": query,
+            "effective_query": query,
+            "rewritten_query": normalized,
+            "endpoint": endpoint,
+            "model": model,
+            "prompt_version": REWRITE_PROMPT_VERSION,
+            "timeout_s": float(timeout_s),
+            "latency_ms": latency_ms,
+            "error": None,
+        }
+
+    original_normalized = " ".join(query.strip().split())
+    if (
+        normalized == query
+        or normalized == query.strip()
+        or normalized.casefold() == original_normalized.casefold()
+    ):
+        return {
+            "enabled": True,
+            "outcome": "rejected",
+            "reason": "unchanged",
+            "skipped": False,
+            "original_query": query,
+            "effective_query": query,
+            "rewritten_query": normalized,
+            "endpoint": endpoint,
+            "model": model,
+            "prompt_version": REWRITE_PROMPT_VERSION,
+            "timeout_s": float(timeout_s),
+            "latency_ms": latency_ms,
+            "error": None,
+        }
+
+    return {
+        "enabled": True,
+        "outcome": "applied",
+        "reason": "applied",
+        "skipped": False,
+        "original_query": query,
+        "effective_query": normalized,
+        "rewritten_query": normalized,
+        "endpoint": endpoint,
+        "model": model,
+        "prompt_version": REWRITE_PROMPT_VERSION,
+        "timeout_s": float(timeout_s),
+        "latency_ms": latency_ms,
+        "error": None,
+    }
 
 
 def lancedb_table_names(list_tables_result):
@@ -367,7 +717,7 @@ def cmd_index(args):
         "db_path": str(db_path)
     }))
 
-def cmd_query(args):
+def cmd_query(args, rewrite_http_client=None, rewrite_clock=None):
     db_path = Path(args.db_path).expanduser().resolve()
     collection = args.collection
     query_str = args.query
@@ -394,29 +744,53 @@ def cmd_query(args):
 
     if args.mode == "auto":
         resolved_mode, rule_name = classify_query(query_str)
+        preclassified = (resolved_mode, rule_name)
     else:
         resolved_mode = args.mode
         rule_name = "explicit"
+        preclassified = None
+
+    rewrite_enabled = bool(getattr(args, "rewrite", False))
+    rewrite_url = getattr(args, "rewrite_url", DEFAULT_REWRITE_URL)
+    rewrite_model = getattr(args, "rewrite_model", DEFAULT_REWRITE_MODEL)
+    rewrite_timeout = getattr(args, "rewrite_timeout", DEFAULT_REWRITE_TIMEOUT_S)
+    rewrite_max_chars = getattr(args, "rewrite_max_chars", DEFAULT_REWRITE_MAX_CHARS)
+    http_client = rewrite_http_client or getattr(args, "rewrite_http_client", None)
+    clock = rewrite_clock or getattr(args, "rewrite_clock", time.perf_counter)
+
+    rewrite_trace = rewrite_query(
+        query_str,
+        enabled=rewrite_enabled,
+        url=rewrite_url,
+        model=rewrite_model,
+        timeout_s=rewrite_timeout,
+        max_chars=rewrite_max_chars,
+        mode=resolved_mode,
+        preclassified=preclassified,
+        http_client=http_client,
+        clock=clock,
+    )
+    search_query = rewrite_trace["effective_query"]
 
     if resolved_mode == "exact":
-        search_results = exact_search(table.to_arrow().to_pylist(), query_str, top_k)
+        search_results = exact_search(table.to_arrow().to_pylist(), search_query, top_k)
     elif resolved_mode == "lexical":
         # LanceTable has no .to_list() on the installed lancedb (0.34.0) -
         # measured on this Mac (AttributeError). to_arrow().to_pylist() is
         # the stable route since pyarrow is a hard lancedb dependency.
-        search_results = lexical_search(table.to_arrow().to_pylist(), query_str, top_k)
+        search_results = lexical_search(table.to_arrow().to_pylist(), search_query, top_k)
     elif resolved_mode == "dense":
         model = get_embedding_model(model_name)
-        query_vector = model.encode(query_str, show_progress_bar=False).tolist()
+        query_vector = model.encode(search_query, show_progress_bar=False).tolist()
         search_results = table.search(query_vector).limit(top_k).to_list()
     else:
         chunks = table.to_arrow().to_pylist()
         candidate_count = max(top_k, HYBRID_CANDIDATE_COUNT)
-        lexical_results = lexical_search(chunks, query_str, candidate_count)
+        lexical_results = lexical_search(chunks, search_query, candidate_count)
         # A hybrid query is invalid if dense retrieval cannot run; do not
         # catch this and silently turn the result into lexical-only output.
         model = get_embedding_model(model_name)
-        query_vector = model.encode(query_str, show_progress_bar=False).tolist()
+        query_vector = model.encode(search_query, show_progress_bar=False).tolist()
         dense_results = table.search(query_vector).limit(candidate_count).to_list()
         search_results = rrf_fuse(lexical_results, dense_results, top_k)
 
@@ -445,6 +819,7 @@ def cmd_query(args):
         "query": query_str,
         "resolved_mode": resolved_mode,
         "rule": rule_name,
+        "rewrite": rewrite_trace,
         "results": formatted_results
     }))
 
@@ -524,6 +899,11 @@ def main():
     p_query.add_argument("--top-k", type=int, default=3)
     p_query.add_argument("--model", default="sentence-transformers/all-MiniLM-L6-v2")
     p_query.add_argument("--mode", choices=("auto", "dense", "lexical", "hybrid", "exact"), default="dense")
+    p_query.add_argument("--rewrite", action="store_true", default=False)
+    p_query.add_argument("--rewrite-url", default=DEFAULT_REWRITE_URL)
+    p_query.add_argument("--rewrite-model", default=DEFAULT_REWRITE_MODEL)
+    p_query.add_argument("--rewrite-timeout", type=float, default=DEFAULT_REWRITE_TIMEOUT_S)
+    p_query.add_argument("--rewrite-max-chars", type=int, default=DEFAULT_REWRITE_MAX_CHARS)
 
     # dvc-commit subcommand
     p_dvc = subparsers.add_parser("dvc-commit")
