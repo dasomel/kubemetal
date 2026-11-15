@@ -135,6 +135,26 @@ DRA/Kueue는 위 조건을 만족하는 **실제 Kubernetes 관리 가능 resour
 | 하드웨어 가드레일 (Phase 3) | `get_guardrail_status`, `set_guardrail_config` | memory pressure(D16)·배터리 상태 조회, 배터리 시 자동 일시정지 설정 |
 | | `pause_mlx_training`, `resume_mlx_training` | 학습 프로세스 그룹에 SIGSTOP/SIGCONT (D17) |
 
+### Health / support bundle 연결 (#17 B1)
+
+`get_system_health_summary`는 관측 완료 시 opaque OS-random 128-bit `correlation_id`와 UTC
+`observed_at`을 한 번 부여한다. 기존 `guardrails.last_event.correlation_id`는 pause/resume 이벤트의 ID여서 snapshot마다 재사용할 수 없다. `HealthSummaryPanel`은 short ID·시각과 전체 ID 복사를 제공한다.
+`create_support_bundle({health_snapshot_id})`는 백엔드 메모리에 보관한 최근 snapshot 원문을
+재사용한다. 보관되지 않은 ID는 refresh를 요구하는 오류이며 다른 관측으로 대체하지 않는다(D22).
+무인자 호출은 새 snapshot을 수집한다. 새 IPC 커맨드나 디스크 snapshot 캐시는 없다.
+
+manifest schema v1에 선택적 `health_snapshot: {correlation_id, observed_at}`을 추가한다.
+원문은 기존 redaction을 거치며 생성 ID/시각은 그대로 보존된다. manifest 연결 메타데이터에는
+고정 형식 ID·시각만 복사해 로그·홈 경로·시크릿을 우회 노출하지 않는다.
+Rust IPC/Python 오프라인 verifier는 해시 검증한 health 파일과 manifest를 대조한다.
+`health_link_status=linked`는 둘이 일치함을, `mismatch`는 검증 실패를 뜻한다.
+구형 manifest·ID/시각 누락은 `not_linked`로 보고하며 무결성 실패를 만들어내지 않는다.
+manifest 자체는 외부 digest 없이는 인증되지 않는다. UI의 번들 생성/검증 결과에도 ID 또는
+연결되지 않음을 표시한다. 이 연결은 개별 probe 관측의 동시성이나 출처 인증을 보장하지 않는다.
+
+의존성 impact graph, K3s/kagent/Prometheus evidence correlation, #13 MLX evidence linkage,
+offline replay는 계속 미구현이다.
+
 ### 프론트 훅 매핑
 
 | 훅 | 갱신 주기 | 호출 커맨드 |

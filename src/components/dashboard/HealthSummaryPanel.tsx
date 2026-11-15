@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, CheckCircle2, Copy, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useTranslation } from '../../i18n/i18nContext';
 import { useSupportBundle } from '../../hooks/useSupportBundle';
+import { HealthCorrelation } from './HealthCorrelation';
 import type { SystemHealthSummary } from '../../types/ipc';
 import {
   createHealthSummaryController,
@@ -19,10 +20,10 @@ const overallTone: Record<SystemHealthSummary['overall'], Tone> = {
 };
 
 export const HealthSummaryPanel: React.FC = () => {
-  const bundle = useSupportBundle();
   const [copied, setCopied] = useState<boolean>(false);
   const [externalPath, setExternalPath] = useState<string>('');
   const [state, setState] = useState<HealthSummaryState>(initialHealthSummaryState);
+  const bundle = useSupportBundle(state.summary?.correlation_id);
   const controllerRef = useRef<ReturnType<typeof createHealthSummaryController> | null>(null);
 
   useEffect(() => {
@@ -94,6 +95,7 @@ export const HealthSummaryView: React.FC<{
             </span>
             {state.fetchedAt && <span className="text-inkFaint">{t('health.fetchedAt', { time: state.fetchedAt })}</span>}
           </div>
+          <HealthCorrelation snapshot={state.summary} />
           {state.stale && <p className="text-caption text-inkMuted mb-3">{t('health.previousSnapshot')}</p>}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
@@ -228,6 +230,7 @@ const SupportBundleSection: React.FC<{
       {bundle.result && (
         <div role="status" className="rounded-lg bg-surfaceRaised p-3 text-caption text-inkMuted space-y-2 break-words">
           <div className="space-y-1">
+            <HealthCorrelation snapshot={bundle.result.manifest.health_snapshot} />
             <p>{t('health.bundle.created', { path: bundle.result.bundle_dir })}</p>
             <p>{t('health.bundle.manifest', { path: bundle.result.manifest_path })}</p>
             <p>{t('health.bundle.counts', { files: bundle.result.files_count, omitted: bundle.result.omitted_count })}</p>
@@ -295,6 +298,7 @@ const SupportBundleSection: React.FC<{
               )}
             </span>
           </div>
+          <HealthCorrelation snapshot={bundle.verificationReport.health_snapshot} status={bundle.verificationReport.health_link_status} />
           {bundle.verificationReport.problems.length > 0 && (
             <ul className="list-disc list-inside space-y-0.5 text-inkMuted pl-2">
               {bundle.verificationReport.problems.slice(0, 5).map((p, idx) => (

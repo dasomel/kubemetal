@@ -272,6 +272,8 @@ export interface GuardrailStatus {
 /** `get_system_health_summary`의 하위 조회 결과. 실패한 조회는 값 대신 해당 `*_error`에
  * 실제 오류를 남기므로, 다른 컴포넌트의 성공 결과를 지우면 안 된다(D22). */
 export interface SystemHealthSummary {
+  correlation_id: string;
+  observed_at: string;
   colima: ClusterStatus | null;
   colima_error: string | null;
   guardrails: GuardrailStatus | null;
@@ -529,6 +531,7 @@ export interface SupportBundleResult {
   files_count: number;
   omitted_count: number;
   manifest: {
+    health_snapshot?: { correlation_id: string; observed_at: string } | null;
     schema_version: number;
     redaction: SupportBundleRedactionInfo;
     created_at: string;
@@ -544,6 +547,8 @@ export interface VerificationProblem {
 }
 
 export interface SupportBundleVerificationReport {
+  health_link_status: 'linked' | 'not_linked' | 'mismatch';
+  health_snapshot: { correlation_id: string; observed_at: string } | null;
   verified: boolean;
   status: 'PASS' | 'FAIL';
   bundle_dir: string;

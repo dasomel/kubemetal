@@ -79,6 +79,11 @@ export const translations: Record<Language, Record<string, string>> = {
     'strip.forwarding': '포워딩',
 
     // Dashboard - System Health Summary
+    'health.correlation.label': '연결 ID',
+    'health.correlation.copy': '연결 ID 복사',
+    'health.correlation.notLinked': '연결되지 않음',
+    'health.correlation.mismatch': '헬스 스냅샷과 불일치',
+    'health.correlation.copyFailed': 'ID 복사 실패: {error}',
     'health.title': '시스템 상태 요약',
     'health.subtitle': '각 하위 진단의 최신 조회 결과',
     'health.refresh': '새로고침',
@@ -1086,6 +1091,11 @@ export const translations: Record<Language, Record<string, string>> = {
     'strip.forwarding': 'Forwarding',
 
     // Dashboard - System Health Summary
+    'health.correlation.label': 'Correlation ID',
+    'health.correlation.copy': 'Copy correlation ID',
+    'health.correlation.notLinked': 'Not linked',
+    'health.correlation.mismatch': 'Health snapshot mismatch',
+    'health.correlation.copyFailed': 'Failed to copy ID: {error}',
     'health.title': 'System Health Summary',
     'health.subtitle': 'Latest result from each underlying diagnostic',
     'health.refresh': 'Refresh',

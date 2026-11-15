@@ -1,7 +1,5 @@
 //! #17 축소 스코프: 이미 흩어져 있는 컴포넌트별 상태 조회(colima/guardrails/kagent)를
-//! 하나의 IPC 호출로 모아 보여준다. 이슈 #17 원안의 dependency graph, correlation ID,
-//! redaction, evidence bundle export는 이 슬라이스의 스코프 밖 — 세션 검토에서 "#1/#13/#15가
-//! 먼저 정리돼야 한다"고 판단했고, 그중 #1/#15가 종결된 지금 첫 슬라이스만 착수한다.
+//! 하나의 IPC 호출로 모아 보여주며 snapshot ID와 관측 시각을 번들까지 보존한다.
 //!
 //! D22(모르면 지어내지 않는다) 준수: 하위 컴포넌트 하나의 조회가 실패해도 나머지 결과를
 //! 가리지 않는다 — 실패한 필드는 `None` + 에러 메시지로 남기고, 전체 커맨드는 계속 성공을
@@ -15,6 +13,8 @@ use crate::commands::kagent::{get_kagent_diagnostics, KagentDiagnosticReport};
 
 #[derive(Debug, Serialize)]
 pub struct SystemHealthSummary {
+    pub correlation_id: String,
+    pub observed_at: String,
     pub colima: Option<ClusterStatus>,
     pub colima_error: Option<String>,
     pub guardrails: Option<GuardrailStatus>,
@@ -42,7 +42,10 @@ pub async fn get_system_health_summary(
 
     let overall = derive_overall_status(colima.as_ref(), guardrails.as_ref(), kagent.as_ref());
 
-    Ok(SystemHealthSummary {
+    let snapshot = crate::services::support_bundle::health_snapshot::HealthSnapshot::new()?;
+    let summary = SystemHealthSummary {
+        correlation_id: snapshot.correlation_id,
+        observed_at: snapshot.observed_at,
         colima,
         colima_error,
         guardrails,
@@ -50,7 +53,12 @@ pub async fn get_system_health_summary(
         kagent,
         kagent_error,
         overall,
-    })
+    };
+    crate::services::support_bundle::health_snapshot::retain(
+        &summary.correlation_id,
+        serde_json::to_string_pretty(&summary).map_err(|e| e.to_string())?,
+    )?;
+    Ok(summary)
 }
 
 /// 조회 실패를 전체 실패로 전파하지 않기 위한 변환 — 성공/실패를 `(값, 에러메시지)`로 나눈다.

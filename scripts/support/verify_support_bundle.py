@@ -47,6 +47,8 @@ def _safe(text):
 
 class Report:
     def __init__(self):
+        self.health_link_status = "not_linked"
+        self.health_snapshot = None
         self.problems = []  # (class, message)
         self.notes = []
 
@@ -147,9 +149,16 @@ def parse_manifest(root, rep, manifest_sha256):
 def validate_schema(m, rep):
     """Field names and optionality exactly as SupportBundleManifest et al. in the Rust service."""
     if not _check_keys(m, ("schema_version", "redaction", "created_at", "files"),
-                       ("omitted",), "manifest", rep):
+                       ("omitted", "health_snapshot"), "manifest", rep):
         return None
     ok = True
+    link = m.get("health_snapshot")
+    if link is not None:
+        if not _check_keys(link, ("correlation_id", "observed_at"), (), "health_snapshot", rep):
+            ok = False
+        elif not all(isinstance(link[k], str) for k in ("correlation_id", "observed_at")):
+            rep.fail("manifest-malformed", "health_snapshot fields must be strings")
+            ok = False
     sv = m["schema_version"]
     if not _is_int(sv, U32_MAX):
         rep.fail("manifest-malformed", "schema_version must be an unsigned 32-bit integer")
@@ -276,6 +285,17 @@ def hash_file(root, rel, size_cap, rep):
     if len(data) > size_cap:
         rep.fail("size", f"{rel}: exceeds cap {size_cap} while reading")
         return None
+    if rel == "health_summary.json":
+        try:
+            health = json.loads(data.decode("utf-8"), object_pairs_hook=_no_dupes)
+            if (isinstance(health, dict)
+                    and isinstance(health.get("correlation_id"), str)
+                    and re.fullmatch(r"[0-9a-f]{32}", health["correlation_id"])
+                    and isinstance(health.get("observed_at"), str)
+                    and CREATED_RE.fullmatch(health["observed_at"])):
+                rep.health_snapshot = {k: health[k] for k in ("correlation_id", "observed_at")}
+        except (ValueError, UnicodeDecodeError):
+            pass  # Invalid/legacy health evidence is not linked, never synthesized.
     return hashlib.sha256(data).hexdigest(), len(data)
 
 
@@ -322,6 +342,8 @@ def verify(root, size_cap=DEFAULT_MAX_BYTES, manifest_sha256=None):
         if res is None:
             continue
         digest, size = res
+        if e["path"] == "health_summary.json" and (digest != e["sha256"] or size != e["bytes"]):
+            rep.health_snapshot = None
         if digest != e["sha256"]:
             rep.fail("changed", f"{e['path']}: sha256 {digest} != manifest {e['sha256']}")
         elif size != e["bytes"]:
@@ -329,6 +351,14 @@ def verify(root, size_cap=DEFAULT_MAX_BYTES, manifest_sha256=None):
     for r in sorted(walk_tree(root, rep)):
         if r != MANIFEST_FILE and r not in listed:
             rep.fail("extra", f"{r}: present in bundle but not in manifest")
+    expected = manifest.get("health_snapshot")
+    if expected is not None and rep.health_snapshot is not None:
+        if expected == rep.health_snapshot:
+            rep.health_link_status = "linked"
+        else:
+            rep.health_link_status = "mismatch"
+            rep.fail("health-link-mismatch", "Health snapshot ID or observation time differs from manifest")
+    rep.note(f"health snapshot: {rep.health_link_status}")
     rep.note(f"checked {len(listed)} file(s); {len(manifest.get('omitted', []))} omitted "
              "entr(ies), each with a reason")
     return rep, manifest

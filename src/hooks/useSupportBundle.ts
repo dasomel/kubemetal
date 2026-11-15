@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { SupportBundleResult, SupportBundleVerificationReport } from '../types/ipc';
 
-export function useSupportBundle() {
+export function useSupportBundle(healthSnapshotId?: string) {
   const [result, setResult] = useState<SupportBundleResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -29,7 +29,7 @@ export function useSupportBundle() {
     setVerificationReport(null);
     setVerifyError(null);
     try {
-      const response = await invoke<SupportBundleResult>('create_support_bundle');
+      const response = await invoke<SupportBundleResult>('create_support_bundle', { healthSnapshotId: healthSnapshotId ?? null });
       if (mounted.current) setResult(response);
     } catch (err) {
       if (mounted.current) setError(String(err));
@@ -37,7 +37,7 @@ export function useSupportBundle() {
       pending.current = false;
       if (mounted.current) setLoading(false);
     }
-  }, []);
+  }, [healthSnapshotId]);
 
   const verify = useCallback(async (bundleDir?: string, expectedManifestSha256?: string) => {
     const targetDir = bundleDir || result?.bundle_dir;

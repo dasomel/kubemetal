@@ -1,0 +1,116 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-team5-b1-17-2026-11-16",
+  "task": "B1 #17 link health snapshot and support bundle",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      ".agents/evals/traces/2026-11-team5-b1.json",
+      "Makefile",
+      "src/**",
+      "scripts/support/**",
+      "tests/frontend/**",
+      "docs/02-requirements.md",
+      "docs/04-architecture.md",
+      "docs/mistakes-log.md"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Read AGENTS.md, issue body/comments, relevant mistakes log, requirements, architecture, DESIGN.md and Makefile. No existing snapshot ID/backend observation time; UI fetchedAt and manifest created_at already existed. Existing commands only; no D-registry rows, installs, push, PR, direct colima/kubectl calls. Existing guardrails.last_event has an event correlation_id/timestamp; it is tied to pause/resume transitions, not a health snapshot, so cannot be reused."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before fixes: manifest link Null, health UI omitted ID, Python rejected optional metadata, make test/verify included live smoke.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml correlation_manifest -- --skip live_smoke --skip live_matrix: exit 101, 0 passed, 1 failed; left Null, right aabbccddeeff00112233445566778899",
+        "test:make test-frontend before UI fix: exit 2, short ID assertion failed",
+        "test:python3 -B -m unittest discover -s scripts/support before verifier fix: exit 1, 4 failures including unknown health_snapshot field",
+        "test:make test-frontend before Makefile exclusion: exit 2, two dry-run assertions failed"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "OS-random 128-bit ID and UTC observation time generated once per snapshot. Latest raw snapshot retained in memory; optional health_snapshot_id reuses exact original or errors if replaced. Optional manifest health_snapshot survives redaction. Rust/Python compare hash-checked health metadata; old/absent ID is not_linked, mismatch fails. Bilingual token-based short ID/copy UI. Make test excludes opt-in live_smoke/live_matrix, enforced by gate test. Updated docs and mistakes log."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Rust unit tests with temporary bundle files, Python synthetic fixtures, bilingual frontend SSR; not live Tauri/cluster evidence",
+      "summary": "Five new Rust tests, two frontend tests and existing gate assertions, four Python tests. Existing make test/verify discovers their modules/directories automatically.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml correlation -- --skip live_smoke --skip live_matrix: exit 0, 4 passed",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml health_snapshot -- --skip live_smoke --skip live_matrix: exit 0, 3 passed",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml commands::health -- --skip live_smoke --skip live_matrix: exit 0, 9 passed",
+        "test:make test-frontend: exit 0, 33 passed",
+        "test:python3 -B -m unittest discover -s scripts/support: exit 0, 30 run, 1 skipped (real bundle opt-in)"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Static checks",
+      "summary": "Requested Rust/TS static checks and IPC type comparison pass.",
+      "evidence": [
+        "ci:cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: exit 0",
+        "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0",
+        "ci:pnpm exec tsc --noEmit: exit 0",
+        "ci:python3 scripts/ci/check_ipc_types.py: exit 0; invoke 103, OK",
+        "ci:pnpm build: exit 0; Vite build completed, existing chunk-size warning",
+        "ci:python3 scripts/ci/check-agent-trace-evidence.py --policy .agents/evals/risk-policy.json --changed-files /tmp/b1-changed-files.txt --trace .agents/evals/traces/2026-11-team5-b1.json: exit 0, passed true"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "pending",
+      "scope": "Full make verify and support suite in lane sandbox",
+      "summary": "SANDBOX-BLOCKED: final verify stopped at Rust; downstream Python/shell/lint/license/build recipes were not reached by make. Requested static checks and support Python/frontend were also run independently.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml support_bundle -- --skip live_smoke --skip live_matrix: exit 101, 48 passed, 1 failed; UnixListener bind PermissionDenied Operation not permitted",
+        "ci:make verify after exclusions: exit 2; frontend 33 passed; Rust 536 passed, 5 failed, 2 ignored, 1 filtered; four port binds and one Unix socket bind fail PermissionDenied Operation not permitted"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "verification",
+      "status": "pending",
+      "scope": "Initial make verify accidentally invoked forbidden live smoke",
+      "summary": "Execution mistake: initial canonical make verify included live_smoke_against_real_install, contrary to the task prohibition. It failed with metal_toolchain_present=false and all_passed=false. No successful GPU runtime evidence claimed. Fixed test recipe exclusion and regression gate before final verify.",
+      "evidence": [
+        "ci:initial make verify: exit 2, 535 passed, 6 failed, 2 ignored (five socket failures and live smoke)",
+        "runtime:live_smoke_against_real_install invoked by initial make verify; metal_toolchain_present=false, all_passed=false"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "external_input",
+      "provenance": ".agents/skills/kubemetal-hybrid-runtime-change/SKILL.md",
+      "reviewed": true,
+      "summary": "Applied hybrid runtime skill. CLAUDE.md additionally names runtime skill loading and Claude-specific harness, absent from AGENTS.md. No new process/network/cluster authority."
+    },
+    {
+      "id": "e9",
+      "type": "completion_claim",
+      "summary": "Implementation and targeted regressions complete; full gate and actual Tauri copy/create/import remain unverified. Latest-only cache requires refresh after another observation/restart. Dependency impact graph, K3s/kagent/Prometheus evidence correlation, #13 MLX linkage and offline replay remain open.",
+      "evidence": [
+        "test:Targeted regressions passed; full make verify sandbox-blocked",
+        "policy:No new Tauri command or D-registry row"
+      ]
+    },
+    {
+      "id": "e10",
+      "type": "task_outcome",
+      "state": "B",
+      "summary": "Meaningful verified progress; host completion check isolated.",
+      "next": "Host: make verify (now excludes live_smoke/live_matrix); pnpm tauri dev, refresh health, copy ID, create bundle, compare manifest ID/time and verify generated/old bundles. Offline command: make verify-support-bundle BUNDLE=<generated-dir>. No GPU live workload needed for B1."
+    }
+  ]
+}
