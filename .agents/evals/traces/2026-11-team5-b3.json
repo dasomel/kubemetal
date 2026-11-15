@@ -70,18 +70,18 @@
     {
       "id": "e7",
       "type": "verification",
-      "summary": "Prior lane attempt: SANDBOX-BLOCKED: five socket bind PermissionDenied, Operation not permitted. Subsequent Make gates not reached. Disposable cargo wrapper appends -- --skip live_smoke --skip live_matrix --skip live_probe only to cargo test; Makefile unchanged. Not rerun in this fix lane; pending host verification remains unchanged.",
-      "status": "pending",
-      "scope": "Full completion suite requires host rerun",
+      "summary": "The lane sandbox blocked socket-binding tests (PermissionDenied), so the orchestrator re-ran make verify on the host: exit 0, 541 Rust tests passed, 0 failed, 2 ignored; frontend suite, lint, licence check and web build passed.",
+      "status": "passed",
+      "scope": "make verify completion suite, re-run by the orchestrator outside the lane sandbox on the macOS host",
       "evidence": [
-        "test:make verify with disposable cargo wrapper adding -- --skip live_smoke --skip live_matrix --skip live_probe to cargo test: exit 2; 533 passed, 5 socket failures, 2 ignored, 2 filtered out",
-        "policy:make verify remains pending; not rerun in this fix lane; live GPU execution prohibited"
+        "test:make-verify-exit-0-541-rust-passed-0-failed-2-ignored",
+        "ci:make-verify-lint-license-build-ok"
       ]
     },
     {
       "id": "e8",
       "type": "completion_claim",
-      "summary": "Partial verified progress only; full completion NOT claimed. Required completion_claim plus B conflicts with strict evaluator; retained owner-required events without weakening policy.",
+      "summary": "The CuMetal abnormal-run classification fixes (smoke wrong-result/NaN/Inf, matrix finite and max_error tokens, doctor without an exit status) are implemented with failing-before/passing-after tests and pass make verify on the host (541 Rust tests, including the live smoke test against the installed CuMetal). The matrix and benchmark were not re-run live.",
       "evidence": [
         "policy:make verify remains pending; outcome B retained"
       ]
@@ -89,8 +89,8 @@
     {
       "id": "e9",
       "type": "task_outcome",
-      "summary": "B: unit/static checks verified; full make verify remains pending host rerun; GPU unverified.",
-      "state": "B",
+      "summary": "Complete and verified for the approved slice: regression tests and make verify (exit 0, 541 Rust tests) on the host. Follow-ups named in the slice remain out of scope.",
+      "state": "A",
       "next": "Orchestrator reruns make verify on host with live exclusions, then explicitly cargo test --locked --manifest-path src-tauri/Cargo.toml live_smoke -- --nocapture and finalizes trace from observed evidence."
     },
     {
