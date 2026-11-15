@@ -398,3 +398,11 @@ status `ok`, lancedb 0.34.0, sentence-transformers 5.6.0, 모델 로드 4.4 s, f
 정답 2개 중 1개만 찾았다(recall@3 0.5). **이 fixture는 4문서·5질의짜리라 "실제 경로로 도구가 돈다"는 증거일 뿐
 검색 품질 평가가 아니다** — 반복 5회는 정확도 표본을 늘리지 않고(결정적) 지연 시간만 다시 잰다. 실제 코퍼스·사람이
 검토한 qrels·rerank 비교는 #38에 남아 있다.
+
+### 옵트인 로컬 query rewrite 계약 (#38 B2)
+
+`scripts/rag/rag_host.py`의 `query` 서브커맨드(`rewrite_query`)는 기본적으로 비활성(`--rewrite` 미지정 시 off)이며 요청/설정 단위로만 opt-in한다. 활성화 시 표준 라이브러리(`urllib.request`)만 사용해 하드 타임아웃(`--rewrite-timeout`, 기본 2.0초) 안에서 로컬 OpenAI 호환 엔드포인트(`http://127.0.0.1:<port>/v1/chat/completions`, 기본 포트는 D1 모델 서빙 포트 `8080`)에 질의 재작성을 요청한다. `localhost`, IPv6(`::1`), `0.0.0.0`, 기타 비루프백 호스트, 비-HTTP 스킴, 자격증명 포함 URL, 리다이렉트는 모두 거부한다.
+
+기존 결정적 라우터(`classify_query`)가 exact/식별자 계열(`quoted_phrase`, `path_separator`, `version_string`, `k8s_resource`, `symbol_or_casing`, `short_token_with_digit_or_symbol`, `empty_query`)로 분류한 질의와 명시적 `--mode exact` 요청은 로컬 모델을 호출하지 않고 rewrite를 건너뛴다. 응답의 `rewrite` 블록은 `outcome`을 `disabled`, `applied`, `timeout`, `error`, `rejected`(`empty` / `too_long` / `unchanged`) 중 하나로 기록하며, 원 질의(`query`, `rewrite.original_query`)는 항상 보존한다. `applied` 이외의 모든 결과에서는 원 질의를 그대로 검색에 사용하며, 모델 미도달·오류·거부 시 가짜 rewrite를 생성하거나 `applied`로 보고하지 않는다(D22).
+
+HTTP 호출은 주입 가능한 callable(`http_client`)을 거치므로 단위 테스트(`tests/rag/test_rag_rewrite.py`, `make test`/`make verify`의 `unittest discover -s tests/rag`에 포함)는 소켓 바인딩 없이 모든 결과 분기·타임아웃·비루프백 URL 거부·exact 질의 스킵·폴백 시 원문 검색·적용 시 재작성 질의 검색·rewrite-off 결과 바이트 불변성을 검증한다. **이 슬라이스에서는 실제 로컬 서빙 모델(MLX/oMLX)을 띄운 live query rewrite 검색 품질·지연 측정을 수행하지 않았다**(수치 없음; 오케스트레이터가 호스트에서 별도 실행 가능).
