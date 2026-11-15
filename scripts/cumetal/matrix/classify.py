@@ -63,6 +63,10 @@ def classify_path(d, path, kernel_probe, repeats=3):
         fields = dict(KV.findall(line)) if line else {}
         dg = fields.get("digest")
         st = fields.get("status")
+        # D22: a success marker cannot override the probe's non-finite result.
+        # Cost: retain legacy lines without finite; newer probes supply the field.
+        if fields.get("finite") == "false":
+            st = "MISMATCH"
         if st == "PASS" and not dg:
             st = None
         parities.append(line); digests.append(dg)

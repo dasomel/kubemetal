@@ -537,6 +537,33 @@ fn find_metric_line(prefix: &str, stdout: &str, stderr: &str) -> Option<String> 
         .map(str::to_string)
 }
 
+// D22: exit 0 cannot override contradictory numeric evidence. Cost: this parser
+// follows the three bundled smoke formats; update it when those formats change.
+fn metric_passes(workload: &str, line: &str) -> bool {
+    let fields: Vec<_> = line
+        .split_whitespace()
+        .filter_map(|v| v.split_once('='))
+        .collect();
+    let get = |key| fields.iter().find(|(k, _)| *k == key).map(|(_, v)| *v);
+    let error = |key| {
+        get(key)
+            .and_then(|v| v.parse::<f64>().ok())
+            .filter(|v| v.is_finite())
+    };
+    match workload {
+        "vector_add" => error("max_abs_error") == Some(0.0),
+        "saxpy" => error("max_rel_error").is_some_and(|v| (0.0..1e-5).contains(&v)),
+        "reduction" => match (
+            get("got").and_then(|v| v.parse::<i64>().ok()),
+            get("expected").and_then(|v| v.parse::<i64>().ok()),
+        ) {
+            (Some(got), Some(expected)) => got == expected,
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 fn spec(program: PathBuf, args: Vec<String>, cwd: &Path, timeout: Duration) -> StepSpec {
     StepSpec {
         program,
@@ -699,7 +726,8 @@ async fn run_workload<R: StepRunner>(
         let metric_line = find_metric_line(w.metric_prefix, &stdout, &stderr);
         if result.status == StepStatus::Ok {
             parity.status = match (result.exit_code, &metric_line) {
-                (Some(0), Some(_)) => ParityStatus::Pass,
+                (Some(0), Some(line)) if metric_passes(w.name, line) => ParityStatus::Pass,
+                (Some(0), Some(_)) => ParityStatus::Fail,
                 // 지표 줄 없이 exit 1이면 비교가 측정되지 않은 것이다(로더/런타임 조기 종료) — Fail로 지어내지 않는다(D22).
                 (Some(1), Some(_)) => ParityStatus::Fail,
                 _ => ParityStatus::Unknown,

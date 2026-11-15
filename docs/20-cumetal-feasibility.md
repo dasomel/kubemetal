@@ -663,3 +663,7 @@ Metal 32023.922를 수집했으며 `errors={}`였다. sysctl 3종·system_profil
 - 수집 내용 확인: 디스플레이 probe에 serial·UUID·MAC 키 없음(`-detailLevel mini`), 증거 전체에 토큰·환경변수 덤프 없음.
   다른 Mac에서 `system_profiler`가 추가 식별자를 내는지는 미검증이다.
 - 리뷰가 재현한 결함: 이 수정 전에는 증거용 소스 복사에서 `parity.h`가 빠져 SGEMM이 `unavailable`이 됐다(실측). 단위 테스트는 통과하고 있었다.
+
+## #84 비정상 실행 단위 회귀 (2026-11-16, live 미실행)
+
+주입 runner/CPU fixture로 compile timeout, signal 종료, 빈/잘린/과대 출력, exit 0의 wrong-result·NaN·Inf 및 matrix PASS/finite=false 모순을 검사한다. 기존 도구 누락·doctor 실패/timeout·provenance 테스트와 함께 실행하며 benchmark의 CPU 비정상 실행도 실패 사유와 수치 미노출을 확인한다.
