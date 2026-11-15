@@ -547,7 +547,7 @@ export interface VerificationProblem {
 }
 
 export interface SupportBundleVerificationReport {
-  health_link_status: 'linked' | 'not_linked' | 'mismatch';
+  health_link_status: 'linked' | 'not_linked' | 'mismatch' | 'invalid_link';
   health_snapshot: { correlation_id: string; observed_at: string } | null;
   verified: boolean;
   status: 'PASS' | 'FAIL';

@@ -139,7 +139,7 @@ DRA/Kueue는 위 조건을 만족하는 **실제 Kubernetes 관리 가능 resour
 
 `get_system_health_summary`는 관측 완료 시 opaque OS-random 128-bit `correlation_id`와 UTC
 `observed_at`을 한 번 부여한다. 기존 `guardrails.last_event.correlation_id`는 pause/resume 이벤트의 ID여서 snapshot마다 재사용할 수 없다. `HealthSummaryPanel`은 short ID·시각과 전체 ID 복사를 제공한다.
-`create_support_bundle({health_snapshot_id})`는 백엔드 메모리에 보관한 최근 snapshot 원문을
+`create_support_bundle({health_snapshot_id})`는 백엔드 메모리에 보관한 최근 8개 snapshot 중 해당 ID의 원문을
 재사용한다. 보관되지 않은 ID는 refresh를 요구하는 오류이며 다른 관측으로 대체하지 않는다(D22).
 무인자 호출은 새 snapshot을 수집한다. 새 IPC 커맨드나 디스크 snapshot 캐시는 없다.
 
@@ -148,7 +148,7 @@ manifest schema v1에 선택적 `health_snapshot: {correlation_id, observed_at}`
 고정 형식 ID·시각만 복사해 로그·홈 경로·시크릿을 우회 노출하지 않는다.
 Rust IPC/Python 오프라인 verifier는 해시 검증한 health 파일과 manifest를 대조한다.
 `health_link_status=linked`는 둘이 일치함을, `mismatch`는 검증 실패를 뜻한다.
-구형 manifest·ID/시각 누락은 `not_linked`로 보고하며 무결성 실패를 만들어내지 않는다.
+연결 주장이 없는 구형 manifest는 `not_linked`로 보고한다. 연결을 주장하지만 health 증거가 누락·읽기 실패·해시/크기 오류·ID/시각 무효이면 `invalid_link`로 실패한다. UI는 refresh 중 번들 영역을 숨기고 ID별 상태를 재생성하여 이전 요청의 늦은 응답을 표시하지 않는다.
 manifest 자체는 외부 digest 없이는 인증되지 않는다. UI의 번들 생성/검증 결과에도 ID 또는
 연결되지 않음을 표시한다. 이 연결은 개별 probe 관측의 동시성이나 출처 인증을 보장하지 않는다.
 

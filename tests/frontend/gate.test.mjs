@@ -7,8 +7,5 @@ for (const target of ['test-frontend', 'test', 'verify']) {
     const result = spawnSync('make', ['--dry-run', target], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /^pnpm test:frontend$/m);
-    if (target !== 'test-frontend') {
-      assert.match(result.stdout, /^cargo test .* --lib -- --skip live_smoke --skip live_matrix$/m);
-    }
   });
 }

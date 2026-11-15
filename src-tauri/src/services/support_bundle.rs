@@ -942,7 +942,13 @@ pub fn verify_support_bundle_dir(
     }
 
     // 4. files 각 항목 검사
-    let mut health_link_status = "not_linked";
+    // D22: a claimed link fails closed until its listed evidence passes every check.
+    // Cost: one explicit problem; removing optional metadata restores legacy absence.
+    let mut health_link_status = if manifest.health_snapshot.is_some() {
+        "invalid_link"
+    } else {
+        "not_linked"
+    };
     let mut verified_snapshot = None;
     let mut files_checked = 0;
     for entry in &manifest.files {
@@ -1066,12 +1072,20 @@ pub fn verify_support_bundle_dir(
                             .into(),
                     });
                 }
+                (Some(_), None) => {}
                 _ => notes.push(
                     "Health snapshot not linked: ID or observation time absent/invalid".into(),
                 ),
             }
         }
         files_checked += 1;
+    }
+
+    if health_link_status == "invalid_link" {
+        problems.push(VerificationProblem {
+            category: "health-link-invalid".into(),
+            message: "Manifest claims a health snapshot but its evidence is missing, unreadable or invalid".into(),
+        });
     }
 
     // 5. omitted 항목 검사

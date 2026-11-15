@@ -4,10 +4,13 @@ import { useTranslation } from '../../i18n/i18nContext';
 
 export const HealthCorrelation: React.FC<{
   snapshot?: { correlation_id: string; observed_at: string } | null;
-  status?: 'linked' | 'not_linked' | 'mismatch';
+  status?: 'linked' | 'not_linked' | 'mismatch' | 'invalid_link';
 }> = ({ snapshot, status }) => {
   const { t } = useTranslation();
   const [error, setError] = React.useState<string | null>(null);
+  if (status === 'invalid_link') {
+    return <p className="text-caption text-danger">{t('health.correlation.invalidLink')}</p>;
+  }
   if (status === 'mismatch' && !snapshot) {
     return <p className="text-caption text-danger">{t('health.correlation.mismatch')}</p>;
   }

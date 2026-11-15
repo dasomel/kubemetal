@@ -105,7 +105,7 @@ test-frontend: ## 임시 TypeScript 컴파일 + Node 프론트엔드 회귀 테�
 	pnpm test:frontend
 
 test: test-frontend ## 프론트엔드·Rust·Python·Air-gap·시뮬레이션 GPU 회귀 테스트
-	cargo test --locked --manifest-path $(CARGO_MANIFEST) --lib -- --skip live_smoke --skip live_matrix
+	cargo test --locked --manifest-path $(CARGO_MANIFEST) --lib
 	python3 -m unittest discover -s tests/rag -v
 	python3 -m unittest discover -s tests/mlx -v
 	python3 -m unittest discover -s scripts/support -v

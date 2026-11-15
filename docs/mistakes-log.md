@@ -9,7 +9,8 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
-| 2026-11-16 | #17 health 요약과 support bundle이 각각 새 관측을 모으고 연결 ID·관측 시각을 보존하지 않아 같은 증거인지 확인할 수 없었다 | snapshot ID로 최근 백엔드 원문을 재사용하고 manifest에 같은 ID·시각을 기록한다. 교체된 ID는 오류로 반환한다. Rust/Python verifier는 불일치와 구형 not_linked를 구별하며 redaction 후 실제 파일과 비교한다 |
+| 2026-11-16 | #17 후속 검증에서 손상된 연결이 not_linked로 표시되고 refresh/다중 창이 ID와 UI 번들 결과를 덮어썼다 | 연결 주장에 대응하는 증거가 없거나 무효면 invalid_link로 실패한다. 최근 8개 ID를 보관하고 카드별 keyed subtree가 번들 결과를 소유한다. Rust/Python/한영 UI 회귀의 수정 전 실패를 확인했다 |
+| 2026-11-16 | #17 health 요약과 support bundle이 각각 새 관측을 모으고 연결 ID·관측 시각을 보존하지 않아 같은 증거인지 확인할 수 없었다 | snapshot ID로 최근 백엔드 원문을 재사용하고 manifest에 같은 ID·시각을 기록한다. 최근 8개를 보관하고 퇴출된 ID는 오류로 반환한다. Rust/Python verifier는 불일치와 구형 not_linked를 구별하며 redaction 후 실제 파일과 비교한다 |
 | 2026-11-12 | #17 전체 health가 스택 네임스페이스의 `pod_issues_count`만 확인해 설치된 kagent가 not-ready여도 healthy로 집계됐다 | 기존 pod 장애 조건에 `kagent_installed && !kagent_ready`를 추가한다. 옵트인 미설치 예외는 유지하며 installed/ready/issues 8개 조합과 세 probe 조회 실패를 회귀로 고정한다. 수정 전 installed=true/ready=false/issues=0에서 healthy 오판을 재현했다. 앱 fixture는 실클러스터 장애 증거가 아니다 |
 | 2026-11-13 | #221 inventory가 모든 root NotFound를 빈 성공으로 반환하고, 루트 열거 오류 뒤 목록을 완전한 것으로 표시했다. 수동 UI fixture도 ignored snapshot에 의존했다 | 열린 부모 아래 미생성만 not_created, 부모 누락·관측 후 루트 소멸·열기 실패는 unknown+오류로 구별한다(D53). 열거 중단은 truncated로 표시한다. Rust 5개·한/영 SSR 2개 회귀를 추가하고 재현 불가능한 수동 fixture는 제거했다 |
 | 2026-11-13 | #221 abort 잔재는 private staging에 남지만 메모리의 repo별 진행 상태만으로는 재시작 후 보이지 않았다. PID·나이는 잔재의 삭제 안전성 근거가 아니다 | D53 별도 읽기 전용 inventory는 현재 등록 시도만 active, 나머지는 unknown으로 표시한다. no-follow 핸들 순회·상한·nullable 크기·부분 오류를 반환하고 catalog와 분리한다. abort/local-transfer·권한·symlink·소멸·상한 회귀 테스트를 추가했다. 경로 교체를 active로 오인하지 않도록 등록 identity(device/inode)를 비교하고, ID는 바이트를 보존한다(경로명만 비교·lossy ID 음성 대조 각각 실패). 삭제/cleanup AC는 여전히 UNMET |
@@ -180,7 +181,6 @@
 
 | Date | Mistake | Fix |
 |------|---------|-----|
-| 2026-11-16 | B1에서도 GPU live 실행 금지 상태에서 make verify의 기본 recipe가 live_smoke를 호출했다(기존 11-12 실수 재발). Metal toolchain 미탐지·실패를 성공 증거로 쓸 수 없다 | make test에 `--skip live_smoke --skip live_matrix`를 넣고 기존 gate 테스트가 test/verify의 dry-run 인자를 검증하게 했다. 제외 전 gate 회귀 실패, 제외 후 통과. 반복 교훈을 실행 가능한 검사로 바꾼다 |
 | 2026-11-13 | #193 아티팩트 조사에서 0.9.12 스키마 도식을 실제 CRD처럼 비교하고 Helm 렌더만으로 DB 미설정 시 기동 불가를 단정했다 | 필드 비교는 양쪽 원본 스키마 추출까지 pending probe, 설치·기동은 unverified로 강등한다. 명령 argv/rc/출력·해시를 함께 보존하고 실패를 nonzero로 전파한다(D22). |
 | 2026-11-12 | #84 GPU 실행 금지 레인에서 make verify의 Rust 기본 테스트에 포함된 live_smoke를 사전 점검하지 않아 실제 smoke 호출이 발생했다 | 상위 게이트를 실행하기 전에 opt-in이 아닌 하위 live 테스트를 확인해야 한다. 이번 실행은 3개 workload가 compile/link 후 run exit 10, provenance 없음으로 실패했으며 재실행하지 않고 원시 로그와 제약 위반을 보고한다 |
 | 2026-11-10 | #13 guardrail history 회귀 테스트가 수동 컴파일에만 의존하여 `make test`/`verify`와 CI에서 실행되지 않았다 | 기존 TypeScript로 임시 컴파일하는 `pnpm test:frontend`와 `make test-frontend`를 `test`에 연결한다. 세 Make 진입점의 연결 회귀 검사와 guarded behavior 임시 훼손 시 실패·복원 후 통과를 검증한다. 테스트 파일의 존재만으로 게이트 커버리지를 주장하지 않는다 |

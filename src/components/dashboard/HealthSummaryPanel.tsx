@@ -20,10 +20,7 @@ const overallTone: Record<SystemHealthSummary['overall'], Tone> = {
 };
 
 export const HealthSummaryPanel: React.FC = () => {
-  const [copied, setCopied] = useState<boolean>(false);
-  const [externalPath, setExternalPath] = useState<string>('');
   const [state, setState] = useState<HealthSummaryState>(initialHealthSummaryState);
-  const bundle = useSupportBundle(state.summary?.correlation_id);
   const controllerRef = useRef<ReturnType<typeof createHealthSummaryController> | null>(null);
 
   useEffect(() => {
@@ -41,15 +38,19 @@ export const HealthSummaryPanel: React.FC = () => {
 
   return (
     <HealthSummaryView state={state} onRefresh={handleRefresh}>
-      <SupportBundleSection
-        bundle={bundle}
-        copied={copied}
-        setCopied={setCopied}
-        externalPath={externalPath}
-        setExternalPath={setExternalPath}
-      />
+      <SnapshotSupportBundle snapshotId={state.summary?.correlation_id} />
     </HealthSummaryView>
   );
+};
+
+// D22 (#17): the keyed subtree owns bundle requests/results for one displayed ID.
+// Refresh unmounts it, fencing late IPC completions; cost: prior results clear on refresh.
+const SnapshotSupportBundle: React.FC<{ snapshotId?: string }> = ({ snapshotId }) => {
+  const bundle = useSupportBundle(snapshotId);
+  const [copied, setCopied] = useState(false);
+  const [externalPath, setExternalPath] = useState('');
+  return <SupportBundleSection bundle={bundle} copied={copied} setCopied={setCopied}
+    externalPath={externalPath} setExternalPath={setExternalPath} />;
 };
 
 export const HealthSummaryView: React.FC<{
@@ -134,7 +135,9 @@ export const HealthSummaryView: React.FC<{
         </>
       )}
 
-      {children}
+      {!state.loading && (
+        <React.Fragment key={state.summary?.correlation_id ?? 'unlinked'}>{children}</React.Fragment>
+      )}
     </section>
   );
 };

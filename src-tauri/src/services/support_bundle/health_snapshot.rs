@@ -1,4 +1,5 @@
 //! Snapshot identity and bounded retention for the existing health/bundle IPCs.
+use std::collections::VecDeque;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
@@ -23,30 +24,36 @@ impl HealthSnapshot {
     }
 }
 
-// D22: retain only the latest raw snapshot in memory, never on disk. Cost: an older
-// card may require refresh; an evicted ID errors rather than collecting a substitute.
-static LATEST: Mutex<Option<(String, String)>> = Mutex::new(None);
+// D22: retain eight recent raw snapshots in memory for refreshes and other windows.
+// Cost: eight bounded health payloads; eviction/restart requires an explicit refresh.
+const RETENTION_LIMIT: usize = 8;
+static RECENT: Mutex<VecDeque<(String, String)>> = Mutex::new(VecDeque::new());
 
 pub fn retain(id: &str, json: String) -> Result<(), String> {
-    *LATEST
+    let mut snapshots = RECENT
         .lock()
-        .map_err(|e| format!("Health snapshot cache: {e}"))? = Some((id.to_owned(), json));
+        .map_err(|e| format!("Health snapshot cache: {e}"))?;
+    snapshots.retain(|(stored_id, _)| stored_id != id);
+    snapshots.push_back((id.to_owned(), json));
+    while snapshots.len() > RETENTION_LIMIT {
+        snapshots.pop_front();
+    }
     Ok(())
 }
 
-fn lookup(snapshot: Option<&(String, String)>, id: &str) -> Result<String, String> {
-    snapshot
-        .filter(|(stored_id, _)| stored_id == id)
+fn lookup(snapshots: &VecDeque<(String, String)>, id: &str) -> Result<String, String> {
+    snapshots
+        .iter()
+        .find(|(stored_id, _)| stored_id == id)
         .map(|(_, json)| json.clone())
         .ok_or_else(|| "Health snapshot is no longer retained; refresh the health summary".into())
 }
 
 pub fn retained(id: &str) -> Result<String, String> {
     lookup(
-        LATEST
+        &*RECENT
             .lock()
-            .map_err(|e| format!("Health snapshot cache: {e}"))?
-            .as_ref(),
+            .map_err(|e| format!("Health snapshot cache: {e}"))?,
         id,
     )
 }
@@ -93,10 +100,23 @@ mod tests {
 
     #[test]
     fn retention_never_substitutes_a_different_snapshot() {
-        let entry = ("id".into(), "original".into());
-        assert_eq!(lookup(Some(&entry), "id").unwrap(), "original");
-        assert!(lookup(Some(&entry), "other").is_err());
-        assert!(lookup(None, "id").is_err());
+        let entries = VecDeque::from([("id".into(), "original".into())]);
+        assert_eq!(lookup(&entries, "id").unwrap(), "original");
+        assert!(lookup(&entries, "other").is_err());
+        assert!(lookup(&VecDeque::new(), "id").is_err());
+    }
+
+    #[test]
+    fn recent_snapshots_survive_refresh_until_bounded_eviction() {
+        retain("retention-card-0", "card-0".into()).unwrap();
+        for i in 1..8 {
+            retain(&format!("retention-card-{i}"), format!("card-{i}")).unwrap();
+        }
+        assert_eq!(retained("retention-card-0").unwrap(), "card-0");
+        retain("retention-card-8", "card-8".into()).unwrap();
+        assert!(retained("retention-card-0").is_err());
+        assert_eq!(retained("retention-card-1").unwrap(), "card-1");
+        assert!(retained("unknown").is_err());
     }
 
     #[test]
