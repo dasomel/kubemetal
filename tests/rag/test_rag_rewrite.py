@@ -2,8 +2,10 @@
 
 import argparse
 import contextlib
+import decimal
 import io
 import json
+import math
 import socket
 import sys
 import tempfile
@@ -27,8 +29,9 @@ from rag_host import (
     exact_search,
     lexical_search,
     retrieval_score,
-     rewrite_query,
+    rewrite_query,
     rrf_fuse,
+    validate_rewrite_timeout,
     validate_rewrite_url,
 )
 
@@ -134,6 +137,74 @@ class UrlValidationTests(unittest.TestCase):
         req = urllib.request.Request("http://127.0.0.1:8080/v1/chat/completions")
         with self.assertRaises(urllib.error.URLError):
             handler.redirect_request(req, None, 302, "Found", {}, "http://example.com/")
+
+    def test_rejects_non_positive_non_finite_or_non_numeric_timeout_at_config_time(self):
+        self.assertEqual(validate_rewrite_timeout(0.25), 0.25)
+        self.assertEqual(validate_rewrite_timeout(2), 2.0)
+
+        invalid_timeouts = [
+            ("nan", float("nan")),
+            ("neg_nan", -float("nan")),
+            ("math_nan", math.nan),
+            ("pos_inf", float("inf")),
+            ("neg_inf", float("-inf")),
+            ("math_inf", math.inf),
+            ("zero_int", 0),
+            ("zero_float", 0.0),
+            ("neg_zero_float", -0.0),
+            ("negative_int", -1),
+            ("negative_float", -0.001),
+            ("none", None),
+            ("bool_true", True),
+            ("bool_false", False),
+            ("str_numeric", "2.0"),
+            ("str_nan", "nan"),
+            ("str_inf", "inf"),
+            ("str_alpha", "abc"),
+            ("decimal_nan", decimal.Decimal("NaN")),
+            ("list", [1.0]),
+            ("dict", {"timeout_s": 1.0}),
+            ("object", object()),
+            ("overflow_int", 10**400),
+        ]
+        for label, bad_timeout in invalid_timeouts:
+            with self.subTest(case=label):
+                with self.assertRaisesRegex(ValueError, "positive finite number"):
+                    validate_rewrite_timeout(bad_timeout)
+
+                with self.assertRaisesRegex(ValueError, "positive finite number"):
+                    default_rewrite_http_client(
+                        "http://127.0.0.1:8080/v1/chat/completions",
+                        {"model": "default", "messages": []},
+                        bad_timeout,
+                    )
+
+                for enabled in (True, False):
+                    for mode in ("auto", "hybrid", "exact"):
+                        custom_client = Mock(
+                            side_effect=AssertionError(
+                                "http_client must never receive an invalid timeout_s"
+                            )
+                        )
+                        with self.assertRaisesRegex(ValueError, "positive finite number"):
+                            rewrite_query(
+                                "how does thermal pressure affect training pause",
+                                enabled=enabled,
+                                mode=mode,
+                                timeout_s=bad_timeout,
+                                http_client=custom_client,
+                            )
+                        custom_client.assert_not_called()
+
+                        # Default HTTP client path must also raise ValueError at config time
+                        # instead of catching it and returning outcome == "error".
+                        with self.assertRaisesRegex(ValueError, "positive finite number"):
+                            rewrite_query(
+                                "how does thermal pressure affect training pause",
+                                enabled=enabled,
+                                mode=mode,
+                                timeout_s=bad_timeout,
+                            )
 
 
 class RewriteOutcomesAndSkippingTests(unittest.TestCase):
@@ -567,6 +638,28 @@ class CmdQueryRewriteIntegrationTests(unittest.TestCase):
             self.assertEqual(parsed.rewrite_model, "local-mlx")
             self.assertEqual(parsed.rewrite_timeout, 0.75)
             self.assertEqual(parsed.rewrite_max_chars, 128)
+
+        for bad_cli_timeout in ("nan", "NaN", "inf", "-inf", "0", "0.0", "-1", "-0.25", "abc"):
+            with self.subTest(cli_timeout=bad_cli_timeout):
+                err_buf = io.StringIO()
+                with patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "rag_host.py",
+                        "query",
+                        "--query",
+                        "hello world",
+                        f"--rewrite-timeout={bad_cli_timeout}",
+                    ],
+                ), patch.object(rag_host, "cmd_query") as mocked_query, contextlib.redirect_stderr(
+                    err_buf
+                ):
+                    with self.assertRaises(SystemExit) as ctx:
+                        rag_host.main()
+                    self.assertEqual(ctx.exception.code, 2)
+                    mocked_query.assert_not_called()
+                    self.assertIn("positive finite number", err_buf.getvalue())
 
 
 if __name__ == "__main__":
