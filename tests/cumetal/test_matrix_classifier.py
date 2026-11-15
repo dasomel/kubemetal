@@ -96,6 +96,17 @@ class MatrixClassifierTests(unittest.TestCase):
                 self.write('jit.run2.out', output)
                 self.assertEqual(self.classify()['class'], expected)
 
+    def test_abnormal_zero_exit_output(self):
+        for output in ('', GPU + 'MATRIX_RESULT status=PA',
+                       GPU + RESULT.rstrip() + ' finite=false max_error=nan\n',
+                       GPU + RESULT.rstrip() + ' finite=false max_error=inf\n',
+                       'noise' * 10000 + '\nMATRIX_RESULT status=MISMATCH\n'):
+            with self.subTest(output=output[:120]):
+                self.write('jit.run2.out', output)
+                result = self.classify()
+                self.assertEqual(result['class'], 'failed')
+                self.assertTrue(result['caveats'])
+
     def test_missing_run_is_failed(self):
         for suffix in ('rc', 'out'):
             with self.subTest(suffix=suffix):

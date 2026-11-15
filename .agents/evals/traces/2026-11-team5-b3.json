@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-team5-b3-84-2026-11-16",
+  "task": "#84 B3 abnormal classification; injected runners/CPU only",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "scripts/cumetal/matrix/classify.py",
+      "tests/cumetal/**",
+      "docs/20-cumetal-feasibility.md",
+      "docs/mistakes-log.md",
+      "docs/plans/2026-11-16-b3.md",
+      ".agents/evals/traces/2026-11-team5-b3.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Read AGENTS, matching mistakes sections, issue, Rust/script runners and tests, Makefile and eval gates. Current worktree only except explicitly requested final report. No IPC, D-registry, GPU/live, cluster, installation, push or PR. Coverage table: docs/plans/2026-11-16-b3.md."
+    },
+    {
+      "id": "e2",
+      "type": "external_input",
+      "summary": "Owner issue reviewed; unit coverage does not establish live acceptance.",
+      "provenance": "/Users/m/Documents/IdeaProjects/20.dasomel/kubemetal/.omc/logs/issues-2026-11-16/issue-84.md",
+      "reviewed": true
+    },
+    {
+      "id": "e3",
+      "type": "reproduction",
+      "summary": "Rust passed wrong numeric and truncated metrics; matrix passed finite=false nan/inf.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml services::cumetal::harness::tests -- --skip live_smoke --skip live_matrix: exit 101; 35 passed, 2 failed",
+        "test:python3 -B -m unittest discover -s tests/cumetal -p test_matrix_classifier.py: exit 1; 14 tests, 2 failing subcases; supported != failed"
+      ]
+    },
+    {
+      "id": "e4",
+      "type": "bug_fix",
+      "summary": "Smoke validates finite metrics with existing tolerances/integer equality; matrix finite=false overrides PASS. Added uncovered timeout, signal/no code, empty/truncated/oversized and numeric fixtures; benchmark CPU executable failures. No refactor."
+    },
+    {
+      "id": "e5",
+      "type": "regression_verification",
+      "summary": "Only injected Rust runners and CPU Python fixtures; no live GPU execution.",
+      "status": "passed",
+      "scope": "CuMetal service and script classification unit regression",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml services::cumetal -- --skip live_smoke --skip live_matrix --skip live_probe: exit 0; 51 passed",
+        "test:python3 -B -m unittest discover -s tests/cumetal -v: exit 0; 44 passed"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "summary": "Requested static/frontend checks passed.",
+      "status": "passed",
+      "scope": "Rust all-targets lint, formatting, TypeScript and frontend",
+      "evidence": [
+        "ci:cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: exit 0",
+        "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0",
+        "ci:pnpm exec tsc --noEmit: exit 0",
+        "test:make test-frontend: exit 0; 31 passed"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "verification",
+      "summary": "SANDBOX-BLOCKED: five socket bind PermissionDenied, Operation not permitted. Subsequent Make gates not reached. Disposable cargo wrapper appends -- --skip live_smoke --skip live_matrix --skip live_probe only to cargo test; Makefile unchanged.",
+      "status": "pending",
+      "scope": "Full completion suite requires host rerun",
+      "evidence": [
+        "test:PATH=\"/tmp/b3-safe-bin:$PATH\" make verify: exit 2; 533 passed, 5 socket failures, 2 ignored, 2 filtered out",
+        "policy:New tests remain in existing make test discovery paths; GPU-heavy live runs prohibited"
+      ]
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "Partial verified progress only; full completion NOT claimed. Required completion_claim plus B conflicts with strict evaluator; retained owner-required events without weakening policy.",
+      "evidence": [
+        "e5",
+        "e6",
+        "e7"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "summary": "B: unit changes verified; completion suite sandbox-blocked; GPU remains unverified.",
+      "state": "B",
+      "next": "Orchestrator reruns make verify on host with live exclusions, then explicitly cargo test --locked --manifest-path src-tauri/Cargo.toml live_smoke -- --nocapture and finalizes trace from observed evidence."
+    }
+  ]
+}

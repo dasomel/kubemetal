@@ -191,6 +191,27 @@ int main() {
         self.assertFalse(bench.succeeded(result))
         self.assertTrue(result['error'])
 
+    def test_abnormal_cpu_executables_fail_collection(self):
+        scripts = ('import sys; print("loader error"); sys.exit(7)',
+                   'import os, signal; os.kill(os.getpid(), signal.SIGTERM)',
+                   'pass', 'print("BENCHMARK_RESULT {")',
+                   'print("x" * 100000)')
+        for script in scripts:
+            with self.subTest(script=script), tempfile.TemporaryDirectory() as tmp:
+                args = bench.parser().parse_args(['--output', str(Path(tmp) / 'out.json')])
+                fake = FakeTools()
+
+                def run(command, timeout, env=None):
+                    if '--benchmark' in list(map(str, command)):
+                        return bench.stage([sys.executable, '-c', script], timeout)
+                    return fake(command, timeout, env)
+
+                result = bench.collect(args, Path(tmp), run)
+                self.assertEqual(result['status'], 'failed')
+                self.assertFalse(result['performance_success'])
+                self.assertTrue(result['failure'])
+                self.assertIsNone(result.get('timing'))
+
     def test_main_writes_failure_and_success(self):
         for success in (False, True):
             with tempfile.TemporaryDirectory() as tmp:

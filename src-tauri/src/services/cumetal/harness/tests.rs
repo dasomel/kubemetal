@@ -960,3 +960,110 @@ async fn gpu_observation_step_runner_preserves_failure_evidence() {
         Some("ioreg timed out after 1s; no captured stdout available")
     );
 }
+
+#[tokio::test]
+async fn abnormal_steps_never_pass() {
+    for (label, runner, reason) in [
+        (
+            "compiletimeout",
+            FakeRunner::default().on(is_compile, |_| RunOutcome::TimedOut),
+            "compile timeout",
+        ),
+        (
+            "signal",
+            FakeRunner::default().on(
+                |s| is_run_of(s, "vector_add"),
+                |_| RunOutcome::Finished {
+                    success: false,
+                    exit_code: None,
+                    stdout: metric_for("vector_add").into(),
+                    stderr: PROVENANCE_OK.into(),
+                },
+            ),
+            "run failed",
+        ),
+        (
+            "empty",
+            FakeRunner::default().on(|s| is_run_of(s, "vector_add"), |_| ok("")),
+            "parity unknown",
+        ),
+        (
+            "truncated",
+            FakeRunner::default().on(
+                |s| is_run_of(s, "vector_add"),
+                |_| exit(0, "vectorAdd n=1048576 max_abs_error=", PROVENANCE_OK),
+            ),
+            "parity fail",
+        ),
+        (
+            "oversized",
+            FakeRunner::default().on(
+                |s| is_run_of(s, "vector_add"),
+                |_| exit(10, &"가".repeat(5000), PROVENANCE_OK),
+            ),
+            "run failed",
+        ),
+    ] {
+        let fx = fixture(label, &[]);
+        let r = run_smoke_with(&runner, fx.inputs()).await;
+        let w = find(&r, "vector_add");
+        assert!(!r.all_passed, "{label}: {r:?}");
+        assert_eq!(w.verdict, Verdict::NotPassed, "{label}");
+        assert_eq!(w.verdict_reason.as_deref(), Some(reason), "{label}");
+        assert!(w.run.excerpt.len() <= super::super::MAX_EXCERPT_BYTES);
+    }
+}
+
+#[tokio::test]
+async fn exit_zero_invalid_numeric_metrics_never_pass() {
+    for metric in [
+        "vectorAdd n=1048576 max_abs_error=0.5",
+        "vectorAdd n=1048576 max_abs_error=NaN",
+        "vectorAdd n=1048576 max_abs_error=Inf",
+        "saxpy n=1048576 max_rel_error=0.5",
+        "saxpy n=1048576 max_rel_error=NaN",
+        "saxpy n=1048576 max_rel_error=Inf",
+        "reduction n=1048576 got=0 expected=36699887",
+        "reduction n=1048576 got=NaN expected=36699887",
+        "reduction n=1048576 got=Inf expected=36699887",
+    ] {
+        // All workload binaries emit the injected line; only its owner recognizes it.
+        #[derive(Clone)]
+        struct NumericRunner(&'static str);
+        impl StepRunner for NumericRunner {
+            fn resolve(&self, bin: &str) -> Result<PathBuf, String> {
+                FakeRunner::default().resolve(bin)
+            }
+            async fn run(&self, spec: &StepSpec) -> RunOutcome {
+                if ["vector_add", "saxpy", "reduction"].contains(&name(spec).as_str()) {
+                    exit(0, self.0, PROVENANCE_OK)
+                } else {
+                    healthy_default(spec)
+                }
+            }
+        }
+        let fx = fixture("invalidnumeric", &[]);
+        let r = run_smoke_with(&NumericRunner(metric), fx.inputs()).await;
+        assert!(!r.all_passed);
+        for w in &r.workloads {
+            assert_eq!(w.verdict, Verdict::NotPassed, "{metric}: {w:?}");
+            assert!(w.verdict_reason.is_some());
+        }
+    }
+}
+
+#[test]
+fn numeric_policy_matches_bundled_smoke_tolerances() {
+    assert!(metric_passes("vector_add", "vectorAdd max_abs_error=0"));
+    assert!(!metric_passes("vector_add", "vectorAdd max_abs_error=-1"));
+    assert!(metric_passes("saxpy", "saxpy max_rel_error=0.000009"));
+    for value in ["0.00001", "-0.1", "NaN", "Inf", ""] {
+        assert!(!metric_passes(
+            "saxpy",
+            &format!("saxpy max_rel_error={value}")
+        ));
+    }
+    assert!(metric_passes("reduction", "reduction got=42 expected=42"));
+    assert!(!metric_passes("reduction", "reduction got=42"));
+    assert!(!metric_passes("reduction", "reduction expected=42"));
+}
