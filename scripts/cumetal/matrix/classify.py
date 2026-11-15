@@ -2,6 +2,7 @@
 import argparse
 import collections
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -68,6 +69,14 @@ def classify_path(d, path, kernel_probe, repeats=3):
         # Revisit only if the probe's output contract changes.
         if "finite" in fields and fields["finite"] != "true":
             st = "MISMATCH"
+        max_error = fields.get("max_error")
+        if max_error is not None:
+            try:
+                valid_error = math.isfinite(float(max_error)) and float(max_error) >= 0
+            except ValueError:
+                valid_error = False
+            if not valid_error:
+                st = "MISMATCH"
         if st == "PASS" and not dg:
             st = None
         parities.append(line); digests.append(dg)

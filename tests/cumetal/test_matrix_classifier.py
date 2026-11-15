@@ -117,6 +117,18 @@ class MatrixClassifierTests(unittest.TestCase):
                     self.assertFalse(result['stable'])
                     self.assertTrue(result['caveats'])
 
+    def test_present_max_error_must_be_finite_non_negative(self):
+        for max_error in ('nan', 'inf', '-inf', '-1', 'broken', ''):
+            with self.subTest(max_error=max_error):
+                self.write('jit.run2.out', GPU + RESULT.rstrip() + f' finite=true max_error={max_error}\n')
+                result = self.classify()
+                self.assertEqual(result['class'], 'failed')
+                self.assertFalse(result['stable'])
+
+    def test_legacy_result_without_max_error_remains_supported(self):
+        self.write('jit.run2.out', GPU + RESULT.rstrip() + ' finite=true\n')
+        self.assertEqual(self.classify()['class'], 'supported')
+
     def test_missing_run_is_failed(self):
         for suffix in ('rc', 'out'):
             with self.subTest(suffix=suffix):
