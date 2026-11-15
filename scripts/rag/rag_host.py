@@ -184,11 +184,39 @@ def validate_rewrite_url(url: str) -> str:
     return f"http://127.0.0.1:{port}{path}"
 
 
+def validate_rewrite_timeout(timeout_s: float) -> float:
+    """Validate rewrite timeout_s as a positive finite number (int or float, excluding bool)."""
+    if (
+        timeout_s is None
+        or isinstance(timeout_s, bool)
+        or not isinstance(timeout_s, (int, float))
+    ):
+        raise ValueError("rewrite timeout_s must be a positive finite number.")
+    try:
+        value = float(timeout_s)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("rewrite timeout_s must be a positive finite number.") from exc
+    if not math.isfinite(value) or value <= 0.0:
+        raise ValueError("rewrite timeout_s must be a positive finite number.")
+    return value
+
+
+def _parse_rewrite_timeout_arg(raw: str) -> float:
+    """Argparse type validator for --rewrite-timeout."""
+    try:
+        parsed = float(raw)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise argparse.ArgumentTypeError("rewrite timeout_s must be a positive finite number.") from exc
+    try:
+        return validate_rewrite_timeout(parsed)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def default_rewrite_http_client(endpoint: str, payload: dict, timeout_s: float) -> dict:
     """POST an OpenAI chat-completions request to a validated 127.0.0.1 endpoint."""
     validated_url = validate_rewrite_url(endpoint)
-    if timeout_s is None or isinstance(timeout_s, bool) or timeout_s <= 0 or not math.isfinite(timeout_s):
-        raise ValueError("rewrite timeout_s must be a positive finite number.")
+    validated_timeout_s = validate_rewrite_timeout(timeout_s)
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         validated_url,
@@ -196,7 +224,7 @@ def default_rewrite_http_client(endpoint: str, payload: dict, timeout_s: float) 
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
-    with _REWRITE_OPENER.open(request, timeout=float(timeout_s)) as response:
+    with _REWRITE_OPENER.open(request, timeout=validated_timeout_s) as response:
         raw_bytes = response.read(65536 + 1)
     if len(raw_bytes) > 65536:
         raise ValueError("Rewrite response body exceeds 64 KiB limit.")
@@ -256,6 +284,10 @@ def rewrite_query(
     else:
         endpoint = None
 
+    validated_timeout_s = validate_rewrite_timeout(timeout_s)
+    if max_chars is None or isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars < 1:
+        raise ValueError("rewrite max_chars must be a positive integer.")
+
     if not enabled:
         return {
             "enabled": False,
@@ -273,11 +305,6 @@ def rewrite_query(
             "error": None,
         }
 
-    if timeout_s is None or isinstance(timeout_s, bool) or timeout_s <= 0 or not math.isfinite(timeout_s):
-        raise ValueError("rewrite timeout_s must be a positive finite number.")
-    if max_chars is None or isinstance(max_chars, bool) or max_chars < 1:
-        raise ValueError("rewrite max_chars must be a positive integer.")
-
     if mode == "exact":
         return {
             "enabled": True,
@@ -290,7 +317,7 @@ def rewrite_query(
             "endpoint": endpoint,
             "model": model,
             "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": float(timeout_s),
+            "timeout_s": validated_timeout_s,
             "latency_ms": None,
             "error": None,
         }
@@ -310,7 +337,7 @@ def rewrite_query(
             "endpoint": endpoint,
             "model": model,
             "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": float(timeout_s),
+            "timeout_s": validated_timeout_s,
             "latency_ms": None,
             "error": None,
         }
@@ -328,11 +355,11 @@ def rewrite_query(
     client = http_client if http_client is not None else default_rewrite_http_client
     started = clock()
     try:
-        raw_response = client(endpoint, payload, float(timeout_s))
+        raw_response = client(endpoint, payload, validated_timeout_s)
         elapsed_s = max(0.0, clock() - started)
     except Exception as exc:
         elapsed_s = max(0.0, clock() - started)
-        is_timeout = _is_timeout_error(exc) or elapsed_s > timeout_s
+        is_timeout = _is_timeout_error(exc) or elapsed_s > validated_timeout_s
         return {
             "enabled": True,
             "outcome": "timeout" if is_timeout else "error",
@@ -344,13 +371,13 @@ def rewrite_query(
             "endpoint": endpoint,
             "model": model,
             "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": float(timeout_s),
+            "timeout_s": validated_timeout_s,
             "latency_ms": elapsed_s * 1000.0,
             "error": f"{type(exc).__name__}: {exc}",
         }
 
     latency_ms = elapsed_s * 1000.0
-    if elapsed_s > timeout_s:
+    if elapsed_s > validated_timeout_s:
         return {
             "enabled": True,
             "outcome": "timeout",
@@ -362,9 +389,9 @@ def rewrite_query(
             "endpoint": endpoint,
             "model": model,
             "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": float(timeout_s),
+            "timeout_s": validated_timeout_s,
             "latency_ms": latency_ms,
-            "error": f"Rewrite exceeded timeout of {timeout_s}s ({elapsed_s:.3f}s)",
+            "error": f"Rewrite exceeded timeout of {validated_timeout_s}s ({elapsed_s:.3f}s)",
         }
 
     try:
@@ -381,7 +408,7 @@ def rewrite_query(
             "endpoint": endpoint,
             "model": model,
             "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": float(timeout_s),
+            "timeout_s": validated_timeout_s,
             "latency_ms": latency_ms,
             "error": f"{type(exc).__name__}: {exc}",
         }
@@ -399,7 +426,7 @@ def rewrite_query(
             "endpoint": endpoint,
             "model": model,
             "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": float(timeout_s),
+            "timeout_s": validated_timeout_s,
             "latency_ms": latency_ms,
             "error": None,
         }
@@ -417,7 +444,7 @@ def rewrite_query(
             "endpoint": endpoint,
             "model": model,
             "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": float(timeout_s),
+            "timeout_s": validated_timeout_s,
             "latency_ms": latency_ms,
             "error": None,
         }
@@ -439,7 +466,7 @@ def rewrite_query(
             "endpoint": endpoint,
             "model": model,
             "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": float(timeout_s),
+            "timeout_s": validated_timeout_s,
             "latency_ms": latency_ms,
             "error": None,
         }
@@ -455,7 +482,7 @@ def rewrite_query(
         "endpoint": endpoint,
         "model": model,
         "prompt_version": REWRITE_PROMPT_VERSION,
-        "timeout_s": float(timeout_s),
+        "timeout_s": validated_timeout_s,
         "latency_ms": latency_ms,
         "error": None,
     }
@@ -902,7 +929,7 @@ def main():
     p_query.add_argument("--rewrite", action="store_true", default=False)
     p_query.add_argument("--rewrite-url", default=DEFAULT_REWRITE_URL)
     p_query.add_argument("--rewrite-model", default=DEFAULT_REWRITE_MODEL)
-    p_query.add_argument("--rewrite-timeout", type=float, default=DEFAULT_REWRITE_TIMEOUT_S)
+    p_query.add_argument("--rewrite-timeout", type=_parse_rewrite_timeout_arg, default=DEFAULT_REWRITE_TIMEOUT_S)
     p_query.add_argument("--rewrite-max-chars", type=int, default=DEFAULT_REWRITE_MAX_CHARS)
 
     # dvc-commit subcommand
