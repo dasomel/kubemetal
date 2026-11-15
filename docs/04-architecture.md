@@ -401,7 +401,7 @@ status `ok`, lancedb 0.34.0, sentence-transformers 5.6.0, 모델 로드 4.4 s, f
 
 ### 옵트인 로컬 query rewrite 계약 (#38 B2)
 
-`scripts/rag/rag_host.py`의 `query` 서브커맨드(`rewrite_query`)는 기본적으로 비활성(`--rewrite` 미지정 시 off)이며 요청/설정 단위로만 opt-in한다. 활성화 시 표준 라이브러리(`urllib.request`)만 사용해 하드 타임아웃(`--rewrite-timeout`, 기본 2.0초) 안에서 로컬 OpenAI 호환 엔드포인트(`http://127.0.0.1:<port>/v1/chat/completions`, 기본 포트는 D1 모델 서빙 포트 `8080`)에 질의 재작성을 요청한다. `localhost`, IPv6(`::1`), `0.0.0.0`, 기타 비루프백 호스트, 비-HTTP 스킴, 자격증명 포함 URL, 리다이렉트는 모두 거부한다.
+`scripts/rag/rag_host.py`의 `query` 서브커맨드(`rewrite_query`)는 기본적으로 비활성(`--rewrite` 미지정 시 off)이며 요청/설정 단위로만 opt-in한다. 활성화 시 표준 라이브러리(`urllib.request`)만 사용해 단조 시계 마감 시간(`--rewrite-timeout`, 기본 2.0초) 안에서 로컬 OpenAI 호환 엔드포인트(`http://127.0.0.1:<port>/v1/chat/completions`, 기본 포트는 D1 모델 서빙 포트 `8080`)에 질의 재작성을 요청한다: 연결·헤더 수신 직후와 최대 4 KiB 단위 응답 본문 청크 읽기(`HTTPResponse.read1`/`read`)마다 남은 마감 시간으로 소켓 타임아웃을 조이고 응답 본문을 최대 64 KiB로 제한하므로, 본문을 조금씩 흘리는(slow-drip) 응답도 마감 시간 이후 진행 중인 소켓 읽기 1회(최대 1개 소켓 연산 구간)를 넘겨 요청을 붙잡을 수 없으며(초기 연결·헤더 라인 수신 중에는 stdlib `urllib`의 소켓 연산별 타임아웃이 적용된 뒤 헤더 반환 즉시 마감 시간을 재검사), 마감 초과 시 `timeout`으로, 64 KiB 초과 본문은 `error`로 폴백한다. `localhost`, IPv6(`::1`), `0.0.0.0`, 기타 비루프백 호스트, 비-HTTP 스킴, 자격증명 포함 URL, 리다이렉트는 모두 거부한다.
 
 기존 결정적 라우터(`classify_query`)가 exact/식별자 계열(`quoted_phrase`, `path_separator`, `version_string`, `k8s_resource`, `symbol_or_casing`, `short_token_with_digit_or_symbol`, `empty_query`)로 분류한 질의와 명시적 `--mode exact` 요청은 로컬 모델을 호출하지 않고 rewrite를 건너뛴다. 응답의 `rewrite` 블록은 `outcome`을 `disabled`, `applied`, `timeout`, `error`, `rejected`(`empty` / `too_long` / `unchanged`) 중 하나로 기록하며, 원 질의(`query`, `rewrite.original_query`)는 항상 보존한다. `applied` 이외의 모든 결과에서는 원 질의를 그대로 검색에 사용하며, 모델 미도달·오류·거부 시 가짜 rewrite를 생성하거나 `applied`로 보고하지 않는다(D22).
 

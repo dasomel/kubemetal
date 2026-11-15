@@ -41,14 +41,79 @@ def openai_response(content):
 
 
 class FakeClock:
-    def __init__(self, steps):
-        self._steps = list(steps)
+    def __init__(self, steps=0.0):
+        if isinstance(steps, (int, float)):
+            self._steps = [float(steps)]
+        else:
+            self._steps = [float(s) for s in steps]
         self._index = 0
+
+    def advance(self, delta_s: float) -> float:
+        current = self._steps[min(self._index, len(self._steps) - 1)]
+        self._steps = [current + float(delta_s)]
+        self._index = 0
+        return self._steps[0]
 
     def __call__(self):
         value = self._steps[min(self._index, len(self._steps) - 1)]
         self._index += 1
         return value
+
+
+class _FakeSocket:
+    def __init__(self, history):
+        self._history = history
+
+    def settimeout(self, timeout_s: float):
+        self._history.append(timeout_s)
+
+
+class _FakeRawStream:
+    def __init__(self, sock):
+        self._sock = sock
+
+
+class _FakeBufferedFp:
+    def __init__(self, sock):
+        self.raw = _FakeRawStream(sock)
+
+
+class FakeStreamingResponse:
+    """Socket-free streaming HTTP response stub that drips byte chunks and advances a FakeClock."""
+
+    def __init__(self, chunks, *, clock=None, chunk_delay_s=0.0):
+        self._chunks = [bytes(c) for c in chunks]
+        self._clock = clock
+        self._chunk_delay_s = float(chunk_delay_s)
+        self.read_calls = 0
+        self.read_sizes = []
+        self.timeout_history = []
+        self.fp = _FakeBufferedFp(_FakeSocket(self.timeout_history))
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
+    def read(self, amt=None):
+        self.read_calls += 1
+        self.read_sizes.append(amt)
+        if self._clock is not None and self._chunk_delay_s > 0.0:
+            self._clock.advance(self._chunk_delay_s)
+        if not self._chunks:
+            return b""
+        chunk = self._chunks.pop(0)
+        if amt is not None and amt >= 0 and len(chunk) > amt:
+            head, tail = chunk[:amt], chunk[amt:]
+            self._chunks.insert(0, tail)
+            return head
+        return chunk
+
+    def close(self):
+        self.closed = True
 
 
 class UrlValidationTests(unittest.TestCase):
@@ -116,9 +181,10 @@ class UrlValidationTests(unittest.TestCase):
     def test_default_http_client_enforces_validation_timeout_and_no_redirect_without_socket(self):
         client_open = MagicMock()
         fake_resp = MagicMock()
-        fake_resp.__enter__.return_value.read.return_value = json.dumps(
-            openai_response("Metal GPU memory")
-        ).encode("utf-8")
+        fake_resp.__enter__.return_value.read.side_effect = [
+            json.dumps(openai_response("Metal GPU memory")).encode("utf-8"),
+            b"",
+        ]
         client_open.return_value = fake_resp
 
         with patch.object(rag_host._REWRITE_OPENER, "open", client_open):
@@ -137,6 +203,130 @@ class UrlValidationTests(unittest.TestCase):
         req = urllib.request.Request("http://127.0.0.1:8080/v1/chat/completions")
         with self.assertRaises(urllib.error.URLError):
             handler.redirect_request(req, None, 302, "Found", {}, "http://example.com/")
+
+    def test_slow_drip_response_past_deadline_aborts_early_and_reports_timeout(self):
+        query = "find models suitable for local VLM inference"
+        raw_body = json.dumps(openai_response("Qwen2-VL local VLM inference")).encode("utf-8")
+        # Split body into 5 small drips; each drip takes 0.20s against a 0.50s total deadline.
+        step = max(1, len(raw_body) // 5)
+        drips = [raw_body[i : i + step] for i in range(0, len(raw_body), step)]
+        self.assertGreaterEqual(len(drips), 5)
+
+        clock = FakeClock(10.0)
+        fake_resp = FakeStreamingResponse(drips, clock=clock, chunk_delay_s=0.20)
+        client_open = MagicMock(return_value=fake_resp)
+
+        with patch.object(rag_host._REWRITE_OPENER, "open", client_open):
+            trace = rewrite_query(
+                query,
+                enabled=True,
+                timeout_s=0.50,
+                clock=clock,
+            )
+
+        # Drip 1 (0.20s), Drip 2 (0.40s), Drip 3 (0.60s > 0.50s deadline) -> stops after 3 reads.
+        self.assertEqual(fake_resp.read_calls, 3)
+        self.assertTrue(fake_resp.closed)
+        self.assertEqual(len(fake_resp.timeout_history), 3)
+        self.assertAlmostEqual(fake_resp.timeout_history[0], 0.50, places=6)
+        self.assertAlmostEqual(fake_resp.timeout_history[1], 0.30, places=6)
+        self.assertAlmostEqual(fake_resp.timeout_history[2], 0.10, places=6)
+        self.assertEqual(trace["outcome"], "timeout")
+        self.assertEqual(trace["reason"], "timeout")
+        self.assertEqual(trace["original_query"], query)
+        self.assertEqual(trace["effective_query"], query)
+        self.assertIsNone(trace["rewritten_query"])
+        self.assertAlmostEqual(trace["latency_ms"], 600.0, places=3)
+
+        # If connect + headers alone exhaust the deadline, body read() is never called at all.
+        header_clock = FakeClock([20.0, 20.55])
+        header_resp = FakeStreamingResponse(drips)
+        with patch.object(rag_host._REWRITE_OPENER, "open", MagicMock(return_value=header_resp)):
+            header_trace = rewrite_query(
+                query,
+                enabled=True,
+                timeout_s=0.50,
+                clock=header_clock,
+            )
+        self.assertEqual(header_resp.read_calls, 0)
+        self.assertTrue(header_resp.closed)
+        self.assertEqual(header_trace["outcome"], "timeout")
+        self.assertEqual(header_trace["effective_query"], query)
+
+    def test_oversized_body_and_oversized_rewrite_with_fake_response_and_clock(self):
+        query = "how does thermal pressure affect training pause"
+
+        # 1. HTTP body exceeds 64 KiB cap -> aborts as soon as cumulative bytes > 65536 (outcome='error').
+        clock_err = FakeClock(0.0)
+        twenty_chunks = [b"x" * 4096 for _ in range(20)]  # 80 KiB total
+        oversized_resp = FakeStreamingResponse(twenty_chunks, clock=clock_err, chunk_delay_s=0.01)
+        with patch.object(rag_host._REWRITE_OPENER, "open", MagicMock(return_value=oversized_resp)):
+            err_trace = rewrite_query(
+                query,
+                enabled=True,
+                timeout_s=2.0,
+                clock=clock_err,
+            )
+        # 16 * 4096 == 65536; the 17th chunk crosses 64 KiB and aborts immediately without reading 18..20.
+        self.assertEqual(oversized_resp.read_calls, 17)
+        self.assertTrue(oversized_resp.closed)
+        self.assertEqual(err_trace["outcome"], "error")
+        self.assertEqual(err_trace["reason"], "request_error")
+        self.assertEqual(err_trace["original_query"], query)
+        self.assertEqual(err_trace["effective_query"], query)
+        self.assertIsNone(err_trace["rewritten_query"])
+        self.assertIn("64 KiB", err_trace["error"])
+
+        # 2. HTTP body is within 64 KiB, but rewritten text exceeds max_chars -> outcome='rejected' ('too_long').
+        clock_rej = FakeClock(5.0)
+        long_rewrite = "thermalState " * 30  # 390 chars > DEFAULT_REWRITE_MAX_CHARS (256)
+        encoded_long = json.dumps(openai_response(long_rewrite)).encode("utf-8")
+        mid = len(encoded_long) // 2
+        long_resp = FakeStreamingResponse(
+            [encoded_long[:mid], encoded_long[mid:]],
+            clock=clock_rej,
+            chunk_delay_s=0.02,
+        )
+        with patch.object(rag_host._REWRITE_OPENER, "open", MagicMock(return_value=long_resp)):
+            rej_trace = rewrite_query(
+                query,
+                enabled=True,
+                timeout_s=2.0,
+                max_chars=DEFAULT_REWRITE_MAX_CHARS,
+                clock=clock_rej,
+            )
+        self.assertTrue(long_resp.closed)
+        self.assertEqual(rej_trace["outcome"], "rejected")
+        self.assertEqual(rej_trace["reason"], "too_long")
+        self.assertEqual(rej_trace["original_query"], query)
+        self.assertEqual(rej_trace["effective_query"], query)
+
+    def test_normal_chunked_body_within_deadline_applies_rewrite_with_fake_response_and_clock(self):
+        query = "저번에 학습했던 qwen 이미지 모델 어디 있지?"
+        rewritten = "Qwen2-VL-2B-Instruct-4bit vision fine-tuning model"
+        encoded = json.dumps(openai_response(f"  {rewritten}\n")).encode("utf-8")
+        chunks = [encoded[:25], encoded[25:55], encoded[55:]]
+
+        clock = FakeClock(100.0)
+        fake_resp = FakeStreamingResponse(chunks, clock=clock, chunk_delay_s=0.05)
+        with patch.object(rag_host._REWRITE_OPENER, "open", MagicMock(return_value=fake_resp)):
+            trace = rewrite_query(
+                query,
+                enabled=True,
+                timeout_s=1.0,
+                clock=clock,
+            )
+
+        # 3 payload chunks + 1 EOF read = 4 read calls, 0.20s elapsed (< 1.0s deadline).
+        self.assertEqual(fake_resp.read_calls, 4)
+        self.assertTrue(fake_resp.closed)
+        self.assertEqual(trace["outcome"], "applied")
+        self.assertEqual(trace["reason"], "applied")
+        self.assertEqual(trace["original_query"], query)
+        self.assertEqual(trace["rewritten_query"], rewritten)
+        self.assertEqual(trace["effective_query"], rewritten)
+        self.assertAlmostEqual(trace["latency_ms"], 200.0, places=3)
+        self.assertIsNone(trace["error"])
 
     def test_rejects_non_positive_non_finite_or_non_numeric_timeout_at_config_time(self):
         self.assertEqual(validate_rewrite_timeout(0.25), 0.25)
