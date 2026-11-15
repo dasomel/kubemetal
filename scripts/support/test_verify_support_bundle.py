@@ -337,5 +337,64 @@ class RulesVersionSyncTest(unittest.TestCase):
                          "bump KNOWN_RULES_VERSION together with REDACTION_RULES_VERSION")
 
 
+
+class CorrelationTests(unittest.TestCase):
+    def test_snapshot_link_and_legacy_absence(self):
+        identity = {"correlation_id": "aabbccddeeff00112233445566778899",
+                    "observed_at": "2026-11-16T01:02:03Z"}
+        with tempfile.TemporaryDirectory() as root:
+            manifest = build_bundle(root, {"health_summary.json": json.dumps(identity).encode()})
+            manifest["health_snapshot"] = identity.copy()
+            write_manifest(root, manifest)
+            rep, _ = v.verify(root)
+            self.assertEqual(rep.problems, [])
+            self.assertEqual(rep.health_link_status, "linked")
+            for field in identity:
+                manifest["health_snapshot"][field] = "different"
+                write_manifest(root, manifest)
+                rep, _ = v.verify(root)
+                self.assertEqual(rep.health_link_status, "mismatch")
+                self.assertIn("health-link-mismatch", [c for c, _ in rep.problems])
+                manifest["health_snapshot"][field] = identity[field]
+            del manifest["health_snapshot"]
+            write_manifest(root, manifest)
+            rep, _ = v.verify(root)
+            self.assertEqual(rep.problems, [])
+            self.assertEqual(rep.health_link_status, "not_linked")
+
+    def test_health_identity_absent_and_malformed(self):
+        for health in [b'{}', b'not json', b'{"correlation_id":"secret"}']:
+            with self.subTest(health=health), tempfile.TemporaryDirectory() as root:
+                manifest = build_bundle(root, {"health_summary.json": health})
+                manifest["health_snapshot"] = {"correlation_id": "a" * 32,
+                                               "observed_at": "2026-11-16T01:02:03Z"}
+                write_manifest(root, manifest)
+                rep, _ = v.verify(root)
+                self.assertEqual(rep.problems, [])
+                self.assertEqual(rep.health_link_status, "not_linked")
+
+    def test_malformed_link_metadata_fails_schema_validation(self):
+        for value in [[], "secret", {}, {"correlation_id": 5, "observed_at": None}]:
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as root:
+                manifest = build_bundle(root)
+                manifest["health_snapshot"] = value
+                write_manifest(root, manifest)
+                rep, _ = v.verify(root)
+                self.assertIn("manifest-malformed", [c for c, _ in rep.problems])
+                self.assertEqual(rep.health_link_status, "not_linked")
+
+    def test_tampered_health_is_never_reported_linked(self):
+        identity = {"correlation_id": "a" * 32, "observed_at": "2026-11-16T01:02:03Z"}
+        with tempfile.TemporaryDirectory() as root:
+            manifest = build_bundle(root, {"health_summary.json": json.dumps(identity).encode()})
+            manifest["health_snapshot"] = identity
+            write_manifest(root, manifest)
+            with open(os.path.join(root, "health_summary.json"), "ab") as f:
+                f.write(b" ")
+            rep, _ = v.verify(root)
+            self.assertIn("changed", [c for c, _ in rep.problems])
+            self.assertEqual(rep.health_link_status, "not_linked")
+
+
 if __name__ == "__main__":
     unittest.main()

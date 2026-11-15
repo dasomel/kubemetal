@@ -6,8 +6,12 @@ use tauri::AppHandle;
 use crate::services::support_bundle::{SupportBundleResult, SupportBundleVerificationReport};
 
 #[tauri::command]
-pub async fn create_support_bundle(app: AppHandle) -> Result<SupportBundleResult, String> {
-    crate::services::support_bundle::create_support_bundle_impl(&app).await
+pub async fn create_support_bundle(
+    app: AppHandle,
+    health_snapshot_id: Option<String>,
+) -> Result<SupportBundleResult, String> {
+    crate::services::support_bundle::create_support_bundle_impl(&app, health_snapshot_id.as_deref())
+        .await
 }
 
 #[tauri::command]
