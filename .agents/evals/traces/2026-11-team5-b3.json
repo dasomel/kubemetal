@@ -10,7 +10,6 @@
       "tests/cumetal/**",
       "docs/20-cumetal-feasibility.md",
       "docs/mistakes-log.md",
-      "docs/plans/2026-11-16-b3.md",
       ".agents/evals/traces/2026-11-team5-b3.json"
     ]
   },
@@ -18,7 +17,7 @@
     {
       "id": "e1",
       "type": "scope_check",
-      "summary": "Read AGENTS, matching mistakes sections, issue, Rust/script runners and tests, Makefile and eval gates. Current worktree only except explicitly requested final report. No IPC, D-registry, GPU/live, cluster, installation, push or PR. Coverage table: docs/plans/2026-11-16-b3.md."
+      "summary": "Read AGENTS, matching mistakes sections, issue, Rust/script runners and tests, Makefile and eval gates. Current worktree only except explicitly requested final report. No IPC, D-registry, GPU/live, cluster, installation, push or PR. Coverage table folded into docs/20-cumetal-feasibility.md #84; plan moved to /tmp/kubemetal-b3-fix/2026-11-16-b3.md outside repo. CLAUDE.md also carries Claude-only adapter/harness guidance, not needed for this classifier/test fix."
     },
     {
       "id": "e2",
@@ -30,16 +29,19 @@
     {
       "id": "e3",
       "type": "reproduction",
-      "summary": "Rust passed wrong numeric and truncated metrics; matrix passed finite=false nan/inf.",
+      "summary": "Rust passed wrong numeric and truncated metrics; matrix passed finite=false nan/inf. Review follow-up reproduced unsupported finite tokens and disproved the benchmark documentation claim, not a benchmark runtime defect.",
       "evidence": [
         "test:cargo test --locked --manifest-path src-tauri/Cargo.toml services::cumetal::harness::tests -- --skip live_smoke --skip live_matrix: exit 101; 35 passed, 2 failed",
-        "test:python3 -B -m unittest discover -s tests/cumetal -p test_matrix_classifier.py: exit 1; 14 tests, 2 failing subcases; supported != failed"
+        "test:python3 -B -m unittest discover -s tests/cumetal -p test_matrix_classifier.py: exit 1; 14 tests, 2 failing subcases; supported != failed",
+        "test:python3 -B -m unittest discover -s tests/cumetal -p test_matrix_classifier.py -v: exit 1; 15 tests, 3 failing subcases (maybe, TRUE, quoted empty); /tmp/b3-fix-classifier-before.log",
+        "test:python3 -B -m unittest discover -s tests/cumetal -p test_matrix_classifier.py -k present_finite: exit 1; finite= empty unquoted classified supported; /tmp/b3-fix-empty-before.log",
+        "test:CPU FakeTools sync failure documentation counterexample: exit 1; AssertionError: failed output retains compile_link_wall_ns=200"
       ]
     },
     {
       "id": "e4",
       "type": "bug_fix",
-      "summary": "Smoke validates finite metrics with existing tolerances/integer equality; matrix finite=false overrides PASS. Added uncovered timeout, signal/no code, empty/truncated/oversized and numeric fixtures; benchmark CPU executable failures. No refactor."
+      "summary": "Smoke validates finite metrics with existing tolerances/integer equality. Matrix accepts only exact true for present finite, preserving absent legacy fields; KV parser retains unquoted empty fields. Added invalid-token regression and CPU valid-output/exit-7 regression asserting timing suppression plus preserved diagnostic values. Narrowed benchmark documentation to timing only; no benchmark behavior change. Coverage table moved into #84 doc; repo plan deleted. No IPC/refactor/live runs."
     },
     {
       "id": "e5",
@@ -48,8 +50,8 @@
       "status": "passed",
       "scope": "CuMetal service and script classification unit regression",
       "evidence": [
-        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml services::cumetal -- --skip live_smoke --skip live_matrix --skip live_probe: exit 0; 51 passed",
-        "test:python3 -B -m unittest discover -s tests/cumetal -v: exit 0; 44 passed"
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml services::cumetal -- --skip live_smoke --skip live_matrix --skip live_probe: exit 0; 51 passed; /tmp/b3-fix-rust.log",
+        "test:python3 -B -m unittest discover -s tests/cumetal -v: exit 0; 46 passed; /tmp/b3-fix-python-final.log"
       ]
     },
     {
@@ -68,7 +70,7 @@
     {
       "id": "e7",
       "type": "verification",
-      "summary": "SANDBOX-BLOCKED: five socket bind PermissionDenied, Operation not permitted. Subsequent Make gates not reached. Disposable cargo wrapper appends -- --skip live_smoke --skip live_matrix --skip live_probe only to cargo test; Makefile unchanged.",
+      "summary": "Prior lane attempt: SANDBOX-BLOCKED: five socket bind PermissionDenied, Operation not permitted. Subsequent Make gates not reached. Disposable cargo wrapper appends -- --skip live_smoke --skip live_matrix --skip live_probe only to cargo test; Makefile unchanged. Not rerun in this fix lane; pending host verification remains unchanged.",
       "status": "pending",
       "scope": "Full completion suite requires host rerun",
       "evidence": [
@@ -89,7 +91,7 @@
     {
       "id": "e9",
       "type": "task_outcome",
-      "summary": "B: unit changes verified; completion suite sandbox-blocked; GPU remains unverified.",
+      "summary": "B: critic fixes and unit/static/frontend checks verified; full make verify remains pending host rerun; GPU unverified.",
       "state": "B",
       "next": "Orchestrator reruns make verify on host with live exclusions, then explicitly cargo test --locked --manifest-path src-tauri/Cargo.toml live_smoke -- --nocapture and finalizes trace from observed evidence."
     }

@@ -212,6 +212,27 @@ int main() {
                 self.assertTrue(result['failure'])
                 self.assertIsNone(result.get('timing'))
 
+    def test_failed_cpu_run_retains_only_unverified_timing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            args = bench.parser().parse_args(['--output', str(Path(tmp) / 'out.json'),
+                                             '--warmup', '2', '--iterations', '4'])
+            fake = FakeTools()
+
+            def run(command, timeout, env=None):
+                if '--benchmark' in list(map(str, command)):
+                    script = f'import sys; print({output()!r}); sys.exit(7)'
+                    return bench.stage([sys.executable, '-c', script], timeout)
+                return fake(command, timeout, env)
+
+            result = bench.collect(args, Path(tmp), run)
+            self.assertEqual(result['status'], 'failed')
+            self.assertFalse(result['performance_success'])
+            self.assertTrue(result['failure'])
+            self.assertIsNone(result.get('timing'))
+            self.assertEqual(result['timing_unverified'], timing())
+            self.assertEqual(result['compile_link_wall_ns'], 200)
+            self.assertGreater(result['run']['elapsed_ns'], 0)
+
     def test_main_writes_failure_and_success(self):
         for success in (False, True):
             with tempfile.TemporaryDirectory() as tmp:

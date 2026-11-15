@@ -17,7 +17,7 @@ def rd(p, default=""):
 
 UNSUP = re.compile(r"unsupported|not supported|not implemented|NOT_SUPPORTED|NOT_IMPLEMENTED|cannot (lower|compile)", re.I)
 PROV = re.compile(r"CUMETAL_PROVENANCE\s+(.*)")
-KV = re.compile(r'(\w+)=("[^"]*"|\S+)')
+KV = re.compile(r'(\w+)=("[^"]*"|\S*)')
 
 def provenance(text):
     ev = collections.Counter(); dev = set(); src = set(); sq = set(); ok = set(); reasons = set(); names = set()
@@ -63,9 +63,10 @@ def classify_path(d, path, kernel_probe, repeats=3):
         fields = dict(KV.findall(line)) if line else {}
         dg = fields.get("digest")
         st = fields.get("status")
-        # D22: a success marker cannot override the probe's non-finite result.
-        # Cost: retain legacy lines without finite; newer probes supply the field.
-        if fields.get("finite") == "false":
+        # D22: only the probe's exact true token establishes finiteness.
+        # Cost: unknown tokens fail closed; legacy lines may omit finite.
+        # Revisit only if the probe's output contract changes.
+        if "finite" in fields and fields["finite"] != "true":
             st = "MISMATCH"
         if st == "PASS" and not dg:
             st = None
