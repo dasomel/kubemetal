@@ -83,9 +83,20 @@
       ]
     },
     {
+      "id": "e10",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Running Tauri dev app built from this branch, observed by window capture on the macOS host (cluster stopped)",
+      "summary": "Health card showed correlation ID 4b1da662d282 with its observation time; the support bundle created from that view showed the same ID and its manifest health_snapshot.correlation_id began with the same 12 characters with the same observed_at; after a health refresh the ID changed and the earlier bundle result was no longer displayed. Multi-window and eviction behaviour were not observed live.",
+      "evidence": [
+        "runtime:tauri-dev-health-card-id-equals-bundle-result-id-and-manifest-prefix",
+        "runtime:tauri-dev-refresh-changes-id-and-clears-previous-bundle-result"
+      ]
+    },
+    {
       "id": "e8",
       "type": "completion_claim",
-      "summary": "State B: four critic fixes and scope reverts implemented with failing-before/passing-after regressions. UI evidence is SSR plus keyed-lifecycle implementation, not observed live IPC races. Eight-ID process-local retention still requires refresh after eviction/restart. Dependency graph, K3s/kagent/Prometheus correlation, #13 MLX linkage and offline replay unchanged/open."
+      "summary": "The health snapshot to support bundle link (#17) is implemented with failing-before/passing-after regressions, passes make verify on the host (544 Rust tests), and was observed in the running app for the single-window create and refresh flows. Multi-window and eviction behaviour are covered by unit tests only."
     },
     {
       "id": "e9",
