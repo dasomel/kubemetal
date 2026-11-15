@@ -670,8 +670,8 @@ Metal 32023.922를 수집했으며 `errors={}`였다. sysctl 3종·system_profil
 
 | 비정상 사례 | Rust 주입 runner | Matrix fixture / benchmark CPU |
 |---|---|---|
-| toolchain·cumetal·cumetalc 누락 | unavailable·사유 | compile 거부 → unavailable |
-| doctor 실패·timeout·success=true이나 exit code 없음 | unavailable·사유 | doctor는 진단이며 capability gate 아님 |
+| toolchain·cumetal·cumetalc 누락 | unavailable·사유 | 해당 사례는 Rust 단위 테스트만 검증; matrix fixture로 입증하지 않음 |
+| doctor 실패·timeout·success=true이나 exit code 없음 | unavailable·사유 | doctor는 Rust 단위 테스트 검증; matrix doctor는 진단이며 capability gate 아님 |
 | compile 실패·timeout | unavailable/failed·사유 | 거부 → unavailable, 142 → failed |
 | run 비정상 exit·timeout·signal (success=true + exit code 없음 + 유효 지표·provenance 포함) | failed·사유 | failed (미지원 API는 unavailable) |
 | exit 0, device 없음·비 Apple GPU | pass 거부 | provenance 부족 → partial |

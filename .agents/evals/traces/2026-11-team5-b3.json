@@ -50,8 +50,8 @@
       "status": "passed",
       "scope": "CuMetal service and script classification unit regression",
       "evidence": [
-        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml services::cumetal -- --skip live_smoke --skip live_matrix --skip live_probe: exit 0; 51 passed",
-        "test:python3 -B -m unittest discover -s tests/cumetal -v: exit 0; 46 passed"
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml services::cumetal -- --skip live_smoke --skip live_matrix --skip live_probe: exit 0; 52 passed, 0 failed, 491 filtered out",
+        "test:python3 -B -m unittest discover -s tests/cumetal: exit 0; Ran 48 tests; OK"
       ]
     },
     {
@@ -107,6 +107,11 @@
       "summary": "Doctor success now requires success=true and exit_code=Some(0). Added success=true/exit_code=None regressions for doctor and harness, with valid-looking metrics and Apple GPU provenance in the harness; existing step_result already rejects missing exit codes."
     },
     {
+      "id": "e13",
+      "type": "bug_fix",
+      "summary": "Matrix PASS records with a present max_error now fail closed unless it parses as a finite non-negative number; legacy records without max_error remain supported. Added malformed, NaN, infinite, and negative max_error fixtures. The probe emits max_error as a non-negative finite parity worst error; existing probes may omit the field."
+    },
+    {
       "id": "e12",
       "type": "regression_verification",
       "status": "passed",
@@ -116,6 +121,17 @@
         "test:cargo test --locked --manifest-path src-tauri/Cargo.toml services::cumetal -- --skip live_smoke --skip live_matrix --skip live_probe: exit 0; 52 passed, 0 failed, 491 filtered out",
         "ci:cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings: exit 0",
         "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0"
+      ]
+    },
+    {
+      "id": "e14",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Fix4 matrix max_error validation and requested CuMetal tests; no live GPU execution",
+      "summary": "Invalid present max_error cannot support a matrix PASS, absent max_error remains compatible, and both requested unit commands passed.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml services::cumetal -- --skip live_smoke --skip live_matrix --skip live_probe: exit 0; 52 passed, 0 failed, 491 filtered out",
+        "test:python3 -B -m unittest discover -s tests/cumetal: exit 0; Ran 48 tests; OK"
       ]
     }
   ]
