@@ -224,7 +224,9 @@ pub(crate) async fn probe_with<R: CommandRunner>(runner: &R) -> CumetalStatus {
             } => {
                 let (output_excerpt, truncated) = excerpt(&stdout, &stderr);
                 doctor = Some(DoctorResult {
-                    success,
+                    // D22: require a confirmed zero exit, even if a runner claims success.
+                    // Cost: reject inconsistent runners; fix their exit reporting to recover.
+                    success: success && exit_code == Some(0),
                     exit_code,
                     output_excerpt,
                     truncated,

@@ -210,6 +210,26 @@ async fn doctor_failure_is_unavailable_with_excerpt() {
 }
 
 #[tokio::test]
+async fn doctor_missing_exit_despite_success_is_unavailable() {
+    let runner = healthy().on("cumetal doctor", || RunOutcome::Finished {
+        success: true,
+        exit_code: None,
+        stdout: "all checks passed\n".into(),
+        stderr: String::new(),
+    });
+    let s = probe_with(&runner).await;
+    assert_eq!(s.state, CumetalState::Unavailable);
+    assert_eq!(
+        s.reason.as_deref(),
+        Some("cumetal doctor failed (exit code None)")
+    );
+    let d = s.doctor.unwrap();
+    assert!(!d.success);
+    assert_eq!(d.exit_code, None);
+    assert_eq!(d.output_excerpt, "all checks passed");
+}
+
+#[tokio::test]
 async fn doctor_timeout_is_reported_as_reason() {
     let runner = healthy().on("cumetal doctor", || RunOutcome::TimedOut);
     let s = probe_with(&runner).await;

@@ -983,6 +983,19 @@ async fn abnormal_steps_never_pass() {
             "run failed",
         ),
         (
+            "missing_exit_despite_success",
+            FakeRunner::default().on(
+                |s| is_run_of(s, "vector_add"),
+                |_| RunOutcome::Finished {
+                    success: true,
+                    exit_code: None,
+                    stdout: metric_for("vector_add").into(),
+                    stderr: PROVENANCE_OK.into(),
+                },
+            ),
+            "run failed",
+        ),
+        (
             "empty",
             FakeRunner::default().on(|s| is_run_of(s, "vector_add"), |_| ok("")),
             "parity unknown",
