@@ -369,12 +369,12 @@ test('health correlation ID is short, copyable and missing identity is not linke
 test('bundle correlation states show linked identity, absence and mismatch in both languages', async () => {
   const { HealthCorrelation } = await import(new URL('components/dashboard/HealthCorrelation.js', output));
   for (const lang of ['ko', 'en']) {
-    for (const status of ['linked', 'not_linked', 'mismatch']) {
+    for (const status of ['linked', 'not_linked', 'mismatch', 'invalid_link']) {
       const snapshot = { correlation_id: 'aabbccddeeff00112233445566778899', observed_at: '2026-11-16T01:02:03Z' };
       const t = key => translations[lang][key] ?? key;
       const html = renderToStaticMarkup(React.createElement(I18nContext.Provider, { value: { t, language: lang } },
         React.createElement(HealthCorrelation, { snapshot, status })));
-      assert.ok(html.includes(status === 'not_linked'
+      assert.ok(html.includes(status === 'invalid_link' ? translations[lang]['health.correlation.invalidLink'] : status === 'not_linked'
         ? translations[lang]['health.correlation.notLinked'] : 'aabbccddeeff'));
       if (status === 'mismatch') assert.ok(html.includes(translations[lang]['health.correlation.mismatch']));
     }
@@ -382,5 +382,15 @@ test('bundle correlation states show linked identity, absence and mismatch in bo
       { value: { t: key => translations[lang][key], language: lang } },
       React.createElement(HealthCorrelation, { status: 'mismatch' })));
     assert.ok(html.includes(translations[lang]['health.correlation.mismatch']));
+  }
+});
+
+test('refresh hides prior bundle result until a current snapshot is available', () => {
+  for (const lang of ['ko', 'en']) {
+    const t = key => translations[lang][key] ?? key;
+    const html = renderToStaticMarkup(React.createElement(I18nContext.Provider, { value: { t, language: lang } },
+      React.createElement(HealthSummaryView, { state: { ...initialHealthSummaryState, summary: makeSummary(), loading: true }, onRefresh() {} },
+        React.createElement('p', null, 'prior-bundle-result'))));
+    assert.ok(!html.includes('prior-bundle-result'));
   }
 });

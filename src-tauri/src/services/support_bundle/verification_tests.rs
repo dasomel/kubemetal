@@ -121,7 +121,7 @@ fn correlation_manifest_and_verification_contract() {
 }
 
 #[test]
-fn correlation_absent_health_identity_is_not_corruption() {
+fn correlation_claim_without_health_identity_is_invalid() {
     let (_temp, root) = fixture();
     let path = root.join(MANIFEST_FILE);
     let mut manifest: serde_json::Value =
@@ -131,7 +131,84 @@ fn correlation_absent_health_identity_is_not_corruption() {
     });
     fs::write(path, manifest.to_string()).unwrap();
     let report = verify_support_bundle_dir(&root, None).unwrap();
-    assert!(report.verified);
-    assert_eq!(report.health_link_status, "not_linked");
+    assert!(!report.verified);
+    assert_eq!(report.health_link_status, "invalid_link");
     assert!(report.health_snapshot.is_none());
+}
+
+#[test]
+fn correlation_broken_evidence_is_invalid_link() {
+    for damage in [
+        "missing",
+        "hash",
+        "size",
+        "invalid-json",
+        "unreadable",
+        "unlisted",
+    ] {
+        let (temp, _) = fixture();
+        let health = serde_json::json!({"correlation_id": "a".repeat(32), "observed_at": "2026-11-16T01:02:03Z"});
+        let result = generate_support_bundle(
+            &temp.0,
+            None,
+            Some(health.to_string()),
+            collect_app_os_version_info(None),
+            vec![],
+        )
+        .unwrap();
+        let root = Path::new(&result.bundle_dir);
+        let path = root.join("health_summary.json");
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&fs::read(&result.manifest_path).unwrap()).unwrap();
+        match damage {
+            "missing" => fs::remove_file(&path).unwrap(),
+            "unreadable" => {
+                fs::remove_file(&path).unwrap();
+                fs::create_dir(&path).unwrap();
+            }
+            "unlisted" => manifest["files"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|e| e["path"] != "health_summary.json"),
+            "size" => {
+                let entry = manifest["files"]
+                    .as_array_mut()
+                    .unwrap()
+                    .iter_mut()
+                    .find(|e| e["path"] == "health_summary.json")
+                    .unwrap();
+                entry["bytes"] = serde_json::json!(1);
+            }
+            "hash" => {
+                let bytes = fs::read_to_string(&path)
+                    .unwrap()
+                    .replace(&"a".repeat(32), &"b".repeat(32));
+                fs::write(&path, bytes).unwrap();
+            }
+            _ => {
+                fs::write(&path, b"not json").unwrap();
+                if damage == "invalid-json" {
+                    let entry = manifest["files"]
+                        .as_array_mut()
+                        .unwrap()
+                        .iter_mut()
+                        .find(|e| e["path"] == "health_summary.json")
+                        .unwrap();
+                    entry["bytes"] = serde_json::json!(8);
+                    entry["sha256"] = serde_json::json!(sha256_digest(b"not json"));
+                }
+            }
+        }
+        fs::write(&result.manifest_path, manifest.to_string()).unwrap();
+        let report = verify_support_bundle_dir(root, None).unwrap();
+        assert_eq!(report.health_link_status, "invalid_link", "{damage}");
+        assert!(!report.verified, "{damage}");
+        if damage == "hash" {
+            assert!(report
+                .problems
+                .iter()
+                .any(|p| p.category == "hash-mismatch"));
+        }
+        assert!(report.health_snapshot.is_none(), "{damage}");
+    }
 }

@@ -159,6 +159,9 @@ def validate_schema(m, rep):
         elif not all(isinstance(link[k], str) for k in ("correlation_id", "observed_at")):
             rep.fail("manifest-malformed", "health_snapshot fields must be strings")
             ok = False
+        else:
+            # D22: retain the claim even if schema validation later rejects missing evidence.
+            rep.health_link_status = "invalid_link"
     sv = m["schema_version"]
     if not _is_int(sv, U32_MAX):
         rep.fail("manifest-malformed", "schema_version must be an unsigned 32-bit integer")
@@ -295,7 +298,7 @@ def hash_file(root, rel, size_cap, rep):
                     and CREATED_RE.fullmatch(health["observed_at"])):
                 rep.health_snapshot = {k: health[k] for k in ("correlation_id", "observed_at")}
         except (ValueError, UnicodeDecodeError):
-            pass  # Invalid/legacy health evidence is not linked, never synthesized.
+            pass  # Never synthesize identity from invalid evidence.
     return hashlib.sha256(data).hexdigest(), len(data)
 
 
@@ -334,6 +337,8 @@ def verify(root, size_cap=DEFAULT_MAX_BYTES, manifest_sha256=None):
         return rep, None
     manifest = parse_manifest(root, rep, manifest_sha256)
     if manifest is None:
+        if rep.health_link_status == "invalid_link":
+            rep.fail("health-link-invalid", "Claimed health snapshot evidence could not be verified")
         return rep, None
     listed = {}
     for e in manifest["files"]:
@@ -352,7 +357,10 @@ def verify(root, size_cap=DEFAULT_MAX_BYTES, manifest_sha256=None):
         if r != MANIFEST_FILE and r not in listed:
             rep.fail("extra", f"{r}: present in bundle but not in manifest")
     expected = manifest.get("health_snapshot")
-    if expected is not None and rep.health_snapshot is not None:
+    if expected is not None and rep.health_snapshot is None:
+        rep.health_link_status = "invalid_link"
+        rep.fail("health-link-invalid", "Manifest claims a health snapshot but its evidence is missing, unreadable or invalid")
+    elif expected is not None and rep.health_snapshot is not None:
         if expected == rep.health_snapshot:
             rep.health_link_status = "linked"
         else:

@@ -370,8 +370,29 @@ class CorrelationTests(unittest.TestCase):
                                                "observed_at": "2026-11-16T01:02:03Z"}
                 write_manifest(root, manifest)
                 rep, _ = v.verify(root)
-                self.assertEqual(rep.problems, [])
-                self.assertEqual(rep.health_link_status, "not_linked")
+                self.assertIn("health-link-invalid", [c for c, _ in rep.problems])
+                self.assertEqual(rep.health_link_status, "invalid_link")
+
+    def test_claimed_link_requires_readable_listed_health_evidence(self):
+        identity = {"correlation_id": "a" * 32, "observed_at": "2026-11-16T01:02:03Z"}
+        for damage in ["missing", "unreadable", "unlisted", "size"]:
+            with self.subTest(damage=damage), tempfile.TemporaryDirectory() as root:
+                manifest = build_bundle(root, {"health_summary.json": json.dumps(identity).encode()})
+                manifest["health_snapshot"] = identity
+                path = os.path.join(root, "health_summary.json")
+                if damage in ("missing", "unreadable"):
+                    os.unlink(path)
+                    if damage == "unreadable":
+                        os.mkdir(path)
+                elif damage == "unlisted":
+                    manifest["files"] = [e for e in manifest["files"] if e["path"] != "health_summary.json"]
+                else:
+                    next(e for e in manifest["files"] if e["path"] == "health_summary.json")["bytes"] = 1
+                write_manifest(root, manifest)
+                rep, _ = v.verify(root)
+                self.assertEqual(rep.health_link_status, "invalid_link")
+                self.assertIn("health-link-invalid", [c for c, _ in rep.problems])
+                self.assertIsNone(rep.health_snapshot)
 
     def test_malformed_link_metadata_fails_schema_validation(self):
         for value in [[], "secret", {}, {"correlation_id": 5, "observed_at": None}]:
@@ -389,11 +410,11 @@ class CorrelationTests(unittest.TestCase):
             manifest = build_bundle(root, {"health_summary.json": json.dumps(identity).encode()})
             manifest["health_snapshot"] = identity
             write_manifest(root, manifest)
-            with open(os.path.join(root, "health_summary.json"), "ab") as f:
-                f.write(b" ")
+            with open(os.path.join(root, "health_summary.json"), "wb") as f:
+                f.write(json.dumps({**identity, "correlation_id": "b" * 32}).encode())
             rep, _ = v.verify(root)
             self.assertIn("changed", [c for c, _ in rep.problems])
-            self.assertEqual(rep.health_link_status, "not_linked")
+            self.assertEqual(rep.health_link_status, "invalid_link")
 
 
 if __name__ == "__main__":
