@@ -6,6 +6,7 @@ and DVC dataset versioning with SeaweedFS S3 remote.
 """
 
 import argparse
+import http.client
 import json
 import math
 import os
@@ -28,6 +29,8 @@ DEFAULT_REWRITE_URL = "http://127.0.0.1:8080/v1/chat/completions"
 DEFAULT_REWRITE_MODEL = "default"
 DEFAULT_REWRITE_TIMEOUT_S = 2.0
 DEFAULT_REWRITE_MAX_CHARS = 256
+REWRITE_MAX_RESPONSE_BYTES = 65536
+REWRITE_READ_CHUNK_BYTES = 4096
 REWRITE_PROMPT_VERSION = "v1"
 REWRITE_OUTCOMES = ("disabled", "applied", "timeout", "error", "rejected")
 REWRITE_SYSTEM_PROMPT = (
@@ -213,10 +216,47 @@ def _parse_rewrite_timeout_arg(raw: str) -> float:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
-def default_rewrite_http_client(endpoint: str, payload: dict, timeout_s: float) -> dict:
-    """POST an OpenAI chat-completions request to a validated 127.0.0.1 endpoint."""
+def _set_response_socket_timeout(response, timeout_s: float) -> None:
+    """Tighten the underlying socket timeout to the remaining wall-clock budget."""
+    clamped = max(0.001, float(timeout_s))
+    settimeout = getattr(response, "settimeout", None)
+    if callable(settimeout):
+        settimeout(clamped)
+        return
+    fp = getattr(response, "fp", None)
+    raw = getattr(fp, "raw", None) if fp is not None else None
+    sock = getattr(raw, "_sock", None) if raw is not None else None
+    sock_settimeout = getattr(sock, "settimeout", None) if sock is not None else None
+    if callable(sock_settimeout):
+        sock_settimeout(clamped)
+
+
+def _read_response_chunk(response, chunk_size: int) -> bytes:
+    """Read at most one bounded chunk; use single-syscall read1 on stdlib HTTPResponse."""
+    if isinstance(response, http.client.HTTPResponse):
+        return response.read1(chunk_size)
+    return response.read(chunk_size)
+
+
+def default_rewrite_http_client(
+    endpoint: str,
+    payload: dict,
+    timeout_s: float,
+    *,
+    clock=time.perf_counter,
+    started_at: float | None = None,
+) -> dict:
+    """POST an OpenAI chat-completions request to a validated 127.0.0.1 endpoint.
+
+    D-R3: enforce a monotonic wall-clock deadline across connect/headers and bounded
+    4 KiB body reads (capped at 64 KiB) rather than a static per-socket-op timeout, so
+    a slow-drip response cannot hold the request past the deadline beyond one in-flight
+    socket read operation.
+    """
     validated_url = validate_rewrite_url(endpoint)
     validated_timeout_s = validate_rewrite_timeout(timeout_s)
+    start = clock() if started_at is None else float(started_at)
+    deadline = start + validated_timeout_s
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         validated_url,
@@ -224,10 +264,38 @@ def default_rewrite_http_client(endpoint: str, payload: dict, timeout_s: float) 
         headers={"Content-Type": "application/json", "Accept": "application/json"},
         method="POST",
     )
+    chunks: list[bytes] = []
+    total_bytes = 0
     with _REWRITE_OPENER.open(request, timeout=validated_timeout_s) as response:
-        raw_bytes = response.read(65536 + 1)
-    if len(raw_bytes) > 65536:
-        raise ValueError("Rewrite response body exceeds 64 KiB limit.")
+        remaining = deadline - clock()
+        if remaining <= 0.0:
+            raise TimeoutError(
+                f"Rewrite request exceeded deadline of {validated_timeout_s}s after headers."
+            )
+        while True:
+            _set_response_socket_timeout(response, remaining)
+            chunk = _read_response_chunk(response, REWRITE_READ_CHUNK_BYTES)
+            if not isinstance(chunk, (bytes, bytearray)):
+                raise ValueError(
+                    f"Rewrite response read must return bytes, got {type(chunk).__name__}."
+                )
+            remaining = deadline - clock()
+            if not chunk:
+                if remaining < 0.0:
+                    raise TimeoutError(
+                        f"Rewrite request exceeded deadline of {validated_timeout_s}s."
+                    )
+                break
+            if remaining <= 0.0:
+                raise TimeoutError(
+                    f"Rewrite request exceeded deadline of {validated_timeout_s}s during body read."
+                )
+            total_bytes += len(chunk)
+            if total_bytes > REWRITE_MAX_RESPONSE_BYTES:
+                raise ValueError("Rewrite response body exceeds 64 KiB limit.")
+            chunks.append(bytes(chunk))
+
+    raw_bytes = b"".join(chunks)
     return json.loads(raw_bytes.decode("utf-8"))
 
 
@@ -352,10 +420,18 @@ def rewrite_query(
         "max_tokens": 64,
         "stream": False,
     }
-    client = http_client if http_client is not None else default_rewrite_http_client
     started = clock()
     try:
-        raw_response = client(endpoint, payload, validated_timeout_s)
+        if http_client is None:
+            raw_response = default_rewrite_http_client(
+                endpoint,
+                payload,
+                validated_timeout_s,
+                clock=clock,
+                started_at=started,
+            )
+        else:
+            raw_response = http_client(endpoint, payload, validated_timeout_s)
         elapsed_s = max(0.0, clock() - started)
     except Exception as exc:
         elapsed_s = max(0.0, clock() - started)
