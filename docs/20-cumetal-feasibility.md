@@ -666,4 +666,24 @@ Metal 32023.922를 수집했으며 `errors={}`였다. sysctl 3종·system_profil
 
 ## #84 비정상 실행 단위 회귀 (2026-11-16, live 미실행)
 
-주입 runner/CPU fixture로 compile timeout, signal 종료, 빈/잘린/과대 출력, exit 0의 wrong-result·NaN·Inf 및 matrix PASS/finite=false 모순을 검사한다. 기존 도구 누락·doctor 실패/timeout·provenance 테스트와 함께 실행하며 benchmark의 CPU 비정상 실행도 실패 사유와 수치 미노출을 확인한다.
+주입 runner/CPU fixture로 compile timeout, signal 종료, 빈/잘린/과대 출력, exit 0의 wrong-result·NaN·Inf 및 matrix PASS와 유한성 토큰의 모순을 검사한다. present `finite`는 probe가 출력하는 정확한 `true`만 허용하며, 필드가 없는 기존 기록은 유지한다. 기존 도구 누락·doctor 실패/timeout·provenance 테스트와 함께 실행하며 benchmark의 CPU 비정상 실행도 실패 사유와 `timing` 결과 미노출을 확인한다. 진단용 `compile_link_wall_ns`·단계별 `elapsed_ns` 및 파싱 가능한 `timing_unverified`는 실패해도 보존한다.
+
+| 비정상 사례 | Rust 주입 runner | Matrix fixture / benchmark CPU |
+|---|---|---|
+| toolchain·cumetal·cumetalc 누락 | unavailable·사유 | compile 거부 → unavailable |
+| doctor 실패·timeout | unavailable·사유 | doctor는 진단이며 capability gate 아님 |
+| compile 실패·timeout | unavailable/failed·사유 | 거부 → unavailable, 142 → failed |
+| run 비정상 exit·timeout·signal | failed·사유 | failed (미지원 API는 unavailable) |
+| exit 0, device 없음·비 Apple GPU | pass 거부 | provenance 부족 → partial |
+| exit 0, wrong-result·NaN·Inf | pass 거부 | MISMATCH 또는 PASS+finite=false/maybe/TRUE/빈 값 → failed |
+| 빈·잘린·과대 출력 | pass 거부·실패 유지 | parity 누락/잘림 → failed; 과대 실패 로그는 failed 유지 |
+| benchmark 비정상 CPU 실행 | 해당 없음 | failed·사유·timing 없음; 유효 출력 뒤 exit 7도 timing_unverified만 보존 |
+
+수정 전 관측(단위/CPU 증거이며 live GPU 증거 아님):
+> Rust: 35 passed; 2 failed (wrong numeric / truncated metric).
+> Python: 14 tests; failures=2 (PASS+finite=false).
+> Review regression: 15 tests; failures=3 (finite=maybe/TRUE/빈 값, supported != failed).
+> Empty-token regression: 1 test; failures=1 (finite=, supported != failed).
+> Benchmark 문구 반증: AssertionError: failed output retains compile_link_wall_ns=200.
+
+전체 `make verify`와 live 판정은 호스트 오케스트레이터가 확정한다. live sanity 명령(이 lane에서는 미실행): `cargo test --locked --manifest-path src-tauri/Cargo.toml live_smoke -- --nocapture`.

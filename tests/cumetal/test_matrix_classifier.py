@@ -107,6 +107,16 @@ class MatrixClassifierTests(unittest.TestCase):
                 self.assertEqual(result['class'], 'failed')
                 self.assertTrue(result['caveats'])
 
+    def test_present_finite_requires_exact_true(self):
+        for finite in ('true', 'false', 'maybe', 'TRUE', '""', ''):
+            with self.subTest(finite=finite):
+                self.write('jit.run2.out', GPU + RESULT.rstrip() + f' finite={finite}\n')
+                result = self.classify()
+                self.assertEqual(result['class'], 'supported' if finite == 'true' else 'failed')
+                if finite != 'true':
+                    self.assertFalse(result['stable'])
+                    self.assertTrue(result['caveats'])
+
     def test_missing_run_is_failed(self):
         for suffix in ('rc', 'out'):
             with self.subTest(suffix=suffix):
