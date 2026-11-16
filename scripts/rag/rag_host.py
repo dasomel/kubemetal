@@ -733,19 +733,35 @@ def chunk_records(fpath: Path, content: str, chunking: str = "fixed"):
 
     "heading" applies only to Markdown (`#` is a comment in .py/.yaml); its ids carry an
     `h` marker (`name_h0`) so they can never collide with fixed ids (`name_0`).
+    "python" (or "source") applies Python AST-based structure chunking to .py files; its ids carry a
+    `p` marker (`name_p0`) when structured parsing succeeds. On syntax error, it falls back
+    to fixed chunking with marker `""` and records the fallback reason (D22).
     """
     if chunking == "heading" and fpath.suffix.lower() == ".md":
         from chunking import chunk_markdown_headings
         file_chunks, marker = chunk_markdown_headings(content, chunk_size=500, overlap=50), "h"
+    elif chunking in ("python", "source") and fpath.suffix.lower() == ".py":
+        from source_chunking import chunk_python_source
+        res = chunk_python_source(content, chunk_size=500, overlap=50)
+        file_chunks = res
+        marker = "p" if getattr(res, "structured", True) else ""
     else:
         file_chunks, marker = chunk_text(content, chunk_size=500, overlap=50), ""
-    return [{
+    records = [{
         "id": f"{fpath.name}_{marker}{idx}",
         "source": str(fpath),
         "filename": fpath.name,
         "chunk_index": idx,
         "text": chunk
     } for idx, chunk in enumerate(file_chunks)]
+    if hasattr(file_chunks, "structured"):
+        class ChunkRecordsList(list):
+            pass
+        wrapped = ChunkRecordsList(records)
+        wrapped.structured = getattr(file_chunks, "structured", True)
+        wrapped.fallback_reason = getattr(file_chunks, "fallback_reason", None)
+        return wrapped
+    return records
 
 def cmd_index(args):
     docs_dir = Path(args.docs_dir).expanduser().resolve()
@@ -992,7 +1008,7 @@ def main():
     p_index.add_argument("--db-path", default="~/.kubemetal/lancedb")
     p_index.add_argument("--collection", default="default")
     p_index.add_argument("--model", default="sentence-transformers/all-MiniLM-L6-v2")
-    p_index.add_argument("--chunking", choices=("fixed", "heading"), default="fixed")
+    p_index.add_argument("--chunking", choices=("fixed", "heading", "python", "source"), default="fixed")
 
     # query subcommand
     p_query = subparsers.add_parser("query")
