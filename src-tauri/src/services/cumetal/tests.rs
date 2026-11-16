@@ -272,6 +272,7 @@ fn short_output_is_not_marked_truncated() {
 /// 실제 프로세스: 어떤 Mac에서도 결정적이다 — 패닉 없이 끝나고, available이면 모든 증거가
 /// 있어야 하며 unavailable이면 사유가 있어야 한다(Xcode 없는 호스트는 metal 부재로 unavailable).
 #[tokio::test]
+#[ignore = "opt-in live probe: requires the host CuMetal/Metal installation; run with --ignored"]
 async fn live_probe_is_consistent_with_its_evidence() {
     let s = probe_cumetal().await;
     match s.state {
