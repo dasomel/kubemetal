@@ -1,0 +1,5 @@
+$ K get nodes -o wide
+NAME               STATUS   ROLES           AGE   VERSION        INTERNAL-IP   EXTERNAL-IP   OS-IMAGE             KERNEL-VERSION      CONTAINER-RUNTIME
+colima-kubemetal   Ready    control-plane   32d   v1.35.0+k3s1   192.168.5.3   <none>        Ubuntu 24.04.4 LTS   6.8.0-117-generic   docker://29.5.2
+
+[rc=0]

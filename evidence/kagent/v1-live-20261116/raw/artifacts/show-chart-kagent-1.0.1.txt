@@ -1,0 +1,22 @@
+$ helm show chart oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 1.0.1
+Pulled: ghcr.io/kagent-dev/kagent/helm/kagent:1.0.1
+Digest: sha256:1c491dde742b91acd8056786177279d3ba8d61fc2c314f6dce66d00ea4bfe9c1
+annotations:
+  org.opencontainers.image.source: https://github.com/kagent-dev/kagent
+apiVersion: v2
+dependencies:
+- condition: kagent-tools.enabled
+  name: kagent-tools
+  repository: oci://ghcr.io/kagent-dev/tools/helm
+  version: 0.3.0
+- condition: oauth2-proxy.enabled
+  name: oauth2-proxy
+  repository: https://oauth2-proxy.github.io/manifests
+  version: ~10.7.0
+description: A Helm chart for kagent, built with Google ADK
+name: kagent
+type: application
+version: 1.0.1
+
+
+[rc=0]

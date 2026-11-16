@@ -1,0 +1,3 @@
+          image: ghcr.io/kagent-dev/kagent/controller:1.0.1
+          image: ghcr.io/kagent-dev/kagent/tools:0.3.0
+          image: ghcr.io/kagent-dev/kagent/ui:1.0.1

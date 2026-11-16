@@ -1,0 +1,17 @@
+$ K get pods -A -o wide
+NAMESPACE     NAME                                             READY   STATUS    RESTARTS         AGE   IP           NODE               NOMINATED NODE   READINESS GATES
+default       mlflow-7688b77dcc-7rcld                          0/1     Error     1                3d    10.42.0.12   colima-kubemetal   <none>           <none>
+default       prefect-79844466dc-x6qcl                         0/1     Error     1                3d    10.42.0.11   colima-kubemetal   <none>           <none>
+default       seaweedfs-57476c586-dfxxl                        1/1     Running   2 (2d19h ago)    3d    10.42.0.8    colima-kubemetal   <none>           <none>
+kagent        helm-agent-67989c657-r7wh6                       0/1     Running   2 (2d19h ago)    3d    10.42.0.6    colima-kubemetal   <none>           <none>
+kagent        k8s-agent-67fdc9db76-szr8s                       0/1     Running   2 (2d19h ago)    3d    10.42.0.10   colima-kubemetal   <none>           <none>
+kagent        kagent-controller-f7b659bbb-48z5j                0/1     Running   5 (2d19h ago)    3d    10.42.0.4    colima-kubemetal   <none>           <none>
+kagent        kagent-kmcp-controller-manager-877f8dd7c-mgmxq   0/1     Running   2 (2d19h ago)    3d    10.42.0.5    colima-kubemetal   <none>           <none>
+kagent        kagent-postgresql-7665497754-5q7jf               0/1     Running   2 (2d19h ago)    3d    10.42.0.7    colima-kubemetal   <none>           <none>
+kagent        kagent-tools-666cb9dbcf-tnjml                    0/1     Running   2 (2d19h ago)    3d    10.42.0.9    colima-kubemetal   <none>           <none>
+kagent        kagent-ui-dc6b9999c-vcbqt                        0/1     Running   3 (2d19h ago)    3d    10.42.0.3    colima-kubemetal   <none>           <none>
+kube-system   coredns-54bf7cdff9-9dpj4                         0/1     Error     11               32d   <none>       colima-kubemetal   <none>           <none>
+kube-system   local-path-provisioner-69879d7dd7-9xqd5          0/1     Error     12               32d   <none>       colima-kubemetal   <none>           <none>
+kube-system   metrics-server-77dbbf84b-bp7fp                   0/1     Running   14 (2d19h ago)   32d   10.42.0.2    colima-kubemetal   <none>           <none>
+
+[rc=0]

@@ -1,0 +1,18 @@
+colima --profile kubemetal stop
+time="2026-11-16T23:07:15+09:00" level=info msg="stopping colima [profile=kubemetal]"
+time="2026-11-16T23:07:15+09:00" level=warning msg="error retrieving runtimes: error retrieving current runtime: empty value"
+time="2026-11-16T23:07:16+09:00" level=info msg="stopping ..." context=vm
+time="2026-11-16T23:07:16+09:00" level=info msg="Sending SIGINT to hostagent process 19119"
+time="2026-11-16T23:07:16+09:00" level=info msg="Waiting for the host agent and the driver processes to shut down"
+time="2026-11-16T23:07:16+09:00" level=info msg="[hostagent] Received SIGINT, shutting down the host agent"
+time="2026-11-16T23:07:16+09:00" level=info msg="[hostagent] Shutting down the host agent"
+time="2026-11-16T23:07:16+09:00" level=info msg="[hostagent] Stopping forwarding `/var/run/docker.sock` (guest) to `/Users/m/.colima/kubemetal/docker.sock` (host)"
+time="2026-11-16T23:07:16+09:00" level=info msg="[hostagent] Stopping forwarding `/var/run/containerd/containerd.sock` (guest) to `/Users/m/.colima/kubemetal/containerd.sock` (host)"
+time="2026-11-16T23:07:16+09:00" level=info msg="[hostagent] Unmounting disk `colima-kubemetal`"
+time="2026-11-16T23:07:16+09:00" level=warning msg="[hostagent] an error during shutting down the host agent" error="failed to run [/bin/sh -c ulimit -S -n 1024 2>/dev/null; exec \"$0\" \"$@\" /usr/bin/ssh -F /dev/null -o IdentityFile=\"/Users/m/.colima/_lima/_config/user\" -o PreferredAuthentications=publickey -o Compression=no -o BatchMode=yes -o IdentitiesOnly=yes -o GSSAPIAuthentication=no -o Ciphers=\"^aes128-gcm@openssh.com,aes256-gcm@openssh.com\" -o StrictHostKeyChecking=yes -o UserKnownHostsFile=\"/Users/m/.colima/_lima/colima-kubemetal/ssh.known_hosts\" -o HostKeyAlias=lima-colima-kubemetal -o User=m -o ControlMaster=auto -o ControlPath=\"/Users/m/.colima/_lima/colima-kubemetal/ssh.sock\" -o ControlPersist=yes -T -O cancel -L /Users/m/.colima/kubemetal/docker.sock:/var/run/docker.sock -N -f -p 49349 127.0.0.1 --]: ``: exit status 255\nfailed to run [/bin/sh -c ulimit -S -n 1024 2>/dev/null; exec \"$0\" \"$@\" /usr/bin/ssh -F /dev/null -o IdentityFile=\"/Users/m/.colima/_lima/_config/user\" -o PreferredAuthentications=publickey -o Compression=no -o BatchMode=yes -o IdentitiesOnly=yes -o GSSAPIAuthentication=no -o Ciphers=\"^aes128-gcm@openssh.com,aes256-gcm@openssh.com\" -o StrictHostKeyChecking=yes -o UserKnownHostsFile=\"/Users/m/.colima/_lima/colima-kubemetal/ssh.known_hosts\" -o HostKeyAlias=lima-colima-kubemetal -o User=m -o ControlMaster=auto -o ControlPath=\"/Users/m/.colima/_lima/colima-kubemetal/ssh.sock\" -o ControlPersist=yes -T -O cancel -L /Users/m/.colima/kubemetal/containerd.sock:/var/run/containerd/containerd.sock -N -f -p 49349 127.0.0.1 --]: ``: exit status 255"
+time="2026-11-16T23:07:16+09:00" level=info msg="[hostagent] Shutting down VZ"
+time="2026-11-16T23:07:26+09:00" level=info msg="[hostagent] [VZ] - vm state change: stopped"
+time="2026-11-16T23:07:26+09:00" level=info msg="Waiting for the instance to shut down"
+time="2026-11-16T23:07:27+09:00" level=info msg="The instance colima-kubemetal has shut down"
+time="2026-11-16T23:07:27+09:00" level=info msg=done
+make cluster-down  0.37s user 0.35s system 6% cpu 11.912 total

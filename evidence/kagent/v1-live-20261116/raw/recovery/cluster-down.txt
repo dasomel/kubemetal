@@ -1,0 +1,165 @@
+colima --profile kubemetal stop
+time="2026-11-16T22:59:08+09:00" level=info msg="stopping colima [profile=kubemetal]"
+time="2026-11-16T22:59:09+09:00" level=info msg="stopping ..." context=kubernetes
++ [ -s /etc/systemd/system/k3s.service ]
++ basename /etc/systemd/system/k3s.service
++ systemctl stop k3s.service
++ [ -x /etc/init.d/k3s* ]
++ killtree
++ kill -9
++ do_unmount_and_remove /run/k3s
++ set +x
++ do_unmount_and_remove /var/lib/kubelet/pods
++ set +x
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/e94c8830-7643-4983-83f5-1ce51f6fbfa7/volumes/kubernetes.io~secret/config
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/e94c8830-7643-4983-83f5-1ce51f6fbfa7/volumes/kubernetes.io~projected/kube-api-access-767wn
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/e94c8830-7643-4983-83f5-1ce51f6fbfa7/volumes/kubernetes.io~projected/kagent-token
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/e09431ec-bfaf-4775-99f7-f6d00cc33a84/volumes/kubernetes.io~projected/kube-api-access-z6lnd
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/e09431ec-bfaf-4775-99f7-f6d00cc33a84/volumes/kubernetes.io~local-volume/pvc-28397766-4bae-40a2-b2d8-f6a7e8b4f01d
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/da77c8de-32af-437e-a1d7-1f949aeb57d3/volumes/kubernetes.io~projected/kube-api-access-5j5zm
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/c0774180-49ad-4e8c-8bc6-2157392a6d7a/volumes/kubernetes.io~secret/config
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/c0774180-49ad-4e8c-8bc6-2157392a6d7a/volumes/kubernetes.io~projected/kube-api-access-blvfn
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/c0774180-49ad-4e8c-8bc6-2157392a6d7a/volumes/kubernetes.io~projected/kagent-token
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/b5def51d-b33e-453d-b2ce-1cc31877703a/volumes/kubernetes.io~projected/kube-api-access-5zkdv
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/99f1b818-0d6f-408b-b602-9981dca3dd81/volumes/kubernetes.io~projected/kube-api-access-52pt5
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/7847ca41-274c-49b3-93aa-3ed591c9f5c2/volumes/kubernetes.io~projected/kube-api-access-d77dx
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/67663f5e-f839-4ae0-acb5-addc3dc56b40/volumes/kubernetes.io~projected/kube-api-access-xxdzs
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/3943760c-394c-4dd3-b063-1b8e772fd262/volumes/kubernetes.io~projected/kube-api-access-nsjrg
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/360f0869-97aa-4975-9c6e-4bbfe64c5ebd/volumes/kubernetes.io~projected/kube-api-access-klbb9
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/360f0869-97aa-4975-9c6e-4bbfe64c5ebd/volumes/kubernetes.io~local-volume/pvc-99d7b705-9b32-4e0a-b420-c8f87cf9fc3f
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/1db42042-f562-4fa0-a85c-a97667170b63/volumes/kubernetes.io~projected/kube-api-access-r4j5g
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/19e7c90e-d334-4dd9-974b-e310be97afc1/volumes/kubernetes.io~projected/kube-api-access-qhczs
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/0b3bb929-3a8a-42eb-831f-d8872f954527/volumes/kubernetes.io~projected/kube-api-access-q55nr
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/0b3bb929-3a8a-42eb-831f-d8872f954527/volume-subpaths/ui-config/ui/3
+sh -c 'umount -f "$0" && rm -rf "$0"' /var/lib/kubelet/pods/0b3bb929-3a8a-42eb-831f-d8872f954527/volume-subpaths/ui-config/ui/2
++ do_unmount_and_remove /var/lib/kubelet/plugins
++ set +x
++ do_unmount_and_remove /run/netns/cni-
++ set +x
++ ip netns show
++ grep cni-
++ xargs -r -t -n 1 ip netns delete
++ remove_interfaces
++ ip link show
++ read ignore iface ignore
++ grep master cni0
++ iface=veth8f1ad415
++ [ -z veth8f1ad415 ]
++ ip link delete veth8f1ad415
++ read ignore iface ignore
++ iface=vethf33a95e1
++ [ -z vethf33a95e1 ]
++ ip link delete vethf33a95e1
++ read ignore iface ignore
++ iface=vethb112f6c5
++ [ -z vethb112f6c5 ]
++ ip link delete vethb112f6c5
++ read ignore iface ignore
++ iface=veth2b3cdaa8
++ [ -z veth2b3cdaa8 ]
++ ip link delete veth2b3cdaa8
++ read ignore iface ignore
++ iface=veth269f9700
++ [ -z veth269f9700 ]
++ ip link delete veth269f9700
++ read ignore iface ignore
++ iface=veth5c13e8a8
++ [ -z veth5c13e8a8 ]
++ ip link delete veth5c13e8a8
++ read ignore iface ignore
++ iface=veth0c3ab80c
++ [ -z veth0c3ab80c ]
++ ip link delete veth0c3ab80c
++ read ignore iface ignore
++ iface=veth2d55b4ef
++ [ -z veth2d55b4ef ]
++ ip link delete veth2d55b4ef
++ read ignore iface ignore
++ iface=veth5292569b
++ [ -z veth5292569b ]
++ ip link delete veth5292569b
++ read ignore iface ignore
++ iface=veth4d8dd79e
++ [ -z veth4d8dd79e ]
++ ip link delete veth4d8dd79e
++ read ignore iface ignore
++ iface=veth66956748
++ [ -z veth66956748 ]
++ ip link delete veth66956748
++ read ignore iface ignore
++ iface=veth095bd5d0
++ [ -z veth095bd5d0 ]
++ ip link delete veth095bd5d0
++ read ignore iface ignore
++ iface=vethbf5f6621
++ [ -z vethbf5f6621 ]
++ ip link delete vethbf5f6621
++ read ignore iface ignore
++ ip link delete cni0
++ ip link delete flannel.1
++ ip link delete flannel-v6.1
+Cannot find device "flannel-v6.1"
++ ip link delete kube-ipvs0
+Cannot find device "kube-ipvs0"
++ ip link delete flannel-wg
+Cannot find device "flannel-wg"
++ ip link delete flannel-wg-v6
+Cannot find device "flannel-wg-v6"
++ command -v tailscale
++ [ -n  ]
++ rm -rf /var/lib/cni/
+rm: cannot remove '/var/lib/cni/': Device or resource busy
++ iptables-save
++ grep -v KUBE-
++ grep -iv flannel
++ grep -v CNI-
++ iptables-restore
++ ip6tables-save
++ grep -v KUBE-
++ grep -v CNI-
++ grep -iv flannel
++ ip6tables-restore
+k8s_local-path-provisioner_local-path-provisioner-69879d7dd7-9xqd5_kube-system_19e7c90e-d334-4dd9-974b-e310be97afc1_15
+k8s_controller_kagent-controller-f7b659bbb-48z5j_kagent_7847ca41-274c-49b3-93aa-3ed591c9f5c2_6
+k8s_mlflow_mlflow-7688b77dcc-7rcld_default_1db42042-f562-4fa0-a85c-a97667170b63_2
+k8s_metrics-server_metrics-server-77dbbf84b-bp7fp_kube-system_3943760c-394c-4dd3-b063-1b8e772fd262_15
+k8s_ui_kagent-ui-dc6b9999c-vcbqt_kagent_0b3bb929-3a8a-42eb-831f-d8872f954527_4
+k8s_prefect_prefect-79844466dc-x6qcl_default_360f0869-97aa-4975-9c6e-4bbfe64c5ebd_2
+k8s_coredns_coredns-54bf7cdff9-9dpj4_kube-system_67663f5e-f839-4ae0-acb5-addc3dc56b40_12
+k8s_kagent_k8s-agent-67fdc9db76-szr8s_kagent_c0774180-49ad-4e8c-8bc6-2157392a6d7a_2
+k8s_kagent_helm-agent-67989c657-r7wh6_kagent_e94c8830-7643-4983-83f5-1ce51f6fbfa7_2
+k8s_postgresql_kagent-postgresql-7665497754-5q7jf_kagent_e09431ec-bfaf-4775-99f7-f6d00cc33a84_2
+k8s_tools_kagent-tools-666cb9dbcf-tnjml_kagent_b5def51d-b33e-453d-b2ce-1cc31877703a_2
+k8s_seaweedfs_seaweedfs-57476c586-dfxxl_default_99f1b818-0d6f-408b-b602-9981dca3dd81_2
+k8s_POD_coredns-54bf7cdff9-9dpj4_kube-system_67663f5e-f839-4ae0-acb5-addc3dc56b40_12
+k8s_POD_local-path-provisioner-69879d7dd7-9xqd5_kube-system_19e7c90e-d334-4dd9-974b-e310be97afc1_12
+k8s_manager_kagent-kmcp-controller-manager-877f8dd7c-mgmxq_kagent_da77c8de-32af-437e-a1d7-1f949aeb57d3_2
+k8s_POD_mlflow-7688b77dcc-7rcld_default_1db42042-f562-4fa0-a85c-a97667170b63_2
+k8s_POD_prefect-79844466dc-x6qcl_default_360f0869-97aa-4975-9c6e-4bbfe64c5ebd_2
+k8s_POD_seaweedfs-57476c586-dfxxl_default_99f1b818-0d6f-408b-b602-9981dca3dd81_2
+k8s_POD_helm-agent-67989c657-r7wh6_kagent_e94c8830-7643-4983-83f5-1ce51f6fbfa7_2
+k8s_POD_kagent-tools-666cb9dbcf-tnjml_kagent_b5def51d-b33e-453d-b2ce-1cc31877703a_2
+k8s_POD_kagent-postgresql-7665497754-5q7jf_kagent_e09431ec-bfaf-4775-99f7-f6d00cc33a84_2
+k8s_POD_kagent-kmcp-controller-manager-877f8dd7c-mgmxq_kagent_da77c8de-32af-437e-a1d7-1f949aeb57d3_2
+k8s_POD_kagent-controller-f7b659bbb-48z5j_kagent_7847ca41-274c-49b3-93aa-3ed591c9f5c2_2
+k8s_POD_k8s-agent-67fdc9db76-szr8s_kagent_c0774180-49ad-4e8c-8bc6-2157392a6d7a_2
+k8s_POD_kagent-ui-dc6b9999c-vcbqt_kagent_0b3bb929-3a8a-42eb-831f-d8872f954527_2
+k8s_POD_metrics-server-77dbbf84b-bp7fp_kube-system_3943760c-394c-4dd3-b063-1b8e772fd262_12
+time="2026-11-16T22:59:12+09:00" level=info msg="stopping ..." context=docker
+Stopping 'docker.service', but its triggering units are still active:
+docker.socket
+colima-kubemetal
+time="2026-11-16T22:59:13+09:00" level=info msg="stopping ..." context=vm
+time="2026-11-16T22:59:13+09:00" level=info msg="Sending SIGINT to hostagent process 43866"
+time="2026-11-16T22:59:13+09:00" level=info msg="Waiting for the host agent and the driver processes to shut down"
+time="2026-11-16T22:59:13+09:00" level=info msg="[hostagent] Received SIGINT, shutting down the host agent"
+time="2026-11-16T22:59:13+09:00" level=info msg="[hostagent] Shutting down the host agent"
+time="2026-11-16T22:59:13+09:00" level=info msg="[hostagent] Stopping forwarding `/var/run/docker.sock` (guest) to `/Users/m/.colima/kubemetal/docker.sock` (host)"
+time="2026-11-16T22:59:13+09:00" level=info msg="[hostagent] Stopping forwarding `/var/run/containerd/containerd.sock` (guest) to `/Users/m/.colima/kubemetal/containerd.sock` (host)"
+time="2026-11-16T22:59:13+09:00" level=info msg="[hostagent] Unmounting disk `colima-kubemetal`"
+time="2026-11-16T22:59:13+09:00" level=info msg="[hostagent] Shutting down VZ"
+time="2026-11-16T22:59:13+09:00" level=info msg="[hostagent] [VZ] - vm state change: stopped"
+time="2026-11-16T22:59:14+09:00" level=info msg="Waiting for the instance to shut down"
+time="2026-11-16T22:59:14+09:00" level=info msg="The instance colima-kubemetal has shut down"
+time="2026-11-16T22:59:14+09:00" level=info msg=done
+make cluster-down  0.71s user 0.62s system 22% cpu 5.973 total

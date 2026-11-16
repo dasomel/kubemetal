@@ -1,0 +1,12 @@
+$ bash -c kubectl --context colima-kubemetal get crd -o name | grep -i kagent || true
+customresourcedefinition.apiextensions.k8s.io/agentharnesses.kagent.dev
+customresourcedefinition.apiextensions.k8s.io/agents.kagent.dev
+customresourcedefinition.apiextensions.k8s.io/mcpservers.kagent.dev
+customresourcedefinition.apiextensions.k8s.io/memories.kagent.dev
+customresourcedefinition.apiextensions.k8s.io/modelconfigs.kagent.dev
+customresourcedefinition.apiextensions.k8s.io/modelproviderconfigs.kagent.dev
+customresourcedefinition.apiextensions.k8s.io/remotemcpservers.kagent.dev
+customresourcedefinition.apiextensions.k8s.io/sandboxagents.kagent.dev
+customresourcedefinition.apiextensions.k8s.io/toolservers.kagent.dev
+
+[rc=0]

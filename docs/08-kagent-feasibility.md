@@ -132,3 +132,12 @@ PR #238(kagent가 설치됐지만 준비되지 않으면 degraded)의 집계를 
 [unverified] 설치, DB 연결, controller/Harness 기동, API admission/CEL·unknown-field pruning, conversion webhooks, migration, 기본값·필수값·enum, D10 추론, MCP 호출, UI 및 runtime 호환성. 후보 경로의 의미 동등성과 ModelConfig values→CR 매핑도 미검증이다. metadata 하위 필드는 flattened paths에 없어 판정하지 않는다.
 
 [measured — host-probe/0-kagent-crds-0.9.12-paths.json; host-probe/1-kagent-crds-1.0.0-alpha17-paths.json] 결론(표에 한정): 앱의 기존 `kagent.dev/v1alpha2` CR 식별자는 new inventory의 `api.kagent.dev/v1alpha3`와 다르며, Agent의 `spec.type`, `spec.description`, `spec.declarative` 및 그 출력 하위 필드는 1.x 스키마 경로에 없어 그대로는 해당 스키마의 필드 구조와 맞지 않는다. ModelConfig 관련 선택 경로와 RemoteMCPServer 출력 spec 경로는 동일 타입으로 존재한다. 실제 API 서버의 거절·가지치기·변환 결과는 [unverified]이다.
+
+## kagent 1.0.1 실기 스파이크 — 부분 수행 (measured-local, 2026-11-16, #193 1단계)
+
+증거와 한계는 `evidence/kagent/v1-live-20261116/README.md`. 앱 colima(`kubemetal`)에서 설치 스파이크를 시도했으나
+호스트→API 포워드(36443)가 기동 약 1분 뒤 두 번 끊겨 **클러스터 쓰기 단계(제거·설치·에이전트·LLM)는 수행하지 못했다**; 0.9.12는 건드리지 않았고 VM은 다시 Stopped다.
+- [measured] 1.0.1 차트가 `oci://ghcr.io/kagent-dev/kagent/helm/{kagent,kagent-crds}`에 존재, 다이제스트·sha256 기록. CRD 그룹 `api.kagent.dev/v1alpha3` 8종.
+- [measured] 1.0.1은 Postgres를 번들하지 않고(외부 시크릿 2개 필수), 기본 렌더에 k8s-agent/helm-agent/kmcp가 없으며, Agent는 `harnessRef`→Harness→Substrate WorkerPool을 요구한다.
+- [unknown] Substrate가 Mac 호스트 colima k3s에서 동작하는지, 메모리 예산, 로컬 LLM 왕복. 원인 추정(미증명): 같은 lima `user-v2` 네트워크를 쓰는 다른 VM(beluga)과의 ssh 포워드 충돌.
+

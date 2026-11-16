@@ -1,0 +1,3 @@
+$ K get nodes -o jsonpath={.items[*].status.allocatable}
+{"cpu":"6","ephemeral-storage":"18698430040","hugepages-1Gi":"0","hugepages-2Mi":"0","hugepages-32Mi":"0","hugepages-64Ki":"0","memory":"12221476Ki","pods":"110"}
+[rc=0]
