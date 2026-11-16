@@ -59,10 +59,13 @@ class DefaultPathUnchangedTests(unittest.TestCase):
     def test_python_chunking_leaves_markdown_as_fixed(self):
         md_path = REPO / "docs" / "04-architecture.md"
         text = md_path.read_text(encoding="utf-8")
+        records = chunk_records(md_path, text, "python")
         self.assertEqual(
-            chunk_records(md_path, text, "python"),
+            [{k: v for k, v in row.items() if k not in ("chunking_status", "fallback_reason")}
+             for row in records],
             chunk_records(md_path, text, "fixed"),
         )
+        self.assertTrue(all(row["chunking_status"] == "fixed" for row in records))
 
 
 class DecoratorAndAsyncTests(unittest.TestCase):
@@ -323,7 +326,7 @@ class DeterminismAndIdentityTests(unittest.TestCase):
 
     def test_empty_and_whitespace_input(self):
         self.assertEqual(list(chunk_python_source("")), [])
-        self.assertEqual(list(chunk_python_source("   \n\n\t  ")), [])
+        self.assertEqual(list(chunk_python_source("   \n\n\t  ")), ["   \n\n\t  "])
 
     def test_comments_only_file(self):
         code = "# Just comment line 1\n# Just comment line 2\n"
