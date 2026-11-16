@@ -848,6 +848,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'rag.err.statusLoad': 'RAG 상태 로드 오류:',
     'rag.toast.envSetupFailed': 'RAG 환경 설치 실패: {error}',
     'rag.toast.indexingDone': '문서 인덱싱 완료 ({docs} 문서, {chunks} 청크)',
+    'rag.toast.indexingPartial': '부분 인덱싱: 파일 {count}개를 건너뛰었습니다.',
     'rag.toast.indexingFailed': '문서 인덱싱 실패: {error}',
     'rag.toast.searchFailed': '시맨틱 검색 실패: {error}',
 
@@ -1866,6 +1867,7 @@ export const translations: Record<Language, Record<string, string>> = {
     'rag.err.statusLoad': 'RAG status load error:',
     'rag.toast.envSetupFailed': 'RAG environment installation failed: {error}',
     'rag.toast.indexingDone': 'Document indexing complete ({docs} docs, {chunks} chunks)',
+    'rag.toast.indexingPartial': 'Partial index: skipped {count} file(s).',
     'rag.toast.indexingFailed': 'Document indexing failed: {error}',
     'rag.toast.searchFailed': 'Semantic search failed: {error}',
 

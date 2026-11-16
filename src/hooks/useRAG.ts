@@ -1,8 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { message } from '@tauri-apps/plugin-dialog';
-import type { RagIndexStatus, RagQueryResponse, RagSearchResult, RetrievalMode } from '../types/ipc';
+import type { RagIndexResult, RagIndexStatus, RagQueryResponse, RagSearchResult, RetrievalMode } from '../types/ipc';
 import { useTranslation } from '../i18n/i18nContext';
+
+export function indexResultMessage(
+  result: RagIndexResult,
+  t: (key: string, params?: Record<string, string | number>) => string,
+) {
+  const done = t('rag.toast.indexingDone', { docs: result.indexed_docs, chunks: result.total_chunks });
+  return result.partial
+    ? `${done}\n${t('rag.toast.indexingPartial', { count: result.skipped_count })}\n${result.skipped_files.map(file => `${file.source}: ${file.reason}`).join('\n')}`
+    : done;
+}
 
 export function useRAG(active: boolean = false) {
   const { t } = useTranslation();
@@ -36,10 +46,10 @@ export function useRAG(active: boolean = false) {
     async (docsPath?: string) => {
       setIndexing(true);
       try {
-        const res = await invoke<{ status: string; collection: string; indexed_docs: number; total_chunks: number; db_path: string }>('index_documents', {
+        const res = await invoke<RagIndexResult>('index_documents', {
           docsPath: docsPath || 'docs',
         });
-        await message(t('rag.toast.indexingDone', { docs: res.indexed_docs, chunks: res.total_chunks }), { title: 'KubeMetal', kind: 'info' });
+        await message(indexResultMessage(res, t), { title: 'KubeMetal', kind: res.partial ? 'warning' : 'info' });
         await fetchStatus();
       } catch (err) {
         await message(t('rag.toast.indexingFailed', { error: String(err) }), { title: 'KubeMetal', kind: 'error' });

@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-team7-d1-38-2026-11-16",
+  "task": "#38 D1: report unreadable/unchunkable index files through existing CLI, Rust payload and completion dialog.",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "scripts/rag/rag_host.py",
+      "src/hooks/useRAG.ts",
+      "src/types/ipc.ts",
+      "src/i18n/translations.ts",
+      "tests/rag/test_rag_index_skipped.py",
+      "tests/frontend/rag-results.test.mjs",
+      "docs/mistakes-log.md",
+      "docs/04-architecture.md",
+      ".agents/evals/traces/2026-11-team7-d1.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Read AGENTS.md, matching mistakes log, D22, Makefile, consumers, DESIGN.md and runtime skill. Current worktree only; requested report is the sole external output. No retrieval/chunking/embedding changes, IPC addition, install, cluster command, GPU live run, push or PR."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before fix, unreadable supported files disappeared from default/heading index success; Python/source only exposed legacy error fields. Rust discarded the new fields. Programming exceptions were swallowed.",
+      "evidence": [
+        "test:python3 -B -m unittest discover -s tests/rag -p test_rag_index_skipped.py -v: 5 tests, 11 failures before fix; unreadable fixed/heading output status=ok without skipped_files.",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml index_result_preserves_skipped_files -- --skip live_smoke --skip live_matrix: exit 101, 0 passed, 1 failed before payload change; JSON roundtrip discarded partial/skipped fields.",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml commands::rag -- --skip live_smoke --skip live_matrix: follow-up before formatter fix exit 101; 5 passed, 1 failed; all-failed JSON remained serialized, unparsable fallback passed."
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Always add partial/skipped_files/skipped_count for attempted indexing, including all-failed error. Keep status=ok for partial indexes because existing Rust rejects other statuses. Catch only OSError/UnicodeError; parser-specific exceptions already become explicit chunker fallbacks. Reuse exact reasons in Python/source legacy fields. Extend existing Rust/TS result and native completion dialog with localized warning, count, sources and reasons; no custom UI styling or new IPC. Success rows and IDs unchanged. Follow-up critic fix: nonzero CLI JSON error is formatted through the existing String error path with its message, skipped file count, first five source/reason pairs and and N more; unparseable text and empty-stdout stderr fallback are preserved. Success payload and IPC remain unchanged."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "status": "passed",
+      "scope": "Mocked embedding/LanceDB, real temporary files, Rust serde roundtrip, existing frontend Node suite; tests auto-discovered by make test/make verify. Follow-up error formatter uses synthetic CLI payloads, not a live child process or Tauri dialog.",
+      "summary": "Six Python cases cover all four modes, all-failed, successful bytes/rows, Unicode errors, chunk errors and programming-error propagation. Rust covers full and partial payloads; frontend covers unchanged full success and both localized partial messages. Rust now has six tests including bounded all-failed error details and unparsable stdout/stderr fallback.",
+      "evidence": [
+        "test:python3 -B -m unittest discover -s tests/rag -v: exit 0; Ran 127 tests, OK.",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml commands::rag -- --skip live_smoke --skip live_matrix: exit 0; 6 passed, 0 failed.",
+        "test:make test-frontend: exit 0; tests 35, pass 35, fail 0."
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "status": "passed",
+      "scope": "Rust static checks, TypeScript and IPC boundary checker",
+      "summary": "Requested individual static checks passed.",
+      "evidence": [
+        "ci:cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: exit 0; Finished dev profile.",
+        "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0.",
+        "ci:pnpm exec tsc --noEmit: exit 0.",
+        "ci:python3 scripts/ci/check_ipc_types.py: exit 0; 103 calls, Rust/invoke types agree.",
+        "ci:git diff --check: exit 0."
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "status": "pending",
+      "scope": "make verify in lane sandbox, with temporary cargo wrapper appending -- --skip live_smoke --skip live_matrix to cargo test only",
+      "summary": "SANDBOX-BLOCKED: make exited 2 at Rust unit suite: 542 passed, 5 failed, 3 ignored, 1 filtered out. Four ports tests and verifier_rejects_unlisted_socket failed binding with code 1 PermissionDenied/Operation not permitted. Downstream make steps did not execute; no whole-suite pass claim.",
+      "evidence": [
+        "ci:make verify with temporary cargo wrapper excluding live_smoke/live_matrix (previous lane run): exit 2; cargo test exit 101; 542 passed, 5 failed, 3 ignored, 1 filtered out; five socket-binding PermissionDenied failures. Not rerun for this follow-up; verification remains pending."
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "external_input",
+      "provenance": ".agents/skills/kubemetal-hybrid-runtime-change/SKILL.md",
+      "reviewed": true,
+      "summary": "Applied runtime skill. CLAUDE.md additionally specifies runtime-skill loading and Claude harness, absent from AGENTS.md. No recorded D decision changes. Native dialog uses OS styling; no DESIGN tokens added. No actual Tauri dialog, LanceDB/embedding runtime or GPU/cluster verification claimed."
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "Implementation and focused regression/static checks complete; full gate and real Tauri dialog remain unverified. Follow-up observed cargo commands::rag: 6 passed; clippy -D warnings and fmt --check: exit 0.",
+      "evidence": [
+        "test:python3 -B -m unittest discover -s tests/rag -v: 127 passed.",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml commands::rag -- --skip live_smoke --skip live_matrix: 6 passed.",
+        "test:make test-frontend: 35 passed."
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "state": "B",
+      "summary": "Meaningful verified progress; sandbox socket permission blocks full completion gate. No unrelated fixes.",
+      "next": "Orchestrator reruns make verify on host with cargo-test live_smoke/live_matrix exclusions, then observes partial index warning in actual Tauri app; no GPU live workload required for this reporting-only fix."
+    }
+  ]
+}

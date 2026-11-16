@@ -810,6 +810,7 @@ def cmd_index(args):
     chunks_data = []
     doc_count = 0
     file_chunking = []
+    skipped_files = []
     for fpath in files:
         try:
             content = fpath.read_text(encoding="utf-8", errors="ignore")
@@ -819,12 +820,14 @@ def cmd_index(args):
             if records:
                 doc_count += 1
                 chunks_data.extend(records)
-        except Exception as exc:
+        except (OSError, UnicodeError) as exc:
+            reason = f"{type(exc).__name__}: {exc}"
+            skipped_files.append({"source": str(fpath), "reason": reason})
             if args.chunking in ("python", "source"):
                 file_chunking.append({
                     "source": str(fpath),
                     "chunking_status": "error",
-                    "fallback_reason": f"{type(exc).__name__}: {exc}",
+                    "fallback_reason": reason,
                 })
             continue
 
@@ -833,8 +836,15 @@ def cmd_index(args):
         "fallback_files": sum(f["chunking_status"] == "fallback" for f in file_chunking),
         "error_files": sum(f["chunking_status"] == "error" for f in file_chunking),
     } if args.chunking in ("python", "source") else {})
+    # D22: Keep status=ok for the Rust consumer; explicit partial metadata costs
+    # three fields but preserves successful rows/IDs. Remove only with IPC migration.
+    skipped_summary = {
+        "partial": bool(skipped_files),
+        "skipped_files": skipped_files,
+        "skipped_count": len(skipped_files),
+    }
     if not chunks_data:
-        print(json.dumps({"status": "error", "error": "인덱싱 가능한 텍스트 내용이 없습니다.", **chunking_summary}))
+        print(json.dumps({"status": "error", "error": "인덱싱 가능한 텍스트 내용이 없습니다.", **chunking_summary, **skipped_summary}))
         sys.exit(1)
 
     # Embed chunks
@@ -859,6 +869,7 @@ def cmd_index(args):
         "indexed_docs": doc_count,
         "total_chunks": len(chunks_data),
         "db_path": str(db_path),
+        **skipped_summary,
         **chunking_summary
     }))
 
