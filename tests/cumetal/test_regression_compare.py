@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / 'scripts/cumetal/regression/compare.py'
@@ -74,6 +75,23 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(doc['summary'], {'unchanged': 2})
         self.assertEqual(doc['versions']['cumetal_version'], {'before': 'v1', 'after': 'v2'})
         self.assertIn('no_regression', target.with_suffix('.md').read_text())
+
+    def test_markdown_failure_leaves_no_partial_report_and_can_retry(self):
+        left, _ = self.fixture('old')
+        right, _ = self.fixture('new')
+        target = self.root / 'retry.json'
+        with mock.patch.object(compare, 'compare', return_value={'verdict': 'no_regression'}), \
+                mock.patch.object(compare, 'markdown', side_effect=OSError('injected markdown failure')):
+            with mock.patch.object(sys, 'argv', ['compare.py', str(left), str(right), str(target)]):
+                self.assertEqual(compare.main(), 2)
+        self.assertFalse(target.exists())
+        self.assertFalse(target.with_suffix('.md').exists())
+        with mock.patch.object(compare, 'compare', return_value={'verdict': 'no_regression'}), \
+                mock.patch.object(compare, 'markdown', return_value='# retry\n'):
+            with mock.patch.object(sys, 'argv', ['compare.py', str(left), str(right), str(target)]):
+                self.assertEqual(compare.main(), 0)
+        self.assertTrue(target.exists())
+        self.assertTrue(target.with_suffix('.md').exists())
 
     def test_supported_to_failed_or_unavailable_and_improvement(self):
         left, _ = self.fixture('old')
