@@ -1,0 +1,8 @@
+$ colima list
+PROFILE      STATUS     ARCH       CPUS    MEMORY    DISK      RUNTIME       ADDRESS
+beluga       Running    aarch64    10      24GiB     50GiB     containerd    
+krbnix       Stopped    aarch64    4       8GiB      80GiB     docker        
+kubemetal    Stopped    aarch64    6       12GiB     100GiB    docker+k3s    
+ldapium      Stopped    aarch64    2       2GiB      100GiB    docker        
+
+[rc=0]

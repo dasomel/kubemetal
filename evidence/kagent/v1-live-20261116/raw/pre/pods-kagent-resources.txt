@@ -1,0 +1,11 @@
+$ K -n kagent get pods -o custom-columns=POD:.metadata.name,REQ:.spec.containers[*].resources.requests,LIM:.spec.containers[*].resources.limits
+POD                                              REQ                          LIM
+helm-agent-67989c657-r7wh6                       map[cpu:50m memory:128Mi]    map[cpu:1 memory:256Mi]
+k8s-agent-67fdc9db76-szr8s                       map[cpu:50m memory:128Mi]    map[cpu:1 memory:256Mi]
+kagent-controller-f7b659bbb-48z5j                map[cpu:100m memory:128Mi]   map[cpu:2 memory:512Mi]
+kagent-kmcp-controller-manager-877f8dd7c-mgmxq   map[cpu:10m memory:64Mi]     map[cpu:500m memory:128Mi]
+kagent-postgresql-7665497754-5q7jf               map[cpu:250m memory:256Mi]   map[cpu:500m memory:512Mi]
+kagent-tools-666cb9dbcf-tnjml                    map[cpu:100m memory:128Mi]   map[cpu:1 memory:512Mi]
+kagent-ui-dc6b9999c-vcbqt                        map[cpu:100m memory:256Mi]   map[cpu:1 memory:1Gi]
+
+[rc=0]

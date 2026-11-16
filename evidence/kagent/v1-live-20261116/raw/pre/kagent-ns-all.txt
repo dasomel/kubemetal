@@ -1,0 +1,67 @@
+$ K -n kagent get all,cm,secret,sa,pvc -o wide
+NAME                                                 READY   STATUS    RESTARTS        AGE   IP           NODE               NOMINATED NODE   READINESS GATES
+pod/helm-agent-67989c657-r7wh6                       0/1     Running   2 (2d19h ago)   3d    10.42.0.6    colima-kubemetal   <none>           <none>
+pod/k8s-agent-67fdc9db76-szr8s                       0/1     Running   2 (2d19h ago)   3d    10.42.0.10   colima-kubemetal   <none>           <none>
+pod/kagent-controller-f7b659bbb-48z5j                0/1     Running   5 (2d19h ago)   3d    10.42.0.4    colima-kubemetal   <none>           <none>
+pod/kagent-kmcp-controller-manager-877f8dd7c-mgmxq   0/1     Running   2 (2d19h ago)   3d    10.42.0.5    colima-kubemetal   <none>           <none>
+pod/kagent-postgresql-7665497754-5q7jf               0/1     Running   2 (2d19h ago)   3d    10.42.0.7    colima-kubemetal   <none>           <none>
+pod/kagent-tools-666cb9dbcf-tnjml                    0/1     Running   2 (2d19h ago)   3d    10.42.0.9    colima-kubemetal   <none>           <none>
+pod/kagent-ui-dc6b9999c-vcbqt                        0/1     Running   3 (2d19h ago)   3d    10.42.0.3    colima-kubemetal   <none>           <none>
+
+NAME                                                     TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE   SELECTOR
+service/helm-agent                                       ClusterIP   10.43.135.170   <none>        8080/TCP   3d    app=kagent,kagent=helm-agent
+service/k8s-agent                                        ClusterIP   10.43.132.6     <none>        8080/TCP   3d    app=kagent,kagent=k8s-agent
+service/kagent-controller                                ClusterIP   10.43.120.225   <none>        8083/TCP   3d    app.kubernetes.io/component=controller,app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kagent
+service/kagent-kmcp-controller-manager-metrics-service   ClusterIP   10.43.101.36    <none>        8443/TCP   3d    app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kmcp,control-plane=controller-manager
+service/kagent-postgresql                                ClusterIP   10.43.156.203   <none>        5432/TCP   3d    app.kubernetes.io/component=database,app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kagent
+service/kagent-tools                                     ClusterIP   10.43.114.63    <none>        8084/TCP   3d    app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kagent-tools
+service/kagent-tools-metrics                             ClusterIP   10.43.6.59      <none>        8085/TCP   3d    app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kagent-tools
+service/kagent-ui                                        ClusterIP   10.43.238.238   <none>        8080/TCP   3d    app.kubernetes.io/component=ui,app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kagent
+
+NAME                                             READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS   IMAGES                                              SELECTOR
+deployment.apps/helm-agent                       0/1     1            0           3d    kagent       cr.kagent.dev/kagent-dev/kagent/app:0.9.12          app=kagent,kagent=helm-agent
+deployment.apps/k8s-agent                        0/1     1            0           3d    kagent       cr.kagent.dev/kagent-dev/kagent/app:0.9.12          app=kagent,kagent=k8s-agent
+deployment.apps/kagent-controller                0/1     1            0           3d    controller   cr.kagent.dev/kagent-dev/kagent/controller:0.9.12   app.kubernetes.io/component=controller,app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kagent
+deployment.apps/kagent-kmcp-controller-manager   0/1     1            0           3d    manager      ghcr.io/kagent-dev/kmcp/controller:0.3.0            app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kmcp,control-plane=controller-manager
+deployment.apps/kagent-postgresql                0/1     1            0           3d    postgresql   docker.io/library/postgres:18.3-alpine              app.kubernetes.io/component=database,app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kagent
+deployment.apps/kagent-tools                     0/1     1            0           3d    tools        ghcr.io/kagent-dev/kagent/tools:0.2.1               app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kagent-tools
+deployment.apps/kagent-ui                        0/1     1            0           3d    ui           cr.kagent.dev/kagent-dev/kagent/ui:0.9.12           app.kubernetes.io/component=ui,app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kagent
+
+NAME                                                       DESIRED   CURRENT   READY   AGE   CONTAINERS   IMAGES                                              SELECTOR
+replicaset.apps/helm-agent-67989c657                       1         1         0       3d    kagent       cr.kagent.dev/kagent-dev/kagent/app:0.9.12          app=kagent,kagent=helm-agent,pod-template-hash=67989c657
+replicaset.apps/helm-agent-7db7698765                      0         0         0       3d    kagent       cr.kagent.dev/kagent-dev/kagent/app:0.9.12          app=kagent,kagent=helm-agent,pod-template-hash=7db7698765
+replicaset.apps/k8s-agent-67fdc9db76                       1         1         0       3d    kagent       cr.kagent.dev/kagent-dev/kagent/app:0.9.12          app=kagent,kagent=k8s-agent,pod-template-hash=67fdc9db76
+replicaset.apps/kagent-controller-f7b659bbb                1         1         0       3d    controller   cr.kagent.dev/kagent-dev/kagent/controller:0.9.12   app.kubernetes.io/component=controller,app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kagent,pod-template-hash=f7b659bbb
+replicaset.apps/kagent-kmcp-controller-manager-877f8dd7c   1         1         0       3d    manager      ghcr.io/kagent-dev/kmcp/controller:0.3.0            app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kmcp,control-plane=controller-manager,pod-template-hash=877f8dd7c
+replicaset.apps/kagent-postgresql-7665497754               1         1         0       3d    postgresql   docker.io/library/postgres:18.3-alpine              app.kubernetes.io/component=database,app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kagent,pod-template-hash=7665497754
+replicaset.apps/kagent-tools-666cb9dbcf                    1         1         0       3d    tools        ghcr.io/kagent-dev/kagent/tools:0.2.1               app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kagent-tools,pod-template-hash=666cb9dbcf
+replicaset.apps/kagent-ui-dc6b9999c                        1         1         0       3d    ui           cr.kagent.dev/kagent-dev/kagent/ui:0.9.12           app.kubernetes.io/component=ui,app.kubernetes.io/instance=kagent,app.kubernetes.io/name=kagent,pod-template-hash=dc6b9999c
+
+NAME                               DATA   AGE
+configmap/kagent-builtin-prompts   5      3d
+configmap/kagent-controller        18     3d
+configmap/kagent-ui-config         2      3d
+configmap/kube-root-ca.crt         1      3d
+
+NAME                                       TYPE                 DATA   AGE
+secret/helm-agent                          Opaque               2      3d
+secret/k8s-agent                           Opaque               2      3d
+secret/kagent-openai                       Opaque               1      3d
+secret/kagent-postgresql                   Opaque               1      3d
+secret/sh.helm.release.v1.kagent-crds.v1   helm.sh/release.v1   1      3d
+secret/sh.helm.release.v1.kagent.v1        helm.sh/release.v1   1      3d
+
+NAME                                            AGE
+serviceaccount/default                          3d
+serviceaccount/helm-agent                       3d
+serviceaccount/k8s-agent                        3d
+serviceaccount/kagent-controller                3d
+serviceaccount/kagent-kmcp-controller-manager   3d
+serviceaccount/kagent-postgresql                3d
+serviceaccount/kagent-tools                     3d
+serviceaccount/kagent-ui                        3d
+
+NAME                                      STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS   VOLUMEATTRIBUTESCLASS   AGE   VOLUMEMODE
+persistentvolumeclaim/kagent-postgresql   Bound    pvc-28397766-4bae-40a2-b2d8-f6a7e8b4f01d   500Mi      RWO            local-path     <unset>                 3d    Filesystem
+
+[rc=0]

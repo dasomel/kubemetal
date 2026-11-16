@@ -1,0 +1,5 @@
+# ssh port 64354 owner while kubemetal hostagent (pid 43866) expects it as its sshLocalPort:
+COMMAND   PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+limactl 67325    m   19u  IPv4 0xe0c264bfce5cf2b1      0t0  TCP 127.0.0.1:64354 (LISTEN)
+  PID STARTED                      COMMAND
+67325 Mon Nov 16 22:38:46 2026     /opt/homebrew/bin/limactl usernet -p /Users/m/.colima/_lima/_networks/user-v2/usernet_user-v2.pid -e /Users/m/.colima/_lima/_

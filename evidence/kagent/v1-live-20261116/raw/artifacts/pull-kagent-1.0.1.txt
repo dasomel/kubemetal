@@ -1,0 +1,5 @@
+$ helm pull oci://ghcr.io/kagent-dev/kagent/helm/kagent --version 1.0.1 --destination /private/tmp/claude-501/-Users-m-Documents-IdeaProjects-20-dasomel-kubemetal/f2cd31d7-fed5-4738-ac77-ca4fedc89f6a/scratchpad/kagent-v1/charts/new
+Pulled: ghcr.io/kagent-dev/kagent/helm/kagent:1.0.1
+Digest: sha256:1c491dde742b91acd8056786177279d3ba8d61fc2c314f6dce66d00ea4bfe9c1
+
+[rc=0]

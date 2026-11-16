@@ -1,0 +1,4 @@
+agents.kagent.dev kagent   helm-agent
+agents.kagent.dev kagent   k8s-agent
+modelconfigs.kagent.dev kagent   default-model-config
+remotemcpservers.kagent.dev kagent   kagent-tool-server

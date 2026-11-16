@@ -1,0 +1,6 @@
+$ H list -A
+NAME       	NAMESPACE	REVISION	UPDATED                             	STATUS  	CHART             	APP VERSION
+kagent     	kagent   	1       	2026-11-13 22:13:34.229039 +0900 KST	deployed	kagent-0.9.12     	           
+kagent-crds	kagent   	1       	2026-11-13 22:13:32.256482 +0900 KST	deployed	kagent-crds-0.9.12	           
+
+[rc=0]

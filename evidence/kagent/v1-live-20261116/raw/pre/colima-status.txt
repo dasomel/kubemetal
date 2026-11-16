@@ -1,0 +1,10 @@
+$ colima --profile kubemetal status
+time="2026-11-16T23:00:13+09:00" level=info msg="colima [profile=kubemetal] is running using macOS Virtualization.Framework"
+time="2026-11-16T23:00:13+09:00" level=info msg="arch: aarch64"
+time="2026-11-16T23:00:13+09:00" level=info msg="runtime: docker"
+time="2026-11-16T23:00:13+09:00" level=info msg="mountType: virtiofs"
+time="2026-11-16T23:00:13+09:00" level=info msg="docker socket: unix:///Users/m/.colima/kubemetal/docker.sock"
+time="2026-11-16T23:00:13+09:00" level=info msg="containerd socket: unix:///Users/m/.colima/kubemetal/containerd.sock"
+time="2026-11-16T23:00:13+09:00" level=info msg="kubernetes: enabled"
+
+[rc=0]

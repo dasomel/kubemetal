@@ -1,0 +1,4 @@
+$ K top node
+error: Metrics API not available
+
+[rc=1]

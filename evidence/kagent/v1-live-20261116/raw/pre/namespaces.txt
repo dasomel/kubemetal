@@ -1,0 +1,9 @@
+$ K get ns
+NAME              STATUS   AGE
+default           Active   32d
+kagent            Active   3d
+kube-node-lease   Active   32d
+kube-public       Active   32d
+kube-system       Active   32d
+
+[rc=0]

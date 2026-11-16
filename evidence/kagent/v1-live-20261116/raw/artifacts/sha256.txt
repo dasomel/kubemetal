@@ -1,0 +1,4 @@
+edb0c2bbfa3e440cd7f47307f80e6048a275c88519c5339dfebfed65998fef41  new/kagent-1.0.1.tgz
+6a6aebfc2667d5a6f1c058741b672b3023844b05e78b921b7576a5b71dd57b4b  new/kagent-crds-1.0.1.tgz
+a6aede4fd39aab4ea0292b68a59ed2b0e41afc50f1e8de8a9a2ead2a89bd5075  old/kagent-0.9.12.tgz
+977e59c4ad7f751f2badea53d5f698220f37a1af28fb282fd7917103a084e7f3  old/kagent-crds-0.9.12.tgz

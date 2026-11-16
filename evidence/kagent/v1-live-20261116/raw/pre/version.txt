@@ -1,0 +1,7 @@
+$ K version
+Client Version: v1.37.2
+Kustomize Version: v5.8.1
+Server Version: v1.35.0+k3s1
+Warning: version difference between client (1.37) and server (1.35) exceeds the supported minor version skew of +/-1
+
+[rc=0]
