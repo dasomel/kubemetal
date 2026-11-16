@@ -556,8 +556,9 @@ fn failure_after_the_stored_launch_cap_still_fails_provenance() {
 }
 
 /// 실제 설치에 대한 live 실행. 설치/컴파일러가 없으면 **명시적으로** 건너뛴다(조용한 통과 금지).
-/// `cargo test live_smoke -- --nocapture`로 JSON을 본다.
+/// `cargo test --lib live_smoke -- --ignored --nocapture`로 JSON을 본다(D22: ignored ≠ PASS).
 #[tokio::test]
+#[ignore = "opt-in Apple GPU smoke: requires real CuMetal/toolchain; run with --ignored"]
 async fn live_smoke_against_real_install() {
     let cumetal = resolve_cli_path("cumetal");
     if let Err(e) = &cumetal {

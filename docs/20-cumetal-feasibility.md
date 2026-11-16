@@ -366,7 +366,7 @@ Metal 툴체인 없이는 실패한다.**
   메모리 할당량 증가는 활동 증가로 판정하지 않는다. 짧은 커널 미포착·0·감소·필드 부재는
   `inconclusive`이며 CPU 실행으로 단정하지 않는다. 기존 CuMetal provenance/verdict는 독립이다.
 - 이 변경의 GPU live 실행은 수행하지 않았다. 오케스트레이터가 idle Mac에서
-  `cargo test --locked --manifest-path src-tauri/Cargo.toml live_smoke -- --nocapture`를 실행해
+  `cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::cumetal::harness::tests::live_smoke_against_real_install -- --exact --ignored --nocapture`를 실행해
   실제 JSON 또는 명시적 `SKIPPED`를 확인해야 한다. 활동 미포착도 유효한 관측 결과다.
 
 ## 2026-11-08 업데이트 — Xcode 설치 후 AOT 경로 검증 (measured-local)
@@ -686,4 +686,32 @@ Metal 32023.922를 수집했으며 `errors={}`였다. sysctl 3종·system_profil
 > Empty-token regression: 1 test; failures=1 (finite=, supported != failed).
 > Benchmark 문구 반증: AssertionError: failed output retains compile_link_wall_ns=200.
 
-전체 `make verify`와 live 판정은 호스트 오케스트레이터가 확정한다. live sanity 명령(이 lane에서는 미실행): `cargo test --locked --manifest-path src-tauri/Cargo.toml live_smoke -- --nocapture`.
+전체 `make verify`와 live 판정은 호스트 오케스트레이터가 확정한다. live sanity 명령(이 lane에서는 미실행): `cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::cumetal::harness::tests::live_smoke_against_real_install -- --exact --ignored --nocapture`.
+
+## 2026-11-16 기본 회귀 / opt-in 실기기 검증 분리 (#84)
+
+기본 `cargo test --lib`, `make test`, `make verify`는 주입 runner 기반 CuMetal
+회귀 테스트를 계속 실행한다. 실제 설치·툴체인을 조회하는
+`live_probe_is_consistent_with_its_evidence`와 Apple GPU workload를 실행하는
+`live_smoke_against_real_install`은 이유를 명시한 `#[ignore]`로 기본 게이트에서
+제외한다. Makefile·CI·프로덕션 harness·판정은 변경하지 않는다.
+
+분리 확인과 기본 회귀(실기기 실행 없음):
+
+```sh
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib cumetal -- --list --ignored
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib cumetal
+```
+
+실기기 프로필은 오케스트레이터가 Apple Silicon 호스트에서 각각 명시적으로 선택한다.
+첫 명령은 실제 설치 probe, 두 번째는 GPU compile/link/run·parity·provenance 검증이다:
+
+```sh
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::cumetal::tests::live_probe_is_consistent_with_its_evidence -- --exact --ignored --nocapture
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib services::cumetal::harness::tests::live_smoke_against_real_install -- --exact --ignored --nocapture
+```
+
+D22: `ignored`는 실기기 PASS가 아니다. smoke의 `SKIPPED`/`unavailable`도
+GPU 성공 증거가 아니므로 실제 JSON·parity·provenance를 확인해야 한다.
+이번 분리 작업에서는 실기기 명령을 실행하지 않았으며, 위 기존 실측 기록의 날짜나
+판정을 새 검증으로 갱신하지 않는다.

@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-2026-11-issue-84-opt-in-live-tests",
+  "task": "C3 #84: default injected-runner regression / opt-in hardware validation split",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "src-tauri/src/services/cumetal/tests.rs",
+      "src-tauri/src/services/cumetal/harness/tests.rs",
+      "docs/20-cumetal-feasibility.md",
+      ".agents/evals/traces/2026-11-issue-84-opt-in-live-tests.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Read AGENTS.md, Rust/Tauri and process mistakes-log sections, Makefile, issue #84, risk policy and reference trace. Current worktree/branch only. No Makefile, CI, production harness, dependencies, IPC, D-registry changes, installs, cluster operations, GPU live execution, push or PR. Existing mistakes-log already records this defect; no duplicate row."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Before editing Rust, ignored-only listing contained zero tests. The same exact-two-name assertion fails on the captured before listing and passes on the after listing. No live test executed.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml --lib cumetal -- --list --ignored (before): exit 0; 0 tests, 0 benchmarks",
+        "test:python3 -B /tmp/c3-check-ignored.py /tmp/c3-before.log: exit 1; AssertionError: ignored tests: expected 2, got 0: []"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Add reasoned #[ignore] to existing live probe and GPU smoke; preserve bodies and injected runner regressions. Document exact opt-in commands and D22: ignored/SKIPPED is not hardware PASS. Historical measured results unchanged."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "summary": "Exactly two live tests ignored; 55 existing regressions still run by default. No new tests, branches, test runner or directory added.",
+      "status": "passed",
+      "scope": "CuMetal test selection and injected-runner regressions only",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml --lib cumetal -- --list --ignored (after): exit 0; exactly live_probe_is_consistent_with_its_evidence and live_smoke_against_real_install; 2 tests, 0 benchmarks",
+        "test:python3 -B /tmp/c3-check-ignored.py /tmp/c3-after-list.log: exit 0; PASS: exactly the two CuMetal live tests are ignored",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml --lib cumetal: exit 0; 55 passed, 0 failed, 2 ignored, 493 filtered out",
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml cumetal -- --skip live_smoke --skip live_matrix: exit 0; library 55 passed, 0 failed, 1 ignored, 494 filtered out; binary 0 tests"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "summary": "Separate requested checks passed. Root Python discovery ran zero tests; all five Makefile suite directories also explicitly executed.",
+      "status": "passed",
+      "scope": "Rust/TypeScript static checks, frontend and Python CPU/mock regression suites",
+      "evidence": [
+        "ci:cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings: exit 0",
+        "ci:cargo fmt --manifest-path src-tauri/Cargo.toml --check: exit 0",
+        "ci:pnpm exec tsc --noEmit: exit 0",
+        "test:make test-frontend: exit 0; 34 passed, 0 failed",
+        "test:python3 -B -m unittest discover: exit 0; Ran 0 tests (no coverage claimed)",
+        "test:python3 -B -m unittest discover -s tests/rag -v: exit 0; Ran 96 tests; OK",
+        "test:python3 -B -m unittest discover -s tests/mlx -v: exit 0; Ran 52 tests; OK",
+        "test:python3 -B -m unittest discover -s scripts/support -v: exit 0; Ran 31 tests; OK (skipped=1)",
+        "test:python3 -B -m unittest discover -s tests/cumetal -v: exit 0; Ran 48 tests; OK",
+        "test:python3 -B -m unittest discover -s tests/kagent -v: exit 0; Ran 6 tests; OK"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "verification",
+      "summary": "SANDBOX-BLOCKED: four ports tests and verifier_rejects_unlisted_socket failed at socket binding. Make stopped at Rust tests; subsequent Python/shell/lint/license/build stages not reached by this invocation. No GPU live tests executed.",
+      "status": "pending",
+      "scope": "Offline make verify; host rerun pending",
+      "evidence": [
+        "ci:CARGO_NET_OFFLINE=true npm_config_offline=true PYTHONDONTWRITEBYTECODE=1 make verify: exit 2; Rust 541 passed, 5 failed, 4 ignored; make: *** [test] Error 101; Os { code: 1, kind: PermissionDenied, message: \"Operation not permitted\" }"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "external_input",
+      "summary": "Reviewed runtime skill; user excludes GPU/cluster execution. CLAUDE.md additionally references runtime skill loading and Claude-only team harness absent from AGENTS.md. No runtime behavior or hardware PASS claimed.",
+      "provenance": ".agents/skills/kubemetal-hybrid-runtime-change/SKILL.md",
+      "reviewed": true
+    },
+    {
+      "id": "e8",
+      "type": "completion_claim",
+      "summary": "Implementation and targeted checks complete only; full verification remains pending (state B). Not a full completion or hardware PASS claim.",
+      "status": "partial",
+      "evidence": [
+        "test:CuMetal default regressions: 55 passed, 2 ignored",
+        "ci:offline make verify SANDBOX-BLOCKED; host rerun pending"
+      ]
+    },
+    {
+      "id": "e9",
+      "type": "task_outcome",
+      "summary": "Meaningful verified progress: default/opt-in split observed. Full make verify sandbox-blocked; hardware validation deliberately not executed.",
+      "state": "B",
+      "next": "Orchestrator reruns CARGO_NET_OFFLINE=true npm_config_offline=true PYTHONDONTWRITEBYTECODE=1 make verify with socket binds permitted. Optional live probe/smoke require exact --ignored commands in docs/20-cumetal-feasibility.md; inspect actual JSON and SKIPPED. Ignored is not hardware PASS."
+    }
+  ]
+}
