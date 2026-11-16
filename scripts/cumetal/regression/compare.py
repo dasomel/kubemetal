@@ -139,10 +139,26 @@ def main():
         if args.output.exists() or md.exists():
             raise ValueError('destination exists')
         doc = compare(args.baseline, args.candidate)
-        with args.output.open('x') as stream:
-            stream.write(json.dumps(doc, indent=2, ensure_ascii=False, sort_keys=True) + '\n')
-        with md.open('x') as stream:
-            stream.write(markdown(doc))
+        staged = []
+        published = []
+        try:
+            for destination, content in (
+                    (args.output, json.dumps(doc, indent=2, ensure_ascii=False, sort_keys=True) + '\n'),
+                    (md, markdown(doc))):
+                fd, name = tempfile.mkstemp(prefix=f'.{destination.name}.', dir=destination.parent)
+                temporary = Path(name)
+                staged.append(temporary)
+                with open(fd, 'w') as stream:
+                    stream.write(content)
+            for temporary, destination in zip(staged, (args.output, md)):
+                temporary.rename(destination)
+                published.append(destination)
+        except BaseException:
+            for path in staged:
+                path.unlink(missing_ok=True)
+            for path in published:
+                path.unlink(missing_ok=True)
+            raise
         return {'no_regression': 0, 'regression': 1, 'incomparable': 2}[doc['verdict']]
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
         print(f'comparison error: {exc}', file=sys.stderr)
