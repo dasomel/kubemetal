@@ -22,12 +22,15 @@ Usage
 
    Chunk IDs carry a `p` marker (`<filename>_p0`, `<filename>_p1`, ...) when
    structured parsing succeeds, distinct from fixed IDs (`<filename>_0`) and
-   Markdown heading IDs (`<filename>_h0`).
+   Markdown heading IDs (`<filename>_h0`). Python/source indexing reports per-file
+   `chunking_status` (structured/fallback/fixed) and `fallback_reason` in CLI JSON
+   (`file_chunking`, `fallback_files`) and stored chunk rows. Empty files appear
+   in the summary even when they produce no rows; fixed/heading modes are unchanged.
 
 Design Decisions & Contracts
 ----------------------------
 - D-S1: Stdlib `ast` only. No third-party parser dependencies (no tree-sitter, libcst).
-- D-S2: Line ranges from the original source. Extracts segments using exact source
+- D-S2: Line ranges from the original source (including whitespace and newlines). Extracts segments using exact source
   line slices to preserve comments, indentation, docstrings, decorators, and syntax.
 - D-S3: Preserves function decorators (`@dec`), `async def` definitions, and nested
   definitions (`def inner():` inside an enclosing function remains in the enclosing chunk).
@@ -37,8 +40,9 @@ Design Decisions & Contracts
   emitted whole. If it exceeds `chunk_size`, it decomposes at method boundaries into
   a class preamble chunk and individual method chunks.
 - D-S6: Bounded chunk size. Large functions or segments exceeding `chunk_size` are
-  split using fixed-size sliding windowing (`chunk_size`, `overlap`).
-- D-S7 (D22 compliance): On syntax or parsing errors (`SyntaxError`), the chunker
+  split using fixed-size sliding windowing (`chunk_size`, `overlap`). With overlap=0,
+  concatenating structured chunks reproduces the input exactly, including blank lines.
+- D-S7 (D22 compliance): On syntax or parsing errors, the chunker
   falls back to fixed-size chunking (`chunk_text`), sets `structured = False`, and
   explicitly records the failure reason in `fallback_reason`. It never fabricates
   a successful structural parse.
@@ -46,6 +50,7 @@ Design Decisions & Contracts
 """
 
 import ast
+import re
 from typing import List, Optional, Tuple
 
 
@@ -71,7 +76,7 @@ def _split_plain(block: str, budget: int, overlap: int) -> List[str]:
     start = 0
     step = max(budget - min(overlap, budget // 2), 1)
     while start < len(block):
-        piece = block[start:start + budget].strip()
+        piece = block[start:start + budget]
         if piece:
             pieces.append(piece)
         if start + budget >= len(block):
@@ -106,13 +111,17 @@ class SourceChunkResult(list):
         return self.structured
 
 
-def _get_start_line(node: ast.AST) -> int:
+def _get_start_line(node: ast.AST, lines: List[str]) -> int:
     """Return earliest line number of a node including decorators."""
     decorators = getattr(node, "decorator_list", [])
     lineno = getattr(node, "lineno", 1)
     if decorators:
         dec_lines = [getattr(d, "lineno", lineno) for d in decorators]
-        return min([lineno] + dec_lines)
+        start = min([lineno] + dec_lines)
+        # Parenthesized decorators can report the expression's line after '@('.
+        while start > 1 and not lines[start - 1].lstrip().startswith("@"):
+            start -= 1
+        return start
     return lineno
 
 
@@ -130,7 +139,7 @@ def _decompose_class(
     overlap: int,
 ) -> List[str]:
     """Decompose an oversized class into class preamble and method chunks."""
-    class_text = "\n".join(lines[class_start - 1 : class_end]).strip()
+    class_text = "".join(lines[class_start - 1 : class_end])
     if len(class_text) <= chunk_size:
         return [class_text]
 
@@ -146,9 +155,9 @@ def _decompose_class(
 
     chunks = []
     # 1. Class preamble (from class_start up to before first child)
-    first_child_start = _get_start_line(children[0])
+    first_child_start = _get_start_line(children[0], lines)
     if first_child_start > class_start:
-        preamble = "\n".join(lines[class_start - 1 : first_child_start - 1]).strip()
+        preamble = "".join(lines[class_start - 1 : first_child_start - 1])
         if preamble:
             if len(preamble) <= chunk_size:
                 chunks.append(preamble)
@@ -158,12 +167,12 @@ def _decompose_class(
     # 2. Iterate children and inter-child statements
     prev_child_end = first_child_start - 1
     for child in children:
-        child_start = _get_start_line(child)
+        child_start = _get_start_line(child, lines)
         child_end = _get_end_line(child)
 
         # Inter-child code (attributes, expressions between methods)
         if child_start > prev_child_end + 1:
-            inter_text = "\n".join(lines[prev_child_end : child_start - 1]).strip()
+            inter_text = "".join(lines[prev_child_end : child_start - 1])
             if inter_text:
                 if len(inter_text) <= chunk_size:
                     chunks.append(inter_text)
@@ -177,7 +186,7 @@ def _decompose_class(
             )
             chunks.extend(child_chunks)
         else:
-            child_text = "\n".join(lines[child_start - 1 : child_end]).strip()
+            child_text = "".join(lines[child_start - 1 : child_end])
             if child_text:
                 if len(child_text) <= chunk_size:
                     chunks.append(child_text)
@@ -188,7 +197,7 @@ def _decompose_class(
 
     # 3. Post-child trailing statements before class_end
     if prev_child_end < class_end:
-        post_text = "\n".join(lines[prev_child_end:class_end]).strip()
+        post_text = "".join(lines[prev_child_end:class_end])
         if post_text:
             if len(post_text) <= chunk_size:
                 chunks.append(post_text)
@@ -212,30 +221,29 @@ def chunk_python_source(
         SourceChunkResult containing the list of chunk strings, structured status,
         and fallback reason if AST parsing failed.
     """
-    stripped = text.strip()
-    if not stripped:
+    if chunk_size <= 0 or not 0 <= overlap < chunk_size:
+        raise ValueError("require chunk_size > 0 and 0 <= overlap < chunk_size")
+
+    if not text:
         return SourceChunkResult([], structured=True, fallback_reason=None)
 
     try:
         tree = ast.parse(text)
-    except Exception as e:
+    except (SyntaxError, ValueError, RecursionError) as e:
         # D22: Never fabricate success on failure.
         # Fall back to fixed chunking and explicitly record failure reason.
         fallback = chunk_text(text, chunk_size=chunk_size, overlap=overlap)
         reason = f"{type(e).__name__}: {e}"
         return SourceChunkResult(fallback, structured=False, fallback_reason=reason)
 
-    lines = text.splitlines()
+    # AST line numbers count Python newlines, not Unicode string separators
+    # or form feeds (which str.splitlines also treats as line boundaries).
+    lines = [line for line in re.findall(r"[^\r\n]*(?:\r\n|\r|\n|$)", text) if line]
     total_lines = len(lines)
 
     # If the file has no AST statements (e.g. only comments and whitespace)
     if not tree.body:
-        if stripped:
-            if len(stripped) <= chunk_size:
-                return SourceChunkResult([stripped], structured=True, fallback_reason=None)
-            chunks = _split_plain(stripped, chunk_size, overlap)
-            return SourceChunkResult(chunks, structured=True, fallback_reason=None)
-        return SourceChunkResult([], structured=True, fallback_reason=None)
+        return SourceChunkResult(_split_plain(text, chunk_size, overlap))
 
     # Group top-level statements into contiguous module blocks and definitions
     groups: List[Tuple[str, List[ast.AST]]] = []
@@ -258,14 +266,10 @@ def chunk_python_source(
     for idx, (kind, nodes) in enumerate(groups):
         if kind == "def":
             node = nodes[0]
-            dec_start = _get_start_line(node)
+            # D-S2: Consume every intervening source line exactly once; preserving
+            # whitespace costs tokens but avoids lost provenance. Fixed mode is unchanged.
+            start = last_end + 1
             end = _get_end_line(node)
-
-            # Include preceding comments immediately above decorators/def
-            c_start = dec_start
-            while c_start - 1 > last_end and lines[c_start - 2].strip().startswith("#"):
-                c_start -= 1
-            start = c_start
 
             if isinstance(node, ast.ClassDef):
                 class_chunks = _decompose_class(
@@ -274,7 +278,7 @@ def chunk_python_source(
                 chunks.extend(class_chunks)
             else:
                 # FunctionDef or AsyncFunctionDef (including nested defs)
-                func_text = "\n".join(lines[start - 1 : end]).strip()
+                func_text = "".join(lines[start - 1 : end])
                 if func_text:
                     if len(func_text) <= chunk_size:
                         chunks.append(func_text)
@@ -283,26 +287,15 @@ def chunk_python_source(
             last_end = max(last_end, end)
         else:
             # Module-level statements (imports, globals, docstrings, expressions)
-            first_node = nodes[0]
-            last_node = nodes[-1]
-            first_lineno = getattr(first_node, "lineno", 1)
-            last_lineno = _get_end_line(last_node)
-
-            if idx == 0:
-                # First module group starts at the very top of file (line 1)
-                start = 1
-            else:
-                c_start = first_lineno
-                while c_start - 1 > last_end and lines[c_start - 2].strip().startswith("#"):
-                    c_start -= 1
-                start = c_start
+            last_lineno = _get_end_line(nodes[-1])
+            start = last_end + 1
 
             end = last_lineno
             # If this is the last group in the file, extend to total_lines
             if idx == len(groups) - 1 and end < total_lines:
                 end = total_lines
 
-            mod_text = "\n".join(lines[start - 1 : end]).strip()
+            mod_text = "".join(lines[start - 1 : end])
             if mod_text:
                 if len(mod_text) <= chunk_size:
                     chunks.append(mod_text)
@@ -312,7 +305,7 @@ def chunk_python_source(
 
     # Trailing comments or code past the last AST definition
     if last_end < total_lines:
-        tail = "\n".join(lines[last_end:total_lines]).strip()
+        tail = "".join(lines[last_end:total_lines])
         if tail:
             if len(tail) <= chunk_size:
                 chunks.append(tail)

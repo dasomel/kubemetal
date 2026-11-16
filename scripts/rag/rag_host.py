@@ -744,7 +744,7 @@ def chunk_records(fpath: Path, content: str, chunking: str = "fixed"):
         from source_chunking import chunk_python_source
         res = chunk_python_source(content, chunk_size=500, overlap=50)
         file_chunks = res
-        marker = "p" if getattr(res, "structured", True) else ""
+        marker = "p" if res.structured else ""
     else:
         file_chunks, marker = chunk_text(content, chunk_size=500, overlap=50), ""
     records = [{
@@ -754,11 +754,22 @@ def chunk_records(fpath: Path, content: str, chunking: str = "fixed"):
         "chunk_index": idx,
         "text": chunk
     } for idx, chunk in enumerate(file_chunks)]
-    if hasattr(file_chunks, "structured"):
+    if chunking in ("python", "source"):
+        # D22: Persist observed analysis state with every row, including mixed
+        # file types; this adds schema fields only for the opt-in source mode.
+        structured = getattr(file_chunks, "structured", None)
+        metadata = {
+            "chunking_status": ("structured" if structured else "fallback")
+            if structured is not None else "fixed",
+            "fallback_reason": getattr(file_chunks, "fallback_reason", None) or "",
+        }
+        for record in records:
+            record.update(metadata)
         class ChunkRecordsList(list):
             pass
         wrapped = ChunkRecordsList(records)
-        wrapped.structured = getattr(file_chunks, "structured", True)
+        wrapped.chunking_metadata = metadata
+        wrapped.structured = structured
         wrapped.fallback_reason = getattr(file_chunks, "fallback_reason", None)
         return wrapped
     return records
@@ -798,18 +809,31 @@ def cmd_index(args):
     # Extract text & chunk
     chunks_data = []
     doc_count = 0
+    file_chunking = []
     for fpath in files:
         try:
             content = fpath.read_text(encoding="utf-8", errors="ignore")
             records = chunk_records(fpath, content, args.chunking)
+            if args.chunking in ("python", "source"):
+                file_chunking.append({"source": str(fpath), **records.chunking_metadata})
             if records:
                 doc_count += 1
                 chunks_data.extend(records)
-        except Exception:
+        except Exception as exc:
+            if args.chunking in ("python", "source"):
+                file_chunking.append({
+                    "source": str(fpath),
+                    "chunking_status": "error",
+                    "fallback_reason": f"{type(exc).__name__}: {exc}",
+                })
             continue
 
+    chunking_summary = ({
+        "file_chunking": file_chunking,
+        "fallback_files": sum(f["chunking_status"] == "fallback" for f in file_chunking),
+    } if args.chunking in ("python", "source") else {})
     if not chunks_data:
-        print(json.dumps({"status": "error", "error": "인덱싱 가능한 텍스트 내용이 없습니다."}))
+        print(json.dumps({"status": "error", "error": "인덱싱 가능한 텍스트 내용이 없습니다.", **chunking_summary}))
         sys.exit(1)
 
     # Embed chunks
@@ -833,7 +857,8 @@ def cmd_index(args):
         "collection": collection,
         "indexed_docs": doc_count,
         "total_chunks": len(chunks_data),
-        "db_path": str(db_path)
+        "db_path": str(db_path),
+        **chunking_summary
     }))
 
 def cmd_query(args, rewrite_http_client=None, rewrite_clock=None):
