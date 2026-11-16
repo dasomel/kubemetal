@@ -831,6 +831,7 @@ def cmd_index(args):
     chunking_summary = ({
         "file_chunking": file_chunking,
         "fallback_files": sum(f["chunking_status"] == "fallback" for f in file_chunking),
+        "error_files": sum(f["chunking_status"] == "error" for f in file_chunking),
     } if args.chunking in ("python", "source") else {})
     if not chunks_data:
         print(json.dumps({"status": "error", "error": "인덱싱 가능한 텍스트 내용이 없습니다.", **chunking_summary}))
