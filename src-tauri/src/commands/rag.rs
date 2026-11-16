@@ -69,12 +69,54 @@ fn retrieval_mode_args(mode: &str) -> [&str; 2] {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkippedIndexFile {
+    pub source: String,
+    pub reason: String,
+}
+
+fn format_index_failure(stdout: &str, stderr: &str) -> String {
+    let text = if stdout.trim().is_empty() {
+        stderr
+    } else {
+        stdout
+    };
+    #[derive(Deserialize)]
+    struct IndexFailure {
+        error: String,
+        skipped_files: Vec<SkippedIndexFile>,
+    }
+
+    let Ok(failure) = serde_json::from_str::<IndexFailure>(text) else {
+        return format!("Indexing failed: {text}");
+    };
+    // D22: Bound dialog detail to five files; omitted entries remain counted.
+    // This costs a short summary; raw output remains the escape hatch for unknown payloads.
+    const DETAIL_LIMIT: usize = 5;
+    let mut message = format!(
+        "Indexing failed: {}\nSkipped files: {}",
+        failure.error,
+        failure.skipped_files.len()
+    );
+    for file in failure.skipped_files.iter().take(DETAIL_LIMIT) {
+        message.push_str(&format!("\n{}: {}", file.source, file.reason));
+    }
+    let remaining = failure.skipped_files.len().saturating_sub(DETAIL_LIMIT);
+    if remaining > 0 {
+        message.push_str(&format!("\nand {remaining} more"));
+    }
+    message
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexResult {
     pub status: String,
     pub collection: String,
     pub indexed_docs: u32,
     pub total_chunks: u32,
     pub db_path: String,
+    pub partial: bool,
+    pub skipped_files: Vec<SkippedIndexFile>,
+    pub skipped_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -376,13 +418,9 @@ pub async fn index_documents(
 
     let stdout_str = String::from_utf8_lossy(&output.stdout);
     if !output.status.success() {
-        return Err(format!(
-            "Indexing failed: {}",
-            if stdout_str.trim().is_empty() {
-                String::from_utf8_lossy(&output.stderr).to_string()
-            } else {
-                stdout_str.to_string()
-            }
+        return Err(format_index_failure(
+            &stdout_str,
+            &String::from_utf8_lossy(&output.stderr),
         ));
     }
 
@@ -481,7 +519,57 @@ pub async fn query_rag(
 
 #[cfg(test)]
 mod retrieval_mode_tests {
+    use super::{format_index_failure, IndexResult};
     use super::{parse_query_response, retrieval_mode_args, validate_retrieval_mode};
+
+    #[test]
+    fn index_failure_reports_all_failed_files_with_bounded_details() {
+        let payload = serde_json::json!({
+            "status": "error",
+            "error": "No valid text chunks extracted from documents.",
+            "partial": true,
+            "skipped_count": 7,
+            "skipped_files": (1..=7).map(|i| serde_json::json!({
+                "source": format!("file{i}.txt"),
+                "reason": "Permission denied"
+            })).collect::<Vec<_>>()
+        });
+        assert_eq!(
+            format_index_failure(&payload.to_string(), "ignored stderr"),
+            "Indexing failed: No valid text chunks extracted from documents.\nSkipped files: 7\nfile1.txt: Permission denied\nfile2.txt: Permission denied\nfile3.txt: Permission denied\nfile4.txt: Permission denied\nfile5.txt: Permission denied\nand 2 more"
+        );
+    }
+
+    #[test]
+    fn index_failure_preserves_unparsable_output() {
+        let raw = "Traceback: index failed\nnot JSON";
+        assert_eq!(
+            format_index_failure(raw, "ignored"),
+            format!("Indexing failed: {raw}")
+        );
+        assert_eq!(
+            format_index_failure(" \n", raw),
+            format!("Indexing failed: {raw}")
+        );
+    }
+
+    #[test]
+    fn index_result_preserves_skipped_files() {
+        for partial in [false, true] {
+            let skipped = if partial {
+                serde_json::json!([{"source": "/docs/bad.py", "reason": "PermissionError: denied"}])
+            } else {
+                serde_json::json!([])
+            };
+            let value = serde_json::json!({
+                "status": "ok", "collection": "docs", "indexed_docs": 1,
+                "total_chunks": 1, "db_path": "/db", "partial": partial,
+                "skipped_count": if partial { 1 } else { 0 }, "skipped_files": skipped
+            });
+            let result: IndexResult = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(serde_json::to_value(result).unwrap(), value);
+        }
+    }
 
     #[test]
     fn query_response_preserves_null_metadata_in_all_modes() {

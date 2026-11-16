@@ -256,3 +256,21 @@ test('handles null id gracefully and renders header with result count', () => {
     assert.ok(html.includes('doc2.md'));
   }
 });
+
+const { indexResultMessage } = await import(new URL('hooks/useRAG.js', output));
+
+test('index completion dialog preserves success and exposes partial reasons in both languages', () => {
+  for (const language of ['en', 'ko']) {
+    const t = (key, params = {}) => Object.entries(params).reduce(
+      (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+      translations[language][key]
+    );
+    const result = { indexed_docs: 1, total_chunks: 2, partial: false, skipped_count: 0, skipped_files: [] };
+    const original = t('rag.toast.indexingDone', { docs: 1, chunks: 2 });
+    assert.equal(indexResultMessage(result, t), original);
+    assert.equal(indexResultMessage({ ...result, partial: true, skipped_count: 2,
+      skipped_files: [{ source: '/docs/a.py', reason: 'PermissionError: denied' },
+        { source: '/docs/b.md', reason: 'OSError: read failed' }]
+    }, t), `${original}\n${t('rag.toast.indexingPartial', { count: 2 })}\n/docs/a.py: PermissionError: denied\n/docs/b.md: OSError: read failed`);
+  }
+});

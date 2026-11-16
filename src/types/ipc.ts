@@ -693,3 +693,14 @@ export interface ModelDownloadStaging {
   errors: string[];
   truncated: boolean;
 }
+
+export interface RagIndexResult {
+  status: string;
+  collection: string;
+  indexed_docs: number;
+  total_chunks: number;
+  db_path: string;
+  partial: boolean;
+  skipped_files: { source: string; reason: string }[];
+  skipped_count: number;
+}

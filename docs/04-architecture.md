@@ -350,6 +350,8 @@ D43: 관리 프로필은 `scripts/colima-profile.txt`에서 읽고 context는 `c
 
 ## #38 retrieval comparison
 
+인덱싱은 모든 청킹 모드에서 `skipped_files: [{source, reason}]`, `skipped_count`, `partial`을 항상 반환한다(정상 시 빈 목록·0·false); Rust 소비자가 `ok`만 허용하므로 부분 성공도 `status: "ok"`이며 기존 완료 대화상자에 양국어 경고와 사유를 표시하고, 전부 실패하면 기존 `error`에 같은 사유를 포함한다. CLI 비정상 종료의 JSON 오류는 Rust가 메시지·누락 수·최대 5개 파일/사유와 `and N more`로 변환하며, 파싱 불가 응답은 원문으로 유지한다. Python/source의 `error_files`·`file_chunking` 오류 사유도 같은 누락 목록과 일치한다.
+
 `scripts/rag/eval_compare.py`는 opt-in CPU 비교 도구다. 커밋된
 `scripts/rag/eval/fixtures/`의 작은 한/영/code/config 문서와 수동 지정한 binary
 문서 qrels를 사용한다. qrels는 구현 단계의 임시 기대값이며 사람의 검토는 대기 중이다. 제품 모델 선택·routing·RRF 정책을 변경하지 않는다.
