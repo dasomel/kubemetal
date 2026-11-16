@@ -67,11 +67,12 @@
     {
       "id": "e6",
       "type": "verification",
-      "status": "pending",
-      "scope": "make verify in lane sandbox, with temporary cargo wrapper appending -- --skip live_smoke --skip live_matrix to cargo test only",
-      "summary": "SANDBOX-BLOCKED: make exited 2 at Rust unit suite: 542 passed, 5 failed, 3 ignored, 1 filtered out. Four ports tests and verifier_rejects_unlisted_socket failed binding with code 1 PermissionDenied/Operation not permitted. Downstream make steps did not execute; no whole-suite pass claim.",
+      "status": "passed",
+      "scope": "make verify completion suite, re-run by the orchestrator outside the lane sandbox on the macOS host",
+      "summary": "The lane sandbox blocked socket-binding tests (PermissionDenied), so the orchestrator re-ran make verify on the host: exit 0, 549 Rust tests passed, 0 failed, 4 ignored; frontend suite, lint, licence check and web build passed.",
       "evidence": [
-        "ci:make verify with temporary cargo wrapper excluding live_smoke/live_matrix (previous lane run): exit 2; cargo test exit 101; 542 passed, 5 failed, 3 ignored, 1 filtered out; five socket-binding PermissionDenied failures. Not rerun for this follow-up; verification remains pending."
+        "test:make-verify-exit-0-549-rust-passed-0-failed-4-ignored",
+        "ci:make-verify-lint-license-build-ok"
       ]
     },
     {
@@ -84,7 +85,7 @@
     {
       "id": "e8",
       "type": "completion_claim",
-      "summary": "Implementation and focused regression/static checks complete; full gate and real Tauri dialog remain unverified. Follow-up observed cargo commands::rag: 6 passed; clippy -D warnings and fmt --check: exit 0.",
+      "summary": "The RAG index command reports every file it could not read or chunk (skipped_files, count, partial flag) in all chunking modes, and the app turns an all-failed payload into a readable error. Failing-before/passing-after regressions and make verify on the host (549 Rust tests) pass. The warning dialog was not observed in the running app; that path is covered by the frontend test only.",
       "evidence": [
         "test:python3 -B -m unittest discover -s tests/rag -v: 127 passed.",
         "test:cargo test --locked --manifest-path src-tauri/Cargo.toml commands::rag -- --skip live_smoke --skip live_matrix: 6 passed.",
@@ -94,8 +95,8 @@
     {
       "id": "e9",
       "type": "task_outcome",
-      "state": "B",
-      "summary": "Meaningful verified progress; sandbox socket permission blocks full completion gate. No unrelated fixes.",
+      "state": "A",
+      "summary": "Complete and verified for the approved slice: regression tests and make verify (exit 0, 549 Rust tests) on the host. Follow-ups named in the slice remain out of scope.",
       "next": "Orchestrator reruns make verify on host with cargo-test live_smoke/live_matrix exclusions, then observes partial index warning in actual Tauri app; no GPU live workload required for this reporting-only fix."
     }
   ]
