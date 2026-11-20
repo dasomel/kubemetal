@@ -54,10 +54,7 @@ pub async fn get_system_health_summary(
         kagent_error,
         overall,
     };
-    crate::services::support_bundle::health_snapshot::retain(
-        &summary.correlation_id,
-        serde_json::to_string_pretty(&summary).map_err(|e| e.to_string())?,
-    )?;
+    crate::services::support_bundle::health_snapshot::retain_summary(&summary)?;
     Ok(summary)
 }
 

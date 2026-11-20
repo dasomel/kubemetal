@@ -4,6 +4,8 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 
+use crate::commands::health::SystemHealthSummary;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HealthSnapshot {
     pub correlation_id: String,
@@ -28,6 +30,13 @@ impl HealthSnapshot {
 // Cost: eight bounded health payloads; eviction/restart requires an explicit refresh.
 const RETENTION_LIMIT: usize = 8;
 static RECENT: Mutex<VecDeque<(String, String)>> = Mutex::new(VecDeque::new());
+
+/// Serializes the summary and retains it under its own `correlation_id`, so the stored
+/// JSON and its key cannot drift. Read it back with `retained(&summary.correlation_id)`.
+pub fn retain_summary(summary: &SystemHealthSummary) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(summary).map_err(|e| e.to_string())?;
+    retain(&summary.correlation_id, json)
+}
 
 pub fn retain(id: &str, json: String) -> Result<(), String> {
     let mut snapshots = RECENT
