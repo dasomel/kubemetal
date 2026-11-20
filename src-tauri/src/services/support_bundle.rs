@@ -534,11 +534,12 @@ pub async fn create_support_bundle_impl(
     let health_summary_json = if let Some(id) = health_snapshot_id {
         Some(health_snapshot::retained(id)?)
     } else {
-        // The summary command already serialized and retained this exact JSON.
         match crate::commands::health::get_system_health_summary(app.clone())
             .await
-            .and_then(|summary| health_snapshot::retained(&summary.correlation_id))
-        {
+            .and_then(|summary| {
+                serde_json::to_string_pretty(&summary)
+                    .map_err(|e| format!("Failed to serialize health summary: {e}"))
+            }) {
             Ok(json) => Some(json),
             Err(err) => Some(
                 serde_json::json!({
