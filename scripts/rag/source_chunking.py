@@ -1,8 +1,9 @@
 """Opt-in Python source code structure-aware chunker (issue #38).
 
 Stdlib only (`ast`), deterministic. The default fixed-size `chunk_text` in
-`rag_host.py` and heading-aware Markdown chunker (`chunking.py`) are untouched;
-this module is used when `--chunking python` (or `--chunking source`) is requested.
+`rag_host.py` and heading-aware Markdown chunker (`chunking.py`) keep their behaviour;
+the plain sliding-window split is shared with `chunking.py` (`_split_plain(strip=False)`).
+This module is used when `--chunking python` (or `--chunking source`) is requested.
 
 Usage
 -----
@@ -99,6 +100,11 @@ class SourceChunkResult(list):
     @property
     def is_structured(self) -> bool:
         return self.structured
+
+    @property
+    def chunks(self) -> List[str]:
+        """The chunk texts as a plain list (the result itself is the list)."""
+        return list(self)
 
 
 def _get_start_line(node: ast.AST, lines: List[str]) -> int:
