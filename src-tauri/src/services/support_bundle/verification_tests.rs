@@ -132,7 +132,7 @@ fn correlation_claim_without_health_identity_is_invalid() {
     fs::write(path, manifest.to_string()).unwrap();
     let report = verify_support_bundle_dir(&root, None).unwrap();
     assert!(!report.verified);
-    assert_eq!(report.health_link_status, "invalid_link");
+    assert_eq!(report.health_link_status, HealthLinkStatus::InvalidLink);
     assert!(report.health_snapshot.is_none());
 }
 
@@ -201,7 +201,11 @@ fn correlation_broken_evidence_is_invalid_link() {
         }
         fs::write(&result.manifest_path, manifest.to_string()).unwrap();
         let report = verify_support_bundle_dir(root, None).unwrap();
-        assert_eq!(report.health_link_status, "invalid_link", "{damage}");
+        assert_eq!(
+            report.health_link_status,
+            HealthLinkStatus::InvalidLink,
+            "{damage}"
+        );
         assert!(!report.verified, "{damage}");
         if damage == "hash" {
             assert!(report

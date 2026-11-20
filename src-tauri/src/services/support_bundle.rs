@@ -108,9 +108,20 @@ pub struct VerificationProblem {
     pub message: String,
 }
 
+/// Wire strings (`linked`/`not_linked`/`mismatch`/`invalid_link`) are mirrored by the
+/// literal union in `src/types/ipc.ts`; `snake_case` keeps them byte-identical.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HealthLinkStatus {
+    Linked,
+    NotLinked,
+    Mismatch,
+    InvalidLink,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SupportBundleVerificationReport {
-    pub health_link_status: String,
+    pub health_link_status: HealthLinkStatus,
     pub health_snapshot: Option<HealthSnapshot>,
     pub verified: bool,
     pub status: String,
@@ -120,6 +131,29 @@ pub struct SupportBundleVerificationReport {
     pub omitted_count: usize,
     pub problems: Vec<VerificationProblem>,
     pub notes: Vec<String>,
+}
+
+impl SupportBundleVerificationReport {
+    /// Fail-closed report for checks that abort before any file is verified.
+    fn aborted(
+        bundle_dir: &Path,
+        manifest_sha256: String,
+        problems: Vec<VerificationProblem>,
+        notes: Vec<String>,
+    ) -> Self {
+        Self {
+            health_link_status: HealthLinkStatus::NotLinked,
+            health_snapshot: None,
+            verified: false,
+            status: "FAIL".into(),
+            bundle_dir: bundle_dir.to_string_lossy().to_string(),
+            manifest_sha256,
+            files_checked: 0,
+            omitted_count: 0,
+            problems,
+            notes,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -500,17 +534,12 @@ pub async fn create_support_bundle_impl(
     let health_summary_json = if let Some(id) = health_snapshot_id {
         Some(health_snapshot::retained(id)?)
     } else {
-        match crate::commands::health::get_system_health_summary(app.clone()).await {
-            Ok(summary) => match serde_json::to_string_pretty(&summary) {
-                Ok(json) => Some(json),
-                Err(e) => Some(
-                    serde_json::json!({
-                        "status": "failed",
-                        "error": format!("Failed to serialize health summary: {e}")
-                    })
-                    .to_string(),
-                ),
-            },
+        // The summary command already serialized and retained this exact JSON.
+        match crate::commands::health::get_system_health_summary(app.clone())
+            .await
+            .and_then(|summary| health_snapshot::retained(&summary.correlation_id))
+        {
+            Ok(json) => Some(json),
             Err(err) => Some(
                 serde_json::json!({
                     "status": "failed",
@@ -742,21 +771,15 @@ pub fn verify_support_bundle_dir(
     let root_meta = match fs::symlink_metadata(bundle_dir) {
         Ok(m) => m,
         Err(e) => {
-            return Ok(SupportBundleVerificationReport {
-                health_link_status: "not_linked".into(),
-                health_snapshot: None,
-                verified: false,
-                status: "FAIL".into(),
-                bundle_dir: bundle_dir.to_string_lossy().to_string(),
-                manifest_sha256: String::new(),
-                files_checked: 0,
-                omitted_count: 0,
-                problems: vec![VerificationProblem {
+            return Ok(SupportBundleVerificationReport::aborted(
+                bundle_dir,
+                String::new(),
+                vec![VerificationProblem {
                     category: "unreadable".into(),
                     message: format!("Failed to read bundle directory: {e}"),
                 }],
                 notes,
-            });
+            ));
         }
     };
     if root_meta.file_type().is_symlink() {
@@ -764,36 +787,24 @@ pub fn verify_support_bundle_dir(
             category: "symlink".into(),
             message: format!("Bundle root {} is a symlink", bundle_dir.display()),
         });
-        return Ok(SupportBundleVerificationReport {
-            health_link_status: "not_linked".into(),
-            health_snapshot: None,
-            verified: false,
-            status: "FAIL".into(),
-            bundle_dir: bundle_dir.to_string_lossy().to_string(),
-            manifest_sha256: String::new(),
-            files_checked: 0,
-            omitted_count: 0,
+        return Ok(SupportBundleVerificationReport::aborted(
+            bundle_dir,
+            String::new(),
             problems,
             notes,
-        });
+        ));
     }
     if !root_meta.is_dir() {
         problems.push(VerificationProblem {
             category: "not-a-directory".into(),
             message: format!("Bundle path {} is not a directory", bundle_dir.display()),
         });
-        return Ok(SupportBundleVerificationReport {
-            health_link_status: "not_linked".into(),
-            health_snapshot: None,
-            verified: false,
-            status: "FAIL".into(),
-            bundle_dir: bundle_dir.to_string_lossy().to_string(),
-            manifest_sha256: String::new(),
-            files_checked: 0,
-            omitted_count: 0,
+        return Ok(SupportBundleVerificationReport::aborted(
+            bundle_dir,
+            String::new(),
             problems,
             notes,
-        });
+        ));
     }
 
     // 2. manifest.json 검사
@@ -805,18 +816,12 @@ pub fn verify_support_bundle_dir(
                 category: "manifest-unreadable".into(),
                 message: format!("Missing or unreadable manifest.json: {e}"),
             });
-            return Ok(SupportBundleVerificationReport {
-                health_link_status: "not_linked".into(),
-                health_snapshot: None,
-                verified: false,
-                status: "FAIL".into(),
-                bundle_dir: bundle_dir.to_string_lossy().to_string(),
-                manifest_sha256: String::new(),
-                files_checked: 0,
-                omitted_count: 0,
+            return Ok(SupportBundleVerificationReport::aborted(
+                bundle_dir,
+                String::new(),
                 problems,
                 notes,
-            });
+            ));
         }
     };
     if m_meta.file_type().is_symlink() {
@@ -824,36 +829,24 @@ pub fn verify_support_bundle_dir(
             category: "symlink".into(),
             message: "manifest.json is a symlink".into(),
         });
-        return Ok(SupportBundleVerificationReport {
-            health_link_status: "not_linked".into(),
-            health_snapshot: None,
-            verified: false,
-            status: "FAIL".into(),
-            bundle_dir: bundle_dir.to_string_lossy().to_string(),
-            manifest_sha256: String::new(),
-            files_checked: 0,
-            omitted_count: 0,
+        return Ok(SupportBundleVerificationReport::aborted(
+            bundle_dir,
+            String::new(),
             problems,
             notes,
-        });
+        ));
     }
     if m_meta.len() > 16 * 1024 * 1024 {
         problems.push(VerificationProblem {
             category: "size".into(),
             message: "manifest.json exceeds 16 MiB".into(),
         });
-        return Ok(SupportBundleVerificationReport {
-            health_link_status: "not_linked".into(),
-            health_snapshot: None,
-            verified: false,
-            status: "FAIL".into(),
-            bundle_dir: bundle_dir.to_string_lossy().to_string(),
-            manifest_sha256: String::new(),
-            files_checked: 0,
-            omitted_count: 0,
+        return Ok(SupportBundleVerificationReport::aborted(
+            bundle_dir,
+            String::new(),
             problems,
             notes,
-        });
+        ));
     }
 
     let manifest_raw = match read_verification_file(&manifest_path, 16 * 1024 * 1024) {
@@ -863,18 +856,12 @@ pub fn verify_support_bundle_dir(
                 category: "manifest-unreadable".into(),
                 message: format!("Failed to read manifest.json: {e}"),
             });
-            return Ok(SupportBundleVerificationReport {
-                health_link_status: "not_linked".into(),
-                health_snapshot: None,
-                verified: false,
-                status: "FAIL".into(),
-                bundle_dir: bundle_dir.to_string_lossy().to_string(),
-                manifest_sha256: String::new(),
-                files_checked: 0,
-                omitted_count: 0,
+            return Ok(SupportBundleVerificationReport::aborted(
+                bundle_dir,
+                String::new(),
                 problems,
                 notes,
-            });
+            ));
         }
     };
     let manifest_sha256 = sha256_digest(&manifest_raw);
@@ -902,18 +889,12 @@ pub fn verify_support_bundle_dir(
                 category: "manifest-malformed".into(),
                 message: format!("manifest.json is not valid schema: {e}"),
             });
-            return Ok(SupportBundleVerificationReport {
-                health_link_status: "not_linked".into(),
-                health_snapshot: None,
-                verified: false,
-                status: "FAIL".into(),
-                bundle_dir: bundle_dir.to_string_lossy().to_string(),
+            return Ok(SupportBundleVerificationReport::aborted(
+                bundle_dir,
                 manifest_sha256,
-                files_checked: 0,
-                omitted_count: 0,
                 problems,
                 notes,
-            });
+            ));
         }
     };
 
@@ -945,9 +926,9 @@ pub fn verify_support_bundle_dir(
     // D22: a claimed link fails closed until its listed evidence passes every check.
     // Cost: one explicit problem; removing optional metadata restores legacy absence.
     let mut health_link_status = if manifest.health_snapshot.is_some() {
-        "invalid_link"
+        HealthLinkStatus::InvalidLink
     } else {
-        "not_linked"
+        HealthLinkStatus::NotLinked
     };
     let mut verified_snapshot = None;
     let mut files_checked = 0;
@@ -1060,12 +1041,12 @@ pub fn verify_support_bundle_dir(
             let observed = health_snapshot::from_json(&actual_bytes);
             match (&manifest.health_snapshot, observed) {
                 (Some(expected), Some(actual)) if *expected == actual => {
-                    health_link_status = "linked";
+                    health_link_status = HealthLinkStatus::Linked;
                     verified_snapshot = Some(actual);
                 }
                 (Some(_), Some(actual)) => {
                     verified_snapshot = Some(actual);
-                    health_link_status = "mismatch";
+                    health_link_status = HealthLinkStatus::Mismatch;
                     problems.push(VerificationProblem {
                         category: "health-link-mismatch".into(),
                         message: "Health snapshot ID or observation time differs from manifest"
@@ -1081,7 +1062,7 @@ pub fn verify_support_bundle_dir(
         files_checked += 1;
     }
 
-    if health_link_status == "invalid_link" {
+    if health_link_status == HealthLinkStatus::InvalidLink {
         problems.push(VerificationProblem {
             category: "health-link-invalid".into(),
             message: "Manifest claims a health snapshot but its evidence is missing, unreadable or invalid".into(),
@@ -1130,7 +1111,7 @@ pub fn verify_support_bundle_dir(
     notes.push(format!("Checked {files_checked} files; status = {status}"));
 
     Ok(SupportBundleVerificationReport {
-        health_link_status: health_link_status.into(),
+        health_link_status,
         health_snapshot: verified_snapshot,
         verified,
         status: status.into(),
