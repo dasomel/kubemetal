@@ -72,7 +72,8 @@ def classify_path(d, path, kernel_probe, repeats=3):
         max_error = fields.get("max_error")
         if max_error is not None:
             try:
-                valid_error = math.isfinite(float(max_error)) and float(max_error) >= 0
+                err = float(max_error)
+                valid_error = math.isfinite(err) and err >= 0
             except ValueError:
                 valid_error = False
             if not valid_error:
@@ -134,7 +135,7 @@ def classify_path(d, path, kernel_probe, repeats=3):
     r["class"] = "supported" if not blocking else "partial"
     return r
 
-def main(work, out_json, repeats, original_result=None, initial=False):
+def classify_matrix(work, repeats, original_result=None, initial=False):
     # D22/D44: replay is bound to the original result, even if all evidence vanished.
     # Cost: callers must retain/pass that JSON. This detects independent/accidental
     # changes, not forgery by someone rewriting both; signatures are out of scope.
@@ -152,9 +153,6 @@ def main(work, out_json, repeats, original_result=None, initial=False):
         actual = {**retained['files'], evidence.INDEX: evidence.file_sha256(Path(work) / evidence.INDEX)}
         if original.get('repeats') != repeats or declared.get('files') != actual:
             raise ValueError('original result evidence digest/inventory mismatch')
-    md = out_json[:-5] + ".md" if out_json.endswith(".json") else out_json + ".md"
-    if retained and (os.path.exists(out_json) or os.path.exists(md)):
-        raise FileExistsError("destination exists")
     env = dict(l.split("=", 1) for l in rd(f"{work}/manifest/env.txt").splitlines() if "=" in l)
     sha = {}
     for l in rd(f"{work}/manifest/sha256.txt").splitlines():
@@ -202,12 +200,24 @@ def main(work, out_json, repeats, original_result=None, initial=False):
            "vocabulary": ["supported", "partial", "unavailable", "failed", "unverified"], "results": rows,
            "summary": dict(collections.Counter(r["overall"] for r in rows))}
     if retained:
-        doc["evidence"] = {"directory": os.path.relpath(work, os.path.dirname(os.path.abspath(out_json))),
-                           "index": evidence.INDEX, "files": {**retained["files"],
+        doc["evidence"] = {"index": evidence.INDEX, "files": {**retained["files"],
                            evidence.INDEX: evidence.file_sha256(f"{work}/{evidence.INDEX}")}}
+    return doc
+
+
+def main(work, out_json, repeats, original_result=None, initial=False):
+    doc = classify_matrix(work, repeats, original_result, initial)
+    retained = "evidence" in doc
+    md = out_json[:-5] + ".md" if out_json.endswith(".json") else out_json + ".md"
+    if retained and (os.path.exists(out_json) or os.path.exists(md)):
+        raise FileExistsError("destination exists")
+    if retained:
+        doc["evidence"] = {"directory": os.path.relpath(work, os.path.dirname(os.path.abspath(out_json))),
+                           **doc["evidence"]}
     with open(out_json, "x" if retained else "w") as f: json.dump(doc, f, indent=2, sort_keys=True); f.write("\n")
 
-    md = out_json[:-5] + ".md" if out_json.endswith(".json") else out_json + ".md"
+    manifest = doc["manifest"]
+    rows = doc["results"]
     def cell(p):
         c = p["class"]; st = {"bit_identical": "bit-identical", "within_tolerance": "tolerance-stable", "tolerance_only": "tolerance-stable"}.get(p.get("stability"), "unstable" if p.get("stable") is False else "-")
         return f"{c} ({st})" if p.get("compile") == "ok" else f"{c} (compile {p.get('compile')})"

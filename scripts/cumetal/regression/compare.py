@@ -29,11 +29,7 @@ def load(path):
         raise ValueError('invalid evidence index')
     root = path.parent / declared['directory']
     # D22: replay verifies evidence.verify plus the original index/file digests.
-    # Cost: temporary JSON/Markdown; retain raw evidence to revisit classification.
-    with tempfile.TemporaryDirectory() as tmp:
-        replay = Path(tmp) / 'replay.json'
-        classify.main(str(root), str(replay), repeats, str(path))
-        rebuilt = json.loads(replay.read_text())
+    rebuilt = classify.classify_matrix(str(root), repeats, str(path))
     for field in ('manifest', 'results'):
         if doc[field] != rebuilt[field]:
             raise ValueError(f'matrix {field} differs from verified replay')
