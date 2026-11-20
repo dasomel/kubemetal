@@ -102,12 +102,14 @@ def _prefix(path, chunk_size):
     return f"[{label}]\n"
 
 
-def _split_plain(block, budget, overlap):
+def _split_plain(block, budget, overlap, *, strip=True):
     """Split an oversized plain paragraph with the fixed chunker's windowing."""
     pieces, start = [], 0
     step = max(budget - min(overlap, budget // 2), 1)
     while start < len(block):
-        piece = block[start:start + budget].strip()
+        piece = block[start:start + budget]
+        if strip:
+            piece = piece.strip()
         if piece:
             pieces.append(piece)
         if start + budget >= len(block):
