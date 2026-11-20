@@ -33,6 +33,7 @@ REWRITE_MAX_RESPONSE_BYTES = 65536
 REWRITE_READ_CHUNK_BYTES = 4096
 REWRITE_PROMPT_VERSION = "v1"
 REWRITE_OUTCOMES = ("disabled", "applied", "timeout", "error", "rejected")
+SOURCE_CHUNKING_MODES = ("python", "source")
 REWRITE_SYSTEM_PROMPT = (
     "Rewrite the user search query into concise retrieval keywords for KubeMetal technical "
     "documentation and code search. Preserve exact identifiers, model names, ports, decision "
@@ -356,59 +357,40 @@ def rewrite_query(
     if max_chars is None or isinstance(max_chars, bool) or not isinstance(max_chars, int) or max_chars < 1:
         raise ValueError("rewrite max_chars must be a positive integer.")
 
-    if not enabled:
-        return {
-            "enabled": False,
-            "outcome": "disabled",
-            "reason": "disabled",
-            "skipped": True,
+    is_enabled = bool(enabled)
+
+    def build_trace(outcome: str, reason: str, **overrides) -> dict:
+        if outcome not in REWRITE_OUTCOMES:
+            raise ValueError(f"Unknown rewrite outcome: {outcome!r}")
+        trace = {
+            "enabled": is_enabled,
+            "outcome": outcome,
+            "reason": reason,
+            "skipped": False,
             "original_query": query,
             "effective_query": query,
             "rewritten_query": None,
-            "endpoint": None,
-            "model": None,
+            "endpoint": endpoint if is_enabled else None,
+            "model": model if is_enabled else None,
             "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": None,
+            "timeout_s": validated_timeout_s if is_enabled else None,
             "latency_ms": None,
             "error": None,
         }
+        trace.update(overrides)
+        return trace
+
+    if not is_enabled:
+        return build_trace("disabled", "disabled", skipped=True)
 
     if mode == "exact":
-        return {
-            "enabled": True,
-            "outcome": "disabled",
-            "reason": "exact_mode",
-            "skipped": True,
-            "original_query": query,
-            "effective_query": query,
-            "rewritten_query": None,
-            "endpoint": endpoint,
-            "model": model,
-            "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": validated_timeout_s,
-            "latency_ms": None,
-            "error": None,
-        }
+        return build_trace("disabled", "exact_mode", skipped=True)
 
     classified_mode, classified_rule = (
         preclassified if preclassified is not None else classify_query(query)
     )
     if classified_mode == "lexical":
-        return {
-            "enabled": True,
-            "outcome": "disabled",
-            "reason": f"exact_query:{classified_rule}",
-            "skipped": True,
-            "original_query": query,
-            "effective_query": query,
-            "rewritten_query": None,
-            "endpoint": endpoint,
-            "model": model,
-            "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": validated_timeout_s,
-            "latency_ms": None,
-            "error": None,
-        }
+        return build_trace("disabled", f"exact_query:{classified_rule}", skipped=True)
 
     payload = {
         "model": model,
@@ -436,94 +418,44 @@ def rewrite_query(
     except Exception as exc:
         elapsed_s = max(0.0, clock() - started)
         is_timeout = _is_timeout_error(exc) or elapsed_s > validated_timeout_s
-        return {
-            "enabled": True,
-            "outcome": "timeout" if is_timeout else "error",
-            "reason": "timeout" if is_timeout else "request_error",
-            "skipped": False,
-            "original_query": query,
-            "effective_query": query,
-            "rewritten_query": None,
-            "endpoint": endpoint,
-            "model": model,
-            "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": validated_timeout_s,
-            "latency_ms": elapsed_s * 1000.0,
-            "error": f"{type(exc).__name__}: {exc}",
-        }
+        return build_trace(
+            "timeout" if is_timeout else "error",
+            "timeout" if is_timeout else "request_error",
+            latency_ms=elapsed_s * 1000.0,
+            error=f"{type(exc).__name__}: {exc}",
+        )
 
     latency_ms = elapsed_s * 1000.0
     if elapsed_s > validated_timeout_s:
-        return {
-            "enabled": True,
-            "outcome": "timeout",
-            "reason": "deadline_exceeded",
-            "skipped": False,
-            "original_query": query,
-            "effective_query": query,
-            "rewritten_query": None,
-            "endpoint": endpoint,
-            "model": model,
-            "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": validated_timeout_s,
-            "latency_ms": latency_ms,
-            "error": f"Rewrite exceeded timeout of {validated_timeout_s}s ({elapsed_s:.3f}s)",
-        }
+        return build_trace(
+            "timeout",
+            "deadline_exceeded",
+            latency_ms=latency_ms,
+            error=f"Rewrite exceeded timeout of {validated_timeout_s}s ({elapsed_s:.3f}s)",
+        )
 
     try:
         content = _extract_rewrite_content(raw_response)
     except (ValueError, KeyError, TypeError) as exc:
-        return {
-            "enabled": True,
-            "outcome": "error",
-            "reason": "invalid_response",
-            "skipped": False,
-            "original_query": query,
-            "effective_query": query,
-            "rewritten_query": None,
-            "endpoint": endpoint,
-            "model": model,
-            "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": validated_timeout_s,
-            "latency_ms": latency_ms,
-            "error": f"{type(exc).__name__}: {exc}",
-        }
+        return build_trace(
+            "error",
+            "invalid_response",
+            latency_ms=latency_ms,
+            error=f"{type(exc).__name__}: {exc}",
+        )
 
     stripped = content.strip()
     if not stripped:
-        return {
-            "enabled": True,
-            "outcome": "rejected",
-            "reason": "empty",
-            "skipped": False,
-            "original_query": query,
-            "effective_query": query,
-            "rewritten_query": None,
-            "endpoint": endpoint,
-            "model": model,
-            "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": validated_timeout_s,
-            "latency_ms": latency_ms,
-            "error": None,
-        }
+        return build_trace("rejected", "empty", latency_ms=latency_ms)
 
     normalized = " ".join(stripped.split())
     if len(stripped) > max_chars or len(normalized) > max_chars:
-        return {
-            "enabled": True,
-            "outcome": "rejected",
-            "reason": "too_long",
-            "skipped": False,
-            "original_query": query,
-            "effective_query": query,
-            "rewritten_query": normalized,
-            "endpoint": endpoint,
-            "model": model,
-            "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": validated_timeout_s,
-            "latency_ms": latency_ms,
-            "error": None,
-        }
+        return build_trace(
+            "rejected",
+            "too_long",
+            rewritten_query=normalized,
+            latency_ms=latency_ms,
+        )
 
     original_normalized = " ".join(query.strip().split())
     if (
@@ -531,37 +463,20 @@ def rewrite_query(
         or normalized == query.strip()
         or normalized.casefold() == original_normalized.casefold()
     ):
-        return {
-            "enabled": True,
-            "outcome": "rejected",
-            "reason": "unchanged",
-            "skipped": False,
-            "original_query": query,
-            "effective_query": query,
-            "rewritten_query": normalized,
-            "endpoint": endpoint,
-            "model": model,
-            "prompt_version": REWRITE_PROMPT_VERSION,
-            "timeout_s": validated_timeout_s,
-            "latency_ms": latency_ms,
-            "error": None,
-        }
+        return build_trace(
+            "rejected",
+            "unchanged",
+            rewritten_query=normalized,
+            latency_ms=latency_ms,
+        )
 
-    return {
-        "enabled": True,
-        "outcome": "applied",
-        "reason": "applied",
-        "skipped": False,
-        "original_query": query,
-        "effective_query": normalized,
-        "rewritten_query": normalized,
-        "endpoint": endpoint,
-        "model": model,
-        "prompt_version": REWRITE_PROMPT_VERSION,
-        "timeout_s": validated_timeout_s,
-        "latency_ms": latency_ms,
-        "error": None,
-    }
+    return build_trace(
+        "applied",
+        "applied",
+        effective_query=normalized,
+        rewritten_query=normalized,
+        latency_ms=latency_ms,
+    )
 
 
 def lancedb_table_names(list_tables_result):
@@ -740,7 +655,7 @@ def chunk_records(fpath: Path, content: str, chunking: str = "fixed"):
     if chunking == "heading" and fpath.suffix.lower() == ".md":
         from chunking import chunk_markdown_headings
         file_chunks, marker = chunk_markdown_headings(content, chunk_size=500, overlap=50), "h"
-    elif chunking in ("python", "source") and fpath.suffix.lower() == ".py":
+    elif chunking in SOURCE_CHUNKING_MODES and fpath.suffix.lower() == ".py":
         from source_chunking import chunk_python_source
         res = chunk_python_source(content, chunk_size=500, overlap=50)
         file_chunks = res
@@ -754,7 +669,7 @@ def chunk_records(fpath: Path, content: str, chunking: str = "fixed"):
         "chunk_index": idx,
         "text": chunk
     } for idx, chunk in enumerate(file_chunks)]
-    if chunking in ("python", "source"):
+    if chunking in SOURCE_CHUNKING_MODES:
         # D22: Persist observed analysis state with every row, including mixed
         # file types; this adds schema fields only for the opt-in source mode.
         structured = getattr(file_chunks, "structured", None)
@@ -810,32 +725,36 @@ def cmd_index(args):
     chunks_data = []
     doc_count = 0
     file_chunking = []
-    skipped_files = []
     for fpath in files:
         try:
             content = fpath.read_text(encoding="utf-8", errors="ignore")
             records = chunk_records(fpath, content, args.chunking)
-            if args.chunking in ("python", "source"):
-                file_chunking.append({"source": str(fpath), **records.chunking_metadata})
+        except (OSError, UnicodeError) as exc:
+            file_chunking.append({
+                "source": str(fpath),
+                "chunking_status": "error",
+                "fallback_reason": f"{type(exc).__name__}: {exc}",
+            })
+        else:
+            metadata = getattr(records, "chunking_metadata", {
+                "chunking_status": "fixed",
+                "fallback_reason": "",
+            })
+            file_chunking.append({"source": str(fpath), **metadata})
             if records:
                 doc_count += 1
                 chunks_data.extend(records)
-        except (OSError, UnicodeError) as exc:
-            reason = f"{type(exc).__name__}: {exc}"
-            skipped_files.append({"source": str(fpath), "reason": reason})
-            if args.chunking in ("python", "source"):
-                file_chunking.append({
-                    "source": str(fpath),
-                    "chunking_status": "error",
-                    "fallback_reason": reason,
-                })
-            continue
 
+    skipped_files = [
+        {"source": f["source"], "reason": f["fallback_reason"]}
+        for f in file_chunking
+        if f["chunking_status"] == "error"
+    ]
     chunking_summary = ({
         "file_chunking": file_chunking,
         "fallback_files": sum(f["chunking_status"] == "fallback" for f in file_chunking),
-        "error_files": sum(f["chunking_status"] == "error" for f in file_chunking),
-    } if args.chunking in ("python", "source") else {})
+        "error_files": len(skipped_files),
+    } if args.chunking in SOURCE_CHUNKING_MODES else {})
     # D22: Keep status=ok for the Rust consumer; explicit partial metadata costs
     # three fields but preserves successful rows/IDs. Remove only with IPC migration.
     skipped_summary = {

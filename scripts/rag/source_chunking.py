@@ -53,6 +53,8 @@ import ast
 import re
 from typing import List, Optional, Tuple
 
+from chunking import _split_plain as _split_window
+
 
 def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
     """Frozen copy of the pre-#38 fixed chunker for fallback compatibility."""
@@ -72,17 +74,7 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]
 
 def _split_plain(block: str, budget: int, overlap: int) -> List[str]:
     """Split an oversized plain code block with sliding windowing."""
-    pieces = []
-    start = 0
-    step = max(budget - min(overlap, budget // 2), 1)
-    while start < len(block):
-        piece = block[start:start + budget]
-        if piece:
-            pieces.append(piece)
-        if start + budget >= len(block):
-            break
-        start += step
-    return pieces
+    return _split_window(block, budget, overlap, strip=False)
 
 
 class SourceChunkResult(list):
@@ -92,7 +84,6 @@ class SourceChunkResult(list):
     chunk texts directly, while also exposing structural metadata:
     - `structured`: True if AST parsing succeeded, False if fallen back.
     - `fallback_reason`: Description of the parse error if fallen back, else None.
-    - `chunks`: Direct access to list[str].
     """
 
     def __init__(
@@ -102,7 +93,6 @@ class SourceChunkResult(list):
         fallback_reason: Optional[str] = None,
     ):
         super().__init__(chunks)
-        self.chunks = list(chunks)
         self.structured = structured
         self.fallback_reason = fallback_reason
 
