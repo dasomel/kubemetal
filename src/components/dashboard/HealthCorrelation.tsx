@@ -1,21 +1,36 @@
 import React from 'react';
 import { Copy } from 'lucide-react';
 import { useTranslation } from '../../i18n/i18nContext';
+import type { SupportBundleVerificationReport } from '../../types/ipc';
 
-export const HealthCorrelation: React.FC<{
-  snapshot?: { correlation_id: string; observed_at: string } | null;
-  status?: 'linked' | 'not_linked' | 'mismatch' | 'invalid_link';
-}> = ({ snapshot, status }) => {
+type CorrelationSnapshot = { correlation_id: string; observed_at: string };
+
+type HealthCorrelationProps = {
+  snapshot?: CorrelationSnapshot | null;
+  status?: SupportBundleVerificationReport['health_link_status'];
+};
+
+const NOTICES = {
+  invalidLink: { key: 'health.correlation.invalidLink', tone: 'text-danger' },
+  mismatch: { key: 'health.correlation.mismatch', tone: 'text-danger' },
+  notLinked: { key: 'health.correlation.notLinked', tone: 'text-inkFaint' },
+} as const;
+
+// A notice replaces the identity row whenever there is no usable identity to show.
+function resolveNotice({ snapshot, status }: HealthCorrelationProps): keyof typeof NOTICES | null {
+  if (status === 'invalid_link') return 'invalidLink';
+  if (status === 'mismatch' && !snapshot) return 'mismatch';
+  if (!snapshot?.correlation_id || status === 'not_linked') return 'notLinked';
+  return null;
+}
+
+export const HealthCorrelation: React.FC<HealthCorrelationProps> = ({ snapshot, status }) => {
   const { t } = useTranslation();
   const [error, setError] = React.useState<string | null>(null);
-  if (status === 'invalid_link') {
-    return <p className="text-caption text-danger">{t('health.correlation.invalidLink')}</p>;
-  }
-  if (status === 'mismatch' && !snapshot) {
-    return <p className="text-caption text-danger">{t('health.correlation.mismatch')}</p>;
-  }
-  if (!snapshot?.correlation_id || status === 'not_linked') {
-    return <p className="text-caption text-inkFaint">{t('health.correlation.notLinked')}</p>;
+  const notice = resolveNotice({ snapshot, status });
+  if (notice !== null || !snapshot) {
+    const { key, tone } = NOTICES[notice ?? 'notLinked'];
+    return <p className={`text-caption ${tone}`}>{t(key)}</p>;
   }
   return (
     <div className="text-caption text-inkMuted">
