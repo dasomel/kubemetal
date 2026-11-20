@@ -135,7 +135,7 @@ def classify_path(d, path, kernel_probe, repeats=3):
     r["class"] = "supported" if not blocking else "partial"
     return r
 
-def classify_matrix(work, repeats, original_result=None, initial=False):
+def classify_matrix(work, repeats, original_result=None, initial=False, after_verify=None):
     # D22/D44: replay is bound to the original result, even if all evidence vanished.
     # Cost: callers must retain/pass that JSON. This detects independent/accidental
     # changes, not forgery by someone rewriting both; signatures are out of scope.
@@ -153,6 +153,8 @@ def classify_matrix(work, repeats, original_result=None, initial=False):
         actual = {**retained['files'], evidence.INDEX: evidence.file_sha256(Path(work) / evidence.INDEX)}
         if original.get('repeats') != repeats or declared.get('files') != actual:
             raise ValueError('original result evidence digest/inventory mismatch')
+    if after_verify is not None:
+        after_verify(retained)  # main() refuses an existing destination here, before any manifest parsing
     env = dict(l.split("=", 1) for l in rd(f"{work}/manifest/env.txt").splitlines() if "=" in l)
     sha = {}
     for l in rd(f"{work}/manifest/sha256.txt").splitlines():
@@ -206,11 +208,12 @@ def classify_matrix(work, repeats, original_result=None, initial=False):
 
 
 def main(work, out_json, repeats, original_result=None, initial=False):
-    doc = classify_matrix(work, repeats, original_result, initial)
-    retained = "evidence" in doc
     md = out_json[:-5] + ".md" if out_json.endswith(".json") else out_json + ".md"
-    if retained and (os.path.exists(out_json) or os.path.exists(md)):
-        raise FileExistsError("destination exists")
+    def refuse_existing(retained):
+        if retained and (os.path.exists(out_json) or os.path.exists(md)):
+            raise FileExistsError("destination exists")
+    doc = classify_matrix(work, repeats, original_result, initial, after_verify=refuse_existing)
+    retained = "evidence" in doc
     if retained:
         doc["evidence"] = {"directory": os.path.relpath(work, os.path.dirname(os.path.abspath(out_json))),
                            **doc["evidence"]}
