@@ -643,6 +643,10 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50):
         start += (chunk_size - overlap)
     return chunks
 
+class ChunkRecordsList(list):
+    """Chunk rows plus the per-file chunking metadata callers read as attributes."""
+
+
 def chunk_records(fpath: Path, content: str, chunking: str = "fixed"):
     """Index records for one file. "fixed" is the original format, byte for byte.
 
@@ -680,8 +684,6 @@ def chunk_records(fpath: Path, content: str, chunking: str = "fixed"):
         }
         for record in records:
             record.update(metadata)
-        class ChunkRecordsList(list):
-            pass
         wrapped = ChunkRecordsList(records)
         wrapped.chunking_metadata = metadata
         wrapped.structured = structured
