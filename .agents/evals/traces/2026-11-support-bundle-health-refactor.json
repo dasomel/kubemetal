@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-2026-11-support-bundle-health-refactor",
+  "task": "Behaviour-preserving cleanup of the support bundle health-link code and the HealthCorrelation component",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "src-tauri/src/commands/health.rs",
+      "src-tauri/src/services/support_bundle.rs",
+      "src-tauri/src/services/support_bundle/health_snapshot.rs",
+      "src-tauri/src/services/support_bundle/verification_tests.rs",
+      "src/components/dashboard/HealthCorrelation.tsx",
+      ".agents/evals/traces/2026-11-support-bundle-health-refactor.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Quality pass requested by the owner on recently merged code. Scope limited to src-tauri support_bundle / health_snapshot / commands::health and HealthCorrelation.tsx. No IPC payload, wire string, user-visible text, Makefile, CI or D-registry change; no cluster or GPU execution."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Not a bug fix: the review found the health link status compared as string literals in several places, a failure report literal repeated at eight early returns, and snapshot retention bookkeeping in the command handler. The existing tests passed before the change and define the behaviour to preserve.",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml support_bundle (before, on main inside make verify): passed"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "Refactor only: HealthLinkStatus enum with snake_case serde (wire format unchanged), one constructor for the aborted verification report, health_snapshot::retain_summary deriving the id from the summary, named props and a notice table in HealthCorrelation. Bundle creation keeps serializing the fresh summary; reusing the retained JSON was rejected because an eviction race would report a failed summary."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "summary": "Existing support bundle and health tests pass unchanged apart from two assertions that now compare the enum value instead of its string; frontend markup tests pass unchanged.",
+      "status": "passed",
+      "scope": "Rust support_bundle and health unit tests, frontend health-summary tests",
+      "evidence": [
+        "test:cargo test --locked --manifest-path src-tauri/Cargo.toml support_bundle: 51 passed, 0 failed",
+        "test:make test-frontend: 35 passed, 0 failed"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "summary": "make verify on the macOS host: exit 0, 549 Rust tests passed, 0 failed, 4 ignored; frontend suite, lint (fmt, clippy -D warnings, tsc, design lint, IPC type check), licence check and web build passed.",
+      "status": "passed",
+      "scope": "make verify completion suite on the macOS host",
+      "evidence": [
+        "test:make-verify-exit-0-549-rust-passed-0-failed-4-ignored",
+        "ci:make-verify-lint-license-build-ok"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "The cleanup is behaviour-preserving as far as the existing test suites and make verify on the host can show (549 Rust tests, 35 frontend tests). It was not observed in the running app.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "summary": "Complete and verified for the cleanup scope: unit and frontend regressions and make verify on the host pass. No live app observation.",
+      "state": "A"
+    }
+  ]
+}
