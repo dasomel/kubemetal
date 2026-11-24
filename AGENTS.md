@@ -7,8 +7,6 @@
 pods in a Colima (`vz`+`virtiofs`) K3s VM; all ML computation runs as macOS host
 processes — Metal GPU cannot be passed through to Linux VMs.
 
-Inspect repository guidance, architecture/design context, `Makefile`, Rust/Tauri configuration, project skills, and the issue/spec only when relevant to the current task. Use the Source Map below to load the owning document instead of preloading all project documentation.
-
 ## Source Map — read the file that owns the topic, don't duplicate it here
 
 | Topic | Canonical file |
@@ -103,17 +101,8 @@ forwards die with their parent.
 
 ## Rules
 
-- Make the smallest coherent change that solves the requested problem.
-- Do not auto-fix unrelated findings; report them separately.
 - Treat Tauri command exposure, filesystem/process/network access, model/tool authorization, credential scope, public API changes, and destructive cluster operations as design changes.
-- Keep low-level host/ML/runtime details behind the appropriate service or adapter boundary.
-- Let formatter/linter rules own deterministic style. Comments explain why, invariants, hazards, or compatibility constraints.
-- For bugs, prefer: reproduce -> failing test/evidence -> minimal fix -> same test passes -> relevant regression suite.
-- Distinguish mocked/unit evidence from real macOS/Tauri/MLX/Kubernetes/runtime verification.
-- Choose verification proportional to task risk and user impact. Do not force full app/cluster verification for unrelated trivial edits, but use real user/runtime evidence when the changed path depends on it.
-- Safe local/disposable inspect-edit-build-test-fix-retest work may proceed within the requested scope. Shared/production/destructive/release/credential/permission/external mutations require explicit authorization unless already granted.
-- Do not claim completion without stating which checks actually ran and their scope.
-- End substantive work as A) complete/verified, B) meaningful verified progress with the next blocker isolated, or C) stop with evidence when further work requires unjustified scope, fragile patches, unsupported assumptions, or unacceptable risk.
+- Distinguish mocked/unit evidence from real macOS/Tauri/MLX/Kubernetes runtime verification, and say which checks actually ran. Shared/production/destructive/release/credential/permission/external mutations need explicit authorization.
 
 ## Commits
 
