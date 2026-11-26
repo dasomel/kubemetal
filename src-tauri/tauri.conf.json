@@ -41,7 +41,10 @@
       "../scripts/mlx/*",
       "../scripts/prefect/*",
       "../scripts/rag/*"
-    ]
+    ],
+    "macOS": {
+      "signingIdentity": "-"
+    }
   },
   "plugins": {}
 }

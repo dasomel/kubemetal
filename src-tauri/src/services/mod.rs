@@ -18,3 +18,4 @@ pub mod ports;
 pub mod process;
 pub mod runtime_adapter;
 pub mod support_bundle;
+pub mod update_check;
