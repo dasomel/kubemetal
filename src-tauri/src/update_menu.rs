@@ -17,8 +17,9 @@ const CHECK_UPDATES: &str = "check-updates";
 
 struct UpdateState {
     item: MenuItem<Wry>,
-    /// Release page found by an earlier check, so a later click opens it without refetching.
-    url: Mutex<Option<String>>,
+    /// `(version, release page)` found by an earlier check, so a later click offers it
+    /// without refetching.
+    found: Mutex<Option<(String, String)>>,
 }
 
 pub fn setup(app: &App) {
@@ -44,7 +45,7 @@ fn install(app: &App) -> tauri::Result<()> {
     app.set_menu(menu)?;
     app.manage(UpdateState {
         item,
-        url: Mutex::new(None),
+        found: Mutex::new(None),
     });
     app.on_menu_event(|app, event| {
         if event.id().as_ref() == CHECK_UPDATES {
@@ -61,15 +62,15 @@ async fn run_check(app: AppHandle, interactive: bool) {
     let state = app.state::<UpdateState>();
     if interactive {
         // Lock only to read the cached value; the network call below runs unlocked.
-        let cached = state.url.lock().await.clone();
-        if let Some(url) = cached {
-            open_release(&app, &url);
+        let cached = state.found.lock().await.clone();
+        if let Some((version, url)) = cached {
+            offer(&app, &version, url);
             return;
         }
     }
     match update_check::check().await {
         UpdateResult::Available { version, url } => {
-            *state.url.lock().await = Some(url.clone());
+            *state.found.lock().await = Some((version.clone(), url.clone()));
             if let Err(error) = state
                 .item
                 .set_text(format!("Update Available (v{version})…"))

@@ -60,6 +60,11 @@ struct Release {
 }
 
 pub fn parse_latest(current: &str, json: &str) -> UpdateResult {
+    // A non-numeric current version (e.g. a pre-release build) cannot be compared; saying
+    // "latest" would be a claim the check never made.
+    if numeric_version(current).is_none() {
+        return failed("This build's version cannot be compared with GitHub releases.");
+    }
     let release: Release = match serde_json::from_str(json) {
         Ok(release) => release,
         Err(_) => return failed("GitHub returned an invalid release response."),
@@ -100,8 +105,14 @@ pub async fn check() -> UpdateResult {
         Ok(cmd) => cmd,
         Err(_) => return failed("curl is not available, so updates cannot be checked."),
     };
+    // `-q` first so a user's ~/.curlrc cannot change the request or the output shape.
     cmd.args([
+        "-q",
         "-fsSL",
+        "--proto",
+        "=https",
+        "--proto-redir",
+        "=https",
         "--max-time",
         "8",
         "-H",
@@ -234,6 +245,14 @@ mod tests {
             "live update check (current {}): {result:?}",
             current_version()
         );
+    }
+
+    #[test]
+    fn uncomparable_current_version_fails_instead_of_claiming_latest() {
+        assert!(matches!(
+            parse_latest("0.4.0-beta", &release("v0.3.0").to_string()),
+            UpdateResult::Failed { .. }
+        ));
     }
 
     #[test]
