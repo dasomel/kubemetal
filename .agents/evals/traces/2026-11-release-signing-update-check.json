@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "openforge-agent-trace/v1",
+  "consistencyMode": "strict",
+  "traceId": "kubemetal-2026-11-release-signing-update-check",
+  "task": "Fix the v0.2.0 release .app being refused as damaged, add a ClusterDeck-style update check, and cut 0.3.0",
+  "changeContext": {
+    "paths": [
+      "src-tauri/**",
+      "src-tauri/tauri.conf.json",
+      "src-tauri/src/lib.rs",
+      "src-tauri/src/update_menu.rs",
+      "src-tauri/src/services/mod.rs",
+      "src-tauri/src/services/update_check.rs",
+      "src-tauri/Cargo.toml",
+      "src-tauri/Cargo.lock",
+      ".github/workflows/release.yml",
+      "package.json",
+      "docs/03-mvp-design.md",
+      "docs/mistakes-log.md",
+      "CHANGELOG.md",
+      "CHANGELOG-ko.md",
+      ".agents/evals/traces/2026-11-release-signing-update-check.json"
+    ]
+  },
+  "events": [
+    {
+      "id": "e1",
+      "type": "scope_check",
+      "summary": "Owner reported the v0.2.0 release zip opens as damaged and asked for ClusterDeck-style update discovery plus a release. Scope: bundle signing config, release workflow signature gate, a Rust-side update menu and GitHub release check (D54), version bump and changelogs. No IPC command, capability, cluster or GPU change."
+    },
+    {
+      "id": "e2",
+      "type": "reproduction",
+      "summary": "Downloaded KubeMetal-v0.2.0-aarch64.zip from the release and inspected it: linker-only ad-hoc signature, Info.plist not bound, no sealed resources, per-build identifier. codesign --verify --deep --strict fails with 'code has no resources but signature indicates they must be present'.",
+      "evidence": [
+        "command:codesign -dv KubeMetal.app -> flags=0x20002(adhoc,linker-signed) Info.plist=not bound Sealed Resources=none Identifier=kubemetal-a567287e2e28826f",
+        "command:codesign --verify --deep --strict KubeMetal.app -> exit 1"
+      ]
+    },
+    {
+      "id": "e3",
+      "type": "bug_fix",
+      "summary": "bundle.macOS.signingIdentity '-' (as ClusterDeck) so bundles are ad-hoc signed as a whole; release.yml fails if codesign --verify --deep --strict fails or the identifier is not com.dasomel.kubemetal. Update check: one silent launch-time GET to GitHub releases/latest via external_command curl (-q, https-only, time and size bounded), a Check for Updates menu item, dialog-plugin prompt, and only the exact numeric release-tag page opened in the browser."
+    },
+    {
+      "id": "e4",
+      "type": "regression_verification",
+      "summary": "Built with zero signing identities (same as CI), zipped with ditto, extracted and quarantined: signature valid, identifier com.dasomel.kubemetal, 51 sealed resources, spctl rejected as unidentified developer rather than damaged; the app stayed running. The new CI signature step exits 1 on the v0.2.0 app.",
+      "status": "passed",
+      "scope": "Locally built release bundle in a CI-equivalent signing setup; release CI build not yet observed",
+      "evidence": [
+        "command:codesign --verify --deep --strict (rebuilt app) -> valid on disk, satisfies its Designated Requirement",
+        "command:spctl -a -t exec (rebuilt, quarantined) -> rejected"
+      ]
+    },
+    {
+      "id": "e5",
+      "type": "verification",
+      "summary": "update_check unit tests (version comparison, draft/prerelease, foreign or mismatched URLs, malformed JSON, uncomparable current version) and the ignored live GitHub probe pass; cargo test --lib 554 passed before review fixes; make lint, license-check, pnpm build and check_versions.py pass. Python unittest suites in make verify not run locally (python3 3.9); CI verify passed.",
+      "status": "passed",
+      "scope": "Rust unit and live network tests, lint and build gates on the macOS host, CI verify",
+      "evidence": [
+        "test:cargo test --locked --lib update_check -- --include-ignored: 7 passed, 0 failed",
+        "ci:verify-passed-on-pr-280"
+      ]
+    },
+    {
+      "id": "e6",
+      "type": "completion_claim",
+      "summary": "Release signing is fixed in a CI-equivalent local build and gated in CI, and the update check works against the live GitHub API. The menu item and dialogs were not observed in the running app, and the Update Available path cannot be exercised end to end until a release newer than 0.3.0 exists.",
+      "evidence": [
+        "e4",
+        "e5"
+      ]
+    },
+    {
+      "id": "e7",
+      "type": "task_outcome",
+      "summary": "Code complete and verified at unit, live-network and local-bundle level; release CI and in-app menu observation pending.",
+      "state": "A"
+    }
+  ]
+}

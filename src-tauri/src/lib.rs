@@ -1,5 +1,6 @@
 mod commands;
 mod services;
+mod update_menu;
 
 use commands::access::get_service_access;
 use commands::colima::{
@@ -88,6 +89,7 @@ pub fn run() {
         .manage(DataIngestState::default())
         .setup(|app| {
             crate::services::mlx_lifecycle::wake::spawn_heartbeat(app.handle().clone());
+            update_menu::setup(app);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
