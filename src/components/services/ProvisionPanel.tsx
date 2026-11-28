@@ -6,6 +6,7 @@ import { usePrefect } from '../../hooks/usePrefect';
 import { useServiceAccess } from '../../hooks/useServiceAccess';
 import { useTranslation } from '../../i18n/i18nContext';
 import { confirmDeployOperation } from '../../lib/confirmDeployOperation';
+import { dashboardEndpoints } from '../../lib/dashboardEndpoints';
 import { openEndpoint } from '../../lib/openEndpoint';
 import type { OperationSummary } from '../../types/ipc';
 
@@ -25,6 +26,7 @@ export const ProvisionPanel: React.FC = () => {
   // 엔드포인트 목록의 URL 출처. 포워딩을 켜거나 끌 때마다 실제 포트가 바뀔 수 있으므로
   // 그 시점에 다시 읽는다(아래 start/stop 핸들러).
   const { services, refresh: refreshServices } = useServiceAccess();
+  const endpoints = dashboardEndpoints(services);
 
   React.useEffect(() => {
     void refreshServices();
@@ -203,12 +205,12 @@ export const ProvisionPanel: React.FC = () => {
         {/* URL은 백엔드가 실제로 잡은 호스트 포트에서 온다(`get_service_access`). D1 포트가
             점유돼 대체 포트로 밀렸을 때 여기에 옛 숫자를 박아두면 링크가 엉뚱한 곳으로 간다. */}
         <div className="flex flex-wrap gap-2 text-caption">
-          {services.length === 0 ? (
+          {endpoints.length === 0 ? (
             <span className="px-3 py-1.5 rounded-md bg-surfaceRaised text-inkFaint">
               {t('provision.endpointsUnknown')}
             </span>
           ) : (
-            services.map((svc) =>
+            endpoints.map((svc) =>
               svc.url ? (
                 <button
                   key={svc.service}
